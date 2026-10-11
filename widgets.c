@@ -6,6 +6,8 @@
 #include "plugins/date.h"
 #include "plugins/colors.h"
 #include "tray/awl_tray.h"
+#include "wuffs/wuffs.h"
+#include "icons/eyes_closed.h"
 
 #include <arpa/inet.h>
 #include <stdatomic.h>
@@ -628,7 +630,7 @@ static backlight_moons_t backlight_moons( int permille ) {
  * moons, but gets two of them wrong, and draws them inverted on a dark bar. */
 static int backlight_emoji( widget_t* w ) {
     static const uint32_t cps[] = { 0x1F311, 0x1F312, 0x1F313, 0x1F314, 0x1F315,
-                                    0x1F316, 0x1F317, 0x1F318, 0x1F440, 0x1F31E, 0x1F6D1 };
+                                    0x1F316, 0x1F317, 0x1F318, 0x1F440, 0x1F6D1 };
     struct fcft_font* font = w->bar->m->drw->font;
     if (!font) return 0;
     for (size_t i = 0; i < sizeof(cps) / sizeof(*cps); ++i) {
@@ -638,7 +640,7 @@ static int backlight_emoji( widget_t* w ) {
     return 1;
 }
 
-/** the gap between the moon and the eyes or sun, in pixels at scale 1 */
+/** the gap between the moon and the eyes, in pixels at scale 1 */
 static const float backlight_emoji_gap = 4.0f;
 /** how much of the right padding (half of lrpad) the emoji leave out, in
  * pixels at scale 1: they fill the whole line height and need less air */
@@ -646,11 +648,13 @@ static const float backlight_emoji_rpad = 5.0f;
 
 /** the backlight widget's snapshot: `text` is "BR"/"DK" without color
  * emoji; with them, moon (empty if the brightness is unknown, a stop sign if
- * it makes no sense) and mode */
+ * it makes no sense) and mode, which `closed` draws as closed eyes in its
+ * place */
 typedef struct {
     textsnap_t text;
     backlight_moons_t moons;
     const char* mode;
+    int closed;
     int gap, rpad;
 } backlightsnap_t;
 
@@ -672,8 +676,8 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     }
 
     // the moon if the brightness is known, a stop sign if the daemon's
-    // number is nonsense, then eyes for automatic updates or a sun for
-    // manual brightness
+    // number is nonsense, then open eyes for automatic updates or closed
+    // ones (as wide as the open ones) for manual brightness
     Monitor* m = w->bar->m;
     float scale = m->wlr_output->scale;
     if (screen >= 0) {
@@ -683,7 +687,8 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     } else {
         s->moons = (backlight_moons_t){ "", "", 0.0 };
     }
-    s->mode = enabled ? "👀" : "🌞";
+    s->mode = "👀";
+    s->closed = !enabled;
     s->gap = *s->moons.m1 ? (int)(backlight_emoji_gap * scale + 0.5f) : 0;
     s->rpad = (int)(backlight_emoji_rpad * scale + 0.5f);
     if (s->rpad > m->lrpad/2) s->rpad = m->lrpad/2;
@@ -706,6 +711,113 @@ static void backlight_glyph( pixman_image_t* dst, struct fcft_font* font,
     pixman_image_composite32( PIXMAN_OP_ADD, g->pix, mask, dst, 0, 0, 0, 0,
             x + g->x, ty - g->y, g->width, g->height );
     pixman_image_unref( mask );
+}
+
+/** The closed eyes for manual brightness: icons/eyes_closed.png, made for
+ * Noto Color Emoji's 136x128 bitmaps (the box and palette of its 👀), and
+ * decoded on first use. Static, so nothing outlives a reload. */
+enum { eyes_closed_w = 136, eyes_closed_h = 128 };
+/** BGRA premultiplied, i.e. PIXMAN_a8r8g8b8 */
+static uint32_t eyes_closed_bits[eyes_closed_w * eyes_closed_h];
+/** scaled to the last box drawn into, if no larger than the image */
+static uint32_t eyes_scaled_bits[eyes_closed_w * eyes_closed_h];
+static int eyes_scaled_w, eyes_scaled_h;
+
+/** 1 if eyes_closed_bits holds the image, 0 if it can't be decoded */
+static int eyes_closed_decode( void ) {
+    static int state = 0; // 0 untried, 1 decoded, -1 failed
+    if (state) return state > 0;
+    state = -1;
+    const char* err = NULL;
+    void* work = NULL;
+    wuffs_png__decoder* dec = malloc( sizeof__wuffs_png__decoder() );
+    if (!dec) { err = "out of memory"; goto out; }
+    wuffs_base__status st = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(),
+            WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
+    if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
+
+    // the reader doesn't write
+    wuffs_base__io_buffer src = wuffs_base__ptr_u8__reader( (uint8_t*)icons_eyes_closed_png,
+            icons_eyes_closed_png_len, true );
+    wuffs_base__image_config ic;
+    st = wuffs_png__decoder__decode_image_config( dec, &ic, &src );
+    if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
+    if (wuffs_base__pixel_config__width( &ic.pixcfg ) != eyes_closed_w
+            || wuffs_base__pixel_config__height( &ic.pixcfg ) != eyes_closed_h) {
+        err = "not 136x128";
+        goto out;
+    }
+    wuffs_base__pixel_config__set( &ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL,
+            WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, eyes_closed_w, eyes_closed_h );
+    wuffs_base__pixel_buffer pb;
+    st = wuffs_base__pixel_buffer__set_from_slice( &pb, &ic.pixcfg,
+            wuffs_base__make_slice_u8( (uint8_t*)eyes_closed_bits, sizeof(eyes_closed_bits) ) );
+    if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
+
+    uint64_t wlen = wuffs_png__decoder__workbuf_len( dec ).max_incl;
+    work = malloc( wlen ? wlen : 1 );
+    if (!work) { err = "out of memory"; goto out; }
+    st = wuffs_png__decoder__decode_frame( dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC,
+            wuffs_base__make_slice_u8( work, wlen ), NULL );
+    if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
+    state = 1;
+
+out:
+    if (err) fprintf( stderr, "backlight widget: can't decode the closed eyes: %s\n", err );
+    free( work );
+    free( dec );
+    return state > 0;
+}
+
+/** Draws the closed eyes into dst where the font's 👀 would go, x being the
+ * pen position as in backlight_glyph(); 0 if it can't. Scaled the way fcft
+ * scales the font's bitmaps (Lanczos3, its default), so both look alike. */
+static int backlight_eyes_closed( pixman_image_t* dst, struct fcft_font* font, int x, int ty ) {
+    const struct fcft_glyph* g = fcft_rasterize_char_utf32( font, 0x1F440, FCFT_SUBPIXEL_NONE );
+    if (!g || g->width <= 0 || g->height <= 0 || !eyes_closed_decode()) return 0;
+    int cache = g->width <= eyes_closed_w && g->height <= eyes_closed_h;
+    pixman_image_t* src = NULL;
+    if (cache && g->width == eyes_scaled_w && g->height == eyes_scaled_h) {
+        src = pixman_image_create_bits( PIXMAN_a8r8g8b8, g->width, g->height,
+                eyes_scaled_bits, g->width * 4 );
+    } else {
+        src = pixman_image_create_bits( PIXMAN_a8r8g8b8, eyes_closed_w, eyes_closed_h,
+                eyes_closed_bits, eyes_closed_w * 4 );
+        if (!src) return 0;
+        double sx = (double)eyes_closed_w / g->width, sy = (double)eyes_closed_h / g->height;
+        pixman_transform_t t;
+        pixman_transform_init_scale( &t, pixman_double_to_fixed( sx ), pixman_double_to_fixed( sy ) );
+        pixman_image_set_transform( src, &t );
+        int n = 0;
+        pixman_fixed_t* params = pixman_filter_create_separable_convolution( &n,
+                pixman_double_to_fixed( sx ), pixman_double_to_fixed( sy ),
+                PIXMAN_KERNEL_IMPULSE, PIXMAN_KERNEL_IMPULSE,
+                PIXMAN_KERNEL_LANCZOS3, PIXMAN_KERNEL_LANCZOS3, 4, 4 );
+        if (params) {
+            pixman_image_set_filter( src, PIXMAN_FILTER_SEPARABLE_CONVOLUTION, params, n );
+            free( params );
+        } else {
+            pixman_image_set_filter( src, PIXMAN_FILTER_BILINEAR, NULL, 0 );
+        }
+        if (cache) {
+            // scaled once per size: the filter is wide when shrinking a lot
+            pixman_image_t* scaled = pixman_image_create_bits( PIXMAN_a8r8g8b8, g->width,
+                    g->height, eyes_scaled_bits, g->width * 4 );
+            if (scaled) {
+                pixman_image_composite32( PIXMAN_OP_SRC, src, NULL, scaled, 0, 0, 0, 0,
+                        0, 0, g->width, g->height );
+                eyes_scaled_w = g->width;
+                eyes_scaled_h = g->height;
+                pixman_image_unref( src );
+                src = scaled;
+            }
+        }
+    }
+    if (!src) return 0;
+    pixman_image_composite32( PIXMAN_OP_OVER, src, NULL, dst, 0, 0, 0, 0,
+            x + g->x, ty - g->y, g->width, g->height );
+    pixman_image_unref( src );
+    return 1;
 }
 
 static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
@@ -740,8 +852,17 @@ static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* p
             pixman_image_unref( tmp );
         }
     }
-    awl_host->text( w->bar, x + mw, -2, w->width - mw, m->b.height, 0, s->mode,
-            s->text.fg, s->text.bg );
+    // the closed eyes: the background, then the image where 👀 would be
+    int closed = s->closed && font;
+    awl_host->text( w->bar, x + mw, -2, w->width - mw, m->b.height, 0,
+            closed ? "" : s->mode, s->text.fg, s->text.bg );
+    if (closed) {
+        int h = m->b.height, y = -2;
+        int ty = y + (h - font->height) / 2 + font->ascent;
+        if (!backlight_eyes_closed( pix, font, (int)(x + mw), ty ))
+            awl_host->text( w->bar, x + mw, -2, w->width - mw, m->b.height, 0, s->mode,
+                    s->text.fg, s->text.bg );
+    }
     return w->width;
 }
 

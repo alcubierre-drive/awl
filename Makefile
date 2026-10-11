@@ -78,13 +78,17 @@ xdg-shell-protocol.h:
 config_awl.h config_plugins.h:
 	cp $(@:.h=.def.h) $@
 awl_config.o: config_plugins.h
+# icons/*.png embedded as static C arrays by xxd -i
+icons/eyes_closed.h: icons/eyes_closed.png
+	xxd -i -n icons_eyes_closed_png icons/eyes_closed.png | sed 's/^unsigned/static const unsigned/' > $@
+widgets.o: icons/eyes_closed.h
 clean:
-	rm -f awl libawlplugins.so *.o *-protocol.h
+	rm -f awl libawlplugins.so *.o *-protocol.h icons/*.h
 	rm -f $(PLUGINS_OBJ) plugins/redraw.o $(DEPS)
 	$(MAKE) -C tray clean
 
 dist: clean
-	mkdir -p awl-$(VERSION)/plugins awl-$(VERSION)/tray awl-$(VERSION)/wuffs
+	mkdir -p awl-$(VERSION)/plugins awl-$(VERSION)/tray awl-$(VERSION)/wuffs awl-$(VERSION)/icons
 	cp -R LICENSE Makefile README.md client.h config_awl.def.h config_plugins.def.h \
 		config.mk protocols awl.c awl.h awl-log.c awl-log.h util.c util.h \
 		awl_draw.c awl_draw.h plugins.c plugins.h widgets.c plugin_host.c plugin_host.h desktop.c desktop.h desktop_panel.c background.c background.h awl_config.c \
@@ -92,6 +96,7 @@ dist: clean
 		awl-$(VERSION)
 	cp plugins/*.c plugins/*.h awl-$(VERSION)/plugins
 	cp wuffs/*.c wuffs/*.h awl-$(VERSION)/wuffs
+	cp icons/*.png awl-$(VERSION)/icons
 	cp -Rp tray/Makefile tray/*.c tray/*.h tray/*.cpp tray/*.hpp tray/protocol \
 		awl-$(VERSION)/tray
 	tar -caf awl-$(VERSION).tar.gz awl-$(VERSION)
