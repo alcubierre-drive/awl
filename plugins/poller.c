@@ -47,6 +47,7 @@ static void update_all( awl_poller_t* p ) {
     temp_update( p->temp );
     date_update( p->date );
     bat_update( p->bat );
+    bat_dock_update( p->bat );
     ip_update( p->ip );
     awl_redraw_request();
 }
@@ -65,8 +66,10 @@ static void tick_callback( pa_mainloop_api* a, pa_time_event* e, const struct ti
         if (p->bat_settle > 0) {
             p->bat_settle--;
             bat_update( p->bat );
-        } else if (p->ticks % BAT_REREAD_TICKS == 0)
+        } else if (p->ticks % BAT_REREAD_TICKS == 0) {
             bat_update( p->bat );
+            if (p->bat->uevent_fd < 0) bat_dock_update( p->bat );
+        }
         if (p->ip->nl_fd < 0 && p->ticks % IP_FALLBACK_TICKS == 0)
             ip_update( p->ip );
         /* the graph moves every second */

@@ -82,8 +82,21 @@ awl_config.o: config_plugins.h
 icons/eyes_closed.h: icons/eyes_closed.png
 	xxd -i -n icons_eyes_closed_png icons/eyes_closed.png | sed 's/^unsigned/static const unsigned/' > $@
 widgets.o: icons/eyes_closed.h
+# the plugin library's git revision, "branch:hash" plus ":dirty" with
+# uncommitted changes to tracked files ("undef" outside git), compiled into
+# plugins.o; rewritten only when it changes, so an unchanged tree doesn't relink
+plugins_git.h: FORCE
+	@if b=`git rev-parse --abbrev-ref HEAD 2>/dev/null` && h=`git rev-parse --short HEAD 2>/dev/null`; then \
+		rev="$$b:$$h"; \
+		git diff --quiet && git diff --cached --quiet || rev="$$rev:dirty"; \
+	else rev=undef; fi; \
+	echo "#define PLUGINS_GIT \"$$rev\"" > $@.tmp; \
+	if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv -f $@.tmp $@; fi
+plugins.o: plugins_git.h
+FORCE:
+.PHONY: FORCE
 clean:
-	rm -f awl libawlplugins.so *.o *-protocol.h icons/*.h
+	rm -f awl libawlplugins.so *.o *-protocol.h icons/*.h plugins_git.h
 	rm -f $(PLUGINS_OBJ) plugins/redraw.o $(DEPS)
 	$(MAKE) -C tray clean
 

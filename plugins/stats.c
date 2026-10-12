@@ -9,7 +9,7 @@
 #include <fcntl.h>
 
 static float cpu_idle( uint64_t* sizes_table, float* io );
-static void getmem( float* mem, float* swp );
+static int getmem( float* mem, float* swp );
 
 awl_stats_t* stats_init( int nval_cpu, int nval_mem, int nval_swp ) {
     /*P_awl_log_printf( "starting system monitor" );*/
@@ -24,6 +24,7 @@ awl_stats_t* stats_init( int nval_cpu, int nval_mem, int nval_swp ) {
         atomic_init( &st->io[i], 0 );
     }
     atomic_init( &st->samples, 0 );
+    atomic_init( &st->has_swap, 1 );
     st->sizes_table = calloc(20, sizeof(uint64_t));
     return st;
 }
@@ -35,7 +36,7 @@ void stats_free( awl_stats_t* st ) {
 
 void stats_update( awl_stats_t* st ) {
     float mem = 0, swp = 0;
-    getmem( &mem, &swp );
+    int has_swap = getmem( &mem, &swp );
     float io = 0;
     float cpu = 1. - cpu_idle(st->sizes_table, &io);
     // the slot after the head is the oldest sample; it becomes the newest
@@ -45,6 +46,7 @@ void stats_update( awl_stats_t* st ) {
     if (st->nmem) atomic_store( &st->mem[next % st->nmem], mem );
     if (st->nswp) atomic_store( &st->swp[next % st->nswp], swp );
     atomic_store( &st->samples, next );
+    atomic_store( &st->has_swap, has_swap );
 }
 
 /* the idle fraction since the last call; *io: the part of it spent waiting
@@ -89,9 +91,10 @@ static float cpu_idle( uint64_t* sizes_table, float* io ) {
     return result > 0.0 ? (result < 1.0 ? result : 1.0) : 0.0;
 }
 
-static void getmem( float* mem, float* swp ) {
+/* returns whether the system has swap */
+static int getmem( float* mem, float* swp ) {
     FILE* f = fopen("/proc/meminfo", "r");
-    if (!f) { *mem = *swp = 0.0; return; }
+    if (!f) { *mem = *swp = 0.0; return 1; }
     long unsigned mem_total = 0,
                   mem_avail = 0,
                   swp_total = 0,
@@ -117,7 +120,7 @@ static void getmem( float* mem, float* swp ) {
     else
         *mem = 1.0 - (float)mem_avail/(float)mem_total;
     if (swp_total == 0)
-        *swp = 1.0;
+        *swp = 0.0;
     else
         *swp = 1.0 - (float)swp_free/(float)swp_total;
 
@@ -125,4 +128,5 @@ static void getmem( float* mem, float* swp ) {
     if (*mem > 1.0) *mem = 1.0;
     if (*swp < 0.0) *swp = 0.0;
     if (*swp > 1.0) *swp = 1.0;
+    return swp_total != 0;
 }

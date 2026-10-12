@@ -18,6 +18,9 @@ typedef struct awl_stats_t {
     _Atomic float io[AWL_STATS_MAX];
     /** number of updates so far */
     atomic_uint samples;
+    /** 0 if the system has no swap (SwapTotal 0); then the bar leaves out
+     * the swap graph. 1 until the first update. */
+    atomic_int has_swap;
     /** ncpu, nmem and nswp: the graphs' numbers of samples; set by
      * `stats_init()`, then read-only */
     int ncpu, nmem, nswp;

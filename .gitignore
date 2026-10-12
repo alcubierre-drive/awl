@@ -8,3 +8,4 @@ config.h
 libawlplugins.so
 test/vptr
 doc/_build
+plugins_git.h

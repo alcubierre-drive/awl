@@ -9,6 +9,7 @@
 #include "plugins/poller.h"
 #include "plugins/redraw.h"
 #include "plugins/persistent.h"
+#include "plugins_git.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -101,6 +102,8 @@ static void loaded_stamp( void ) {
 
 static void api_init( int paused ) {
     loaded_stamp();
+    /* this library's git revision, see plugins_git.h in the Makefile */
+    AWL_HOST_CFG_SET( awl_host, "plugins_git", AWL_DICT_STR( PLUGINS_GIT ) );
     plugin_data = calloc(1,sizeof(awl_plugin_data_t));
     plugin_data->paused = paused;
     /* plugins/persistent.h's file: $XDG_STATE_HOME/awl/persistent */

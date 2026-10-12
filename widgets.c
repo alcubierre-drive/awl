@@ -49,6 +49,8 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
 static uint32_t tempwidget_measure( widget_t* w );
 static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t batwidget_measure( widget_t* w );
+static uint32_t dockwidget_measure( widget_t* w );
+static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t ipwidget_measure( widget_t* w );
 
 static uint32_t backlightwidget_measure( widget_t* w );
@@ -113,6 +115,12 @@ void awl_widgets_create( awl_draw_t* drw ) {
         .bar = drw,
         .measure = &tempwidget_measure,
         .draw = &tempwidget_draw,
+        .free = free,
+    };
+    drw->widgets_right[drw->n_widgets_right++] = (widget_t){
+        .bar = drw,
+        .measure = &dockwidget_measure,
+        .draw = &dockwidget_draw,
         .free = free,
     };
     drw->widgets_right[drw->n_widgets_right++] = (widget_t){
@@ -353,6 +361,7 @@ static uint32_t pulsewidget_measure( widget_t* w ) {
 
 typedef struct {
     pixman_box32_t fg[AWL_STATS_MAX], bg[AWL_STATS_MAX], io[AWL_STATS_MAX]; // one graph at a time
+    int nswp; // the swap samples measure() made room for: 0 without swap
 } statuswidget_userdata_t;
 
 static uint32_t statuswidget_measure( widget_t* w ) {
@@ -361,11 +370,13 @@ static uint32_t statuswidget_measure( widget_t* w ) {
 
     if (!w->userdata)
         w->userdata = calloc(1, sizeof(statuswidget_userdata_t));
-    const awl_stats_t* st = P->stats;
+    awl_stats_t* st = P->stats;
+    statuswidget_userdata_t* u = w->userdata;
+    u->nswp = atomic_load( &st->has_swap ) ? st->nswp : 0;
 
     // one column per sample, accumulated the same way draw() places them
     float xx = 0;
-    int n = st->ncpu + st->nmem + st->nswp;
+    int n = st->ncpu + st->nmem + u->nswp;
     for (int i=0; i<n; ++i) xx += w->bar->m->wlr_output->scale;
     return xx;
 }
@@ -376,7 +387,7 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     statuswidget_userdata_t* u = w->userdata;
     awl_stats_t* st = P->stats;
 
-    const int n[3] = { st->ncpu, st->nmem, st->nswp };
+    const int n[3] = { st->ncpu, st->nmem, u->nswp };
     _Atomic float* graph[3] = { st->cpu, st->mem, st->swp };
     const pixman_color_t* fg[3] = { &P->awl_colors.fg_stats_cpu, &P->awl_colors.fg_stats_mem,
                                     &P->awl_colors.fg_stats_swp };
@@ -473,6 +484,46 @@ static uint32_t batwidget_measure( widget_t* w ) {
     if (charging)       s->fg = color_8bit_to_16bit( molokai_green );
     s->bg = P->awl_colors.bg_status;
     return textsnap_width( w );
+}
+
+/** Whether the bar font of w's monitor draws all n code points cps in color
+ * (a monochrome fallback doesn't count). */
+static int color_emoji( widget_t* w, const uint32_t* cps, size_t n ) {
+    struct fcft_font* font = w->bar->m->drw->font;
+    if (!font) return 0;
+    for (size_t i = 0; i < n; ++i) {
+        const struct fcft_glyph* g = fcft_rasterize_char_utf32( font, cps[i], FCFT_SUBPIXEL_DEFAULT );
+        if (!g || pixman_image_get_format( g->pix ) != PIXMAN_a8r8g8b8) return 0;
+    }
+    return 1;
+}
+
+/** 🔌 when a Thunderbolt dock is attached, 💻 otherwise; "DOCK" or nothing
+ * without color emoji, nothing at all without a Thunderbolt bus. No left
+ * padding: it sits right against the battery. */
+static uint32_t dockwidget_measure( widget_t* w ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    if (!P || !P->bat) return 0;
+    int docked = atomic_load( &P->bat->docked );
+    if (docked < 0) return 0;
+
+    static const uint32_t cps[] = { 0x1F50C, 0x1F4BB };
+    textsnap_t* s = textsnap( w );
+    if (color_emoji( w, cps, sizeof(cps) / sizeof(*cps) ))
+        strcpy( s->text, docked ? "🔌" : "💻" );
+    else
+        strcpy( s->text, docked ? "DOCK" : "" );
+    s->fg = P->awl_colors.fg_status;
+    s->bg = P->awl_colors.bg_status;
+    if (!*s->text) return 0;
+    return TEXTW( w->bar->m, s->text ) - w->bar->m->lrpad/2;
+}
+
+static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
+    textsnap_t* s = w->userdata;
+    if (!s) return 0;
+    awl_host->text( w->bar, x, -2, w->width, w->bar->m->b.height, 0, s->text, s->fg, s->bg );
+    return w->width;
 }
 
 static uint32_t ipwidget_measure( widget_t* w ) {
@@ -631,13 +682,7 @@ static backlight_moons_t backlight_moons( int permille ) {
 static int backlight_emoji( widget_t* w ) {
     static const uint32_t cps[] = { 0x1F311, 0x1F312, 0x1F313, 0x1F314, 0x1F315,
                                     0x1F316, 0x1F317, 0x1F318, 0x1F440, 0x1F6D1 };
-    struct fcft_font* font = w->bar->m->drw->font;
-    if (!font) return 0;
-    for (size_t i = 0; i < sizeof(cps) / sizeof(*cps); ++i) {
-        const struct fcft_glyph* g = fcft_rasterize_char_utf32( font, cps[i], FCFT_SUBPIXEL_DEFAULT );
-        if (!g || pixman_image_get_format( g->pix ) != PIXMAN_a8r8g8b8) return 0;
-    }
-    return 1;
+    return color_emoji( w, cps, sizeof(cps) / sizeof(*cps) );
 }
 
 /** the gap between the moon and the eyes, in pixels at scale 1 */
