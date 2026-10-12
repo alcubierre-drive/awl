@@ -24,3 +24,5 @@ static const char* Autostarts[][8] = {
 };
 static const int ScreenLockServiceAtStart = 1;
 static const char* ScreenLockService[] = { "systemd-lock-handler", "--", "swaylock", "-c", "00000000", "-p", NULL };
+
+#define SCENEFX_HAS_SHATTER

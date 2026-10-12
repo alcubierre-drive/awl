@@ -208,6 +208,9 @@ static pid_t Autostarted_pids[256] = {0};
 static int Autostarted_pids_sz = 0;
 
 static int locked = 0;
+/* key presses while locked, reset on unlock; nothing reads it yet (main
+ * thread only, and only a count: never the keys, never their timing) */
+static unsigned locked_keystrokes = 0;
 static void *exclusive_focus;
 static struct wl_display *dpy;
 static struct wl_event_loop *event_loop;
@@ -318,6 +321,13 @@ static struct wlr_xwayland *xwayland;
 
 /* attempt to encapsulate suck into one file */
 #include "client.h"
+
+#ifdef SCENEFX_HAS_SHATTER
+#define AWL_wlr_scene_blur_set_shatter(blur, shatter) \
+    wlr_scene_blur_set_shatter((blur), (shatter))
+#else
+#define AWL_wlr_scene_blur_set_shatter(blur, shatter) {}
+#endif
 
 #define AWL_ACTION_INIT(name) .name = name,
 const awl_actions_t awl_actions = { AWL_ACTIONS(AWL_ACTION_INIT) };
@@ -2039,9 +2049,13 @@ destroylock(SessionLock *lock, int unlock)
     wlr_seat_keyboard_notify_clear_focus(seat);
     if ((locked = !unlock))
         goto destroy;
+    locked_keystrokes = 0;
     updatepluginpause();
 
-    if (locked_bg_blur) wlr_scene_node_set_enabled(&locked_bg_blur->node, 0);
+    if (locked_bg_blur) {
+        wlr_scene_node_set_enabled(&locked_bg_blur->node, 0);
+        AWL_wlr_scene_blur_set_shatter(locked_bg_blur, 0.01);
+    }
 
     focusclient(focustop(selmon), 0);
     motionnotify(0, NULL, 0, 0, 0, 0);
@@ -2776,6 +2790,12 @@ keypress(struct wl_listener *listener, void *data)
 
     wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
+    if (locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        locked_keystrokes++;
+        if (locked_bg_blur)
+            AWL_wlr_scene_blur_set_shatter(locked_bg_blur, (float)locked_keystrokes/20.0);
+    }
+
     /* On _press_ if there is no active screen locker,
      * attempt to process a compositor keybinding. */
     if (!locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
@@ -2846,7 +2866,10 @@ locksession(struct wl_listener *listener, void *data)
 {
     struct wlr_session_lock_v1 *session_lock = data;
     SessionLock *lock;
-    if (locked_bg_blur) wlr_scene_node_set_enabled(&locked_bg_blur->node, 1);
+    if (locked_bg_blur) {
+        wlr_scene_node_set_enabled(&locked_bg_blur->node, 1);
+        AWL_wlr_scene_blur_set_shatter(locked_bg_blur, 0.01);
+    }
     if (cur_lock) {
         wlr_session_lock_v1_destroy(session_lock);
         return;
