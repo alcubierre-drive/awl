@@ -648,8 +648,11 @@ arrangelayers(Monitor *m)
             }
             if (locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
                 continue;
-            /* Deactivate the focused client. */
-            focusclient(NULL, 0);
+            /* Deactivate the focused client, except for our own tray popups:
+             * the client keeps its border color and activated state, only
+             * the keyboard moves to the popup (unmap gives it back) */
+            if (!l->is_popup)
+                focusclient(NULL, 0);
             exclusive_focus = l;
             client_notify_enter(l->layer_surface->surface, wlr_seat_get_keyboard(seat));
             return;
@@ -1696,6 +1699,13 @@ createlayersurface(struct wl_listener *listener, void *data)
      * are translucent; they follow the launcher's blur settings */
     l->is_popup = layer_surface->namespace && (!strncmp(layer_surface->namespace, "awl-calendar:", 13)
             || !strncmp(layer_surface->namespace, "awl-popup:", 10));
+    /* the namespace is client-chosen; the tray runs in-process, so only
+     * trust it from our own pid (is_popup keeps the focused client active) */
+    if (l->is_popup) {
+        pid_t pid = 0;
+        wl_client_get_credentials(wl_resource_get_client(layer_surface->resource), &pid, NULL, NULL);
+        l->is_popup = pid == getpid();
+    }
     l->type = LayerShell;
     LISTEN(&surface->events.commit, &l->surface_commit, commitlayersurfacenotify);
     LISTEN(&surface->events.unmap, &l->unmap, unmaplayersurfacenotify);
