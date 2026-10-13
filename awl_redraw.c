@@ -1,4 +1,4 @@
-#include "redraw.h"
+#include "awl_redraw.h"
 #include <stdatomic.h>
 #include <stdint.h>
 #include <unistd.h>

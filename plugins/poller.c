@@ -1,5 +1,5 @@
 #include "poller.h"
-#include "redraw.h"
+#include "../awl_host.h"
 #include "thread.h"
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -49,7 +49,7 @@ static void update_all( awl_poller_t* p ) {
     bat_update( p->bat );
     bat_dock_update( p->bat );
     ip_update( p->ip );
-    awl_redraw_request();
+    awl_host->redraw_request();
 }
 
 static void tick_callback( pa_mainloop_api* a, pa_time_event* e, const struct timeval* tv, void* userdata ) {
@@ -73,7 +73,7 @@ static void tick_callback( pa_mainloop_api* a, pa_time_event* e, const struct ti
         if (p->ip->nl_fd < 0 && p->ticks % IP_FALLBACK_TICKS == 0)
             ip_update( p->ip );
         /* the graph moves every second */
-        awl_redraw_request();
+        awl_host->redraw_request();
     }
     /* the next full wall-clock second */
     struct timeval next;
@@ -110,20 +110,20 @@ static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_eve
 static void bat_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
     (void)a; (void)e; (void)fd; (void)f;
     awl_poller_t* p = userdata;
-    if (bat_dispatch( p->bat ) && !atomic_load( &p->paused )) awl_redraw_request();
+    if (bat_dispatch( p->bat ) && !atomic_load( &p->paused )) awl_host->redraw_request();
     p->bat_settle = BAT_SETTLE_TICKS;
 }
 
 static void ip_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
     (void)a; (void)e; (void)fd; (void)f;
     awl_poller_t* p = userdata;
-    if (ip_dispatch( p->ip ) && !atomic_load( &p->paused )) awl_redraw_request();
+    if (ip_dispatch( p->ip ) && !atomic_load( &p->paused )) awl_host->redraw_request();
 }
 
 /* NetworkManager's view changed: it may pick another address */
 static void nm_changed( void* userdata ) {
     awl_poller_t* p = userdata;
-    if (ip_update( p->ip ) && !atomic_load( &p->paused )) awl_redraw_request();
+    if (ip_update( p->ip ) && !atomic_load( &p->paused )) awl_host->redraw_request();
 }
 
 static void* poller_run( void* arg ) {

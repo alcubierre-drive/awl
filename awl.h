@@ -107,15 +107,15 @@
 
 /* enums */
 /** bordercolors[] */
-enum { BorderNorm, BorderSel, BorderUrg, BorderLast };
+enum BorderColor { BorderNorm, BorderSel, BorderUrg, BorderLast };
 /** cursor */
-enum { CurNormal, CurPressed, CurMove, CurResize };
+enum CursorMode { CurNormal, CurPressed, CurMove, CurResize };
 /** client types */
-enum { XDGShell, LayerShell, X11 };
+enum ClientType { XDGShell, LayerShell, X11 };
 /** scene layers, bottom to top */
-enum { LyrBg, LyrBottom, LyrTile, LyrFloat, LyrTop, LyrFS, LyrOverlay, LyrBlock, NUM_LAYERS };
+enum SceneLayer { LyrBg, LyrBottom, LyrTile, LyrFloat, LyrTop, LyrFS, LyrOverlay, LyrBlock, NUM_LAYERS };
 /** where a click went, `Button.click` */
-enum { ClkBar, ClkClient, ClkRoot };
+enum ClickRegion { ClkBar, ClkClient, ClkRoot };
 
 /** The argument config_plugins.h's bindings pass to their function. */
 typedef union {
@@ -275,7 +275,7 @@ struct Monitor {
     char ltsymbol[16];
     /** the per-tag layouts: [1+t] for tag t viewed alone, [0] for views of
      * several tags. Kept current with lt/sellt while pertag is on. */
-    struct { const Layout *lt[2]; unsigned int sellt; } ptlt[32];
+    struct PertagLayout { const Layout *lt[2]; unsigned int sellt; } ptlt[32];
     int asleep;
     /** the bar's drawing state and widgets */
     awl_draw_t *drw;

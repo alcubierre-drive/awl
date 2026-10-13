@@ -22,7 +22,9 @@
 # keyboard and pointer then work in them too.
 #
 # State goes to $LIVE_DIR (default /tmp/awl-live-$UID): log, runtime dir,
-# home. Desktop fixture: $LIVE_DIR/home/Desktop, created on start if missing.
+# home. awl gets -l '' (stderr, i.e. that log, only), so it leaves the real
+# awl's log file alone; arguments after start come after it. Desktop fixture:
+# $LIVE_DIR/home/Desktop, created on start if missing.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 awl=$(cd "$here/.." && pwd)/awl
@@ -110,7 +112,7 @@ start)
 			gdb -q -batch \
 			-ex "handle SIGUSR1 SIGUSR2 SIGTERM SIGPIPE nostop noprint pass" \
 			-ex run -ex "bt full" -ex "thread apply all bt" \
-			--args "$awl" "${@:2}"
+			--args "$awl" -l '' "${@:2}"
 	) >"$log" 2>&1 </dev/null &
 	echo $! >"$dir/sid" # setsid didn't need to fork, $! is the session leader
 	for i in $(seq 100); do

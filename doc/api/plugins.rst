@@ -3,20 +3,16 @@ The plugins
 
 The data the bar shows, collected off the main thread (see
 :doc:`/threads`). Each plugin keeps its output in atomics, which the widgets
-read while drawing, and asks for a redraw when it changed.
+read while drawing, and asks for a redraw when it changed (awl_redraw.h,
+in :doc:`bar`).
 
-Threads and redraws
--------------------
+Threads
+-------
 
 plugins/thread.h
 ^^^^^^^^^^^^^^^^
 
 .. c:autodoc:: plugins/thread.h
-
-plugins/redraw.h
-^^^^^^^^^^^^^^^^
-
-.. c:autodoc:: plugins/redraw.h
 
 plugins/poller.h
 ^^^^^^^^^^^^^^^^

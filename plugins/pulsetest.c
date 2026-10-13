@@ -4,7 +4,7 @@
 #include <string.h>
 #include <pulse/pulseaudio.h>
 #include "pulsetest.h"
-#include "redraw.h"
+#include "../awl_host.h"
 
 /* Tracks the default sink's volume/mute through PulseAudio subscriptions,
  * on the plugins' shared loop (poller.h), which only wakes for server events
@@ -128,7 +128,7 @@ static void sink_info_callback( pa_context* c, const pa_sink_info* i, int eol, v
         int muted = i->mute;
         int changed = atomic_exchange( &t->value, value ) != value;
         changed |= atomic_exchange( &t->muted, muted ) != muted;
-        if (changed) awl_redraw_request();
+        if (changed) awl_host->redraw_request();
     }
 }
 

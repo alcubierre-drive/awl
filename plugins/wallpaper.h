@@ -42,5 +42,5 @@ int awl_wallpaper_position( int* cur, int* n, int* rand_next );
  * asked for isn't done yet. Main thread. */
 int awl_wallpaper_settled( int* cur, int* n );
 /** the newest decoded wallpaper not taken yet, or NULL; the caller owns it.
- * `awl_redraw_request()` announces one. Main thread. */
+ * A redraw request announces one. Main thread. */
 awl_image_t* awl_wallpaper_take( void );

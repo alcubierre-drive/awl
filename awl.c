@@ -1,5 +1,5 @@
 #include "awl.h"
-#include "awl-log.h"
+#include "awl_log.h"
 #include "util.h"
 #include "awl_draw.h"
 #include "awl_dict.h"
@@ -8,7 +8,7 @@
 #include "background.h"
 #include "desktop.h"
 #include "plugins/colors.h" /* config_plugins.h */
-#include "plugins/redraw.h"
+#include "awl_redraw.h"
 #include "tray/awl_tray.h"
 #include <limits.h>
 #include <wlr/backend/headless.h>
@@ -89,7 +89,7 @@ static int bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *d
 
 static void wallpapertake(void);
 
-/** bars are redrawn on demand: see plugins/redraw.h */
+/** bars are redrawn on demand: see awl_redraw.h */
 static struct wl_event_source* redraw_source = NULL;
 static int redraw_fire( int fd, uint32_t mask, void* data ) {
     (void)fd; (void)mask; (void)data;
@@ -149,6 +149,7 @@ static void setmon(Client *c, Monitor *m, uint32_t newtags);
 static void setpsel(struct wl_listener *listener, void *data);
 static void setsel(struct wl_listener *listener, void *data);
 static void setup(void);
+static void wlrlog(enum wlr_log_importance importance, const char *fmt, va_list ap);
 static void spawn(const Arg *arg);
 static pid_t spawn_pid(const Arg *arg);
 static void autostart(const char **argv);
@@ -347,7 +348,7 @@ static awl_dict_t *cfgdict;
 static uint32_t borders[BorderLast];
 /** What the keyboard and the bars' font were set up with, copied, to tell
  * whether a reload changed them */
-static struct {
+static struct AppliedConfig {
     char *xkb[5]; /* rules, model, layout, variant, options */
     int repeat_rate, repeat_delay;
     char *font;
@@ -481,7 +482,7 @@ applyrules(Client *c)
 
     appid = client_get_appid(c);
     title = client_get_title(c);
-    logprintf( "SPAWN APPID '%s' @TITLE '%s'\n", appid, title );
+    awl_log_printf( "SPAWN APPID '%s' @TITLE '%s'\n", appid, title );
     int apply_resize = 0;
     struct wlr_box rbox;
 
@@ -1220,7 +1221,6 @@ cleanup(void)
     struct timespec start, now;
     sigset_t quitsigs;
 
-    awl_tray_set_change_callback(NULL);
     if (redraw_source) wl_event_source_remove(redraw_source);
     if (hover_timer) {
         wl_event_source_remove(hover_timer);
@@ -1267,7 +1267,7 @@ cleanup(void)
                 >= TRAY_STOP_MS) {
             /* Tearing the display down under a GTK thread that still uses
              * it could crash anywhere; the kernel cleans up just as well. */
-            fprintf(stderr, "awl: tray thread did not stop within %d ms, exiting without cleanup\n",
+            awl_wrn_printf("tray thread did not stop within %d ms, exiting without cleanup\n",
                     TRAY_STOP_MS);
             stopchildren();
             _exit(EXIT_FAILURE);
@@ -2783,7 +2783,7 @@ keybinding(uint32_t mods, xkb_keysym_t sym)
     for (k = cfg->keys; k < cfg->keys + cfg->n_keys; k++) {
         if (CLEANMASK(mods) == CLEANMASK(k->mod)
                 && sym == k->keysym && k->func) {
-            // logprintf( "keybinding: (mod:%u key:%u func:%p arg:%li)\n", k->mod, k->keysym, k->func, k->arg.v );
+            // awl_vrb_printf( "keybinding: (mod:%u key:%u func:%p arg:%li)\n", k->mod, k->keysym, k->func, k->arg.v );
             k->func(&k->arg);
             return 1;
         }
@@ -3427,7 +3427,7 @@ run(char *startup_cmd)
      * client. Its startup runs in the background (it can't complete the
      * connection handshake until wl_display_run() below starts servicing
      * clients) -- awl_tray_init() must not block waiting for that. */
-    awl_tray_init(cfg->tray);
+    awl_tray_init(awl_host_table(), cfg->tray);
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM
      * master, etc */
@@ -3447,7 +3447,7 @@ run(char *startup_cmd)
             close(STDIN_FILENO);
             setsid();
             execl("/bin/sh", "/bin/sh", "-c", startup_cmd, NULL);
-            fprintf(stderr, "startup: execl failed: %s\n", strerror(errno));
+            awl_err_printf("startup: execl failed: %s\n", strerror(errno));
             _exit(1);
         }
     }
@@ -3773,7 +3773,7 @@ setup(void)
     wl_list_init(&inputdevices);
 
 
-    wlr_log_init(log_level, NULL);
+    wlr_log_init(log_level, wlrlog);
 
     /* The Wayland display is managed by libwayland. It handles accepting
      * clients from the Unix socket, manging Wayland globals, and so on. */
@@ -4009,7 +4009,7 @@ setup(void)
 
     /* NULL is fine: every lookup then fails with AWL_DICT_ERR_INVALID */
     if (!(cfgdict = awl_dict_new()))
-        fprintf(stderr, "awl: out of memory for the config dictionary\n");
+        awl_err_printf("out of memory for the config dictionary\n");
     cfgdict_defaults(cfgdict);
     awl_plugins_load(0, cfgdict);
     configuse();
@@ -4017,7 +4017,6 @@ setup(void)
     if (awl_redraw_init() >= 0)
         redraw_source = wl_event_loop_add_fd(event_loop, awl_redraw_fd(),
                 WL_EVENT_READABLE, redraw_fire, NULL);
-    awl_tray_set_change_callback(awl_redraw_request);
 
     /* Make sure XWayland clients don't connect to the parent X server,
      * e.g when running in the x11 backend or the wayland backend and the
@@ -4034,7 +4033,7 @@ setup(void)
 
         setenv("DISPLAY", xwayland->display_name, 1);
     } else {
-        fprintf(stderr, "failed to setup XWayland X server, continuing without it\n");
+        awl_wrn_printf("failed to setup XWayland X server, continuing without it\n");
     }
 #endif
 }
@@ -4046,7 +4045,7 @@ spawn_pid(const Arg *arg)
      * shares stdio buffers with the parent until it exits or execs. */
     pid_t pid = vfork();
     if (pid < 0) {
-        fprintf(stderr, "awl: vfork failed: %s\n", strerror(errno));
+        awl_err_printf("vfork failed: %s\n", strerror(errno));
         return -1;
     } else if (pid == 0) {
         unblocksignals();
@@ -4054,7 +4053,7 @@ spawn_pid(const Arg *arg)
         dup2(STDERR_FILENO, STDOUT_FILENO);
         setsid();
         execvp(((char **)arg->v)[0], (char **)arg->v);
-        fprintf(stderr, "awl: execvp %s failed: %s\n", ((char **)arg->v)[0], strerror(errno));
+        awl_err_printf("execvp %s failed: %s\n", ((char **)arg->v)[0], strerror(errno));
         _exit(1);
     } else {
         return pid;
@@ -4070,7 +4069,7 @@ autostart(const char **argv)
 {
     pid_t pid;
     if (Autostarted_pids_sz >= (int)LENGTH(Autostarted_pids)) {
-        fprintf(stderr, "autostart: more than %d programs, not starting %s\n",
+        awl_wrn_printf("autostart: more than %d programs, not starting %s\n",
                 (int)LENGTH(Autostarted_pids), argv[0]);
         return;
     }
@@ -4118,7 +4117,7 @@ stopchildren(void)
     for (i = 0; i < n; i++) {
         if (!pids[i])
             continue;
-        fprintf(stderr, "awl: pid %d still running %d ms after SIGTERM, sending SIGKILL\n",
+        awl_wrn_printf("pid %d still running %d ms after SIGTERM, sending SIGKILL\n",
                 (int)pids[i], CHILD_STOP_MS);
         kill(-pids[i], SIGKILL);
         waitpid(pids[i], NULL, 0);
@@ -4693,7 +4692,7 @@ configapply(void)
     for (i = changed = 0; i < (int)LENGTH(xkb); i++)
         changed |= !streqnull(xkb[i], applied.xkb[i]);
     if (changed && !(keymap = compilekeymap())) {
-        fprintf(stderr, "config_plugins.h: can't compile the keymap, keeping the old one\n");
+        awl_wrn_printf("config_plugins.h: can't compile the keymap, keeping the old one\n");
     } else if (changed) {
         wlr_keyboard_set_keymap(&kb_group->wlr_group->keyboard, keymap);
         wl_list_for_each(d, &inputdevices, link)
@@ -5074,19 +5073,36 @@ xwaylandready(struct wl_listener *listener, void *data)
 }
 #endif
 
+/* wlroots' (and scenefx') messages; wlroots drops those above log_level */
+static void
+wlrlog(enum wlr_log_importance importance, const char *fmt, va_list ap)
+{
+    char msg[1024];
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    awl_dbg_printf(importance == WLR_ERROR ? awl_loglevel_err
+            : importance == WLR_INFO ? awl_loglevel_log : awl_loglevel_vrb, "wlr: %s\n", msg);
+}
+
 int
 main(int argc, char *argv[])
 {
     char *startup_cmd = NULL;
+    const char *logfile = AWL_LOGFILE;
     int c;
 
-    while ((c = getopt(argc, argv, "s:hdv")) != -1) {
+    while ((c = getopt(argc, argv, "s:l:hdv")) != -1) {
         if (c == 's')
             startup_cmd = optarg;
-        else if (c == 'd')
+        else if (c == 'l')
+            logfile = optarg;
+        else if (c == 'd') {
             log_level = WLR_DEBUG;
-        else if (c == 'v')
-            die("awl " VERSION);
+            awl_log_set_level(awl_loglevel_vrb);
+        }
+        else if (c == 'v') {
+            puts("awl " VERSION);
+            return EXIT_SUCCESS;
+        }
         else
             goto usage;
     }
@@ -5096,6 +5112,8 @@ main(int argc, char *argv[])
     /* Wayland requires XDG_RUNTIME_DIR for creating its communications socket */
     if (!getenv("XDG_RUNTIME_DIR"))
         die("XDG_RUNTIME_DIR must be set");
+    /* only now: awl -v or a usage error must not truncate a running awl's log */
+    awl_log_init(logfile);
 
     setup();
     if (ScreenLockServiceAtStart)
@@ -5106,5 +5124,6 @@ main(int argc, char *argv[])
     return EXIT_SUCCESS;
 
 usage:
-    die("Usage: %s [-v] [-d] [-s startup command]", argv[0]);
+    fprintf(stderr, "Usage: %s [-v] [-d] [-l logfile] [-s startup command]\n", argv[0]);
+    return EXIT_FAILURE;
 }

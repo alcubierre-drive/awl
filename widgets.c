@@ -869,7 +869,7 @@ static void backlight_glyph( pixman_image_t* dst, struct fcft_font* font,
 /** The closed eyes for manual brightness: icons/eyes_closed.png, made for
  * Noto Color Emoji's 136x128 bitmaps (the box and palette of its 👀), and
  * decoded on first use. Static, so nothing outlives a reload. */
-enum { eyes_closed_w = 136, eyes_closed_h = 128 };
+enum eyes_closed_size { eyes_closed_w = 136, eyes_closed_h = 128 };
 /** BGRA premultiplied, i.e. PIXMAN_a8r8g8b8 */
 static uint32_t eyes_closed_bits[eyes_closed_w * eyes_closed_h];
 /** scaled to the last box drawn into, if no larger than the image */
@@ -916,7 +916,7 @@ static int eyes_closed_decode( void ) {
     state = 1;
 
 out:
-    if (err) fprintf( stderr, "backlight widget: can't decode the closed eyes: %s\n", err );
+    if (err) awl_err_printf( "backlight widget: can't decode the closed eyes: %s\n", err );
     free( work );
     free( dec );
     return state > 0;

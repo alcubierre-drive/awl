@@ -52,7 +52,8 @@ Results are handed over, not shared.
    `awl_image_t`.
 
 Changes are announced with a redraw request.
-   `awl_redraw_request()` may be called from any thread. The main loop
+   `awl_redraw_request()` may be called from any thread; the libraries call
+   it as ``awl_host->redraw_request()``. Logging, too, is safe everywhere. The main loop
    handles all requests since its last wakeup at once.
 
 Threads are woken, never cancelled.
@@ -76,8 +77,9 @@ Who talks to whom
 -----------------
 
 Solid arrows are data handed over, dashed ones wakeups. The main thread
-wakes the library's threads through their eventfds; they wake it through the
-redraw eventfd, and it then picks up whatever they published.
+wakes the library's threads through their eventfds; they and the tray wake it
+through the redraw eventfd, with ``awl_host->redraw_request()``, and it then
+picks up whatever they published.
 
 .. mermaid::
 
@@ -89,7 +91,7 @@ redraw eventfd, and it then picks up whatever they published.
        changer["wallpaper thread<br/>pick, decode"] -- "decoded image" --> image[("pending<br/>awl_image_t*")]
      end
      tray["tray thread<br/>GTK, libawltray.so"]
-     redraw(["redraw eventfd<br/>plugins/redraw.c"])
+     redraw(["redraw eventfd<br/>awl_redraw.c"])
      subgraph main["main thread (awl.c)"]
        direction LR
        loop["Wayland event loop"] --> fire["redraw_fire()"]
@@ -98,8 +100,8 @@ redraw eventfd, and it then picks up whatever they published.
        fire --> wp["wallpapertake()"]
      end
 
-     lib -. "awl_redraw_request()" .-> redraw
-     tray -. "width changed" .-> redraw
+     lib -. "awl_host->redraw_request()" .-> redraw
+     tray -. "awl_host->redraw_request():<br/>a tray's width changed" .-> redraw
      redraw -. "readable" .-> loop
      atomics -- "widgets read them" --> bars
      pending -- "awl_desktop_version()" --> panels
@@ -147,13 +149,13 @@ the tick as a safety net.
      wait -- "1 s tick" --> fresh{"fresh?<br/>(just resumed)"}
      fresh -- yes --> all["update_all():<br/>every plugin re-reads"]
      fresh -- no --> tick["stats, temperature, clock<br/>battery every 60th tick<br/>IP every 5th, if without netlink"]
-     all --> req1["awl_redraw_request()"]
+     all --> req1["awl_host->redraw_request()"]
      tick --> req1
      req1 --> rearm["re-arm for the next<br/>full second"] --> wait
 
      wait -- "uevent fd" --> bat["bat_dispatch()"] --> chg1{"changed and<br/>not paused?"}
      wait -- "rtnetlink fd" --> ip["ip_dispatch()"] --> chg1
-     chg1 -- yes --> req2["awl_redraw_request()"] --> wait
+     chg1 -- yes --> req2["awl_host->redraw_request()"] --> wait
      chg1 -- no --> wait
 
      wait -- "PulseAudio, D-Bus" --> other["pulsetest.c, backlight.c<br/>event sources"] --> wait
@@ -179,7 +181,7 @@ every output off):
      M->>P: awl_plugins_set_paused(0)<br/>paused = 0, wake
      P->>P: sync_paused(): new tick, due now
      P->>P: tick: update_all()
-     P-->>M: awl_redraw_request()
+     P-->>M: awl_host->redraw_request()
 
 A wallpaper change
 ------------------
@@ -198,7 +200,7 @@ all of them end on.
      W->>W: change(): lists the directory,<br/>picks, sets wallpaper_index,<br/>where = (cur, n, rand_next), done = asked
      W->>W: decode() the PNG (Wuffs)
      W->>W: pending = image<br/>(frees one not taken yet)
-     W-->>M: awl_redraw_request()
+     W-->>M: awl_host->redraw_request()
      M->>M: redraw_fire(): wallpapertake()
      M->>M: awl_wallpaper_take(): pending = NULL
      M->>M: background_set(): fade in
@@ -216,7 +218,7 @@ The desktop scanner
      Note over S: an event: wait 50 ms for more,<br/>500 ms at most
      S->>S: findfiles(): the list
      S->>S: pending = copy, if it changed
-     S-->>M: awl_redraw_request()
+     S-->>M: awl_host->redraw_request()
      M->>M: desktop_update_all()
      M->>M: awl_desktop_version(): takes pending,<br/>version + 1 if it differs
      M->>M: redraws the panels whose version changed

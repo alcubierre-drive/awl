@@ -3,24 +3,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <fcntl.h>
+
+#include "awl_log.h"
 
 #include "util.h"
 
 void
 die(const char *fmt, ...) {
     va_list ap;
+    char msg[1024];
+    int err = errno;
 
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
 
-    if (fmt[0] && fmt[strlen(fmt)-1] == ':') {
-        fputc(' ', stderr);
-        perror(NULL);
-    } else {
-        fputc('\n', stderr);
-    }
+    if (fmt[0] && fmt[strlen(fmt)-1] == ':')
+        awl_err_printf("%s %s\n", msg, strerror(err));
+    else
+        awl_err_printf("%s\n", msg);
 
     exit(1);
 }
@@ -39,11 +42,11 @@ int
 fd_set_nonblock(int fd) {
     int flags = fcntl(fd, F_GETFL);
     if (flags < 0) {
-        perror("fcntl(F_GETFL):");
+        awl_err_printf("fcntl(F_GETFL): %s\n", strerror(errno));
         return -1;
     }
     if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-        perror("fcntl(F_SETFL):");
+        awl_err_printf("fcntl(F_SETFL): %s\n", strerror(errno));
         return -1;
     }
 

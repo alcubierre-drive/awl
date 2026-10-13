@@ -1,6 +1,7 @@
 /* gettid(), pthread_setname_np(), pthread_timedjoin_np() */
 #define _GNU_SOURCE
 #include "thread.h"
+#include "../awl_log.h"
 #include <errno.h>
 #include <signal.h>
 #include <stdint.h>
@@ -12,7 +13,7 @@
 
 static void* trampoline( void* data ) {
     awl_thread_t* t = data;
-    fprintf( stderr, "awl: %s thread is tid %d\n", t->name, (int)gettid() );
+    awl_log_printf( "%s thread is tid %d\n", t->name, (int)gettid() );
     return t->fn( t->arg );
 }
 
@@ -23,7 +24,7 @@ int awl_thread_start( awl_thread_t* t, const char* name, void* (*fn)( void* ), v
     atomic_init( &t->quit, 0 );
     t->wake_fd = eventfd( 0, EFD_CLOEXEC | EFD_NONBLOCK );
     if (t->wake_fd < 0) {
-        fprintf( stderr, "awl: %s: eventfd: %s\n", name, strerror( errno ) );
+        awl_err_printf( "%s: eventfd: %s\n", name, strerror( errno ) );
         return -1;
     }
 
@@ -33,7 +34,7 @@ int awl_thread_start( awl_thread_t* t, const char* name, void* (*fn)( void* ), v
     int err = pthread_create( &t->thread, NULL, trampoline, t );
     pthread_sigmask( SIG_SETMASK, &old, NULL );
     if (err) {
-        fprintf( stderr, "awl: can't start the %s thread: %s\n", name, strerror( err ) );
+        awl_err_printf( "can't start the %s thread: %s\n", name, strerror( err ) );
         close( t->wake_fd );
         return -1;
     }

@@ -7,8 +7,8 @@
  * places it), picking and decoding the wallpaper (plugins/wallpaper.c; awl's
  * background.c shows it) and config_plugins.h (awl_config.c).
  * awl loads the library with ``dlopen()`` and looks up a single symbol,
- * `AWL_PLUGIN_ENTRY`; everything else goes through the two tables below,
- * `awl_host_t` and `awl_plugin_api_t`, so the library has no unresolved
+ * `AWL_PLUGIN_ENTRY`; everything else goes through two tables, `awl_host_t`
+ * (awl_host.h) and `awl_plugin_api_t` below, so the library has no unresolved
  * references into awl (no ``-rdynamic``).
  *
  * The library still reads awl's structs directly (`awl_draw_t`, `widget_t`,
@@ -22,11 +22,12 @@
 #include <stdint.h>
 #include "awl_draw.h"
 #include "awl_dict_type.h"
+#include "awl_host.h"
 #include "tray/awl_tray.h"
 #include "plugins/wallpaper.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 17
+#define AWL_PLUGIN_ABI 18
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -135,104 +136,6 @@ typedef struct awl_config_t {
     .tray = &tray_config, .wallpaper = &wallpaper_config, \
 }
 
-/**
- * What awl provides to the library. All functions are main-thread only,
- * except `redraw_request` and `cfg`'s, which any thread may call.
- */
-typedef struct awl_host_t {
-    /** `AWL_PLUGIN_ABI` as awl was built */
-    uint32_t abi;
-    /** sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor and
-     * sizeof_client: the layouts the library compiles against */
-    size_t sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor, sizeof_client;
-
-    /** `awl_redraw_request()` */
-    void (*redraw_request)( void );
-
-    /** drawing: `awl_draw_text_color2()` */
-    int (*text)( awl_draw_t* drw, int x, int y, unsigned int w, unsigned int h,
-                 unsigned int lpad, const char* text, pixman_color_t fg, pixman_color_t bg );
-    /** drawing: `awl_draw_font_getwidth()` */
-    unsigned int (*font_getwidth)( awl_draw_t* drw, const char* text );
-
-    /** actions: what config_plugins.h binds keys and buttons to */
-    const awl_actions_t* actions;
-    /** actions: what config_plugins.h's layouts arrange with */
-    const awl_arranges_t* arranges;
-    /** `focusclient()` */
-    void (*focusclient)( Client* c, int lift );
-    /** `arrange()` */
-    void (*arrange)( Monitor* m );
-
-    /** tray: `awl_tray_width()` */
-    uint32_t (*tray_width)( const char* monitor_id );
-    /** tray: `awl_tray_set_widget_x()` */
-    void (*tray_set_widget_x)( const char* monitor_id, uint32_t x );
-    /** tray: `awl_tray_calendar_toggle()` */
-    void (*calendar_toggle)( const char* monitor_id );
-    /** tray: `awl_tray_calendar_show()` */
-    void (*calendar_show)( const char* monitor_id );
-    /** tray: `awl_tray_calendar_hide()` */
-    void (*calendar_hide)( void );
-    /** tray: `awl_tray_calendar_scroll()` */
-    void (*calendar_scroll)( int amount );
-    /** tray: `awl_tray_popup_show()` */
-    void (*popup_show)( const char* monitor_id, int center_x, const char* text, int toggle );
-    /** tray: `awl_tray_popup_update()` */
-    void (*popup_update)( const char* text );
-    /** tray: `awl_tray_popup_hide()` */
-    void (*popup_hide)( void );
-
-    /**
-     * config values that can change while awl runs, by name. awl owns the
-     * dictionary (``cfg.s``, awl.c's ``cfgdict``): it lives as long as awl
-     * and keeps its entries across reloads.
-     *
-     * Any thread may use it, plugin threads included (awl_dict.h has the
-     * details): every call is atomic on its own, under the dictionary's
-     * lock. A thread that needs several calls to see the same dictionary
-     * holds the lock across them, with `AWL_HOST_CFG_LOCK` and
-     * `AWL_HOST_CFG_UNLOCK`: a read-modify-write, an iteration, and any use
-     * of a string or owned pointer it got, which another thread could free
-     * by overwriting or deleting the entry. Numbers and plain pointers are
-     * copied out and need no lock. The lock is recursive. Hold it briefly
-     * and never wait for anything under it: awl's main thread takes it too.
-     *
-     * A value must not point into
-     * the library, which may be unloaded while the entry stays: a string is
-     * copied, but a pointer, an owned pointer and its free function must be
-     * awl's, libc's or heap memory (``AWL_DICT_OWNED( p, free )``). The
-     * `AWL_HOST_CFG_*` macros below go through this.
-     */
-    awl_dict_c cfg;
-} awl_host_t;
-
-/** `awl_dict_get()` on `awl_host_t.cfg`; valptr is an ``awl_dict_val_t*`` */
-#define AWL_HOST_CFG_GET( host, key, valptr ) \
-    (host)->cfg.s_get( (host)->cfg.s, (key), (valptr) )
-/** `awl_dict_set()` on `awl_host_t.cfg`; val is an ``awl_dict_val_t``, e.g.
- * ``AWL_DICT_STR( "x" )`` */
-#define AWL_HOST_CFG_SET( host, key, val ) \
-    (host)->cfg.s_set( (host)->cfg.s, (key), &(val) )
-/** `awl_dict_del()` on `awl_host_t.cfg` */
-#define AWL_HOST_CFG_DEL( host, key ) \
-    (host)->cfg.s_del( (host)->cfg.s, (key) )
-/** `awl_dict_lock()` on `awl_host_t.cfg`, e.g. around getting a string and
- * using it:
- *
- *     awl_dict_val_t v;
- *     AWL_HOST_CFG_LOCK( awl_host );
- *     if (AWL_HOST_CFG_GET( awl_host, "name", &v ) == AWL_DICT_OK &&
- *         v.kind == AWL_DICT_KIND_STR)
- *         use( v.str );
- *     AWL_HOST_CFG_UNLOCK( awl_host );
- */
-#define AWL_HOST_CFG_LOCK( host ) \
-    (host)->cfg.s_lock( (host)->cfg.s )
-/** `awl_dict_unlock()` on `awl_host_t.cfg` */
-#define AWL_HOST_CFG_UNLOCK( host ) \
-    (host)->cfg.s_unlock( (host)->cfg.s )
-
 /** What the library provides. Main thread only. */
 typedef struct awl_plugin_api_t {
     /** `AWL_PLUGIN_ABI` as the library was built */
@@ -287,3 +190,4 @@ typedef struct awl_plugin_api_t {
  * loaded.
  */
 typedef const awl_plugin_api_t* (*awl_plugin_entry_t)( const awl_host_t* host );
+

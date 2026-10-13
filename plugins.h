@@ -34,9 +34,6 @@ typedef struct awl_plugin_data_t {
     struct awl_colors awl_colors;
 } awl_plugin_data_t;
 
-/** awl's side of the boundary, set by ``awl_plugin_entry()`` */
-extern const awl_host_t* awl_host;
-
 /** The running plugins' state; NULL while the plugins aren't running. */
 awl_plugin_data_t* awl_plugin_get( void );
 

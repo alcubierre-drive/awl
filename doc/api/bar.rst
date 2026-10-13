@@ -11,6 +11,11 @@ awl_draw.h
 
 .. c:autodoc:: awl_draw.h
 
+awl_redraw.h
+------------
+
+.. c:autodoc:: awl_redraw.h
+
 widgets.c
 ---------
 

@@ -20,6 +20,7 @@
 // g_idle_add() (documented thread-safe).
 
 #include "awl_tray.h"
+#include "../awl_log.h"
 #include "calendar.hpp"
 #include "textpopup.hpp"
 #include "tray.hpp"
@@ -70,11 +71,6 @@ struct Shared {
         return geom;
     }
 };
-
-// Set via awl_tray_set_change_callback(); called from the GTK thread whenever
-// a tray's content width changes, so awl redraws its bar (which reserves
-// that width) instead of polling awl_tray_width().
-std::atomic<void (*)(void)> g_change_cb{nullptr};
 
 // The settings in effect. Written by awl_tray_init() before the GTK thread
 // exists, then only on the GTK thread (awl_tray_reload()), which is the only
@@ -264,7 +260,7 @@ void Bridge::checkWidth() {
     int min_w = 0, nat_w = 0;
     tray_->box_.get_preferred_width(min_w, nat_w);
     if (shared_->content_w.exchange(nat_w, std::memory_order_relaxed) != nat_w)
-        if (auto cb = g_change_cb.load()) cb();
+        awl_host->redraw_request();  // the bar reserves that width
     if (shown_ && nat_w != last_forced_w_) {
         last_forced_w_ = nat_w;
         int w = nat_w > 0 ? nat_w : 1;
@@ -547,26 +543,59 @@ void *thread_main(void *) {
     return nullptr;
 }
 
+// GLib's messages (GTK's, the D-Bus code's, our g_warning()s) as awl's;
+// G_MESSAGES_DEBUG still decides about debug and info
+GLogWriterOutput glib_writer(GLogLevelFlags flags, const GLogField *fields, gsize n, gpointer) {
+    const char *domain = nullptr, *msg = "";
+    int msglen = -1;
+    for (gsize i = 0; i < n; ++i) {
+        if (!strcmp(fields[i].key, "GLIB_DOMAIN"))
+            domain = static_cast<const char *>(fields[i].value);
+        else if (!strcmp(fields[i].key, "MESSAGE")) {
+            msg = static_cast<const char *>(fields[i].value);
+            msglen = static_cast<int>(fields[i].length);
+        }
+    }
+    if (g_log_writer_default_would_drop(flags, domain)) return G_LOG_WRITER_HANDLED;
+    awl_loglevel_t l = (flags & (G_LOG_LEVEL_ERROR | G_LOG_LEVEL_CRITICAL)) ? awl_loglevel_err
+                     : (flags & G_LOG_LEVEL_WARNING) ? awl_loglevel_wrn
+                     : (flags & G_LOG_LEVEL_DEBUG) ? awl_loglevel_vrb : awl_loglevel_log;
+    if (msglen < 0) awl_dbg_printf(l, "%s: %s\n", domain ? domain : "GLib", msg);
+    else awl_dbg_printf(l, "%s: %.*s\n", domain ? domain : "GLib", msglen, msg);
+    return G_LOG_WRITER_HANDLED;
+}
+
+void route_logs() {
+    static std::once_flag once;
+    std::call_once(once, [] { g_log_set_writer_func(glib_writer, nullptr, nullptr); });
+}
+
 }  // namespace
 }  // namespace SNI
 
 extern "C" {
 
-void awl_tray_init(const awl_tray_config_t *config) {
+// awl_host.h; hidden, like the plugin library's copy
+__attribute__((visibility("hidden"))) const awl_host_t *awl_host = nullptr;
+
+void awl_tray_init(const awl_host_t *host, const awl_tray_config_t *config) {
     if (SNI::g_running.load()) return;
+    // first: every log message goes through it
+    awl_host = host;
     // the thread doesn't exist yet; pthread_create() publishes this to it
     SNI::g_config = *config;
+    SNI::route_logs();
     // g_running before the thread exists: the thread's first calls into
     // awl (shared_for(), via geometry pushes) check it
     SNI::g_running = true;
     int err = pthread_create(&SNI::g_thread, nullptr, SNI::thread_main, nullptr);
     if (err) {
-        fprintf(stderr, "awl: can't start the tray thread: %s\n", strerror(err));
+        awl_err_printf("can't start the tray thread: %s\n", strerror(err));
         SNI::g_running = false;
         return;
     }
     pthread_setname_np(SNI::g_thread, "awl-tray");
-    fprintf(stderr, "awl: tray thread started\n");
+    awl_log_printf("tray thread started\n");
 }
 
 void awl_tray_shutdown(void) {
@@ -619,10 +648,6 @@ void awl_tray_set_bar_geometry(const char *monitor_id, int32_t x, int32_t y, uin
         sh->geom = g;
     }
     if (moved) SNI::with_bridge(mon, [](SNI::Bridge &b) { b.reposition(); });
-}
-
-void awl_tray_set_change_callback(void (*cb)(void)) {
-    SNI::g_change_cb.store(cb);
 }
 
 void awl_tray_reload(const awl_tray_config_t *config) {

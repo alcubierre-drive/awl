@@ -3,8 +3,11 @@
 /**
  * The system tray and the calendar popup, ``libawltray.so`` (tray/, C++,
  * gtkmm). awl links it directly; it isn't part of the reloadable plugin
- * library, which reaches it through `awl_host_t`. Everything runs on the
- * tray's own thread, a GTK main loop; the calls below only hand it work.
+ * library, which reaches it through `awl_host_t`. The other way round, the
+ * tray reaches awl only through that same host table (awl_host.h), handed
+ * over by `awl_tray_init()`: it logs and requests bar redraws with it.
+ * Everything runs on the tray's own thread, a GTK main loop; the calls below
+ * only hand it work.
  */
 
 #include <stdint.h>
@@ -12,6 +15,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct awl_host_t awl_host_t;
 
 /** The tray's settings, config_plugins.h's tray_config. Colors are 0xRRGGBBAA, sizes
  * logical pixels. The tray keeps a copy, so the struct only has to live for
@@ -22,7 +27,7 @@ typedef struct awl_tray_config_t {
      * at fractional scales it misses the slot by up to a pixel. */
     uint32_t bg;
     /** calendar: the calendar popup */
-    struct {
+    struct awl_tray_calendar_config_t {
         uint32_t bg, fg, border;
         /** today's date */
         uint32_t today;
@@ -43,8 +48,11 @@ typedef struct awl_tray_config_t {
  * D-Bus StatusNotifierHost/Watcher and, per monitor, a real gtk-layer-shell
  * overlay window that renders that monitor's tray icons and owns their
  * input directly (so context-menu popups work like any normal GTK app).
- * Safe to call once during compositor startup. */
-void awl_tray_init(const awl_tray_config_t *config);
+ * Safe to call once during compositor startup. host becomes the tray's
+ * ``awl_host`` and must outlive it; the tray uses only its thread-safe
+ * members (``log``, ``redraw_request``: a redraw whenever a tray's width
+ * changes, since the bar reserves that width). */
+void awl_tray_init(const awl_host_t *host, const awl_tray_config_t *config);
 
 /** Requests the background thread to quit. Does NOT block until it has
  * exited -- see `awl_tray_join()`. (It can't safely block itself: the tray
@@ -80,12 +88,6 @@ int awl_tray_join(void);
  * windows that exist and those created later.
  * No-op if the tray was never started. */
 void awl_tray_reload(const awl_tray_config_t *config);
-
-/** Registers a function the tray calls (from its own thread) whenever the
- * value `awl_tray_width()` returns may have changed for some monitor, so the
- * caller can redraw its bar. Must be safe to call from any thread. Pass NULL
- * to unregister. */
-void awl_tray_set_change_callback(void (*cb)(void));
 
 /** All of the below identify which monitor's tray overlay window they apply
  * to via ``monitor_id``, a stable per-output identifier -- pass

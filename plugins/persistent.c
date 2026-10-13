@@ -113,11 +113,11 @@ int awl_persistent_set_str( const char* key, const char* v ) {
     char path[PATH_MAX], tmp[PATH_MAX + 8];
     static char buf[MAX_SIZE + 1];
     if (strchr( v, '\n' )) {
-        fprintf( stderr, "awl persistent: %s's value has a newline, not writing it\n", key );
+        awl_wrn_printf( "persistent: %s's value has a newline, not writing it\n", key );
         return -1;
     }
     if (awl_persistent_path( path, sizeof(path) )) {
-        fprintf( stderr, "awl persistent: state_home or " AWL_PERSISTENT_KEY " unset\n" );
+        awl_err_printf( "persistent: state_home or " AWL_PERSISTENT_KEY " unset\n" );
         return -1;
     }
     snprintf( tmp, sizeof(tmp), "%s.tmp", path );
@@ -126,7 +126,7 @@ int awl_persistent_set_str( const char* key, const char* v ) {
     ssize_t len = readall( path, buf, sizeof(buf) );
     if (len < 0 && errno != ENOENT) {
         /* unreadable or too large: rather keep it than lose its other lines */
-        fprintf( stderr, "awl persistent: can't read %s, not writing it\n", path );
+        awl_err_printf( "persistent: can't read %s, not writing it\n", path );
         pthread_mutex_unlock( &lock );
         return -1;
     }
@@ -158,7 +158,7 @@ int awl_persistent_set_str( const char* key, const char* v ) {
     return 0;
 
 fail:
-    fprintf( stderr, "awl persistent: can't write %s: %s\n", path, strerror( errno ) );
+    awl_err_printf( "persistent: can't write %s: %s\n", path, strerror( errno ) );
     unlink( tmp );
     pthread_mutex_unlock( &lock );
     return -1;

@@ -15,3 +15,8 @@ awl.c
 -----
 
 .. c:autodoc:: awl.c
+
+awl_log.h
+---------
+
+.. c:autodoc:: awl_log.h

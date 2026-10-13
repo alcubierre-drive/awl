@@ -1,6 +1,6 @@
 #include "watcher.hpp"
 
-#include <spdlog/spdlog.h>
+#include "../awl_log.h"
 
 using namespace SNI;
 
@@ -35,7 +35,7 @@ void Watcher::busAcquired(const Glib::RefPtr<Gio::DBus::Connection>& conn, Glib:
     if (error != nullptr) {
         // Don't print an error when a watcher is already present
         if (error->code != 2) {
-            spdlog::error("Watcher: {}", error->message);
+            awl_err_printf("tray: watcher: %s\n", error->message);
         }
         g_error_free(error);
         return;

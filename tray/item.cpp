@@ -1,34 +1,16 @@
 #include "item.hpp"
+#include "../awl_log.h"
 
 #include <gdkmm/general.h>
 #include <glibmm/main.h>
 #include <gtkmm/tooltip.h>
 #include <gtkmm/window.h>
-#include <spdlog/spdlog.h>
 
 #include <fstream>
 #include <map>
 
 /* #include "util/format.hpp" */
 #include "gtk_icon.hpp"
-
-template <>
-struct fmt::formatter<Glib::VariantBase> : formatter<std::string> {
-    bool is_printable(const Glib::VariantBase& value) {
-        auto type = value.get_type_string();
-        /* Print only primitive (single character excluding 'v') and short complex types */
-        return (type.length() == 1 && islower(type[0]) && type[0] != 'v') || value.get_size() <= 32;
-    }
-
-    template <typename FormatContext>
-    auto format(const Glib::VariantBase& value, FormatContext& ctx) {
-        if (is_printable(value)) {
-            return formatter<std::string>::format(static_cast<std::string>(value.print()), ctx);
-        } else {
-            return formatter<std::string>::format(value.get_type_string(), ctx);
-        }
-    }
-};
 
 namespace SNI {
 
@@ -78,15 +60,15 @@ void Item::proxyReady(Glib::RefPtr<Gio::AsyncResult>& result) {
         this->proxy_->signal_signal().connect(sigc::mem_fun(*this, &Item::onSignal));
 
         if (this->id.empty() || this->category.empty()) {
-            spdlog::error("Invalid Status Notifier Item: {}, {}", bus_name, object_path);
+            awl_err_printf("tray: invalid Status Notifier Item: %s, %s\n", bus_name.c_str(), object_path.c_str());
             return;
         }
         this->updateImage();
 
     } catch (const Glib::Error& err) {
-        fprintf(stderr, "Failed to create DBus Proxy for %s %s: %s\n", bus_name.c_str(), object_path.c_str(), err.what().c_str());
+        awl_wrn_printf("tray: failed to create DBus Proxy for %s %s: %s\n", bus_name.c_str(), object_path.c_str(), err.what().c_str());
     } catch (const std::exception& err) {
-        fprintf(stderr, "Failed to create DBus Proxy for %s %s: %s\n", bus_name.c_str(), object_path.c_str(), err.what());
+        awl_wrn_printf("tray: failed to create DBus Proxy for %s %s: %s\n", bus_name.c_str(), object_path.c_str(), err.what());
     }
 }
 
@@ -154,10 +136,10 @@ void Item::setProperty(const Glib::ustring& name, Glib::VariantBase& value) {
             item_is_menu = get_variant<bool>(value);
         }
     } catch (const Glib::Error& err) {
-        fprintf(stderr, "Failed to set tray item property: %s.%s, value = %i, err = %s\n",
+        awl_wrn_printf("tray: failed to set tray item property: %s.%s, value = %i, err = %s\n",
                 id.empty() ? bus_name.c_str() : id.c_str(), name.c_str(), *reinterpret_cast<int*>(&value), err.what().c_str());
     } catch (const std::exception& err) {
-        fprintf(stderr, "Failed to set tray item property: %s.%s, value = %i, err = %s\n",
+        awl_wrn_printf("tray: failed to set tray item property: %s.%s, value = %i, err = %s\n",
                 id.empty() ? bus_name.c_str() : id.c_str(), name.c_str(), *reinterpret_cast<int*>(&value), err.what());
     }
 }
@@ -200,9 +182,9 @@ void Item::processUpdatedProperties(Glib::RefPtr<Gio::AsyncResult>& _result) {
 
         this->updateImage();
     } catch (const Glib::Error& err) {
-        fprintf(stderr, "failed to update properties: %s\n", err.what().c_str());
+        awl_wrn_printf("tray: failed to update properties: %s\n", err.what().c_str());
     } catch (const std::exception& err) {
-        fprintf(stderr, "failed to update properties: %s\n", err.what());
+        awl_wrn_printf("tray: failed to update properties: %s\n", err.what());
     }
     update_pending_.clear();
 }
@@ -303,7 +285,7 @@ void Item::updateImage() {
         int scale_factor = std::max(1, image.get_scale_factor());
         auto pixbuf = getIconPixbuf(scale_factor);
         if (!pixbuf) {
-            spdlog::error("Item '{}': updateImage got a null pixbuf, leaving image unchanged", id);
+            awl_err_printf("tray: item '%s': updateImage got a null pixbuf, leaving image unchanged\n", id.c_str());
             return;
         }
         int scaled_icon_size = icon_size * scale_factor;
@@ -350,9 +332,9 @@ void Item::updateImage() {
             image.set(logical_pixbuf);
         }
     } catch (const Glib::Error& err) {
-        spdlog::error("Item '{}': updateImage failed: {}", id, static_cast<std::string>(err.what()));
+        awl_err_printf("tray: item '%s': updateImage failed: %s\n", id.c_str(), err.what().c_str());
     } catch (const std::exception& err) {
-        spdlog::error("Item '{}': updateImage failed: {}", id, err.what());
+        awl_err_printf("tray: item '%s': updateImage failed: %s\n", id.c_str(), err.what());
     }
 }
 
@@ -371,15 +353,15 @@ Glib::RefPtr<Gdk::Pixbuf> Item::getIconPixbuf(int scale_factor) {
             // But a warning is logged, as the file apparently exists, but there was
             // a failure in creating a pixbuf out of it.
 
-            spdlog::warn("Item '{}': {}", id, static_cast<std::string>(e.what()));
+            awl_wrn_printf("tray: item '%s': %s\n", id.c_str(), e.what().c_str());
         }
 
         try {
             // Will throw if it can not find an icon.
             return getIconByName(icon_name, scaled_icon_size);
         } catch (Glib::Error& e) {
-            spdlog::warn("Item '{}': lookup for icon '{}' at size {} failed: {}", id, icon_name,
-                         scaled_icon_size, static_cast<std::string>(e.what()));
+            awl_wrn_printf("tray: item '%s': lookup for icon '%s' at size %d failed: %s\n", id.c_str(),
+                           icon_name.c_str(), scaled_icon_size, e.what().c_str());
         }
     }
 
@@ -389,10 +371,10 @@ Glib::RefPtr<Gdk::Pixbuf> Item::getIconPixbuf(int scale_factor) {
     }
 
     if (icon_name.empty()) {
-        spdlog::error("Item '{}': No icon name or pixmap given.", id);
+        awl_err_printf("tray: item '%s': no icon name or pixmap given\n", id.c_str());
     } else {
-        spdlog::error("Item '{}': Could not find an icon named '{}' and no pixmap given.", id,
-                      icon_name);
+        awl_err_printf("tray: item '%s': could not find an icon named '%s' and no pixmap given\n",
+                       id.c_str(), icon_name.c_str());
     }
 
     try {
@@ -402,8 +384,8 @@ Glib::RefPtr<Gdk::Pixbuf> Item::getIconPixbuf(int scale_factor) {
         // configured at all) -- synthesize a plain solid pixbuf so the item
         // still gets *something* visible/clickable instead of updateImage()
         // throwing and leaving image with no content set.
-        spdlog::error("Item '{}': fallback icon lookup failed too: {}", id,
-                     static_cast<std::string>(e.what()));
+        awl_err_printf("tray: item '%s': fallback icon lookup failed too: %s\n", id.c_str(),
+                       e.what().c_str());
         auto pixbuf = Gdk::Pixbuf::create(Gdk::Colorspace::COLORSPACE_RGB, true, 8, scaled_icon_size,
                                           scaled_icon_size);
         pixbuf->fill(0x808080ffu);

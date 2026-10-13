@@ -15,8 +15,8 @@ What a reload picks up
 
    * - Reloads with the library
      - Needs a restart of awl
-   * - widgets.c, desktop_panel.c, plugins.c, plugins/ (except redraw.c)
-     - awl.c, awl_draw.c, desktop.c, background.c, plugin_host.c, the tray
+   * - widgets.c, desktop_panel.c, plugins.c, plugins/
+     - awl.c, awl_draw.c, awl_redraw.c, desktop.c, background.c, plugin_host.c, the tray
    * - config_plugins.h: keys, buttons, rules, layouts,
        colors, font, borders, blur, input devices, keymap, tray and
        wallpaper settings
@@ -159,7 +159,8 @@ Adding to the ABI
 Adding a function to `awl_host_t` or `awl_plugin_api_t`, or changing a
 struct both sides read:
 
-#. Change the table in awl_plugin_abi.h and bump `AWL_PLUGIN_ABI`.
+#. Change the table in awl_host.h or awl_plugin_abi.h and bump
+   `AWL_PLUGIN_ABI`.
 #. Fill in the new entry: in plugin_host.c for the host table (awl.c for
    `AWL_ACTIONS`), in plugins.c for the library's.
 #. Rebuild and restart awl: the running one would refuse the new library.

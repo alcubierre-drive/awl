@@ -9,6 +9,11 @@ awl_plugin_abi.h
 
 .. c:autodoc:: awl_plugin_abi.h
 
+awl_host.h
+----------
+
+.. c:autodoc:: awl_host.h
+
 plugin_host.h
 -------------
 

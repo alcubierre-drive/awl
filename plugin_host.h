@@ -47,6 +47,11 @@ typedef struct awl_arranges_t awl_arranges_t;
 /** awl.c's functions config_plugins.h's layouts arrange with, for the library */
 extern const awl_arranges_t awl_arranges;
 
+typedef struct awl_host_t awl_host_t;
+/** awl's host table (awl_host.h), the one the library gets; for the tray's
+ * `awl_tray_init()`. Lives as long as awl. */
+const awl_host_t* awl_host_table( void );
+
 typedef struct awl_plugin_api_t awl_plugin_api_t;
 /** The loaded library's table, NULL if none. Changes on reload, so don't
  * keep it (or anything from it) across one. */

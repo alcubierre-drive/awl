@@ -7,7 +7,6 @@
 #include "plugins/date.h"
 #include "plugins/pulsetest.h"
 #include "plugins/poller.h"
-#include "plugins/redraw.h"
 #include "plugins/persistent.h"
 #include "plugins_git.h"
 
@@ -81,10 +80,6 @@ awl_plugin_data_t* awl_plugin_get( void ) {
     return plugin_data;
 }
 
-/* plugins/redraw.c lives in awl, which owns the eventfd */
-void awl_redraw_request( void ) {
-    awl_host->redraw_request();
-}
 
 /** sets the config dictionary's "t_plugins_loaded" to the local time now, as
  * "YY/MM/DD HH:MM:SS" (24h): when this library was loaded, at awl's start or

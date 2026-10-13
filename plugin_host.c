@@ -4,7 +4,7 @@
 #include "plugin_host.h"
 #include "awl_plugin_abi.h"
 #include "awl_dict.h"
-#include "plugins/redraw.h"
+#include "awl_redraw.h"
 #include "tray/awl_tray.h"
 
 #include <dlfcn.h>
@@ -26,6 +26,7 @@ static awl_host_t host = {
     .sizeof_client = sizeof(Client),
 
     .redraw_request = awl_redraw_request,
+    .log = awl_dbg_printf,
 
     .text = awl_draw_text_color2,
     .font_getwidth = awl_draw_font_getwidth,
@@ -110,18 +111,18 @@ out:
 static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
     char path[PATH_MAX], fdpath[64];
     if (libpath( path, sizeof(path) )) {
-        fprintf( stderr, "awl plugins: can't determine the library path\n" );
+        awl_err_printf( "plugins: can't determine the library path\n" );
         return NULL;
     }
     int fd = memfd_copy( path );
     if (fd < 0) {
-        fprintf( stderr, "awl plugins: can't read %s: %s\n", path, strerror( errno ) );
+        awl_err_printf( "plugins: can't read %s: %s\n", path, strerror( errno ) );
         return NULL;
     }
     snprintf( fdpath, sizeof(fdpath), "/proc/self/fd/%d", fd );
     void* h = dlopen( fdpath, RTLD_NOW | RTLD_LOCAL );
     if (!h) {
-        fprintf( stderr, "awl plugins: %s: %s\n", path, dlerror() );
+        awl_err_printf( "plugins: %s: %s\n", path, dlerror() );
         close( fd );
         return NULL;
     }
@@ -132,7 +133,7 @@ static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
     memcpy( &entry, &sym, sizeof(entry) );
     const awl_plugin_api_t* a = entry ? entry( &host ) : NULL;
     if (!a || a->abi != AWL_PLUGIN_ABI) {
-        fprintf( stderr, "awl plugins: %s: %s\n", path, !entry ? "no entry point" :
+        awl_err_printf( "plugins: %s: %s\n", path, !entry ? "no entry point" :
                  "built against different headers than this awl (rebuild both)" );
         dlclose( h );
         close( fd );
@@ -156,7 +157,7 @@ int awl_plugins_load( int p, awl_dict_t* cfg ) {
  * running, which would then crash */
 static void stop( void* h, int fd ) {
     if (api && api->fini()) {
-        fprintf( stderr, "awl plugins: a plugin thread is stuck, keeping its library loaded\n" );
+        awl_wrn_printf( "plugins: a plugin thread is stuck, keeping its library loaded\n" );
         return;
     }
     if (h) dlclose( h );
@@ -198,6 +199,10 @@ void awl_plugins_set_paused( int p ) {
 
 void awl_plugins_bar_widgets( awl_draw_t* bar ) {
     if (api) api->bar_widgets( bar );
+}
+
+const awl_host_t* awl_host_table( void ) {
+    return &host;
 }
 
 const awl_plugin_api_t* awl_plugins_api( void ) {

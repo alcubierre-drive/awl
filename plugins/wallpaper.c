@@ -3,7 +3,6 @@
 #include "../plugins.h"
 #include "persistent.h"
 #include "readdir.h"
-#include "redraw.h"
 #include "thread.h"
 #include "../wuffs/wuffs.h"
 
@@ -135,14 +134,14 @@ static awl_image_t* decode( Changer* c, const char* path ) {
     int fd = open( path, O_RDONLY | O_CLOEXEC );
     struct stat st;
     if (fd < 0 || fstat( fd, &st ) || st.st_size <= 0) {
-        fprintf( stderr, "wallpaper: can't read %s: %s\n", path, strerror( errno ) );
+        awl_err_printf( "wallpaper: can't read %s: %s\n", path, strerror( errno ) );
         if (fd >= 0) close( fd );
         return NULL;
     }
     void* map = mmap( NULL, (size_t)st.st_size, PROT_READ, MAP_PRIVATE, fd, 0 );
     close( fd );
     if (map == MAP_FAILED) {
-        fprintf( stderr, "wallpaper: can't map %s: %s\n", path, strerror( errno ) );
+        awl_err_printf( "wallpaper: can't map %s: %s\n", path, strerror( errno ) );
         return NULL;
     }
 
@@ -193,7 +192,7 @@ out:
     if (!dec) err = "out of memory";
     /* a stop request cuts decoding short; that's no error worth a word */
     if (err && !atomic_load( &c->thread.quit ))
-        fprintf( stderr, "wallpaper: can't decode %s: %s\n", path, err );
+        awl_err_printf( "wallpaper: can't decode %s: %s\n", path, err );
     if (err) {
         free( img );
         img = NULL;
@@ -213,7 +212,7 @@ static void change( Changer* c, int steps, int random, int back, unsigned asked 
     for (i = 0; i < c->files.n_files; i++)
         if (ispng( &c->files.files[i] )) png[n++] = i;
     if (!n) {
-        fprintf( stderr, "wallpaper: no *.png in %s\n", c->dir );
+        awl_wrn_printf( "wallpaper: no *.png in %s\n", c->dir );
         return;
     }
 
@@ -246,7 +245,7 @@ static void change( Changer* c, int steps, int random, int back, unsigned asked 
     if (!img) return;
     /* replaces one the main thread hasn't taken yet */
     free( atomic_exchange( &c->pending, img ) );
-    awl_redraw_request();
+    awl_host->redraw_request();
 }
 
 static void* changer( void* data ) {
@@ -310,7 +309,7 @@ int awl_wallpaper_stop( void ) {
     Changer* old = ch;
     ch = NULL;
     if (awl_thread_stop( &old->thread, 500 )) {
-        fprintf( stderr, "wallpaper: thread stuck (in %s?), not waiting for it\n", old->dir );
+        awl_wrn_printf( "wallpaper: thread stuck (in %s?), not waiting for it\n", old->dir );
         return -1; /* old stays allocated, the thread may still use it */
     }
     free( atomic_load( &old->pending ) );

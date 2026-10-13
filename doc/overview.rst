@@ -12,7 +12,9 @@ awl is three binaries:
 ``tray/libawltray.so``
    The system tray and the calendar popup (C++, gtkmm). Linked into awl and
    running on its own GTK thread; it draws into real layer-shell windows of
-   its own, placed over the bar's systray slot. See :doc:`api/tray`.
+   its own, placed over the bar's systray slot. Like the plugin library, it
+   reaches awl only through `awl_host_t` (handed over by `awl_tray_init()`).
+   See :doc:`api/tray`.
 
 ``libawlplugins.so``
    Everything that is meant to change often: the plugin threads that collect
@@ -35,7 +37,7 @@ What lives where
      - buffers, layout, pointer events, hover timers (awl.c, awl_draw.c)
      - the widgets: what they show and what clicks do (widgets.c)
    * - Status data
-     - polls the redraw eventfd (plugins/redraw.c)
+     - polls the redraw eventfd (awl_redraw.c)
      - the plugins, on the poller thread (plugins/)
    * - Wallpaper
      - shows it, scaled to cover, and fades (background.c); the timer and
@@ -53,16 +55,25 @@ What lives where
      - spawns ``notify-send`` (plugins.c)
 
 The library never calls into awl directly: awl hands it a table of
-functions, `awl_host_t`, and gets one back, `awl_plugin_api_t`. It does read
-awl's structs (`Monitor`, `Client`, `awl_draw_t`, ...), so both have to be built
-from the same headers; the library checks that when it is loaded.
+functions, `awl_host_t` (awl_host.h), and gets one back, `awl_plugin_api_t`.
+It does read awl's structs (`Monitor`, `Client`, `awl_draw_t`, ...), so both
+have to be built from the same headers; the library checks that when it is
+loaded. The tray gets the same `awl_host_t` from `awl_tray_init()` and uses
+only its thread-safe part: logging and redraw requests. Neither library has
+a symbol reference into awl; awl exports nothing.
+
+Logging works the same way. awl_log.c, in awl, writes every message to
+stderr and the log file (see `awl_log.h`); in code built with
+``AWL_HOSTED`` (both libraries) `awl_err_printf()` and the other level
+macros expand to ``awl_host->log(...)``, which is awl's `awl_dbg_printf()`.
+wlroots' and GLib's messages are routed there too.
 
 A redraw, end to end
 --------------------
 
 #. A plugin thread notices a change, e.g. the clock ticks, stores the new
-   value in an atomic and calls `awl_redraw_request()`.
-#. That writes awl's redraw eventfd. Requests coalesce until the main loop
+   value in an atomic and calls ``awl_host->redraw_request()``.
+#. That is awl's `awl_redraw_request()`, which writes the redraw eventfd. Requests coalesce until the main loop
    gets to it, so a burst costs one redraw.
 #. The main loop wakes up and redraws the bars: for each right-hand widget
    it calls `widget_t.measure` to learn its width, then `widget_t.draw` for
@@ -75,8 +86,9 @@ Where to start reading
 ----------------------
 
 * awl_plugin_abi.h: the contract between awl and the library, and the list
-  of what the library does.
-* plugins/thread.h and plugins/redraw.h: how every background thread starts,
+  of what the library does; awl_host.h: awl's side of it, `awl_host_t`,
+  which the tray gets too.
+* plugins/thread.h and awl_redraw.h: how every background thread starts,
   stops and reports.
 * awl_draw.h: `widget_t`, the unit the bar is made of.
 * config_awl.def.h and config_plugins.def.h: the configuration, read at

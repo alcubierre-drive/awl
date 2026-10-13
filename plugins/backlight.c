@@ -1,5 +1,5 @@
 #include "backlight.h"
-#include "redraw.h"
+#include "../awl_host.h"
 #include <stdarg.h>
 #include <string.h>
 #include <stdint.h>
@@ -38,7 +38,7 @@
 
 /** awl_backlight_t.requests; a second toggle before the loop got to the
  * first one cancels it */
-enum { REQ_TOGGLE = 1, REQ_UPDATE = 2 };
+enum awl_backlight_request { REQ_TOGGLE = 1, REQ_UPDATE = 2 };
 
 struct awl_backlight_bus_t {
     awl_backlight_t* b;
@@ -90,7 +90,7 @@ static void set_gone( awl_backlight_bus_t* s ) {
     changed |= set_int( &b->enabled, 0 );
     changed |= set_int( &b->screen, BACKLIGHT_UNKNOWN );
     changed |= set_int( &b->webcam, BACKLIGHT_UNKNOWN );
-    if (changed) awl_redraw_request();
+    if (changed) awl_host->redraw_request();
 }
 
 /** a method reply: whether it is a proper one; marks the connection as
@@ -131,7 +131,7 @@ static void read_properties( awl_backlight_bus_t* s, sd_bus_message* m, int runn
     }
     sd_bus_message_exit_container( m );
 out:
-    if (changed) awl_redraw_request();
+    if (changed) awl_host->redraw_request();
 }
 
 /** Properties.GetAll(BUS_IFACE) -> a{sv}. An error means the daemon went

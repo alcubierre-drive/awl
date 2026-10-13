@@ -6,7 +6,6 @@
 #include "plugins/colors.h"
 #include "plugins/persistent.h"
 #include "plugins/readdir.h"
-#include "plugins/redraw.h"
 #include "plugins/thread.h"
 
 #include <errno.h>
@@ -43,7 +42,7 @@ typedef struct {
 /** Main thread state. The main thread never touches the file system: on a
  * hung (e.g. remote) mount any file system call can block indefinitely,
  * which must not freeze the compositor. */
-static struct {
+static struct PanelState {
     /* main thread's copy of the scanner's last list, what the panels show */
     Filename files[NFILES];
     int n_files;
@@ -75,7 +74,7 @@ static Scanner* sc;
  * survive reloads: "off", "on" or "all" (hidden files too). awl gives it a
  * default, the scanner loads and saves it in persistent.h's file. Off
  * doesn't keep hidden files' setting. */
-static const char mode_key[] = "desktop_file_mode";
+static const char file_mode_key[] = "desktop_file_mode";
 
 /** desk.show and desk.hidden from the dictionary; unchanged if it has no
  * mode; main thread */
@@ -83,7 +82,7 @@ static void readmode( void ) {
     awl_dict_val_t v;
     /* the string is the dictionary's until it's unlocked */
     AWL_HOST_CFG_LOCK( awl_host );
-    if (AWL_HOST_CFG_GET( awl_host, mode_key, &v ) == AWL_DICT_OK
+    if (AWL_HOST_CFG_GET( awl_host, file_mode_key, &v ) == AWL_DICT_OK
             && v.kind == AWL_DICT_KIND_STR) {
         if (!strcmp( v.str, "off" )) {
             desk.show = 0;
@@ -98,7 +97,7 @@ static void readmode( void ) {
 /** the dictionary's mode from desk.show and desk.hidden; main thread */
 static void writemode( void ) {
     const char* mode = !desk.show ? "off" : desk.hidden ? "all" : "on";
-    AWL_HOST_CFG_SET( awl_host, mode_key, AWL_DICT_STR( mode ) );
+    AWL_HOST_CFG_SET( awl_host, file_mode_key, AWL_DICT_STR( mode ) );
 }
 
 /** after an event, wait this long for more before scanning, so a burst
@@ -114,7 +113,7 @@ static void* scanner( void* data ) {
 
     /* at awl's start, the saved mode; the main thread reads it with the
      * first list */
-    awl_persistent_load_str( mode_key );
+    awl_persistent_load_str( file_mode_key );
     while (1) {
         /* the directory may have been (re)created since */
         if (ifd >= 0 && watch < 0)
@@ -130,7 +129,7 @@ static void* scanner( void* data ) {
                 *copy = sc->files;
                 /* replaces one the main thread hasn't taken yet */
                 free( atomic_exchange( &sc->pending, copy ) );
-                awl_redraw_request();
+                awl_host->redraw_request();
                 unsent = 0;
             }
         }
@@ -158,7 +157,7 @@ static void* scanner( void* data ) {
         }
     }
     if (ifd >= 0) close( ifd );
-    awl_persistent_save_str( mode_key );
+    awl_persistent_save_str( file_mode_key );
     return NULL;
 }
 
@@ -183,7 +182,7 @@ void awl_desktop_start( void ) {
         snprintf( n->path, sizeof(n->path), "%s", dir.str );
     AWL_HOST_CFG_UNLOCK( awl_host );
     if (!n->path[0]) {
-        fprintf( stderr, "desktop: no desktop_dir in the config dictionary\n" );
+        awl_wrn_printf( "desktop: no desktop_dir in the config dictionary\n" );
         free( n );
         return;
     }
@@ -203,7 +202,7 @@ int awl_desktop_stop( void ) {
     /* a scanner blocked on a dead mount can't be woken or cancelled; leave
      * it behind instead of hanging awl */
     if (awl_thread_stop( &old->thread, 500 )) {
-        fprintf( stderr, "desktop: scanner thread stuck (in %s?), not waiting for it\n",
+        awl_wrn_printf( "desktop: scanner thread stuck (in %s?), not waiting for it\n",
                  old->path );
         return -1; /* old stays allocated, the thread may still use it */
     }

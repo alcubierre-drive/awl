@@ -22,8 +22,8 @@ Dependencies:
 
 - awl: wlroots 0.20, scenefx 0.5, wayland, xkbcommon, libinput, pixman,
   fcft, libpulse, libsystemd, and xcb and xcb-icccm for XWayland
-- the tray (`tray/`): gtkmm 3, gtk-layer-shell, dbusmenu-gtk3, jsoncpp,
-  spdlog, and optionally libecal for calendar events
+- the tray (`tray/`): gtkmm 3, gtk-layer-shell, dbusmenu-gtk3,
+  and optionally libecal for calendar events
 
 scenefx is looked up under `~/Desktop/awl-libs` (`AWL_LIBS` in config.mk).
 Then:
@@ -46,10 +46,10 @@ blur, input devices, the keymap, and the tray and wallpaper settings.
 
 ## Running
 
-    awl [-s startup command] [-d] [-v]
+    awl [-s startup command] [-l logfile] [-d] [-v]
 
 `-s` runs a shell command at startup. awl sends it SIGTERM when it exits.
-`-d` turns on debug logging. awl logs to `/tmp/awl.log`.
+`-d` turns on debug logging (wlroots' and awl's verbose messages). awl logs to stderr, colored on a terminal, and uncolored to the file given with `-l`, by default `/tmp/awl.log` (`-DAWL_LOGFILE=...` changes the default); `-l ''` logs to stderr only. The file starts over on each start, and once it passes 128 KiB.
 
 Like dwl, awl runs on any wlroots backend: nested in an X11 or Wayland
 session, or directly on a VT. On a VT you need a seat, either from
