@@ -185,6 +185,8 @@ static void xytonode(double x, double y, struct wlr_surface **psurface,
         Client **pc, LayerSurface **pl, double *nx, double *ny);
 static void setontop(Client *c, int ontop);
 static void toggleontop(const Arg* arg);
+static void togglepertag(const Arg *arg);
+static void pertagstore(Monitor *m, size_t slot);
 static void plugin_restart(const Arg* arg);
 static void minimize(const Arg* arg);
 static void unminimize(const Arg* arg);
@@ -630,7 +632,7 @@ arrangelayers(Monitor *m)
     /* Find topmost keyboard interactive layer, if such a layer exists */
     for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
         wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
-            if ((l->is_notification || l->is_launcher || l->is_calendar) && l->blur && l->layer_surface) {
+            if ((l->is_notification || l->is_launcher || l->is_popup) && l->blur && l->layer_surface) {
                 /* arrangelayers() runs on every layer-surface commit (e.g.
                  * every redrawn frame of a notification/launcher), not just
                  * on actual resizes; only touch the blur node's size when it
@@ -1038,8 +1040,9 @@ buttonpress(struct wl_listener *listener, void *data)
 
     wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
-    /* The calendar popup (tray/calendar.cpp) takes exclusive keyboard focus
-     * while shown, which also keeps clicks from reaching the bar's widgets.
+    /* The calendar and text popups (tray/calendar.cpp, tray/textpopup.cpp)
+     * take exclusive keyboard focus while shown, which also keeps clicks
+     * from reaching the bar's widgets.
      * Like a menu, a press anywhere outside it only closes it; the matching
      * release is swallowed too, so nothing below sees half a click. */
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED && swallow_release) {
@@ -1060,7 +1063,7 @@ buttonpress(struct wl_listener *listener, void *data)
     }
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && exclusive_focus
             && ((LayerSurface *)exclusive_focus)->type == LayerShell
-            && ((LayerSurface *)exclusive_focus)->is_calendar) {
+            && ((LayerSurface *)exclusive_focus)->is_popup) {
         /* compare against the popup's own rect: xytonode()'s parent walk
          * overshoots by one node for layer surfaces, so its LayerSurface
          * isn't reliable here */
@@ -1071,6 +1074,7 @@ buttonpress(struct wl_listener *listener, void *data)
                 l->layer_surface->surface->current.height };
         if (!wlr_box_contains_point(&box, cursor->x, cursor->y)) {
             awl_tray_calendar_hide();
+            awl_tray_popup_hide();
             swallow_release = 1;
             return;
         }
@@ -1664,11 +1668,12 @@ createlayersurface(struct wl_listener *listener, void *data)
      * that output here, before the generic "no output requested -> selmon"
      * fallback below would otherwise land every monitor's tray window on
      * whichever one happens to be selmon. */
-    /* The calendar popup from the same library does the same with
-     * "awl-calendar:<monitor_id>". */
+    /* The calendar and text popups from the same library do the same with
+     * "awl-calendar:<monitor_id>" and "awl-popup:<monitor_id>". */
     if (!layer_surface->output && layer_surface->namespace &&
             (!strncmp(layer_surface->namespace, "awl-tray:", 9) ||
-             !strncmp(layer_surface->namespace, "awl-calendar:", 13))) {
+             !strncmp(layer_surface->namespace, "awl-calendar:", 13) ||
+             !strncmp(layer_surface->namespace, "awl-popup:", 10))) {
         const char *want = strchr(layer_surface->namespace, ':') + 1;
         Monitor *tm;
         wl_list_for_each(tm, &mons, link) {
@@ -1687,9 +1692,10 @@ createlayersurface(struct wl_listener *listener, void *data)
     l = layer_surface->data = ecalloc(1, sizeof(*l));
     l->is_notification = cfg->blur_notifications && !strcmp(layer_surface->namespace, "notifications");
     l->is_launcher = cfg->blur_launcher && !strcmp(layer_surface->namespace, "launcher");
-    /* the calendar popup (tray/calendar.cpp) is translucent; it follows the
-     * launcher's blur settings */
-    l->is_calendar = layer_surface->namespace && !strncmp(layer_surface->namespace, "awl-calendar:", 13);
+    /* the calendar and text popups (tray/calendar.cpp, tray/textpopup.cpp)
+     * are translucent; they follow the launcher's blur settings */
+    l->is_popup = layer_surface->namespace && (!strncmp(layer_surface->namespace, "awl-calendar:", 13)
+            || !strncmp(layer_surface->namespace, "awl-popup:", 10));
     l->type = LayerShell;
     LISTEN(&surface->events.commit, &l->surface_commit, commitlayersurfacenotify);
     LISTEN(&surface->events.unmap, &l->unmap, unmaplayersurfacenotify);
@@ -1699,9 +1705,9 @@ createlayersurface(struct wl_listener *listener, void *data)
     l->mon = layer_surface->output->data;
     l->scene_layer = wlr_scene_layer_surface_v1_create(scene_layer, layer_surface);
     l->scene = l->scene_layer->tree;
-    if (l->is_notification || l->is_launcher || (l->is_calendar && cfg->blur_launcher)) {
+    if (l->is_notification || l->is_launcher || (l->is_popup && cfg->blur_launcher)) {
         l->blur = wlr_scene_blur_create(l->scene, l->scene->node.x, l->scene->node.y);
-        if (l->is_launcher || l->is_calendar) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_launcher_radius);
+        if (l->is_launcher || l->is_popup) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_launcher_radius);
         if (l->is_notification) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_notifications_radius);
         wlr_scene_blur_set_size(l->blur, l->layer_surface->current.desired_width, l->layer_surface->current.desired_height);
         wlr_scene_blur_set_strength(l->blur, cfg->blur[0]);
@@ -1777,11 +1783,15 @@ createmon(struct wl_listener *listener, void *data)
                 m->lt[0] = r->lt;
             m->lt[1] = &cfg->layouts[cfg->n_layouts > 1 && r->lt != &cfg->layouts[1]];
             strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, LENGTH(m->ltsymbol)-1);
+            m->pertag = !!r->pertag;
             wlr_output_state_set_scale(&state, r->scale);
             wlr_output_state_set_transform(&state, r->rr);
             break;
         }
     }
+    /* every view starts with the monitor's layout */
+    for (i = 0; i < LENGTH(m->ptlt); i++)
+        pertagstore(m, i);
 
     /* The mode is a tuple of (width, height, refresh rate), and each
      * monitor supports only a specific set of modes. We just pick the
@@ -2214,6 +2224,7 @@ drawbar(Monitor *m)
     m->drw->ntags = LENGTH(tags);
     m->drw->selmon = (m == selmon);
     if (wl_list_length(&mons) == 1) m->drw->selmon = -1;
+    m->drw->pertag = m->pertag;
 
     for (int ww=0; ww<m->drw->n_widgets_left; ++ww) {
         if (m->drw->widgets_left[ww].draw)
@@ -3548,6 +3559,52 @@ layoutindex(const Layout *l)
     return (int)((p - first) / sizeof(Layout));
 }
 
+/** m's ptlt[] slot for what it shows: 1+t for tag t alone, 0 for several */
+static size_t
+pertagslot(const Monitor *m)
+{
+    uint32_t ts = m->tagset[m->seltags];
+    return ts && !(ts & (ts - 1)) ? (size_t)__builtin_ctz(ts) + 1 : 0;
+}
+
+/** m's layout into its ptlt[slot] */
+static void
+pertagstore(Monitor *m, size_t slot)
+{
+    m->ptlt[slot].lt[0] = m->lt[0];
+    m->ptlt[slot].lt[1] = m->lt[1];
+    m->ptlt[slot].sellt = m->sellt;
+}
+
+/** after m's tagset changed: with per-tag layouts, the one of its new view */
+static void
+pertagload(Monitor *m)
+{
+    size_t slot = pertagslot(m);
+    if (!m->pertag)
+        return;
+    m->lt[0] = m->ptlt[slot].lt[0];
+    m->lt[1] = m->ptlt[slot].lt[1];
+    m->sellt = m->ptlt[slot].sellt;
+    strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, LENGTH(m->ltsymbol)-1);
+}
+
+/** per-tag layouts on selmon on or off (MonitorRule.pertag sets where it
+ * starts). Turned on, the current view keeps its layout and the others get
+ * back the ones they had when it was last on; off, all views share the
+ * current one. */
+void
+togglepertag(const Arg *arg)
+{
+    (void)arg;
+    if (!selmon)
+        return;
+    selmon->pertag = !selmon->pertag;
+    if (selmon->pertag)
+        pertagstore(selmon, pertagslot(selmon));
+    drawbar(selmon);
+}
+
 /** the next (arg->i > 0) or previous (< 0) of config_plugins.h's layouts on selmon */
 void
 cycle_layout(const Arg* arg)
@@ -3572,8 +3629,19 @@ setlayout(const Arg *arg)
     if (l)
         selmon->lt[selmon->sellt] = l;
     strncpy(selmon->ltsymbol, selmon->lt[selmon->sellt]->symbol, LENGTH(selmon->ltsymbol)-1);
+    if (selmon->pertag)
+        pertagstore(selmon, pertagslot(selmon));
     arrange(selmon);
     drawbar(selmon);
+}
+
+/** l, pointing into the old layouts table, moved to the same index in the
+ * new one, or its first */
+static const Layout *
+layoutmoved(const Layout *l, const Layout *old, size_t n_old)
+{
+    size_t idx = l >= old && l < old + n_old ? (size_t)(l - old) : 0;
+    return &cfg->layouts[MIN(idx, cfg->n_layouts - 1)];
 }
 
 /** After cfg changed: the monitors' layouts point into the old table (which
@@ -3582,11 +3650,12 @@ static void
 layoutsmoved(const Layout *old, size_t n_old)
 {
     Monitor *m;
-    size_t i, idx;
+    size_t i, j;
     wl_list_for_each(m, &mons, link) {
         for (i = 0; i < LENGTH(m->lt); i++) {
-            idx = m->lt[i] >= old && m->lt[i] < old + n_old ? (size_t)(m->lt[i] - old) : 0;
-            m->lt[i] = &cfg->layouts[MIN(idx, cfg->n_layouts - 1)];
+            m->lt[i] = layoutmoved(m->lt[i], old, n_old);
+            for (j = 0; j < LENGTH(m->ptlt); j++)
+                m->ptlt[j].lt[i] = layoutmoved(m->ptlt[j].lt[i], old, n_old);
         }
         strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, LENGTH(m->ltsymbol)-1);
         arrange(m);
@@ -4217,6 +4286,7 @@ toggleview(const Arg *arg)
         return;
 
     selmon->tagset[selmon->seltags] = newtagset;
+    pertagload(selmon);
     focusclient(focustop(selmon), 1);
     arrange(selmon);
     drawbars();
@@ -4491,6 +4561,7 @@ view(const Arg *arg)
     selmon->seltags ^= 1; /* toggle sel tagset */
     if (arg->ui & TAGMASK)
         selmon->tagset[selmon->seltags] = arg->ui & TAGMASK;
+    pertagload(selmon);
     focusclient(focustop(selmon), 1);
     arrange(selmon);
     drawbars();
@@ -4512,6 +4583,7 @@ cycle_view(const Arg* arg)
     selmon->seltags ^= 1; /* toggle sel tagset */
     int next = arg->i > 0 ? (tmax + 1)%nt : (tmin - 1 + nt)%nt;
     selmon->tagset[selmon->seltags] = (1 << next) & TAGMASK;
+    pertagload(selmon);
 
     focusclient(focustop(selmon), 1);
     arrange(selmon);

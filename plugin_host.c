@@ -41,6 +41,9 @@ static awl_host_t host = {
     .calendar_show = awl_tray_calendar_show,
     .calendar_hide = awl_tray_calendar_hide,
     .calendar_scroll = awl_tray_calendar_scroll,
+    .popup_show = awl_tray_popup_show,
+    .popup_update = awl_tray_popup_update,
+    .popup_hide = awl_tray_popup_hide,
 
     .cfg = {
         .s_new = &awl_dict_new,

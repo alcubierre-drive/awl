@@ -103,13 +103,13 @@ static const Layout layouts[] = {
 */
 /* NOTE: ALWAYS add a fallback rule, even if you are completely sure it won't be used */
 static const MonitorRule monrules[] = {
-    /* name       mfact  nmaster scale layout       rotate/reflect                x    y */
+    /* name       mfact  nmaster scale layout       rotate/reflect                x    y  pertag*/
     /* example of a HiDPI laptop monitor:
     */
     /* defaults */
-    { "eDP-1",    0.5f,  1,    1.5,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1 },
-    /* { "HDMI-A-1", 0.5f,  1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_90,       -1,  -1 }, */
-    { NULL,       0.5f,  1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1 },
+    { "eDP-1",    0.5f,  1,    1.5,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1, 0 },
+    /* { "HDMI-A-1", 0.5f,  1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_90,       -1,  -1, 0 }, */
+    { NULL,       0.5f,  1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1, 0 },
 };
 
 /* keyboard */
@@ -224,6 +224,7 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_m,          maximize,         {0} },
     { MODKEY,                    XKB_KEY_space,      cycle_layout,     {.i = +1} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,      cycle_layout,     {.i = -1} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_space,      togglepertag,     {0} },
     { MODKEY,                    XKB_KEY_Right,      cycle_view,       {.i = +1} },
     { MODKEY,                    XKB_KEY_Left,       cycle_view,       {.i = -1} },
     { MODKEY,                    XKB_KEY_f,          togglefullscreen, {0} },

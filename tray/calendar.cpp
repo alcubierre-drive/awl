@@ -242,16 +242,6 @@ Popup *g_popup = nullptr;
 // live in the same process. The colors and sizes are config_plugins.h's
 // (tray_config.calendar).
 
-// 0xRRGGBBAA as CSS. Not printf's %f: GTK sets the user's locale, whose
-// decimal separator may be a comma.
-std::string css_color(uint32_t c) {
-    unsigned a = ((c & 0xff) * 1000 + 127) / 255;
-    char buf[48];
-    snprintf(buf, sizeof(buf), "rgba(%u, %u, %u, %u.%03u)", c >> 24, c >> 16 & 0xff,
-             c >> 8 & 0xff, a / 1000, a % 1000);
-    return buf;
-}
-
 std::string make_css(const awl_tray_config_t &config) {
     const auto &c = config.calendar;
     gchar *css = g_strdup_printf(R"css(
@@ -622,6 +612,16 @@ gboolean deliver(gpointer data) {
 #endif
 
 }  // namespace
+
+// 0xRRGGBBAA as CSS. Not printf's %f: GTK sets the user's locale, whose
+// decimal separator may be a comma.
+std::string css_color(uint32_t c) {
+    unsigned a = ((c & 0xff) * 1000 + 127) / 255;
+    char buf[48];
+    snprintf(buf, sizeof(buf), "rgba(%u, %u, %u, %u.%03u)", c >> 24, c >> 16 & 0xff,
+             c >> 8 & 0xff, a / 1000, a % 1000);
+    return buf;
+}
 
 void calendar_init(const awl_tray_config_t &config) {
     if (g_popup) return;

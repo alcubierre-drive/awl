@@ -21,6 +21,7 @@
 
 #include "awl_tray.h"
 #include "calendar.hpp"
+#include "textpopup.hpp"
 #include "tray.hpp"
 
 #include <gtk-layer-shell.h>
@@ -523,6 +524,7 @@ void *thread_main(void *) {
     // The calendar popup is created right away (hidden), so it can connect to
     // evolution-data-server before the first click (see calendar.hpp).
     awl::calendar_init(g_config);
+    awl::textpopup_init(g_config);
 
     Gtk::Main::run();
 
@@ -534,6 +536,7 @@ void *thread_main(void *) {
     // race ahead into wl_display_destroy_clients()/wl_display_destroy()
     // concurrently with this thread still using the display).
     awl::calendar_fini();
+    awl::textpopup_fini();
     std::unordered_map<std::string, Entry> bridges;
     {
         std::lock_guard<std::mutex> lg(g_bridges_mtx);
@@ -627,6 +630,7 @@ void awl_tray_reload(const awl_tray_config_t *config) {
     SNI::run_on_gtk_thread([config = *config] {
         SNI::g_config = config;
         awl::calendar_configure(config);
+        awl::textpopup_configure(config);
         // reloadTray() is GTK work; don't hold the lock for it
         std::vector<SNI::Bridge *> bridges;
         {
@@ -649,18 +653,28 @@ void awl_tray_set_visible(const char *monitor_id, int visible) {
         SNI::with_bridge(mon, [](SNI::Bridge &b) { b.applyVisible(); });
 }
 
+// mon's bar's geometry, as awl last sent it
+static SNI::BarGeom bar_geom(const std::string &mon) {
+    SNI::BarGeom g;
+    std::lock_guard<std::mutex> lg(SNI::g_bridges_mtx);
+    auto it = SNI::g_bridges.find(mon);
+    if (it != SNI::g_bridges.end()) g = it->second.shared->getGeom();
+    return g;
+}
+
+// whether mon's bar is at the top of its screen
+static bool bar_on_top(const std::string &mon) {
+    // awl puts a bottom bar at y = monitor height - bar height
+    return bar_geom(mon).y == 0;
+}
+
 static void calendar_on_gtk_thread(const char *monitor_id, bool toggle) {
     if (!SNI::g_running.load()) return;
     std::string mon(monitor_id ? monitor_id : "");
-    SNI::BarGeom g;
-    {
-        std::lock_guard<std::mutex> lg(SNI::g_bridges_mtx);
-        auto it = SNI::g_bridges.find(mon);
-        if (it != SNI::g_bridges.end()) g = it->second.shared->getGeom();
-    }
-    // awl puts a bottom bar at y = monitor height - bar height
-    bool top = g.y == 0;
+    bool top = bar_on_top(mon);
     SNI::run_on_gtk_thread([mon, toggle, top] {
+        // one popup at a time: both take the keyboard
+        awl::textpopup_hide();
         if (toggle)
             awl::calendar_toggle(mon, top);
         else
@@ -684,6 +698,30 @@ void awl_tray_calendar_hide(void) {
 void awl_tray_calendar_scroll(int amount) {
     if (!SNI::g_running.load()) return;
     SNI::run_on_gtk_thread([amount] { awl::calendar_scroll(amount); });
+}
+
+void awl_tray_popup_show(const char *monitor_id, int center_x, const char *text, int toggle) {
+    if (!SNI::g_running.load()) return;
+    std::string mon(monitor_id ? monitor_id : ""), t(text ? text : "");
+    // the bar spans the screen: its width is the screen's
+    SNI::BarGeom g = bar_geom(mon);
+    bool top = g.y == 0;
+    int width = g.width;
+    SNI::run_on_gtk_thread([mon, top, center_x, width, t, toggle] {
+        awl::calendar_hide();
+        awl::textpopup_show(mon, top, center_x, width, t, toggle != 0);
+    });
+}
+
+void awl_tray_popup_update(const char *text) {
+    if (!SNI::g_running.load()) return;
+    std::string t(text ? text : "");
+    SNI::run_on_gtk_thread([t] { awl::textpopup_update(t); });
+}
+
+void awl_tray_popup_hide(void) {
+    if (!SNI::g_running.load()) return;
+    SNI::run_on_gtk_thread([] { awl::textpopup_hide(); });
 }
 
 void awl_tray_remove_monitor(const char *monitor_id) {

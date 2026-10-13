@@ -99,12 +99,13 @@ static const Layout layouts[] = {
 */
 /* NOTE: ALWAYS add a fallback rule, even if you are completely sure it won't be used */
 static const MonitorRule monrules[] = {
-    /* name       mfact  nmaster scale layout       rotate/reflect                x    y */
+    /* pertag: each tag keeps its own layout (togglepertag switches it at runtime) */
+    /* name       mfact  nmaster scale layout       rotate/reflect                x    y   pertag */
     /* example of a HiDPI laptop monitor:
-    { "eDP-1",    0.5f,  1,      2,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1 },
+    { "eDP-1",    0.5f,  1,      2,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  0 },
     */
     /* defaults */
-    { NULL,       0.55f, 1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1 },
+    { NULL,       0.55f, 1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  0 },
 };
 
 /* keyboard */
@@ -203,6 +204,7 @@ static const Key keys[] = {
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,      cycle_layout,     {.i = -1} },
     { MODKEY,                    XKB_KEY_f,          setlayout,        {.v = &layouts[1]} },
     { MODKEY,                    XKB_KEY_g,          setlayout,        {0} }, /* the previous one */
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_g,          togglepertag,     {0} }, /* per-tag layouts */
     { MODKEY,                    XKB_KEY_Right,      cycle_view,       {.i = +1} },
     { MODKEY,                    XKB_KEY_Left,       cycle_view,       {.i = -1} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_space,      togglefloating,   {0} },

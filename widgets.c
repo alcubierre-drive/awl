@@ -52,6 +52,10 @@ static uint32_t batwidget_measure( widget_t* w );
 static uint32_t dockwidget_measure( widget_t* w );
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t ipwidget_measure( widget_t* w );
+static uint32_t ipwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
+static void ipwidget_click( widget_t* w, uint32_t x, int button );
+static void ipwidget_hover( widget_t* w );
+static void ipwidget_leave( widget_t* w );
 
 static uint32_t backlightwidget_measure( widget_t* w );
 static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
@@ -85,7 +89,7 @@ void awl_widgets_create( awl_draw_t* drw ) {
         .draw = &clockwidget_draw,
         .callback_click = &clockwidget_click,
         .callback_hover = &clockwidget_hover,
-        .hover_delay_ms = 500,
+        .hover_delay_ms = 100,
         .callback_leave = &clockwidget_leave,
         .callback_scroll = &clockwidget_scroll,
         .leave_delay_ms = 20,
@@ -132,7 +136,13 @@ void awl_widgets_create( awl_draw_t* drw ) {
     drw->widgets_right[drw->n_widgets_right++] = (widget_t){
         .bar = drw,
         .measure = &ipwidget_measure,
-        .draw = &textsnap_draw,
+        .draw = &ipwidget_draw,
+        .callback_click = &ipwidget_click,
+        .callback_hover = &ipwidget_hover,
+        .hover_delay_ms = 100,
+        .callback_leave = &ipwidget_leave,
+        .leave_delay_ms = 20,
+        .popup_namespace = "awl-popup:",
         .free = free,
     };
     drw->widgets_right[drw->n_widgets_right++] = (widget_t){
@@ -255,6 +265,20 @@ static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     if (!P) return 0;
     int ww = TEXTW(w->bar->m, "XXX");
     TEXT( ww, w->bar->m->ltsymbol, P->awl_colors.fg_lay, P->awl_colors.bg_lay );
+    /* each tag has its own layout: a red frame around the symbol */
+    if (w->bar->pertag) {
+        int hh = w->bar->m->b.height;
+        int t = hh / 16;
+        if (t < 1) t = 1;
+        pixman_color_t c = color_8bit_to_16bit( molokai_red );
+        pixman_rectangle16_t rects[] = {
+            { .x=x,        .y=0,    .width=ww, .height=t },
+            { .x=x,        .y=hh-t, .width=ww, .height=t },
+            { .x=x,        .y=0,    .width=t,  .height=hh },
+            { .x=x+ww-t,   .y=0,    .width=t,  .height=hh },
+        };
+        pixman_image_fill_rectangles( PIXMAN_OP_SRC, pix, &c, 4, rects );
+    }
     return ww;
 }
 
@@ -526,29 +550,113 @@ static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
     return w->width;
 }
 
+/** the IP widget: the bar shows the primary address (`awl_ipaddr_t.best`:
+ * NetworkManager's, else the one the kernel would use for the internet),
+ * the popup all of them */
+typedef struct {
+    textsnap_t snap; // first: textsnap_draw() reads it
+    /** the popup's table, see `awl_tray_popup_show()` */
+    char popup[1024];
+    /** where draw() put the widget, in bar pixels */
+    uint32_t x;
+} ipwidget_userdata_t;
+
 static uint32_t ipwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->ip) return 0;
-    textsnap_t* s = textsnap( w );
+    if (!w->userdata) w->userdata = calloc(1, sizeof(ipwidget_userdata_t));
+    ipwidget_userdata_t* u = w->userdata;
+    textsnap_t* s = &u->snap;
 
-    int n = atomic_load( &P->ip->n_addr ), online = n > 0;
-    size_t len = 0;
-    *s->text = 0;
-    for (int i=0; i<n && i<AWL_IP_MAX; ++i) {
-        struct in_addr a = { .s_addr = atomic_load( &P->ip->addr[i] ) };
-        char host[INET_ADDRSTRLEN];
-        if (!inet_ntop( AF_INET, &a, host, sizeof host )) continue;
-        if (!strncmp( host, "127.0.0.", 8 )) online = 0;
-        // truncates instead of overflowing with many interfaces
-        int c = snprintf( s->text+len, sizeof(s->text)-len, "%s%s", len ? " | " : "", host );
-        if (c > 0) len += (size_t)c;
-        if (len >= sizeof(s->text)) len = sizeof(s->text)-1;
-    }
-    if (!*s->text) strcpy( s->text, "disconnected" );
+    awl_ipaddr_entry_t e[AWL_IP_MAX];
+    int best = -1, routed = 0, by_nm = 0, connectivity = -1;
+    int n = ip_snapshot( P->ip, e, &best, &routed, &by_nm, &connectivity );
 
-    s->fg = online ? color_8bit_to_16bit(molokai_green) : color_8bit_to_16bit(molokai_red);
+    char host[AWL_IP_MAX][INET_ADDRSTRLEN];
+    for (int i=0; i<n; ++i)
+        if (!inet_ntop( AF_INET, &(struct in_addr){ .s_addr = e[i].addr }, host[i], sizeof host[i] ))
+            strcpy( host[i], "?" );
+
+    // green: online; orange: an address, but no (full) way out; red: none.
+    // NetworkManager's connectivity check knows best; without one (not
+    // running, or checks off) the kernel's route has to do.
+    snprintf( s->text, sizeof s->text, "%s", best >= 0 ? host[best] : "disconnected" );
+    int online = connectivity > AWL_NM_CONNECTIVITY_UNKNOWN ? connectivity == AWL_NM_CONNECTIVITY_FULL
+                                                            : routed;
+    s->fg = best < 0 || !strncmp( host[best], "127.", 4 ) ? color_8bit_to_16bit(molokai_red) :
+            online ? color_8bit_to_16bit(molokai_green) :
+            connectivity == AWL_NM_CONNECTIVITY_NONE ? color_8bit_to_16bit(molokai_red) :
+            color_8bit_to_16bit(molokai_orange);
     s->bg = P->awl_colors.bg_status;
+
+    // the popup: interface, address, default route metric; the routed one bold
+    char popup[sizeof u->popup];
+    size_t len = 0;
+    *popup = 0;
+    for (int i=0; i<n; ++i) {
+        char metric[64];
+        if (e[i].metric >= 0) snprintf( metric, sizeof metric, "metric %d", e[i].metric );
+        else snprintf( metric, sizeof metric, "<span alpha=\"50%%\">no default route</span>" );
+        // interface names are at most 15 plain characters, but may hold & or <
+        char ifname[6*sizeof e[i].ifname] = "";
+        for (size_t k=0, o=0; e[i].ifname[k] && o+6 < sizeof ifname; ++k) {
+            const char* esc = e[i].ifname[k] == '&' ? "&amp;" : e[i].ifname[k] == '<' ? "&lt;" :
+                              e[i].ifname[k] == '>' ? "&gt;" : NULL;
+            if (esc) { strcpy( ifname+o, esc ); o += strlen(esc); }
+            else { ifname[o++] = e[i].ifname[k]; ifname[o] = 0; }
+        }
+        int c = i == best && (routed || by_nm)
+            ? snprintf( popup+len, sizeof popup - len, "%s<b>%s</b>\t<b>%s</b>\t<b>%s</b>",
+                        len ? "\n" : "", ifname, host[i], metric )
+            : snprintf( popup+len, sizeof popup - len, "%s%s\t%s\t%s",
+                        len ? "\n" : "", ifname, host[i], metric );
+        if (c < 0 || (size_t)c >= sizeof popup - len) break;
+        len += (size_t)c;
+    }
+    if (!n) snprintf( popup, sizeof popup, "no IPv4 address" );
+    // NetworkManager's verdict, as a last row
+    if (connectivity >= 0) {
+        static const char* const words[] = { "unknown", "none", "captive portal", "limited", "full" };
+        len = strlen( popup );
+        snprintf( popup+len, sizeof popup - len, "\n<span alpha=\"50%%\">connectivity</span>\t%s",
+                  words[connectivity <= AWL_NM_CONNECTIVITY_FULL ? connectivity : 0] );
+    }
+    // an open popup follows the addresses and routes
+    if (strcmp( popup, u->popup )) {
+        strcpy( u->popup, popup );
+        awl_host->popup_update( u->popup );
+    }
     return textsnap_width( w );
+}
+
+static uint32_t ipwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
+    ipwidget_userdata_t* u = w->userdata;
+    if (u) u->x = x;
+    return textsnap_draw( w, x, pix );
+}
+
+/* the popup centered under the widget, in logical pixels */
+static void ipwidget_popup( widget_t* w, int toggle ) {
+    ipwidget_userdata_t* u = w->userdata;
+    if (!u) return;
+    Monitor* m = w->bar->m;
+    float center = (float)u->x + (float)w->width / 2.0f;
+    awl_host->popup_show( m->wlr_output->name, (int)(center / m->wlr_output->scale + 0.5f),
+                          u->popup, toggle );
+}
+
+static void ipwidget_click( widget_t* w, uint32_t x, int button ) {
+    (void)x; (void)button;
+    ipwidget_popup( w, 1 );
+}
+
+static void ipwidget_hover( widget_t* w ) {
+    ipwidget_popup( w, 0 );
+}
+
+static void ipwidget_leave( widget_t* w ) {
+    (void)w;
+    awl_host->popup_hide();
 }
 
 static void tagwidget_scroll( widget_t* w, uint32_t x, int amount ) {

@@ -120,6 +120,12 @@ static void ip_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event
     if (ip_dispatch( p->ip ) && !atomic_load( &p->paused )) awl_redraw_request();
 }
 
+/* NetworkManager's view changed: it may pick another address */
+static void nm_changed( void* userdata ) {
+    awl_poller_t* p = userdata;
+    if (ip_update( p->ip ) && !atomic_load( &p->paused )) awl_redraw_request();
+}
+
 static void* poller_run( void* arg ) {
     awl_poller_t* p = arg;
     prctl( PR_SET_TIMERSLACK, TIMER_SLACK_NS, 0, 0, 0 );
@@ -149,6 +155,7 @@ awl_poller_t* poller_new( awl_stats_t* stats, awl_temperature_t* temp, awl_date_
         p->bat_io = p->api->io_new( p->api, bat->uevent_fd, PA_IO_EVENT_INPUT, bat_callback, p );
     if (ip->nl_fd >= 0)
         p->ip_io = p->api->io_new( p->api, ip->nl_fd, PA_IO_EVENT_INPUT, ip_callback, p );
+    ip->nm = nm_new( p->api, nm_changed, p );
     return p;
 }
 
@@ -176,7 +183,9 @@ void poller_stop( awl_poller_t* p ) {
 
 void poller_free( awl_poller_t* p ) {
     if (!p) return;
-    /* frees whatever event sources are left, ours included */
+    /* its event sources first; the loop frees whatever is left */
+    nm_free( p->ip->nm );
+    p->ip->nm = NULL;
     pa_mainloop_free( p->ml );
     free( p );
 }

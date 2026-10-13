@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "awl_tray.h"
@@ -30,5 +31,8 @@ void calendar_show(const std::string& monitor_id, bool bar_on_top);
 void calendar_hide();
 // Moves the shown popup a month forward (amount > 0) or back (amount < 0).
 void calendar_scroll(int amount);
+
+// 0xRRGGBBAA as a CSS color
+std::string css_color(uint32_t c);
 
 }  // namespace awl

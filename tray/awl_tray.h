@@ -143,6 +143,25 @@ void awl_tray_calendar_hide(void);
  * thread. */
 void awl_tray_calendar_scroll(int amount);
 
+/** Shows the text popup (tray/textpopup.hpp) for a bar widget on the given
+ * monitor, on the bar's side of the screen, centered on center_x (logical
+ * pixels from the screen's left edge) as far as the screen allows: text is
+ * a table, rows separated by
+ * '\n', columns by '\t', each cell Pango markup. With toggle, hides it
+ * instead if it is already shown there. Hides the calendar popup; it looks
+ * like it (config.calendar) and also closes on Escape. Its layer surface's
+ * namespace is "awl-popup:<monitor_id>". Fire-and-forget, safe to call from
+ * any thread. */
+void awl_tray_popup_show(const char *monitor_id, int center_x, const char *text, int toggle);
+
+/** Replaces the text of the shown text popup; does nothing while it is
+ * hidden. Fire-and-forget, safe to call from any thread. */
+void awl_tray_popup_update(const char *text);
+
+/** Hides the text popup if it is shown. Fire-and-forget, safe to call from
+ * any thread. */
+void awl_tray_popup_hide(void);
+
 /** Tears down the given monitor's tray overlay window (if one was ever
  * created for it) -- call when a monitor is being destroyed (e.g.
  * unplugged), from cleanupmon(), before its wlr_output goes away. Safe to

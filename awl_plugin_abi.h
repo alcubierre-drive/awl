@@ -26,7 +26,7 @@
 #include "plugins/wallpaper.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 16
+#define AWL_PLUGIN_ABI 17
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -40,7 +40,7 @@
     X( focusstack ) X( incnmaster ) X( killclient ) X( maximize ) X( minimize ) \
     X( moveresize ) X( movestack ) X( plugin_restart ) X( quit ) X( setlayout ) X( setmfact ) \
     X( spawn ) X( tag ) X( tagmon ) X( togglebar ) X( togglebw ) X( togglefloating ) \
-    X( togglefullscreen ) X( toggleontop ) X( toggletag ) X( toggleview ) \
+    X( togglefullscreen ) X( toggleontop ) X( togglepertag ) X( toggletag ) X( toggleview ) \
     X( transluce ) X( unminimize ) X( view ) X( wallpaper ) X( wallpapermode )
 
 #define AWL_ACTION_FIELD( name ) void (*name)( const Arg* arg );
@@ -176,6 +176,12 @@ typedef struct awl_host_t {
     void (*calendar_hide)( void );
     /** tray: `awl_tray_calendar_scroll()` */
     void (*calendar_scroll)( int amount );
+    /** tray: `awl_tray_popup_show()` */
+    void (*popup_show)( const char* monitor_id, int center_x, const char* text, int toggle );
+    /** tray: `awl_tray_popup_update()` */
+    void (*popup_update)( const char* text );
+    /** tray: `awl_tray_popup_hide()` */
+    void (*popup_hide)( void );
 
     /**
      * config values that can change while awl runs, by name. awl owns the

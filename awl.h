@@ -218,7 +218,7 @@ typedef struct {
     struct wlr_scene_tree *popups;
     struct wlr_scene_layer_surface_v1 *scene_layer;
     struct wl_list link;
-    short mapped, is_notification, is_launcher, is_calendar;
+    short mapped, is_notification, is_launcher, is_popup;
     struct wlr_layer_surface_v1 *layer_surface;
 
     struct wl_listener destroy;
@@ -268,7 +268,14 @@ struct Monitor {
     int nmaster;
     uint8_t showbar:1;
     uint8_t closedbar:1;
+    /** whether each view keeps its own layout (MonitorRule.pertag,
+     * togglepertag); then setlayout() saves into ptlt[] and changing the
+     * tagset loads from there */
+    uint8_t pertag:1;
     char ltsymbol[16];
+    /** the per-tag layouts: [1+t] for tag t viewed alone, [0] for views of
+     * several tags. Kept current with lt/sellt while pertag is on. */
+    struct { const Layout *lt[2]; unsigned int sellt; } ptlt[32];
     int asleep;
     /** the bar's drawing state and widgets */
     awl_draw_t *drw;
@@ -294,6 +301,8 @@ typedef struct {
     const Layout *lt;
     enum wl_output_transform rr;
     int x, y;
+    /** whether each tag gets its own layout (see togglepertag); 0 if left out */
+    int pertag;
 } MonitorRule;
 
 typedef struct {

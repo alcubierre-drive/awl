@@ -109,6 +109,8 @@ struct awl_draw_t {
     int ntags;
     /** nonzero on the bar of the selected monitor, -1 if only one monitor exists */
     int selmon;
+    /** nonzero if the monitor gives each tag its own layout (Monitor.pertag) */
+    int pertag;
 
     Monitor* m;
 };
