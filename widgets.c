@@ -268,7 +268,7 @@ static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     /* each tag has its own layout: a red frame around the symbol */
     if (w->bar->pertag) {
         int hh = w->bar->m->b.height;
-        int t = hh / 16;
+        int t = hh / 8;
         if (t < 1) t = 1;
         pixman_color_t c = color_8bit_to_16bit( molokai_red );
         pixman_rectangle16_t rects[] = {

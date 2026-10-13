@@ -224,7 +224,7 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_m,          maximize,         {0} },
     { MODKEY,                    XKB_KEY_space,      cycle_layout,     {.i = +1} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,      cycle_layout,     {.i = -1} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_space,      togglepertag,     {0} },
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_space,togglepertag,{0} },
     { MODKEY,                    XKB_KEY_Right,      cycle_view,       {.i = +1} },
     { MODKEY,                    XKB_KEY_Left,       cycle_view,       {.i = -1} },
     { MODKEY,                    XKB_KEY_f,          togglefullscreen, {0} },
