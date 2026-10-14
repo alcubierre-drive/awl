@@ -9,7 +9,7 @@
  * go through ``awl_host->log``.
  *
  * Plain C types only (awl's own structs are opaque here), so the C++ tray
- * includes it too. awl fills the table in plugin_host.c; changing it is an
+ * includes it too. awl fills the table in awl_plugin_host.c; changing it is an
  * ABI change of the plugin library (`AWL_PLUGIN_ABI`).
  */
 

@@ -11,7 +11,7 @@ awl_draw_t * awl_draw_create(Monitor* m) {
     if (!(drw = calloc(1, sizeof(awl_draw_t))))
         return NULL;
     drw->m = m;
-    /* the widgets come from libawlplugins.so, see plugin_host.h */
+    /* the widgets come from libawlplugins.so, see awl_plugin_host.h */
     return drw;
 }
 

@@ -6,11 +6,11 @@
  * every monitor. This side only places the panels and owns their buffers;
  * what's in them -- the file list, its scanner thread (all file system access
  * is there, so a hung mount can't block the compositor), the layout, the look
- * and what clicks do -- is desktop_panel.c in ``libawlplugins.so``, so it
- * reloads with the plugins. Without the library, no panel. Main thread only.
+ * and what clicks do -- is plugins_desktop_panel.c in ``libawlplugins.so``,
+ * so it reloads with the plugins. Without the library, no panel. Main thread only.
  *
  * The panels live in their own scene tree right above ``LyrBg``, so they
- * cover the wallpaper (background.h) and background layer surfaces but
+ * cover the wallpaper (awl_background.h) and background layer surfaces but
  * nothing else, and they're not part of ``layers[]``, so ``xytonode()`` and
  * clicks go right through them.
  */

@@ -3,23 +3,23 @@ The desktop panel
 
 The list of the files in ``desktop_dir`` (a config dictionary key,
 ``$HOME/Desktop`` by default) over the wallpaper. awl places the
-panels and owns their buffers (desktop.c), the library scans the directory
-and draws the list (desktop_panel.c).
+panels and owns their buffers (awl_desktop.c), the library scans the directory
+and draws the list (plugins_desktop_panel.c).
 
-desktop.h
----------
+awl_desktop.h
+-------------
 
-.. c:autodoc:: desktop.h
+.. c:autodoc:: awl_desktop.h
 
-desktop.c
-^^^^^^^^^
+awl_desktop.c
+^^^^^^^^^^^^^
 
-.. c:autodoc:: desktop.c
+.. c:autodoc:: awl_desktop.c
 
-desktop_panel.c
----------------
+plugins_desktop_panel.c
+-----------------------
 
-.. c:autodoc:: desktop_panel.c
+.. c:autodoc:: plugins_desktop_panel.c
 
 plugins/readdir.h
 -----------------

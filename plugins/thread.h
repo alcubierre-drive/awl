@@ -1,8 +1,8 @@
 #pragma once
 
 /**
- * The plugin threads (poller.c's event loop, desktop_panel.c's scanner,
- * wallpaper.c's decoder) all start and stop the same way: the thread sleeps
+ * The plugin threads (poller.c's event loop, plugins_desktop_panel.c's
+ * scanner, wallpaper.c's decoder) all start and stop the same way: the thread sleeps
  * in ``poll()`` on, among others, ``wake_fd``; `awl_thread_stop()` sets
  * ``quit`` and makes ``wake_fd`` readable, the thread notices in
  * `awl_thread_woken()` and returns. No thread is ever cancelled.

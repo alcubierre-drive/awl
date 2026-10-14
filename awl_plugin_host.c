@@ -1,7 +1,7 @@
 /* memfd_create() */
 #define _GNU_SOURCE
 
-#include "plugin_host.h"
+#include "awl_plugin_host.h"
 #include "awl_plugin_abi.h"
 #include "awl_dict.h"
 #include "awl_lock.h"

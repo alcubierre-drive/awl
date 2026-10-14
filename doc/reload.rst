@@ -15,8 +15,8 @@ What a reload picks up
 
    * - Reloads with the library
      - Needs a restart of awl
-   * - widgets.c, desktop_panel.c, plugins.c, plugins/
-     - awl.c, awl_draw.c, awl_redraw.c, awl_lock.c, awl_alert.c, desktop.c, background.c, plugin_host.c, the tray
+   * - plugins_widgets.c, plugins_desktop_panel.c, plugins.c, plugins/
+     - awl.c, awl_draw.c, awl_redraw.c, awl_lock.c, awl_alert.c, awl_desktop.c, awl_background.c, awl_plugin_host.c, the tray
    * - config_plugins.h: keys, buttons, rules, layouts,
        colors, font, borders, blur, input devices, keymap, tray and
        wallpaper settings
@@ -68,7 +68,7 @@ As a sequence, with the library's threads in it:
    sequenceDiagram
      participant K as key binding
      participant D as awl main thread
-     participant H as plugin_host.c
+     participant H as awl_plugin_host.c
      participant O as old library
      participant N as new library
      K->>D: plugin_restart()
@@ -139,7 +139,7 @@ The config split
 ----------------
 
 awl.c includes config_awl.h, and config_plugins.def.h as the fallback for
-while no library is loaded. awl_config.c includes config_plugins.h and turns
+while no library is loaded. plugins_config.c includes config_plugins.h and turns
 it into an `awl_config_t` with `AWL_CONFIG_TABLE`; awl.c does the same with
 config_plugins.def.h. Only the library ever sees config_plugins.h.
 
@@ -147,7 +147,7 @@ The functions config_plugins.h binds keys to are awl's; in the library, they
 are same-named wrappers that call awl through `awl_host_t.actions`, so the
 file reads like a dwl config.h. A function it binds has to be listed in
 `AWL_ACTIONS` (or `AWL_ARRANGES` for layouts), or be one of the library's own
-actions, which awl_config.c defines next to the wrappers (``notifyconfig``,
+actions, which plugins_config.c defines next to the wrappers (``notifyconfig``,
 ``backlighttoggle``). The wrappers and those actions aren't static, so any
 of them may stay unbound without a warning, and the library exports none of
 them. config_plugins.def.h, which awl itself is built with, can bind only
@@ -161,6 +161,6 @@ struct both sides read:
 
 #. Change the table in awl_host.h or awl_plugin_abi.h and bump
    `AWL_PLUGIN_ABI`.
-#. Fill in the new entry: in plugin_host.c for the host table (awl.c for
+#. Fill in the new entry: in awl_plugin_host.c for the host table (awl.c for
    `AWL_ACTIONS`), in plugins.c for the library's.
 #. Rebuild and restart awl: the running one would refuse the new library.

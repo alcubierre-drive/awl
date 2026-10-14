@@ -25,7 +25,7 @@ The threads
        temperature and clock once per second; battery and IP address on
        kernel events; volume and the backlight-tooler daemon on their own events
    * - ``desktop``
-     - desktop_panel.c
+     - plugins_desktop_panel.c
      - watches ``desktop_dir`` with inotify and lists it
    * - ``wallpaper``
      - plugins/wallpaper.c

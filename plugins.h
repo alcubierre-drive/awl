@@ -50,24 +50,24 @@ void awl_backlight_toggle( void );
  * end on is shown; main thread */
 void awl_notify_wallpaper_shown( const char* title );
 
-/** widgets.c: `awl_plugin_api_t.bar_widgets` */
+/** plugins_widgets.c: `awl_plugin_api_t.bar_widgets` */
 void awl_widgets_create( awl_draw_t* bar );
 
-/** desktop_panel.c: starts the scanner thread */
+/** plugins_desktop_panel.c: starts the scanner thread */
 void awl_desktop_start( void );
-/** desktop_panel.c: stops the scanner thread; returns nonzero if it had to
- * be left running */
+/** plugins_desktop_panel.c: stops the scanner thread; returns nonzero if it
+ * had to be left running */
 int awl_desktop_stop( void );
-/** desktop_panel.c: `awl_plugin_api_t.desktop_version` */
+/** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_version` */
 uint64_t awl_desktop_version( void );
-/** desktop_panel.c: `awl_plugin_api_t.desktop_measure` */
+/** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_measure` */
 void awl_desktop_measure( awl_draw_t* drw, int avail_w, int avail_h, int r, float scale,
                           int* x, int* y, int* w, int* h );
-/** desktop_panel.c: `awl_plugin_api_t.desktop_draw` */
+/** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_draw` */
 void awl_desktop_draw( awl_draw_t* drw, uint32_t* data, int stride, int w, int h, int r,
                        float scale );
-/** desktop_panel.c: `awl_plugin_api_t.desktop_click` */
+/** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_click` */
 int awl_desktop_click( int button, uint32_t mods );
 
-/** awl_config.c: `awl_plugin_api_t.config` */
+/** plugins_config.c: `awl_plugin_api_t.config` */
 const awl_config_t* awl_config( void );

@@ -8,7 +8,7 @@
 
 #include "awl_log.h"
 
-#include "util.h"
+#include "awl_util.h"
 
 void
 die(const char *fmt, ...) {

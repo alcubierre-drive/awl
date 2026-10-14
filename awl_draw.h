@@ -21,7 +21,7 @@ typedef struct Client Client;
 /**
  * A part of the bar: the tags, the layout symbol, the task bar, the clock,
  * the graphs... Each bar has its own, made by `awl_plugin_api_t.bar_widgets`
- * (widgets.c); everything but `bar` and `width` is the library's.
+ * (plugins_widgets.c); everything but `bar` and `width` is the library's.
  */
 struct widget_t {
     /** what the last draw used, set by awl */

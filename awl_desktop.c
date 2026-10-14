@@ -1,8 +1,8 @@
-#include "desktop.h"
+#include "awl_desktop.h"
 #include "awl_draw.h"
-#include "util.h"
+#include "awl_util.h"
 #include "awl_plugin_abi.h"
-#include "plugin_host.h"
+#include "awl_plugin_host.h"
 
 /** everything a panel's pixels depend on; zeroed before filling, so the
  * padding compares equal too */

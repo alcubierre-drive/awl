@@ -1,5 +1,5 @@
-#include "background.h"
-#include "util.h"
+#include "awl_background.h"
+#include "awl_util.h"
 
 #include <drm_fourcc.h>
 #include <stdlib.h>

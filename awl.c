@@ -1,12 +1,12 @@
 #include "awl.h"
 #include "awl_log.h"
-#include "util.h"
+#include "awl_util.h"
 #include "awl_draw.h"
 #include "awl_dict.h"
-#include "plugin_host.h"
+#include "awl_plugin_host.h"
 #include "awl_plugin_abi.h"
-#include "background.h"
-#include "desktop.h"
+#include "awl_background.h"
+#include "awl_desktop.h"
 #include "plugins/colors.h" /* config_plugins.h */
 #include "awl_redraw.h"
 #include "awl_lock.h"
@@ -366,7 +366,7 @@ static struct wlr_xwayland *xwayland;
 #include "config_plugins.def.h"
 
 /* attempt to encapsulate suck into one file */
-#include "client.h"
+#include "awl_client.h"
 
 #ifdef SCENEFX_HAS_SHATTER
 #define AWL_wlr_scene_blur_set_shatter(blur, shatter) \
@@ -462,8 +462,8 @@ static void cfgdict_defaults(awl_dict_t* cfgdict)
     applied.wallpaper_mode = cfg->wallpaper->mode;
 
     /* "desktop_file_mode": what the desktop panels list, "off", "on" or
-     * "all" (hidden files too); desktop_panel.c keeps it current and, like
-     * "wallpaper_mode", saved */
+     * "all" (hidden files too); plugins_desktop_panel.c keeps it current
+     * and, like "wallpaper_mode", saved */
     awl_dict_set(cfgdict, "desktop_file_mode", &AWL_DICT_STR("on"));
 
     /* "lock_on_suspend": config_awl.h's, for plugins/logind.c */
@@ -4092,11 +4092,11 @@ setup(void)
     }
     drag_icon = wlr_scene_tree_create(&scene->tree);
     wlr_scene_node_place_below(&drag_icon->node, &layers[LyrBlock]->node);
-    /* the wallpaper, under background layer surfaces (see background.h) */
+    /* the wallpaper, under background layer surfaces (see awl_background.h) */
     background_tree = wlr_scene_tree_create(&scene->tree);
     wlr_scene_node_place_below(&background_tree->node, &layers[LyrBg]->node);
     background_init(background_tree, event_loop);
-    /* the desktop_dir panels, over the wallpaper (see desktop.h) */
+    /* the desktop_dir panels, over the wallpaper (see awl_desktop.h) */
     desktop_tree = wlr_scene_tree_create(&scene->tree);
     wlr_scene_node_place_above(&desktop_tree->node, &layers[LyrBg]->node);
     desktop_init(desktop_tree, &(desktop_config_t){

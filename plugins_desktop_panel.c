@@ -1,6 +1,6 @@
 /** The desktop file list's content: which files, how they look, what clicks
- * do. awl's desktop.c owns the panels' buffers and scene nodes and asks for
- * the pixels through awl_plugin_api_t (see awl_plugin_abi.h). */
+ * do. awl_desktop.c owns the panels' buffers and scene nodes and asks for the
+ * pixels through awl_plugin_api_t (see awl_plugin_abi.h). */
 
 #include "plugins.h"
 #include "plugins/colors.h"

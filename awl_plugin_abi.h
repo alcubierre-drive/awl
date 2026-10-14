@@ -3,9 +3,10 @@
 /**
  * The boundary between awl and ``libawlplugins.so``, the live-reloadable part
  * of awl: the plugin threads (plugins.c, plugins/), the bar widgets
- * (widgets.c), the desktop file list (desktop_panel.c; awl's desktop.c only
- * places it), picking and decoding the wallpaper (plugins/wallpaper.c; awl's
- * background.c shows it) and config_plugins.h (awl_config.c).
+ * (plugins_widgets.c), the desktop file list (plugins_desktop_panel.c;
+ * awl_desktop.c only places it), picking and decoding the wallpaper
+ * (plugins/wallpaper.c; awl_background.c shows it) and config_plugins.h
+ * (plugins_config.c).
  * awl loads the library with ``dlopen()`` and looks up a single symbol,
  * `AWL_PLUGIN_ENTRY`; everything else goes through two tables, `awl_host_t`
  * (awl_host.h) and `awl_plugin_api_t` below, so the library has no unresolved
@@ -34,7 +35,7 @@
 /**
  * Every awl function config_plugins.h can bind to a key or button, as an X macro.
  * The library binds them through same-named wrappers around
- * `awl_host_t.actions` (awl_config.c).
+ * `awl_host_t.actions` (plugins_config.c).
  */
 #define AWL_ACTIONS( X ) \
     X( changebw ) X( chvt ) X( cycle_layout ) X( cycle_view ) X( focusmon ) \

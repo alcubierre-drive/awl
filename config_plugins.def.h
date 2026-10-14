@@ -177,7 +177,7 @@ static const char *termcmd[] = { "foot", NULL };
 static const char *menucmd[] = { "wmenu-run", NULL };
 
 /* the functions keys and buttons can call are listed in AWL_ACTIONS
- * (awl_plugin_abi.h), plus the library's own in awl_config.c, like
+ * (awl_plugin_abi.h), plus the library's own in plugins_config.c, like
  * notifyconfig; config_plugins.h may define more, like this one. awl itself
  * is built with this file, so it binds only AWL_ACTIONS. */
 static void tagmonf( const Arg* arg ) { tagmon(arg); focusmon(arg); }

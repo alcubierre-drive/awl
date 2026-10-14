@@ -14,15 +14,15 @@ awl_host.h
 
 .. c:autodoc:: awl_host.h
 
-plugin_host.h
--------------
+awl_plugin_host.h
+-----------------
 
-.. c:autodoc:: plugin_host.h
+.. c:autodoc:: awl_plugin_host.h
 
-plugin_host.c
-^^^^^^^^^^^^^
+awl_plugin_host.c
+^^^^^^^^^^^^^^^^^
 
-.. c:autodoc:: plugin_host.c
+.. c:autodoc:: awl_plugin_host.c
 
 plugins.h
 ---------
@@ -34,7 +34,7 @@ plugins.c
 
 .. c:autodoc:: plugins.c
 
-awl_config.c
-------------
+plugins_config.c
+----------------
 
-.. c:autodoc:: awl_config.c
+.. c:autodoc:: plugins_config.c

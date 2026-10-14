@@ -35,21 +35,21 @@ What lives where
      - libawlplugins.so
    * - Bar
      - buffers, layout, pointer events, hover timers (awl.c, awl_draw.c)
-     - the widgets: what they show and what clicks do (widgets.c)
+     - the widgets: what they show and what clicks do (plugins_widgets.c)
    * - Status data
      - polls the redraw eventfd (awl_redraw.c)
      - the plugins, on the poller thread (plugins/)
    * - Wallpaper
-     - shows it, scaled to cover, and fades (background.c); the timer and
+     - shows it, scaled to cover, and fades (awl_background.c); the timer and
        the ``wallpaper``/``wallpapermode`` actions (awl.c)
      - lists the directory, picks and decodes (plugins/wallpaper.c, Wuffs)
    * - Desktop panel
-     - scene nodes, buffers, placement (desktop.c)
+     - scene nodes, buffers, placement (awl_desktop.c)
      - scans ``desktop_dir``, lays out and draws the list, handles
-       clicks on the bare desktop (desktop_panel.c)
+       clicks on the bare desktop (plugins_desktop_panel.c)
    * - Config
      - config_awl.h, and config_plugins.def.h as a fallback
-     - config_plugins.h (awl_config.c)
+     - config_plugins.h (plugins_config.c)
    * - Notifications
      - alerts (awl_alert.c)
      - spawns ``notify-send`` (plugins.c)
