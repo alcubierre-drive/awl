@@ -187,6 +187,7 @@ static const Key keys[] = {
     /* modifier                  key                 function          argument */
     { MODKEY,                    XKB_KEY_p,          spawn,            {.v = menucmd} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Return,     spawn,            {.v = termcmd} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_G,          lockscreen,       {0} },
     { MODKEY,                    XKB_KEY_w,          wallpaper,        {.i = WallpaperTimerNext} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_W,          wallpaper,        {.i = WallpaperTimerBack} },
     { MODKEY,                    XKB_KEY_b,          togglebar,        {0} },

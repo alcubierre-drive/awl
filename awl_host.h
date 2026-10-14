@@ -29,10 +29,20 @@ typedef struct Client Client;
 typedef struct awl_actions_t awl_actions_t;
 typedef struct awl_arranges_t awl_arranges_t;
 
+/** what the plugins' logind thread (plugins/logind.h) listens for, as it
+ * tells `awl_host_t.logind_state` */
+typedef enum awl_logind_flags {
+    /** our session's ``Lock`` signal (``loginctl lock-session``) */
+    AWL_LOGIND_LOCK = 1,
+    /** ``PrepareForSleep``, with a delay inhibitor held, so suspend waits
+     * for the lock; only with config_awl.h's lock_on_suspend */
+    AWL_LOGIND_SLEEP = 2,
+} awl_logind_flags_t;
+
 /**
  * What awl provides to libawlplugins.so and libawltray.so. All functions are
- * main-thread only, except `redraw_request`, `log` and `cfg`'s, which any
- * thread may call (the tray, on its GTK thread, uses only those).
+ * main-thread only, except `redraw_request`, `log`, `lock_request`,
+ * `logind_state` and `cfg`'s, which any thread may call (the tray, on its GTK thread, uses only those).
  */
 typedef struct awl_host_t {
     /** `AWL_PLUGIN_ABI` as awl was built */
@@ -47,6 +57,13 @@ typedef struct awl_host_t {
      * expand to it */
     void (*log)( awl_loglevel_t loglevel, const char* fmt, ... )
         __attribute__(( format( printf, 2, 3 ) ));
+    /** `awl_lock_request()`: lock the screen (config_awl.h's locker),
+     * unless it is or is about to be */
+    void (*lock_request)( void );
+    /** `awl_lock_logind_state()`: what the logind thread listens for now,
+     * `awl_logind_flags` or'ed (0 when it stops); awl raises an alert while
+     * that's less than it needs */
+    void (*logind_state)( unsigned flags );
 
     /** drawing: `awl_draw_text_color2()` */
     int (*text)( awl_draw_t* drw, int x, int y, unsigned int w, unsigned int h,

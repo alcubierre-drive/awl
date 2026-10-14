@@ -4,6 +4,7 @@
 #include "plugin_host.h"
 #include "awl_plugin_abi.h"
 #include "awl_dict.h"
+#include "awl_lock.h"
 #include "awl_redraw.h"
 #include "tray/awl_tray.h"
 
@@ -27,6 +28,8 @@ static awl_host_t host = {
 
     .redraw_request = awl_redraw_request,
     .log = awl_dbg_printf,
+    .lock_request = awl_lock_request,
+    .logind_state = awl_lock_logind_state,
 
     .text = awl_draw_text_color2,
     .font_getwidth = awl_draw_font_getwidth,
@@ -65,6 +68,7 @@ static void* handle = NULL;
 static int handle_fd = -1;
 static const awl_plugin_api_t* api = NULL;
 static int paused = 0;
+static int covered = 0;
 
 /** $AWL_PLUGINS, or libawlplugins.so next to the awl binary */
 static int libpath( char* out, size_t n ) {
@@ -150,6 +154,7 @@ int awl_plugins_load( int p, awl_dict_t* cfg ) {
     if (!(api = libopen( &handle, &handle_fd )))
         return -1;
     api->init( paused );
+    api->session_covered( covered );
     return 0;
 }
 
@@ -179,7 +184,10 @@ int awl_plugins_reload( void (*detach)( void ), void (*attach)( void ) ) {
     } else if (api) {
         api->fini(); // restart in place; a stuck thread stays stuck either way
     }
-    if (api) api->init( paused );
+    if (api) {
+        api->init( paused );
+        api->session_covered( covered );
+    }
     attach();
     return next ? 0 : -1;
 }
@@ -195,6 +203,11 @@ void awl_plugins_unload( void ) {
 void awl_plugins_set_paused( int p ) {
     paused = p;
     if (api) api->set_paused( paused );
+}
+
+void awl_plugins_set_covered( int c ) {
+    covered = c;
+    if (api) api->session_covered( covered );
 }
 
 void awl_plugins_bar_widgets( awl_draw_t* bar ) {

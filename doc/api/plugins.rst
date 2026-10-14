@@ -24,6 +24,11 @@ plugins/poller.c
 
 .. c:autodoc:: plugins/poller.c
 
+plugins/logind.h
+^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/logind.h
+
 Persistent state
 ----------------
 

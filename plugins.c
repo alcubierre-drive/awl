@@ -8,6 +8,7 @@
 #include "plugins/pulsetest.h"
 #include "plugins/poller.h"
 #include "plugins/persistent.h"
+#include "plugins/logind.h"
 #include "plugins_git.h"
 
 #include <stddef.h>
@@ -103,6 +104,8 @@ static void api_init( int paused ) {
     plugin_data->paused = paused;
     /* plugins/persistent.h's file: $XDG_STATE_HOME/awl/persistent */
     AWL_HOST_CFG_SET( awl_host, AWL_PERSISTENT_KEY, AWL_DICT_STR( "awl/persistent" ) );
+    /* first: the lock before suspend matters more than anything below */
+    awl_logind_start();
     awl_plugin_start( plugin_data );
     awl_desktop_start();
     awl_wallpaper_start();
@@ -112,6 +115,7 @@ static int api_fini( void ) {
     if (!plugin_data) return 0;
     int stuck = awl_desktop_stop();
     stuck |= awl_wallpaper_stop();
+    stuck |= awl_logind_stop();
     awl_plugin_stop( plugin_data );
     free( plugin_data );
     plugin_data = NULL;
@@ -283,6 +287,7 @@ static const awl_plugin_api_t api = {
     .wallpaper = api_wallpaper,
     .wallpaper_take = api_wallpaper_take,
     .wallpaper_mode = api_wallpaper_mode,
+    .session_covered = awl_logind_covered,
     .config = awl_config,
 };
 

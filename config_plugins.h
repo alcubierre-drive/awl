@@ -176,12 +176,8 @@ static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TA
     { MODKEY|WLR_MODIFIER_SHIFT, SKEY,           tag,             {.ui = 1ul << TAG} }, \
     { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,toggletag, {.ui = 1ul << TAG} }
 
-/* helper for spawning shell commands in the pre dwm-5.0 fashion */
-#define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
-
 /* commands */
 static const char *termcmd[] = { "kitty", "-d", "$HOME", NULL };
-/* static const char *termcmd[] = { "xfce4-terminal", "--working-directory=$HOME", NULL }; */
 static const char *menucmd[] = { "fuzzel", NULL };
 static const char *hyprcopy[] = { "hyprcopy", NULL };
 static const char *brightp[] = { "backlight-tooler", "-v5", NULL };
@@ -193,8 +189,6 @@ static const char *volT[] = { "pactl", "set-source-mute", "@DEFAULT_SOURCE@", "t
 static const char *speakerT[] = { "pulse_port_switch", NULL };
 static const char *grimslurp[] = { "grim_slurp", NULL };
 static const char *wdisplays[] = { "wdisplays", NULL };
-// static const char *swaylock[] = { "hyprlock", NULL };
-static const char* swaylock[] = { "swaylock", "-c", "00000000", "-p", NULL };
 static const char *docked_r[] = { "docked", "reset", NULL };
 static const char *docked_d[] = { "docked", "dock", NULL };
 static const char *docked_z[] = { "docked", "zoom", NULL };
@@ -242,19 +236,19 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_n,          minimize,         {0} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_n,          unminimize,       {0} },
     { MODKEY,                    XKB_KEY_c,          spawn,            {.v = hyprcopy} },
-    { 0, XKB_KEY_XF86MonBrightnessUp,  spawn, {.v=brightp} },
-    { 0, XKB_KEY_XF86MonBrightnessDown,spawn, {.v=brightm} },
-    { 0, XKB_KEY_XF86AudioRaiseVolume, spawn, {.v=volp} },
-    { 0, XKB_KEY_XF86AudioLowerVolume, spawn, {.v=volm} },
-    { 0, XKB_KEY_XF86AudioMute,        spawn, {.v=volt} },
-    { 0, XKB_KEY_XF86AudioMicMute,     spawn, {.v=volT} },
+    { 0, XKB_KEY_XF86MonBrightnessUp,                spawn,            {.v=brightp} },
+    { 0, XKB_KEY_XF86MonBrightnessDown,              spawn,            {.v=brightm} },
+    { 0, XKB_KEY_XF86AudioRaiseVolume,               spawn,            {.v=volp} },
+    { 0, XKB_KEY_XF86AudioLowerVolume,               spawn,            {.v=volm} },
+    { 0, XKB_KEY_XF86AudioMute,                      spawn,            {.v=volt} },
+    { 0, XKB_KEY_XF86AudioMicMute,                   spawn,            {.v=volT} },
     { MODKEY,                    XKB_KEY_F1,         spawn,            {.v = speakerT} },
-    { 0, XKB_KEY_Print,                spawn, {.v=grimslurp} },
-    { MODKEY, XKB_KEY_d,               spawn, {.v=wdisplays} },
-    { 0, XKB_KEY_XF86Display,          spawn, {.v=wdisplays} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_G, spawn, {.v=swaylock} },
-    { MODKEY|WLR_MODIFIER_CTRL,                     XKB_KEY_z, transluce, {.i=+1} },
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,  XKB_KEY_Z, transluce, {.i=-1} },
+    { 0,                         XKB_KEY_Print,      spawn,            {.v=grimslurp} },
+    { MODKEY,                    XKB_KEY_d,          spawn,            {.v=wdisplays} },
+    { 0,                         XKB_KEY_XF86Display,spawn,            {.v=wdisplays} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_G,          lockscreen,       {0} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_z,          transluce,        {.i=+1} },
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_Z,transluce, {.i=-1} },
 
     { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_D, spawn,   {.v=docked_r} },
     { MODKEY|WLR_MODIFIER_CTRL,     XKB_KEY_d,         spawn,         {.v=docked_d} },

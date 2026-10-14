@@ -12,6 +12,9 @@ its own:
 - a panel listing the files in `~/Desktop`
 - blur and rounded corners for layer surfaces (scenefx)
 - desktop notifications for its own events
+- screen locking with an ext-session-lock client (swaylock by default) on
+  `loginctl lock-session` and before suspend, which waits for the lock; a red
+  alert on screen if that stops working
 
 Most of that lives in `libawlplugins.so`, which a running awl rebuilds and
 reloads without a restart.
@@ -41,6 +44,12 @@ The configuration is in two files:
 - config_plugins.h is built into `libawlplugins.so` too, so `make` followed by
   `plugin_restart` (MOD+Ctrl+r) applies it to the running awl
 
+config_awl.h has the screen locker: `locker`, the ext-session-lock client to
+run, `lock_at_start`, and `lock_on_suspend`, which makes suspend wait until
+the locker covers every output (through a logind delay inhibitor). With
+that, no separate lock handler (`xss-lock`, a `sleep.target` unit calling
+`loginctl lock-session`) is needed; `loginctl lock-session` still works.
+
 config_plugins.h covers keys, buttons, rules, layouts, colors, font, borders,
 blur, input devices, the keymap, and the tray and wallpaper settings.
 
@@ -57,7 +66,8 @@ logind with polkit, or from seatd. To start it from a display
 manager, copy `awl.desktop` to `/usr/share/wayland-sessions/`.
 
 `test/live.sh` runs a headless instance for testing, see the comment at its
-top.
+top. It keeps the instance off the real system bus; `test/live-nm.sh` does the
+same but lets it read NetworkManager through `xdg-dbus-proxy`.
 
 ## Documentation
 

@@ -9,6 +9,8 @@
 #include "desktop.h"
 #include "plugins/colors.h" /* config_plugins.h */
 #include "awl_redraw.h"
+#include "awl_lock.h"
+#include "awl_alert.h"
 #include "tray/awl_tray.h"
 #include <limits.h>
 #include <wlr/backend/headless.h>
@@ -83,11 +85,38 @@ static void destroykeyboardgroup(struct wl_listener *listener, void *data);
 static Monitor *nextmon(int add);
 static void drawbar(Monitor *m);
 static void drawbars(void);
+static void drawalert(Monitor *m);
+static void drawalerts(void);
+static bool alert_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy);
 static Buffer *barbuffer(Monitor *m);
 static Buffer *newbarbuffer(Monitor *m);
 static int bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *damage);
 
 static void wallpapertake(void);
+
+/* the screen lock, see lockscreen(): lock requests and the logind thread's
+ * state come in through awl_lock.h's eventfd */
+static struct wl_event_source *lock_source = NULL;
+/** the logind alert's grace period, see logindupdate() */
+static struct wl_event_source *logind_timer = NULL;
+/** the most a lock waits for its first frame on every output */
+static struct wl_event_source *covered_timer = NULL;
+/** the locker lockscreen() started, until it exits; 0 if none */
+static pid_t locker_pid = 0;
+/** it has locked the session at least once */
+static int locker_locked = 0;
+/** what the logind thread last said it listens for, awl_logind_flags */
+static unsigned logind_flags = 0;
+/** it doesn't listen for all it should; the grace period runs since then */
+static int logind_missing = 1;
+/** a lock waits for each output to show it, see lockcovered() */
+static int covered_pending = 0;
+static int lockfire(int fd, uint32_t mask, void *data);
+static int logindtimeout(void *data);
+static int coveredtimeout(void *data);
+static void lockcovered(void);
+static void logindupdate(void);
+void awl_alert_notify(const char *text);
 
 /** bars are redrawn on demand: see awl_redraw.h */
 static struct wl_event_source* redraw_source = NULL;
@@ -97,6 +126,7 @@ static int redraw_fire( int fd, uint32_t mask, void* data ) {
     drawbars();
     desktop_update_all();
     wallpapertake();
+    drawalerts();
     return 0;
 }
 
@@ -118,6 +148,7 @@ static void keypress(struct wl_listener *listener, void *data);
 static void keypressmod(struct wl_listener *listener, void *data);
 static int keyrepeat(void *data);
 static void killclient(const Arg *arg);
+static void lockscreen(const Arg *arg);
 static void locksession(struct wl_listener *listener, void *data);
 static void mapnotify(struct wl_listener *listener, void *data);
 static void maximizenotify(struct wl_listener *listener, void *data);
@@ -203,6 +234,16 @@ static void view(const Arg *arg);
 /** how long awl waits on exit for the tray thread and for its children */
 #define TRAY_STOP_MS 5000
 #define CHILD_STOP_MS 3000
+/** how long the logind thread may not listen before the alert goes up
+ * (logindupdate()), and the most a lock waits to cover every output
+ * (lockcovered()) */
+#define LOGIND_GRACE_MS 10000
+#define LOCK_COVER_MS 2000
+/** the alert (drawalert()): its font size relative to the bar's, its
+ * distance from the bottom left corner in logical pixels, its opacity */
+#define ALERT_FONT_SCALE 1.5
+#define ALERT_MARGIN 12
+#define ALERT_ALPHA 0.9f
 
 /* variables */
 static pid_t child_pid = -1;
@@ -253,6 +294,8 @@ static struct wlr_cursor *cursor;
 static struct wlr_xcursor_manager *cursor_mgr;
 
 static struct wlr_scene_rect *root_bg;
+/** the alerts' tree, the topmost one: see drawalert() */
+static struct wlr_scene_tree *alert_tree;
 static struct wlr_session_lock_manager_v1 *session_lock_mgr;
 static struct wlr_scene_blur *locked_bg_blur = NULL;
 static struct wlr_session_lock_v1 *cur_lock;
@@ -422,6 +465,9 @@ static void cfgdict_defaults(awl_dict_t* cfgdict)
      * "all" (hidden files too); desktop_panel.c keeps it current and, like
      * "wallpaper_mode", saved */
     awl_dict_set(cfgdict, "desktop_file_mode", &AWL_DICT_STR("on"));
+
+    /* "lock_on_suspend": config_awl.h's, for plugins/logind.c */
+    awl_dict_set(cfgdict, "lock_on_suspend", &AWL_DICT_NUM(lock_on_suspend));
 }
 
 static const awl_config_t *
@@ -629,6 +675,7 @@ arrangelayers(Monitor *m)
 
     desktop_update(m);
     background_update(m);
+    drawalert(m);
 
     /* Find topmost keyboard interactive layer, if such a layer exists */
     for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
@@ -1222,6 +1269,10 @@ cleanup(void)
     sigset_t quitsigs;
 
     if (redraw_source) wl_event_source_remove(redraw_source);
+    if (lock_source) wl_event_source_remove(lock_source);
+    if (logind_timer) wl_event_source_remove(logind_timer);
+    if (covered_timer) wl_event_source_remove(covered_timer);
+    lock_source = logind_timer = covered_timer = NULL;
     if (hover_timer) {
         wl_event_source_remove(hover_timer);
         hover_timer = NULL;
@@ -1308,8 +1359,9 @@ cleanup(void)
     awl_plugins_unload();
     awl_dict_destroy(cfgdict);
     cfgdict = NULL;
-    /* only now nothing can request a redraw anymore */
+    /* only now nothing can request a redraw or a lock anymore */
     awl_redraw_fini();
+    awl_lock_fini();
 }
 
 void
@@ -1363,6 +1415,7 @@ cleanupmon(struct wl_listener *listener, void *data)
     wlr_scene_node_destroy(&m->scene_buffer->node);
     desktop_removemon(m);
     background_removemon(m);
+    wlr_scene_node_destroy(&m->alert->node);
     for (i = 0; i < LENGTH(m->bar_bufs); i++)
         if (m->bar_bufs[i])
             wlr_buffer_drop(&m->bar_bufs[i]->base);
@@ -1842,6 +1895,11 @@ createmon(struct wl_listener *listener, void *data)
     drawbar(m);
     desktop_addmon(m);
     background_addmon(m);
+    m->alert = wlr_scene_buffer_create(alert_tree, NULL);
+    m->alert->point_accepts_input = alert_accepts_input;
+    wlr_scene_buffer_set_opacity(m->alert, ALERT_ALPHA);
+    wlr_scene_node_set_enabled(&m->alert->node, 0);
+    m->alert_version = (unsigned int)-1;
 
     wl_list_insert(&mons, &m->link);
 
@@ -2067,6 +2125,11 @@ void
 destroylock(SessionLock *lock, int unlock)
 {
     wlr_seat_keyboard_notify_clear_focus(seat);
+    /* a crashed locker leaves the screen locked, but only under awl's blur:
+     * a suspend now waits for the next locker */
+    covered_pending = 0;
+    wl_event_source_timer_update(covered_timer, 0);
+    awl_plugins_set_covered(0);
     if ((locked = !unlock))
         goto destroy;
     locked_keystrokes = 0;
@@ -2289,6 +2352,92 @@ drawbar(Monitor *m)
     pixman_region32_fini(&damage);
     if (oneoff)
         wlr_buffer_drop(&buf->base);
+}
+
+void
+drawalerts(void)
+{
+    Monitor *m;
+    wl_list_for_each(m, &mons, link)
+        drawalert(m);
+}
+
+/** clicks go through the alert */
+static bool
+alert_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy)
+{
+    return false;
+}
+
+/** The alert (awl_alert.h) on m: white on red at ALERT_ALPHA, in the
+ * bar's font at ALERT_FONT_SCALE times its size, in the bottom left corner,
+ * ALERT_MARGIN logical pixels from the edges, above everything, the lock
+ * screen included. Redrawn only when the alert, m's area or its scale
+ * changed; called on every redraw request and whenever m is arranged. */
+void
+drawalert(Monitor *m)
+{
+    static const pixman_color_t fg = {0xffff, 0xffff, 0xffff, 0xffff},
+                                bg = {0xc000, 0x0000, 0x0000, 0xffff};
+    const char *text = awl_alert_text();
+    const float s = m->wlr_output->scale;
+    unsigned int version = awl_alert_version();
+    char font[128], attrs[16];
+    const char *pfont = font;
+    awl_draw_t *drw;
+    Buffer *buf;
+    int pad, w, h;
+
+    if (!m->alert) /* createmon() arranges before it makes it */
+        return;
+    if (m->alert_version == version && m->alert_scale == s
+            && wlr_box_equal(&m->alert_area, &m->m))
+        return;
+    m->alert_version = version;
+    m->alert_scale = s;
+    m->alert_area = m->m;
+    if (!text || !m->wlr_output->enabled || m->m.width <= 0 || !cfg->font) {
+        wlr_scene_node_set_enabled(&m->alert->node, 0);
+        return;
+    }
+
+    /* a font of its own, only while drawing: alerts are rare */
+    if (!(drw = awl_draw_create(m)))
+        return;
+    snprintf(attrs, sizeof(attrs), "dpi=%.2f", 96. * 2. * s);
+    snprintf(font, sizeof(font), "%s%.0f", cfg->font, cfg->fontsize * ALERT_FONT_SCALE * s);
+    if (!awl_draw_load_font(drw, 1, &pfont, attrs)) {
+        awl_draw_destroy(drw);
+        return;
+    }
+    pad = drw->font->height * 6 / 10;
+    h = drw->font->height + pad;
+    w = (int)awl_draw_font_getwidth(drw, text) + 2 * pad;
+    if (w > (int)(m->m.width * s) - 2 * (int)(ALERT_MARGIN * s))
+        w = (int)(m->m.width * s) - 2 * (int)(ALERT_MARGIN * s);
+    if (w <= 0) {
+        awl_draw_destroy(drw);
+        wlr_scene_node_set_enabled(&m->alert->node, 0);
+        return;
+    }
+
+    buf = ecalloc(1, sizeof(Buffer) + (size_t)awl_draw_stride(w) * h);
+    buf->stride = awl_draw_stride(w);
+    buf->w = w;
+    buf->h = h;
+    wlr_buffer_init(&buf->base, &buffer_impl, w, h);
+    awl_draw_prepare_drawing(drw, w, h, buf->data, buf->stride);
+    awl_draw_text_color2(drw, 0, 0, w, h, pad, text, fg, bg);
+    awl_draw_finish_drawing(drw);
+    awl_draw_destroy(drw);
+
+    wlr_scene_buffer_set_buffer(m->alert, &buf->base);
+    wlr_buffer_drop(&buf->base); /* the scene holds it now */
+    wlr_scene_buffer_set_dest_size(m->alert, (int)(w / s), (int)(h / s));
+    wlr_scene_node_set_position(&m->alert->node, m->m.x + ALERT_MARGIN,
+            m->m.y + m->m.height - ALERT_MARGIN - (int)(h / s));
+    wlr_scene_node_raise_to_top(&alert_tree->node);
+    wlr_scene_node_set_enabled(&m->alert->node, 1);
 }
 
 Buffer *
@@ -2624,6 +2773,11 @@ handlesigchld(int signo, void *data)
             break;
 #endif
         waitpid(in.si_pid, NULL, 0);
+        if (in.si_pid == locker_pid) {
+            locker_pid = 0;
+            if (!locker_locked)
+                awl_alert_set(AwlAlertLocker, "%s exited without locking", locker[0]);
+        }
     }
     return 0;
 }
@@ -2882,11 +3036,126 @@ killclient(const Arg *arg)
         client_send_close(sel);
 }
 
+/** A lock covers the screen once every enabled output has shown a frame
+ * with the locker's surface on it, or after LOCK_COVER_MS anyway (a locker
+ * that never draws, an output that doesn't render). The logind thread waits
+ * for that before it lets a suspend go ahead, so the last image before
+ * sleep, and the first after it, is the locker's. */
+void
+lockcovered(void)
+{
+    Monitor *m;
+    if (!covered_pending)
+        return;
+    wl_list_for_each(m, &mons, link)
+        if (m->wlr_output->enabled && !m->lock_shown)
+            return;
+    covered_pending = 0;
+    wl_event_source_timer_update(covered_timer, 0);
+    awl_plugins_set_covered(1);
+}
+
+int
+coveredtimeout(void *data)
+{
+    if (covered_pending)
+        awl_wrn_printf("lock: not drawn on every output after %d ms, covered anyway\n",
+                LOCK_COVER_MS);
+    covered_pending = 0;
+    awl_plugins_set_covered(1);
+    return 0;
+}
+
+/** awl_lock.h's eventfd: a lock request, a new logind thread state */
+int
+lockfire(int fd, uint32_t mask, void *data)
+{
+    unsigned flags;
+    if (awl_lock_take(&flags))
+        lockscreen(NULL);
+    if (flags != logind_flags) {
+        logind_flags = flags;
+        logindupdate();
+    }
+    return 0;
+}
+
+/** Starts config_awl.h's locker, unless a lock is in place (a locker holds
+ * it) or the one started last is still running and yet to lock. While
+ * locked without a lock (the locker crashed), a new locker takes over. */
+void
+lockscreen(const Arg *arg)
+{
+    pid_t pid;
+    if (cur_lock)
+        return;
+    if (locker_pid > 0) {
+        awl_log_printf("lock: %s (%d) is still starting\n", locker[0], (int)locker_pid);
+        return;
+    }
+    if ((pid = spawn_pid(&(Arg){.v = locker})) > 0) {
+        locker_pid = pid;
+        locker_locked = 0;
+    } else {
+        awl_alert_set(AwlAlertLocker, "can't start %s", locker[0]);
+    }
+}
+
+/** what the logind thread has to listen for */
+static unsigned
+logindneeded(void)
+{
+    return AWL_LOGIND_LOCK | (lock_on_suspend ? AWL_LOGIND_SLEEP : 0);
+}
+
+/** The logind alert: up once the logind thread hasn't listened for all of
+ * logindneeded() for LOGIND_GRACE_MS (it starts and reconnects within that,
+ * a plugin reload too), down as soon as it does. That covers a thread that
+ * never reports at all, e.g. without a plugin library. */
+void
+logindupdate(void)
+{
+    if (!(logindneeded() & ~logind_flags)) {
+        logind_missing = 0;
+        wl_event_source_timer_update(logind_timer, 0);
+        awl_alert_clear(AwlAlertLogind);
+    } else if (awl_alert_up(AwlAlertLogind)) {
+        logindtimeout(NULL); /* the text may change */
+    } else if (!logind_missing) {
+        /* only from when it stopped: a thread that keeps reconnecting and
+         * failing must not keep the alert down */
+        logind_missing = 1;
+        wl_event_source_timer_update(logind_timer, LOGIND_GRACE_MS);
+    }
+}
+
+int
+logindtimeout(void *data)
+{
+    unsigned missing = logindneeded() & ~logind_flags;
+    if (missing == (AWL_LOGIND_LOCK | AWL_LOGIND_SLEEP))
+        awl_alert_set(AwlAlertLogind, "Not listening to logind: NO LOCK ON SUSPEND");
+    else if (missing & AWL_LOGIND_SLEEP)
+        awl_alert_set(AwlAlertLogind, "logind: NO LOCK ON SUSPEND");
+    else if (missing)
+        awl_alert_set(AwlAlertLogind, "logind: loginctl lock-session does nothing");
+    return 0;
+}
+
+/** awl_alert.c's notification */
+void
+awl_alert_notify(const char *text)
+{
+    spawn(&(Arg){.v = (const char *[]){ "notify-send", "-a", "awl", "-u", "critical",
+            "awl alert", text, NULL }});
+}
+
 void
 locksession(struct wl_listener *listener, void *data)
 {
     struct wlr_session_lock_v1 *session_lock = data;
     SessionLock *lock;
+    Monitor *m;
     if (locked_bg_blur) {
         wlr_scene_node_set_enabled(&locked_bg_blur->node, 1);
         AWL_wlr_scene_blur_set_shatter(locked_bg_blur, 0.01);
@@ -2902,12 +3171,22 @@ locksession(struct wl_listener *listener, void *data)
     cur_lock = lock->lock = session_lock;
     locked = 1;
     updatepluginpause();
+    if (locker_pid > 0)
+        locker_locked = 1;
+    awl_alert_clear(AwlAlertLocker);
 
     LISTEN(&session_lock->events.new_surface, &lock->new_surface, createlocksurface);
     LISTEN(&session_lock->events.destroy, &lock->destroy, destroysessionlock);
     LISTEN(&session_lock->events.unlock, &lock->unlock, unlocksession);
 
     wlr_session_lock_v1_send_locked(session_lock);
+
+    /* covered once every output has shown a frame of it */
+    wl_list_for_each(m, &mons, link)
+        m->lock_shown = 0;
+    covered_pending = 1;
+    wl_event_source_timer_update(covered_timer, LOCK_COVER_MS);
+    lockcovered();
 }
 
 void
@@ -3312,7 +3591,12 @@ rendermon(struct wl_listener *listener, void *data)
             wlr_scene_node_for_each_buffer(&c->scene_surface->node, scenebuffersetopacity, c);
         }
     }
-    wlr_scene_output_commit(m->scene_output, NULL);
+    /* the locker's own surface, not just the blur behind it */
+    if (wlr_scene_output_commit(m->scene_output, NULL) && covered_pending
+            && m->lock_surface && wlr_surface_has_buffer(m->lock_surface->surface)) {
+        m->lock_shown = 1;
+        lockcovered();
+    }
 
 skip:
     /* Let clients know a frame has been rendered */
@@ -3478,7 +3762,8 @@ run(char *startup_cmd)
     wlr_cursor_warp_closest(cursor, NULL, cursor->x, cursor->y);
     wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
 
-    system( "loginctl lock-session" );
+    if (lock_at_start)
+        lockscreen(NULL);
 
     /* Run the Wayland event loop. This does not return until you exit the
      * compositor. Starting the backend rigged up all of the necessary event
@@ -3817,6 +4102,8 @@ setup(void)
     desktop_init(desktop_tree, &(desktop_config_t){
             .blur = cfg->blur_launcher, .radius = cfg->blur_launcher_radius,
             .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] });
+    /* the alerts, over everything (drawalert() keeps it on top) */
+    alert_tree = wlr_scene_tree_create(&scene->tree);
 
     /* Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The user
      * can also specify a renderer using the WLR_RENDERER env var.
@@ -4017,6 +4304,13 @@ setup(void)
     if (awl_redraw_init() >= 0)
         redraw_source = wl_event_loop_add_fd(event_loop, awl_redraw_fd(),
                 WL_EVENT_READABLE, redraw_fire, NULL);
+    if (awl_lock_init() >= 0)
+        lock_source = wl_event_loop_add_fd(event_loop, awl_lock_fd(),
+                WL_EVENT_READABLE, lockfire, NULL);
+    covered_timer = wl_event_loop_add_timer(event_loop, coveredtimeout, NULL);
+    /* the logind thread has until then to start listening (logind_missing) */
+    logind_timer = wl_event_loop_add_timer(event_loop, logindtimeout, NULL);
+    wl_event_source_timer_update(logind_timer, LOGIND_GRACE_MS);
 
     /* Make sure XWayland clients don't connect to the parent X server,
      * e.g when running in the x11 backend or the wayland backend and the
@@ -4401,6 +4695,7 @@ updatemons(struct wl_listener *listener, void *data)
         m->m = m->w = (struct wlr_box){0};
         desktop_update(m);
         background_update(m);
+        drawalert(m);
     }
     /* Insert outputs that need to */
     wl_list_for_each(m, &mons, link) {
@@ -5116,8 +5411,6 @@ main(int argc, char *argv[])
     awl_log_init(logfile);
 
     setup();
-    if (ScreenLockServiceAtStart)
-        autostart(ScreenLockService);
 
     run(startup_cmd);
     cleanup();

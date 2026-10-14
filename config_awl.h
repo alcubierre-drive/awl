@@ -22,7 +22,8 @@ static const char* Autostarts[][8] = {
     { "Telegram", NULL },
     { "evolution", NULL },
 };
-static const int ScreenLockServiceAtStart = 1;
-static const char* ScreenLockService[] = { "systemd-lock-handler", "--", "swaylock", "-c", "00000000", "-p", NULL };
+static const char* locker[] = { "swaylock", "-c", "00000000", "-p", NULL };
+static const int lock_at_start   = 1;
+static const int lock_on_suspend = 1;
 
 #define SCENEFX_HAS_SHATTER

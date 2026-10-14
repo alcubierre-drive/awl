@@ -27,7 +27,7 @@
 #include "plugins/wallpaper.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 18
+#define AWL_PLUGIN_ABI 19
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -38,7 +38,7 @@
  */
 #define AWL_ACTIONS( X ) \
     X( changebw ) X( chvt ) X( cycle_layout ) X( cycle_view ) X( focusmon ) \
-    X( focusstack ) X( incnmaster ) X( killclient ) X( maximize ) X( minimize ) \
+    X( focusstack ) X( incnmaster ) X( killclient ) X( lockscreen ) X( maximize ) X( minimize ) \
     X( moveresize ) X( movestack ) X( plugin_restart ) X( quit ) X( setlayout ) X( setmfact ) \
     X( spawn ) X( tag ) X( tagmon ) X( togglebar ) X( togglebw ) X( togglefloating ) \
     X( togglefullscreen ) X( toggleontop ) X( togglepertag ) X( toggletag ) X( toggleview ) \
@@ -178,6 +178,12 @@ typedef struct awl_plugin_api_t {
     awl_image_t* (*wallpaper_take)( void );
     /** the wallpaper timer's mode changed (the wallpapermode action) */
     void (*wallpaper_mode)( WallpaperMode mode );
+
+    /** whether the screen is covered by the locker: from the first frame
+     * that shows its surface on every output on, until it unlocks or
+     * crashes (awl then stays locked under its blur, but not covered); right
+     * after `init` too */
+    void (*session_covered)( int covered );
 
     /** config_plugins.h; valid until the library is unloaded */
     const awl_config_t* (*config)( void );

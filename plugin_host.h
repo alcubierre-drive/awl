@@ -37,6 +37,10 @@ void awl_plugins_unload( void );
 /** `awl_plugin_api_t.set_paused`, if a library is loaded */
 void awl_plugins_set_paused( int paused );
 
+/** `awl_plugin_api_t.session_covered`, if a library is loaded; also given
+ * to every library started later */
+void awl_plugins_set_covered( int covered );
+
 /** Fills an empty bar's widget lists; no-op without a loaded library. */
 void awl_plugins_bar_widgets( awl_draw_t* bar );
 

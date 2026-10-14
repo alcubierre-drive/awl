@@ -20,3 +20,13 @@ awl_log.h
 ---------
 
 .. c:autodoc:: awl_log.h
+
+awl_lock.h
+----------
+
+.. c:autodoc:: awl_lock.h
+
+awl_alert.h
+-----------
+
+.. c:autodoc:: awl_alert.h

@@ -251,6 +251,13 @@ struct Monitor {
     struct wl_listener request_state;
     struct wl_listener destroy_lock_surface;
     struct wlr_session_lock_surface_v1 *lock_surface;
+    /** a frame showing the lock went out since it began (lockcovered()) */
+    int lock_shown;
+    /** the alert on this output (drawalert()), and what it was drawn for */
+    struct wlr_scene_buffer *alert;
+    unsigned int alert_version;
+    float alert_scale;
+    struct wlr_box alert_area;
     struct wlr_box m; /* monitor area, layout-relative */
     struct {
         int width, height;

@@ -18,5 +18,9 @@ static int log_level = WLR_ERROR;
 static const char* Autostarts[][8] = {
     { NULL }, /* e.g. { "nm-applet", NULL }, */
 };
-static const int ScreenLockServiceAtStart = 0; /* spawn ScreenLockService */
-static const char* ScreenLockService[] = { "systemd-lock-handler", "--", "swaylock", "-c", "00000000", NULL };
+
+/* the screen lock: locker is an ext-session-lock client, started on logind's
+ * Lock (loginctl lock-session), before suspend and by the lockscreen action */
+static const char* locker[] = { "swaylock", "-c", "00000000", NULL };
+static const int lock_at_start   = 0; /* lock right after starting */
+static const int lock_on_suspend = 1; /* suspend waits for the lock */

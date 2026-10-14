@@ -51,8 +51,12 @@ What lives where
      - config_awl.h, and config_plugins.def.h as a fallback
      - config_plugins.h (awl_config.c)
    * - Notifications
-     -
+     - alerts (awl_alert.c)
      - spawns ``notify-send`` (plugins.c)
+   * - Screen lock
+     - starts the locker, tells when it covers the screen, raises the
+       alert when logind isn't listened to (awl.c, awl_lock.c)
+     - listens to logind, holds the inhibitor (plugins/logind.c)
 
 The library never calls into awl directly: awl hands it a table of
 functions, `awl_host_t` (awl_host.h), and gets one back, `awl_plugin_api_t`.
@@ -81,6 +85,21 @@ A redraw, end to end
 #. The same wakeup updates the desktop panels (`desktop_update_all()`), which
    redraw only if `awl_plugin_api_t.desktop_version` changed, and takes a
    newly decoded wallpaper, if any (`awl_plugin_api_t.wallpaper_take`).
+
+Locking
+-------
+
+awl locks with an ext-session-lock client, config_awl.h's ``locker``
+(swaylock by default), started by `lockscreen()`: as the ``lockscreen``
+action, at start with ``lock_at_start``, and on request of the plugins'
+logind thread, which listens for ``loginctl lock-session`` and for an
+upcoming suspend. Before suspend it holds a delay inhibitor until the locker
+covers every output, so the machine never sleeps, or wakes, showing the
+desktop. See :doc:`threads` for the sequence.
+
+If that thread doesn't listen, awl raises an alert (awl_alert.h): white on
+red in the bottom left corner of every output, above everything, the lock
+screen included (`drawalert()`), and a critical notification. awl raises it, not the library, so it comes up even without one.
 
 Where to start reading
 ----------------------

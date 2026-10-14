@@ -30,6 +30,11 @@ The threads
    * - ``wallpaper``
      - plugins/wallpaper.c
      - lists the wallpaper directory, picks one, decodes it
+   * - ``logind``
+     - plugins/logind.c
+     - listens to systemd-logind on the system bus: asks awl to lock on
+       ``Lock`` and before suspend, holds the delay inhibitor that makes
+       suspend wait for it
    * - tray
      - tray/
      - the GTK main loop: StatusNotifier host and watcher, the tray windows,
@@ -54,7 +59,15 @@ Results are handed over, not shared.
 Changes are announced with a redraw request.
    `awl_redraw_request()` may be called from any thread; the libraries call
    it as ``awl_host->redraw_request()``. Logging, too, is safe everywhere. The main loop
-   handles all requests since its last wakeup at once.
+   handles all requests since its last wakeup at once. Lock requests and the
+   logind thread's state take the same way through their own eventfd
+   (awl_lock.h).
+
+Alerts are awl's.
+   What the user must not miss, such as no lock before suspend, is raised
+   by awl's main thread (awl_alert.h), never by a library thread: the
+   library may be the very thing that is missing. awl watches for what the
+   thread should report, and raises the alert when it doesn't.
 
 Threads are woken, never cancelled.
    Every library thread is an `awl_thread_t`: it sleeps in ``poll()`` on its
@@ -91,18 +104,26 @@ picks up whatever they published.
        changer["wallpaper thread<br/>pick, decode"] -- "decoded image" --> image[("pending<br/>awl_image_t*")]
      end
      tray["tray thread<br/>GTK, libawltray.so"]
+     logind["logind thread<br/>plugins/logind.c"]
      redraw(["redraw eventfd<br/>awl_redraw.c"])
+     lockfd(["lock eventfd<br/>awl_lock.c"])
      subgraph main["main thread (awl.c)"]
        direction LR
        loop["Wayland event loop"] --> fire["redraw_fire()"]
        fire --> bars["drawbars()"]
        fire --> panels["desktop_update_all()"]
        fire --> wp["wallpapertake()"]
+       loop --> lockfire["lockfire()"]
+       lockfire --> lockscreen["lockscreen()"]
+       lockfire --> logindupdate["logindupdate():<br/>the alert"]
      end
 
      lib -. "awl_host->redraw_request()" .-> redraw
      tray -. "awl_host->redraw_request():<br/>a tray's width changed" .-> redraw
      redraw -. "readable" .-> loop
+     logind -. "awl_host->lock_request(),<br/>awl_host->logind_state()" .-> lockfd
+     lockfd -. "readable" .-> loop
+     main -. "session_covered()" .-> logind
      atomics -- "widgets read them" --> bars
      pending -- "awl_desktop_version()" --> panels
      image -- "awl_wallpaper_take()" --> wp
@@ -114,6 +135,7 @@ The life of a thread
 Every thread of the library is an `awl_thread_t`, started and stopped the
 same way. Only the poller is waited for without a limit: the only files it
 reads are in ``/proc`` and ``/sys``, which can't hang like a remote mount.
+The logind thread touches no files at all; it gets 2 s.
 
 .. mermaid::
 
@@ -222,3 +244,46 @@ The desktop scanner
      M->>M: desktop_update_all()
      M->>M: awl_desktop_version(): takes pending,<br/>version + 1 if it differs
      M->>M: redraws the panels whose version changed
+
+Locking before suspend
+----------------------
+
+The logind thread holds a delay inhibitor whenever config_awl.h's
+``lock_on_suspend`` is set, so logind sends ``PrepareForSleep(true)`` and then
+waits, up to its ``InhibitDelayMaxSec`` (5 s by default), for the inhibitor's
+fd to be closed. "Covered" means every enabled output has shown a frame with
+the locker's surface (`lockcovered()`), or ``LOCK_COVER_MS`` passed.
+
+.. mermaid::
+
+   sequenceDiagram
+     participant L as logind
+     participant T as logind thread
+     participant M as main thread
+     participant K as locker
+     T->>L: Inhibit(sleep, delay) at start and after each resume
+     L-->>T: inhibitor fd
+     L->>T: PrepareForSleep(true)
+     T-->>M: awl_host->lock_request()
+     M->>M: lockfire(): lockscreen()
+     M->>K: spawn config_awl.h's locker
+     K->>M: ext-session-lock: lock, surfaces
+     M->>M: locksession(), then rendermon():<br/>a frame with its surface on every output
+     M->>T: lockcovered(): session_covered(1), wake
+     T->>L: close(inhibitor fd), SetLockedHint(true)
+     Note over L: suspends
+     L->>T: PrepareForSleep(false)
+     T->>L: Inhibit(sleep, delay)
+
+``loginctl lock-session`` takes the first half of this: the session's
+``Lock`` signal, ``lock_request()``, and the locker. A request while a lock
+is in place, or while the locker started last hasn't locked yet, does
+nothing.
+
+The thread tells awl what it listens for (`awl_logind_flags`), on every
+change. While that is less than awl needs (``Lock``, plus ``PrepareForSleep``
+with an inhibitor if ``lock_on_suspend``) for ``LOGIND_GRACE_MS``, awl raises
+the logind alert: a red box in every output's bottom left corner and a
+critical notification.
+That covers a thread that never reports at all, too, e.g. without a plugin
+library; a plugin reload or a reconnect stays within the grace period.

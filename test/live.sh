@@ -21,6 +21,12 @@
 # in the session at $WAYLAND_DISPLAY instead of headless ones; that session's
 # keyboard and pointer then work in them too.
 #
+# The system bus is $LIVE_SYSTEM_BUS (default unix:path=$LIVE_DIR/system_bus,
+# where nothing listens unless a test starts its own dbus-daemon there): the
+# logind thread takes inhibitors and sets the session's LockedHint, so it must
+# never reach the real logind; NetworkManager is gone with it. live-nm.sh
+# brings it back.
+#
 # State goes to $LIVE_DIR (default /tmp/awl-live-$UID): log, runtime dir,
 # home. awl gets -l '' (stderr, i.e. that log, only), so it leaves the real
 # awl's log file alone; arguments after start come after it. Desktop fixture:
@@ -105,6 +111,7 @@ start)
 			export WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=${LIVE_OUTPUTS:-1}
 		fi
 		export XDG_RUNTIME_DIR=$run HOME=$dir/home
+		export DBUS_SYSTEM_BUS_ADDRESS=${LIVE_SYSTEM_BUS:-unix:path=$dir/system_bus}
 		unset DISPLAY WAYLAND_SOCKET
 		export WLR_RENDERER=${WLR_RENDERER:-gles2} WLR_LIBINPUT_NO_DEVICES=1 AWL_TEST_OUTPUTS=1
 		cd "$dir"
