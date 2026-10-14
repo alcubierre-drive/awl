@@ -26,6 +26,14 @@ awl is three binaries:
 What lives where
 ----------------
 
+The file names say which binary a file belongs to: ``awl_*`` (and awl.c,
+awl.h) to ``awl``, ``plugins_*`` and plugins/ (and plugins.c, plugins.h) to
+``libawlplugins.so``, tray/ to ``libawltray.so``. The headers that make up
+awl's side of the interface (awl_host.h, awl_plugin_abi.h, awl_draw.h,
+awl_log.h, awl_dict_type.h) are included by the libraries too. config_awl.h
+belongs to ``awl``, config_plugins.h to the library (awl builds in
+config_plugins.def.h only as a fallback).
+
 .. list-table::
    :header-rows: 1
    :widths: 20 40 40
