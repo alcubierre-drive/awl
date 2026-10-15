@@ -266,23 +266,27 @@ struct Monitor {
     } b; /* bar area */
     struct wlr_box w; /* window area, layout-relative */
     struct wl_list layers[4]; /* LayerSurface.link */
-    const Layout *lt[2];
     unsigned int seltags;
-    unsigned int sellt;
     uint32_t tagset[2];
-    float mfact;
     int gamma_lut_changed;
-    int nmaster;
     uint8_t showbar:1;
     uint8_t closedbar:1;
-    /** whether each view keeps its own layout (MonitorRule.pertag,
-     * togglepertag); then setlayout() saves into ptlt[] and changing the
-     * tagset loads from there */
+    /** whether each view keeps its own layout and its settings in ptlt[]
+     * (MonitorRule.pertag, togglepertag); if not, all share ptlt[0] */
     uint8_t pertag:1;
     char ltsymbol[16];
-    /** the per-tag layouts: [1+t] for tag t viewed alone, [0] for views of
-     * several tags. Kept current with lt/sellt while pertag is on. */
-    struct PertagLayout { const Layout *lt[2]; unsigned int sellt; } ptlt[32];
+    /** the layouts and their settings, read through monlt(): with pertag,
+     * [1+t] for tag t viewed alone and [0] for views of several tags;
+     * without, [0] for all views */
+    struct PertagLayout {
+        /** the selected layout lt[sellt] and the previous one (setlayout()) */
+        const Layout *lt[2];
+        unsigned int sellt;
+        /** master area share (setmfact()) and number of master clients
+         * (incnmaster()) */
+        float mfact;
+        int nmaster;
+    } ptlt[32];
     int asleep;
     /** the bar's drawing state and widgets */
     awl_draw_t *drw;

@@ -222,7 +222,8 @@ static void xytonode(double x, double y, struct wlr_surface **psurface,
 static void setontop(Client *c, int ontop);
 static void toggleontop(const Arg* arg);
 static void togglepertag(const Arg *arg);
-static void pertagstore(Monitor *m, size_t slot);
+static struct PertagLayout *monlt(Monitor *m);
+static const Layout *sellayout(Monitor *m);
 static void plugin_restart(const Arg* arg);
 static void minimize(const Arg* arg);
 static void unminimize(const Arg* arg);
@@ -555,7 +556,7 @@ applyrules(Client *c)
                 if (r->monitor == i++)
                     mon = m;
             }
-            if (c->isfloating || !mon->lt[mon->sellt]->arrange) {
+            if (c->isfloating || !sellayout(mon)->arrange) {
                 /* client is floating or in floating layout */
                 if (r->w != 0 && r->h != 0) {
                     rbox.width = r->w;
@@ -610,7 +611,7 @@ arrange(Monitor *m)
     wlr_scene_node_set_enabled(&m->fullscreen_bg->node,
             (c = focustop(m)) && c->isfullscreen);
 
-    strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, LENGTH(m->ltsymbol)-1);
+    strncpy(m->ltsymbol, sellayout(m)->symbol, LENGTH(m->ltsymbol)-1);
 
     /* We move all clients (except fullscreen and unmanaged) to LyrTile while
      * in floating layout to avoid "real" floating clients be always on top */
@@ -620,15 +621,15 @@ arrange(Monitor *m)
 
         wlr_scene_node_reparent(&c->scene->node,
                 c->isontop ? layers[LyrTop] :
-                (!m->lt[m->sellt]->arrange && c->isfloating)
+                (!sellayout(m)->arrange && c->isfloating)
                         ? layers[LyrTile]
-                        : (m->lt[m->sellt]->arrange && c->isfloating)
+                        : (sellayout(m)->arrange && c->isfloating)
                                 ? layers[LyrFloat]
                                 : c->scene->node.parent);
     }
 
-    if (m->lt[m->sellt]->arrange)
-        m->lt[m->sellt]->arrange(m);
+    if (sellayout(m)->arrange)
+        sellayout(m)->arrange(m);
     motionnotify(0, NULL, 0, 0, 0, 0);
     checkidleinhibitor(NULL);
     /* layout symbol, taskbar order and window states may have changed */
@@ -1866,20 +1867,18 @@ createmon(struct wl_listener *listener, void *data)
     m->tagset[0] = m->tagset[1] = 1;
     /* if no rule matches */
     m->m.x = m->m.y = -1;
-    m->mfact = 0.55f;
-    m->nmaster = 1;
-    m->lt[0] = m->lt[1] = &cfg->layouts[0];
-    strncpy(m->ltsymbol, m->lt[0]->symbol, LENGTH(m->ltsymbol)-1);
+    m->ptlt[0].mfact = 0.55f;
+    m->ptlt[0].nmaster = 1;
+    m->ptlt[0].lt[0] = m->ptlt[0].lt[1] = &cfg->layouts[0];
     for (r = cfg->monrules; r < cfg->monrules + cfg->n_monrules; r++) {
         if (!r->name || strstr(wlr_output->name, r->name)) {
             m->m.x = r->x;
             m->m.y = r->y;
-            m->mfact = r->mfact;
-            m->nmaster = r->nmaster;
+            m->ptlt[0].mfact = r->mfact;
+            m->ptlt[0].nmaster = r->nmaster;
             if (layoutindex(r->lt) >= 0)
-                m->lt[0] = r->lt;
-            m->lt[1] = &cfg->layouts[cfg->n_layouts > 1 && r->lt != &cfg->layouts[1]];
-            strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, LENGTH(m->ltsymbol)-1);
+                m->ptlt[0].lt[0] = r->lt;
+            m->ptlt[0].lt[1] = &cfg->layouts[cfg->n_layouts > 1 && r->lt != &cfg->layouts[1]];
             m->pertag = !!r->pertag;
             wlr_output_state_set_scale(&state, r->scale);
             wlr_output_state_set_transform(&state, r->rr);
@@ -1887,8 +1886,9 @@ createmon(struct wl_listener *listener, void *data)
         }
     }
     /* every view starts with the monitor's layout */
-    for (i = 0; i < LENGTH(m->ptlt); i++)
-        pertagstore(m, i);
+    for (i = 1; i < LENGTH(m->ptlt); i++)
+        m->ptlt[i] = m->ptlt[0];
+    strncpy(m->ltsymbol, sellayout(m)->symbol, LENGTH(m->ltsymbol)-1);
 
     /* The mode is a tuple of (width, height, refresh rate), and each
      * monitor supports only a specific set of modes. We just pick the
@@ -2990,6 +2990,7 @@ bstack(Monitor *m)
     int w, h, mh, mx, tx, ty, tw;
     int i, n = 0;
     Client *c;
+    const struct PertagLayout *l = monlt(m);
 
     wl_list_for_each(c, &clients, link)
         if (VISIBLEON_ACTIVE(c, m) && !c->isfloating && !c->ismaximized && !c->isfullscreen)
@@ -2997,9 +2998,9 @@ bstack(Monitor *m)
     if (n == 0)
         return;
 
-    if (n > m->nmaster) {
-        mh = (int)round(m->nmaster ? m->mfact * m->w.height : 0);
-        tw = m->w.width / (n - m->nmaster);
+    if (n > l->nmaster) {
+        mh = (int)round(l->nmaster ? l->mfact * m->w.height : 0);
+        tw = m->w.width / (n - l->nmaster);
         ty = m->w.y + mh;
     } else {
         mh = m->w.height;
@@ -3012,8 +3013,8 @@ bstack(Monitor *m)
     wl_list_for_each(c, &clients, link) {
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->ismaximized || c->isfullscreen)
             continue;
-        if (i < m->nmaster) {
-            w = (m->w.width - mx) / (MIN(n, m->nmaster) - i);
+        if (i < l->nmaster) {
+            w = (m->w.width - mx) / (MIN(n, l->nmaster) - i);
             resize(c, (struct wlr_box) { .x = m->w.x + mx, .y = m->w.y, .width = w, .height = mh }, 0);
             mx += c->geom.width;
         } else {
@@ -3031,7 +3032,7 @@ incnmaster(const Arg *arg)
 {
     if (!arg || !selmon)
         return;
-    selmon->nmaster = MAX(selmon->nmaster + arg->i, 0);
+    monlt(selmon)->nmaster = MAX(monlt(selmon)->nmaster + arg->i, 0);
     arrange(selmon);
 }
 
@@ -3954,7 +3955,7 @@ setfloating(Client *c, int floating)
     Client *p = client_get_parent(c);
     c->isfloating = floating;
     /* If in floating layout do not change the client's layer */
-    if (!c->mon || !client_surface(c)->mapped || !c->mon->lt[c->mon->sellt]->arrange)
+    if (!c->mon || !client_surface(c)->mapped || !sellayout(c->mon)->arrange)
         return;
     wlr_scene_node_reparent(&c->scene->node, layers[c->isfullscreen ||
             (p && p->isfullscreen) ? LyrFS
@@ -4004,41 +4005,40 @@ pertagslot(const Monitor *m)
     return ts && !(ts & (ts - 1)) ? (size_t)__builtin_ctz(ts) + 1 : 0;
 }
 
-/** m's layout into its ptlt[slot] */
-static void
-pertagstore(Monitor *m, size_t slot)
+/** m's current layout and its settings: with per-tag layouts those of the
+ * view's ptlt[] slot, else ptlt[0] */
+static struct PertagLayout *
+monlt(Monitor *m)
 {
-    m->ptlt[slot].lt[0] = m->lt[0];
-    m->ptlt[slot].lt[1] = m->lt[1];
-    m->ptlt[slot].sellt = m->sellt;
+    return &m->ptlt[m->pertag ? pertagslot(m) : 0];
 }
 
-/** after m's tagset changed: with per-tag layouts, the one of its new view */
-static void
-pertagload(Monitor *m)
+/** m's selected layout */
+static const Layout *
+sellayout(Monitor *m)
 {
-    size_t slot = pertagslot(m);
-    if (!m->pertag)
-        return;
-    m->lt[0] = m->ptlt[slot].lt[0];
-    m->lt[1] = m->ptlt[slot].lt[1];
-    m->sellt = m->ptlt[slot].sellt;
-    strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, LENGTH(m->ltsymbol)-1);
+    struct PertagLayout *l = monlt(m);
+    return l->lt[l->sellt];
 }
 
 /** per-tag layouts on selmon on or off (MonitorRule.pertag sets where it
- * starts). Turned on, the current view keeps its layout and the others get
- * back the ones they had when it was last on; off, all views share the
- * current one. */
+ * starts). Either way the current view keeps its layout, mfact and nmaster;
+ * turned on, the other views get back the ones they had when it was last on
+ * (except views of several tags: their ptlt[0] is also the pertag-off one),
+ * off, all views share the current ones. */
 void
 togglepertag(const Arg *arg)
 {
+    size_t slot;
     (void)arg;
     if (!selmon)
         return;
+    slot = pertagslot(selmon);
     selmon->pertag = !selmon->pertag;
     if (selmon->pertag)
-        pertagstore(selmon, pertagslot(selmon));
+        selmon->ptlt[slot] = selmon->ptlt[0];
+    else
+        selmon->ptlt[0] = selmon->ptlt[slot];
     drawbar(selmon);
 }
 
@@ -4049,7 +4049,7 @@ cycle_layout(const Arg* arg)
     int i, n = (int)cfg->n_layouts;
     if (!selmon || !arg || !arg->i)
         return;
-    i = layoutindex(selmon->lt[selmon->sellt]) + (arg->i > 0 ? 1 : -1);
+    i = layoutindex(sellayout(selmon)) + (arg->i > 0 ? 1 : -1);
     setlayout(&(Arg){.v = &cfg->layouts[(i % n + n) % n]});
 }
 
@@ -4059,15 +4059,14 @@ void
 setlayout(const Arg *arg)
 {
     const Layout *l = arg ? arg->v : NULL;
+    struct PertagLayout *ml;
     if (!selmon || (l && layoutindex(l) < 0))
         return;
-    if (!l || l != selmon->lt[selmon->sellt])
-        selmon->sellt ^= 1;
+    ml = monlt(selmon);
+    if (!l || l != ml->lt[ml->sellt])
+        ml->sellt ^= 1;
     if (l)
-        selmon->lt[selmon->sellt] = l;
-    strncpy(selmon->ltsymbol, selmon->lt[selmon->sellt]->symbol, LENGTH(selmon->ltsymbol)-1);
-    if (selmon->pertag)
-        pertagstore(selmon, pertagslot(selmon));
+        ml->lt[ml->sellt] = l;
     arrange(selmon);
     drawbar(selmon);
 }
@@ -4089,12 +4088,9 @@ layoutsmoved(const Layout *old, size_t n_old)
     Monitor *m;
     size_t i, j;
     wl_list_for_each(m, &mons, link) {
-        for (i = 0; i < LENGTH(m->lt); i++) {
-            m->lt[i] = layoutmoved(m->lt[i], old, n_old);
-            for (j = 0; j < LENGTH(m->ptlt); j++)
+        for (j = 0; j < LENGTH(m->ptlt); j++)
+            for (i = 0; i < LENGTH(m->ptlt[j].lt); i++)
                 m->ptlt[j].lt[i] = layoutmoved(m->ptlt[j].lt[i], old, n_old);
-        }
-        strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, LENGTH(m->ltsymbol)-1);
         arrange(m);
     }
 }
@@ -4119,12 +4115,12 @@ setmfact(const Arg *arg)
 {
     float f;
 
-    if (!arg || !selmon || !selmon->lt[selmon->sellt]->arrange)
+    if (!arg || !selmon || !sellayout(selmon)->arrange)
         return;
-    f = arg->f < 1.0f ? arg->f + selmon->mfact : arg->f - 1.0f;
+    f = arg->f < 1.0f ? arg->f + monlt(selmon)->mfact : arg->f - 1.0f;
     if (f < 0.1 || f > 0.9)
         return;
-    selmon->mfact = f;
+    monlt(selmon)->mfact = f;
     arrange(selmon);
 }
 
@@ -4630,6 +4626,7 @@ tile(Monitor *m)
     unsigned int mw, my, ty;
     int i, n = 0;
     Client *c;
+    const struct PertagLayout *l = monlt(m);
 
     wl_list_for_each(c, &clients, link)
         if (VISIBLEON_ACTIVE(c, m) && !c->isfloating && !c->isfullscreen && !c->ismaximized)
@@ -4637,17 +4634,17 @@ tile(Monitor *m)
     if (n == 0)
         return;
 
-    if (n > m->nmaster)
-        mw = m->nmaster ? (int)roundf(m->w.width * m->mfact) : 0;
+    if (n > l->nmaster)
+        mw = l->nmaster ? (int)roundf(m->w.width * l->mfact) : 0;
     else
         mw = m->w.width;
     i = my = ty = 0;
     wl_list_for_each(c, &clients, link) {
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->isfullscreen || c->ismaximized)
             continue;
-        if (i < m->nmaster) {
+        if (i < l->nmaster) {
             resize(c, (struct wlr_box){.x = m->w.x, .y = m->w.y + my, .width = mw,
-                .height = (m->w.height - my) / (MIN(n, m->nmaster) - i)}, 0);
+                .height = (m->w.height - my) / (MIN(n, l->nmaster) - i)}, 0);
             my += c->geom.height;
         } else {
             resize(c, (struct wlr_box){.x = m->w.x + mw, .y = m->w.y + ty,
@@ -4734,7 +4731,6 @@ toggleview(const Arg *arg)
         return;
 
     selmon->tagset[selmon->seltags] = newtagset;
-    pertagload(selmon);
     focusclient(focustop(selmon), 1);
     arrange(selmon);
     drawbars();
@@ -5011,7 +5007,6 @@ view(const Arg *arg)
     selmon->seltags ^= 1; /* toggle sel tagset */
     if (arg->ui & TAGMASK)
         selmon->tagset[selmon->seltags] = arg->ui & TAGMASK;
-    pertagload(selmon);
     focusclient(focustop(selmon), 1);
     arrange(selmon);
     drawbars();
@@ -5033,7 +5028,6 @@ cycle_view(const Arg* arg)
     selmon->seltags ^= 1; /* toggle sel tagset */
     int next = arg->i > 0 ? (tmax + 1)%nt : (tmin - 1 + nt)%nt;
     selmon->tagset[selmon->seltags] = (1 << next) & TAGMASK;
-    pertagload(selmon);
 
     focusclient(focustop(selmon), 1);
     arrange(selmon);
@@ -5452,7 +5446,7 @@ configurex11(struct wl_listener *listener, void *data)
                 event->x, event->y, event->width, event->height);
         return;
     }
-    if ((c->isfloating && c != grabc) || !c->mon->lt[c->mon->sellt]->arrange) {
+    if ((c->isfloating && c != grabc) || !sellayout(c->mon)->arrange) {
         resize(c, (struct wlr_box){.x = event->x - c->bw,
                 .y = event->y - c->bw, .width = event->width + c->bw * 2,
                 .height = event->height + c->bw * 2}, 0);
