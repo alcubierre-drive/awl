@@ -4298,9 +4298,9 @@ setup(void)
     if (!(cfgdict = awl_dict_new()))
         awl_err_printf("out of memory for the config dictionary\n");
     cfgdict_defaults(cfgdict);
-    awl_plugins_load(0, cfgdict);
-    configuse();
-    awl_draw_init();
+    /* before the plugins: their threads wake these from the start, and a
+     * wake without the eventfd is lost (the logind state then stays unseen
+     * and its alert up) */
     if (awl_redraw_init() >= 0)
         redraw_source = wl_event_loop_add_fd(event_loop, awl_redraw_fd(),
                 WL_EVENT_READABLE, redraw_fire, NULL);
@@ -4311,6 +4311,9 @@ setup(void)
     /* the logind thread has until then to start listening (logind_missing) */
     logind_timer = wl_event_loop_add_timer(event_loop, logindtimeout, NULL);
     wl_event_source_timer_update(logind_timer, LOGIND_GRACE_MS);
+    awl_plugins_load(0, cfgdict);
+    configuse();
+    awl_draw_init();
 
     /* Make sure XWayland clients don't connect to the parent X server,
      * e.g when running in the x11 backend or the wayland backend and the

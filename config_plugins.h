@@ -179,6 +179,7 @@ static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TA
 /* commands */
 static const char *termcmd[] = { "kitty", "-d", "$HOME", NULL };
 static const char *menucmd[] = { "fuzzel", NULL };
+static const char *suspend[] = { "systemctl", "suspend", NULL };
 static const char *hyprcopy[] = { "hyprcopy", NULL };
 static const char *brightp[] = { "backlight-tooler", "-v5", NULL };
 static const char *brightm[] = { "backlight-tooler", "-v-5", NULL };
@@ -232,6 +233,7 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_b,          togglebw,         {0} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_B,          changebw,         {.i=+1} },
     { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_B, changebw, {.i=-1} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_S, spawn,    {.v = suspend} },
 
     { MODKEY,                    XKB_KEY_n,          minimize,         {0} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_n,          unminimize,       {0} },
