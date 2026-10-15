@@ -188,6 +188,10 @@ void awl_draw_prepare_drawing(awl_draw_t *drw, unsigned int w, unsigned int h, u
  * edge, in fg; returns the x after the box */
 int awl_draw_text_color2(awl_draw_t *drw, int x, int y, unsigned int w, unsigned int h,
         unsigned int lpad, const char *text, pixman_color_t fg, pixman_color_t bg);
+/** like `awl_draw_text_color2()`, but without padding and over what is
+ * already there instead of a filled box; fg is 0xRRGGBBAA */
+int awl_draw_text_over(awl_draw_t *drw, int x, int y, unsigned int w, unsigned int h,
+        const char *text, uint32_t fg);
 /** width of text in pixels, kerning included */
 unsigned int awl_draw_font_getwidth(awl_draw_t *drw, const char *text);
 /** lets go of what `awl_draw_prepare_drawing()` pointed at */

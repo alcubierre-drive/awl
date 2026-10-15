@@ -343,6 +343,21 @@ typedef struct {
 void arrange(Monitor *m);
 /** focuses c (NULL: none) and, if lift, raises it */
 void focusclient(Client *c, int lift);
+typedef struct awl_window awl_window_t;
+/** a new, hidden text popup (awl_window.h) for the plugins, styled like the
+ * tray's; NULL before setup(). The plugins' detaching destroys the ones they
+ * left. Several can be shown at once. */
+awl_window_t *textwincreate(void);
+/** nothing if win is NULL or already destroyed */
+void textwindestroy(awl_window_t *win);
+/** shows win for a bar widget on m, centered on center_x (logical pixels
+ * from m's left edge), on the bar's side; text as `awl_window_set_text()`.
+ * With toggle, hides it instead if it is already shown on m. A press
+ * anywhere but on the bar hides every popup. */
+void textwinshow(awl_window_t *win, Monitor *m, int center_x, const char *text, int toggle);
+/** replaces win's text if it is shown; nothing while it is hidden */
+void textwinupdate(awl_window_t *win, const char *text);
+void textwinhide(awl_window_t *win);
 /**
  * which wallpaper the wallpaper action (`Arg.i`) and the timer switch to; the
  * ones after `WallpaperModeCount` are no timer modes: back to the one shown

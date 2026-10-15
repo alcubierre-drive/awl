@@ -77,8 +77,9 @@ static unsigned int text_width(awl_draw_t *drw, const char *text) {
     return x > 0 ? (unsigned int)x : 0;
 }
 
+/* fill: the box gets bg first, else the text goes over what is there */
 static int awl_draw_text_color(awl_draw_t *drw, int x, int y, unsigned int w, unsigned int h,
-        unsigned int lpad, const char *text, uint32_t fg, uint32_t bg) {
+        unsigned int lpad, const char *text, uint32_t fg, uint32_t bg, int fill) {
     int ty;
     int utf8charlen, render = x || y || w || h;
     long x_kern;
@@ -98,13 +99,14 @@ static int awl_draw_text_color(awl_draw_t *drw, int x, int y, unsigned int w, un
         clr = convert_color(fg);
         fg_pix = pixman_image_create_solid_fill(&clr);
 
-        awl_draw_rect_color(drw, x, y, w, y<0?h-y:h, bg);
+        if (fill)
+            awl_draw_rect_color(drw, x, y, w, y<0?h-y:h, bg);
 
         x += lpad;
         w -= lpad;
     }
 
-    if (render && (bg & 0xFF) != 0xFF)
+    if (render && (!fill || (bg & 0xFF) != 0xFF))
         fcft_subpixel_mode = FCFT_SUBPIXEL_NONE;
 
     // U+2026 == …
@@ -166,7 +168,12 @@ static int awl_draw_text_color(awl_draw_t *drw, int x, int y, unsigned int w, un
 
 int awl_draw_text_color2(awl_draw_t *drw, int x, int y, unsigned int w, unsigned int h,
         unsigned int lpad, const char *text, pixman_color_t fg, pixman_color_t bg) {
-    return awl_draw_text_color(drw, x, y, w, h, lpad, text, color_16bit_to_8bit(fg), color_16bit_to_8bit(bg));
+    return awl_draw_text_color(drw, x, y, w, h, lpad, text, color_16bit_to_8bit(fg), color_16bit_to_8bit(bg), 1);
+}
+
+int awl_draw_text_over(awl_draw_t *drw, int x, int y, unsigned int w, unsigned int h,
+        const char *text, uint32_t fg) {
+    return awl_draw_text_color(drw, x, y, w, h, 0, text, fg, 0, 0);
 }
 
 unsigned int awl_draw_font_getwidth(awl_draw_t *drw, const char *text) {

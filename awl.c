@@ -11,6 +11,7 @@
 #include "awl_redraw.h"
 #include "awl_lock.h"
 #include "awl_alert.h"
+#include "awl_window.h"
 #include "tray/awl_tray.h"
 #include <limits.h>
 #include <wlr/backend/headless.h>
@@ -87,6 +88,9 @@ static void drawbar(Monitor *m);
 static void drawbars(void);
 static void drawalert(Monitor *m);
 static void drawalerts(void);
+static void textwinsupdate(Monitor *m);
+static void textwinshideall(void);
+static void textwinsdestroy(void);
 static bool alert_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy);
 static Buffer *barbuffer(Monitor *m);
 static Buffer *newbarbuffer(Monitor *m);
@@ -296,6 +300,15 @@ static struct wlr_xcursor_manager *cursor_mgr;
 static struct wlr_scene_rect *root_bg;
 /** the alerts' tree, the topmost one: see drawalert() */
 static struct wlr_scene_tree *alert_tree;
+/** the plugins' text popups (awl_window.h, textwincreate()), TextWin.link;
+ * their tree, right above LyrTop, is made with the first one: until a plugin
+ * asks for a popup, none of this runs */
+typedef struct {
+    awl_window_t *win;
+    struct wl_list link;
+} TextWin;
+static struct wl_list textwins = {&textwins, &textwins};
+static struct wlr_scene_tree *textwin_tree;
 static struct wlr_session_lock_manager_v1 *session_lock_mgr;
 static struct wlr_scene_blur *locked_bg_blur = NULL;
 static struct wlr_session_lock_v1 *cur_lock;
@@ -676,10 +689,13 @@ arrangelayers(Monitor *m)
     desktop_update(m);
     background_update(m);
     drawalert(m);
+    textwinsupdate(m);
 
-    /* Find topmost keyboard interactive layer, if such a layer exists */
+    /* a loop of its own: the focus search below stops at the first
+     * keyboard-interactive surface (e.g. the calendar), which would leave
+     * the blur of anything after it (a new notification) unsized */
     for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
-        wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
+        wl_list_for_each(l, &m->layers[layers_above_shell[i]], link) {
             if ((l->is_notification || l->is_launcher || l->is_popup) && l->blur && l->layer_surface) {
                 /* arrangelayers() runs on every layer-surface commit (e.g.
                  * every redrawn frame of a notification/launcher), not just
@@ -694,6 +710,12 @@ arrangelayers(Monitor *m)
                     l->geom.height = desired_height;
                 }
             }
+        }
+    }
+
+    /* Find topmost keyboard interactive layer, if such a layer exists */
+    for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
+        wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
             if (locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
                 continue;
             /* Deactivate the focused client, except for our own tray popups:
@@ -1131,6 +1153,13 @@ buttonpress(struct wl_listener *listener, void *data)
         }
     }
 
+    /* awl's popups take no input; a press anywhere but on the bar (whose
+     * widgets toggle them) closes them, and goes on to what is below */
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&textwins)
+            && !((node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL))
+                && (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer))
+        textwinshideall();
+
     click = ClkRoot; // TODO we don't treat these cases
     xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
     if (c)
@@ -1353,6 +1382,8 @@ cleanup(void)
     wl_display_destroy(dpy);
     /* Destroy after the wayland display (when the monitors are already destroyed)
        to avoid destroying them with an invalid scene output. */
+    textwinsdestroy();
+    textwin_tree = NULL;
     wlr_scene_node_destroy(&scene->tree.node);
     awl_draw_fini();
     cfg = builtinconfig();
@@ -1370,6 +1401,7 @@ cleanupmon(struct wl_listener *listener, void *data)
     in_cleanupmon = 1;
     Monitor *m = wl_container_of(listener, m, destroy);
     LayerSurface *l, *tmp;
+    TextWin *tw;
     size_t i;
 
     /* Tear down this monitor's own tray overlay window (if it ever got
@@ -1415,6 +1447,8 @@ cleanupmon(struct wl_listener *listener, void *data)
     wlr_scene_node_destroy(&m->scene_buffer->node);
     desktop_removemon(m);
     background_removemon(m);
+    wl_list_for_each(tw, &textwins, link)
+        awl_window_removemon(tw->win, m);
     wlr_scene_node_destroy(&m->alert->node);
     for (i = 0; i < LENGTH(m->bar_bufs); i++)
         if (m->bar_bufs[i])
@@ -2352,6 +2386,114 @@ drawbar(Monitor *m)
     pixman_region32_fini(&damage);
     if (oneoff)
         wlr_buffer_drop(&buf->base);
+}
+
+/** the popups' look, from config_plugins.h */
+static awl_window_style_t
+textwinstyle(void)
+{
+    return (awl_window_style_t){
+            .bg = cfg->tray->calendar.bg, .fg = cfg->tray->calendar.fg,
+            .border = cfg->tray->calendar.border,
+            .border_width = cfg->tray->calendar.border_width,
+            .radius = cfg->tray->calendar.radius, .padding = cfg->tray->calendar.padding,
+            .blur = cfg->blur_launcher,
+            .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] };
+}
+
+/** win's entry in textwins, NULL if it is not (or no longer) one of them */
+static TextWin *
+textwinfind(awl_window_t *win)
+{
+    TextWin *tw;
+    if (win)
+        wl_list_for_each(tw, &textwins, link)
+            if (tw->win == win)
+                return tw;
+    return NULL;
+}
+
+awl_window_t *
+textwincreate(void)
+{
+    TextWin *tw;
+    awl_window_style_t style;
+    if (!scene)
+        return NULL;
+    /* over the bar and the windows, under fullscreen ones */
+    if (!textwin_tree) {
+        textwin_tree = wlr_scene_tree_create(&scene->tree);
+        wlr_scene_node_place_above(&textwin_tree->node, &layers[LyrTop]->node);
+    }
+    style = textwinstyle();
+    tw = ecalloc(1, sizeof(*tw));
+    tw->win = awl_window_create(textwin_tree, &style);
+    wl_list_insert(textwins.prev, &tw->link);
+    return tw->win;
+}
+
+void
+textwindestroy(awl_window_t *win)
+{
+    TextWin *tw = textwinfind(win);
+    if (!tw)
+        return;
+    wl_list_remove(&tw->link);
+    awl_window_destroy(tw->win);
+    free(tw);
+}
+
+void
+textwinshow(awl_window_t *win, Monitor *m, int center_x, const char *text, int toggle)
+{
+    if (!m || !textwinfind(win))
+        return;
+    if (toggle && awl_window_monitor(win) == m) {
+        awl_window_hide(win);
+        return;
+    }
+    awl_window_set_text(win, text);
+    awl_window_show(win, m, center_x, topbar);
+}
+
+void
+textwinupdate(awl_window_t *win, const char *text)
+{
+    if (textwinfind(win) && awl_window_monitor(win))
+        awl_window_set_text(win, text);
+}
+
+void
+textwinhide(awl_window_t *win)
+{
+    if (textwinfind(win))
+        awl_window_hide(win);
+}
+
+/** m was arranged, or its font or scale changed */
+static void
+textwinsupdate(Monitor *m)
+{
+    TextWin *tw;
+    wl_list_for_each(tw, &textwins, link)
+        awl_window_update(tw->win, m);
+}
+
+static void
+textwinshideall(void)
+{
+    TextWin *tw;
+    wl_list_for_each(tw, &textwins, link)
+        awl_window_hide(tw->win);
+}
+
+/** the ones the plugins did not destroy themselves */
+static void
+textwinsdestroy(void)
+{
+    TextWin *tw, *tmp;
+    wl_list_for_each_safe(tw, tmp, &textwins, link)
+        textwindestroy(tw->win);
 }
 
 void
@@ -4822,6 +4964,7 @@ updatebar(Monitor *m)
     m->b.height = m->drw->font->height + 2;
     m->b.real_height = (int)((float)m->b.height / m->wlr_output->scale);
     desktop_fontchanged(m);
+    textwinsupdate(m);
 
     /* x/y are monitor-LOCAL (0, and the bar's own vertical offset within
      * this monitor), not m->m.x/m->m.y's global output-layout position:
@@ -4980,6 +5123,8 @@ configapply(void)
     Client *c, *sel = focustop(selmon);
     LayerSurface *l;
     InputDevice *d;
+    TextWin *tw;
+    awl_window_style_t style;
     int mode;
     struct xkb_keymap *keymap;
     const char *xkb[5] = { cfg->xkb_rules->rules, cfg->xkb_rules->model,
@@ -5093,6 +5238,11 @@ configapply(void)
     desktop_configure(&(desktop_config_t){
             .blur = cfg->blur_launcher, .radius = cfg->blur_launcher_radius,
             .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] });
+    if (!wl_list_empty(&textwins)) {
+        style = textwinstyle();
+        wl_list_for_each(tw, &textwins, link)
+            awl_window_set_style(tw->win, &style);
+    }
 
     drawbars();
 }
@@ -5144,6 +5294,8 @@ pluginsdetach(void)
     wl_list_for_each(m, &mons, link)
         if (m->drw)
             awl_draw_widgets_clear(m->drw);
+    /* the popups the plugins left: nothing would update them any more */
+    textwinsdestroy();
     /* cfg points into the library */
     const Layout *old = cfg->layouts;
     size_t n_old = cfg->n_layouts;

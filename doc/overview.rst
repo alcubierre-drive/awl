@@ -51,6 +51,10 @@ config_plugins.def.h only as a fallback).
      - shows it, scaled to cover, and fades (awl_background.c); the timer and
        the ``wallpaper``/``wallpapermode`` actions (awl.c)
      - lists the directory, picks and decodes (plugins/wallpaper.c, Wuffs)
+   * - Popups
+     - awl's own text popups, any number at once: draws and places them (awl_window.c, awl.c)
+     - what it says and when it opens (plugins_widgets.c; for now only the
+       temperature widget, as a test)
    * - Desktop panel
      - scene nodes, buffers, placement (awl_desktop.c)
      - scans ``desktop_dir``, lays out and draws the list, handles

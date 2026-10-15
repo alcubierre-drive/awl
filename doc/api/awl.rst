@@ -30,3 +30,8 @@ awl_alert.h
 -----------
 
 .. c:autodoc:: awl_alert.h
+
+awl_window.h
+------------
+
+.. c:autodoc:: awl_window.h

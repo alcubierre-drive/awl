@@ -25,6 +25,7 @@ extern "C" {
 
 typedef struct awl_draw_t awl_draw_t;
 typedef struct Monitor Monitor;
+typedef struct awl_window awl_window_t;
 typedef struct Client Client;
 typedef struct awl_actions_t awl_actions_t;
 typedef struct awl_arranges_t awl_arranges_t;
@@ -98,6 +99,17 @@ typedef struct awl_host_t {
     void (*popup_update)( const char* text );
     /** tray: `awl_tray_popup_hide()` */
     void (*popup_hide)( void );
+    /** awl's own text popups (awl_window.h): `textwincreate()`; a window
+     * lives until window_destroy() or until the plugins detach */
+    awl_window_t* (*window_create)( void );
+    /** `textwindestroy()` */
+    void (*window_destroy)( awl_window_t* win );
+    /** `textwinshow()` */
+    void (*window_show)( awl_window_t* win, Monitor* m, int center_x, const char* text, int toggle );
+    /** `textwinupdate()` */
+    void (*window_update)( awl_window_t* win, const char* text );
+    /** `textwinhide()` */
+    void (*window_hide)( awl_window_t* win );
 
     /**
      * config values that can change while awl runs, by name. awl owns the

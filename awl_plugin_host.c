@@ -48,6 +48,11 @@ static awl_host_t host = {
     .popup_show = awl_tray_popup_show,
     .popup_update = awl_tray_popup_update,
     .popup_hide = awl_tray_popup_hide,
+    .window_create = textwincreate,
+    .window_destroy = textwindestroy,
+    .window_show = textwinshow,
+    .window_update = textwinupdate,
+    .window_hide = textwinhide,
 
     .cfg = {
         .s_new = &awl_dict_new,
