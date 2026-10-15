@@ -1,7 +1,9 @@
 NAME := libawltray.so
 
-CC := gcc
-CXX := g++
+-include config.mk
+
+CC ?= gcc
+CXX ?= g++
 LD := g++
 
 PKGLIST := gtkmm-3.0 gtk-layer-shell-0 dbusmenu-gtk3-0.4
