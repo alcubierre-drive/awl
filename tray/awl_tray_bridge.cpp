@@ -5,9 +5,8 @@
 //
 // This is deliberately close to the tray's original standalone design
 // (a real GtkWindow that GTK renders and Wayland delivers input to
-// directly, so context-menu popups -- which need a genuine input-event
-// serial -- work exactly as libdbusmenu-gtk expects). The two things that
-// change from the original: it runs as a library thread with a lifecycle
+// directly; the items' menus are awl's own popups, see menu.h). The two
+// things that change from the original: it runs as a library thread with a lifecycle
 // awl owns (awl_tray_init()/awl_tray_shutdown() from awl.c's run()/
 // cleanup()) instead of being spawned as a separate process, and it's
 // auto-positioned from awl's real bar geometry/layout (awl_tray_set_bar_geometry

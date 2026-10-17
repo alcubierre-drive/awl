@@ -6,6 +6,7 @@
 #include "awl_dict.h"
 #include "awl_lock.h"
 #include "awl_redraw.h"
+#include "awl_post.h"
 #include "tray/awl_tray.h"
 
 #include <dlfcn.h>
@@ -66,6 +67,12 @@ static awl_host_t host = {
     .window_set_painter = textwinsetpainter,
     .window_redraw = textwinredraw,
     .window_monitor = textwinmonitor,
+
+    .post = awl_post,
+    .window_create_kept = textwincreatekept,
+    .monitor_named = monitornamed,
+    .popup_config = popupconfig,
+    .window_set_hidden = textwinsethidden,
 };
 
 static void* handle = NULL;

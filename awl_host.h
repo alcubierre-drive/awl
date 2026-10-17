@@ -27,6 +27,7 @@ struct fcft_font;
 typedef struct Monitor Monitor;
 typedef struct awl_window awl_window_t;
 typedef struct awl_window_painter_t awl_window_painter_t;
+typedef struct awl_popup_config_t awl_popup_config_t;
 typedef struct Client Client;
 typedef struct awl_actions_t awl_actions_t;
 typedef struct awl_arranges_t awl_arranges_t;
@@ -44,7 +45,9 @@ typedef enum awl_logind_flags {
 /**
  * What awl provides to libawlplugins.so and libawltray.so. All functions are
  * main-thread only, except `redraw_request`, `log`, `lock_request`,
- * `logind_state` and `cfg`'s, which any thread may call (the tray, on its GTK thread, uses only those).
+ * `logind_state`, `post` and `cfg`'s, which any thread may call. The tray, on
+ * its GTK thread, uses only those; what it does on the main thread (its
+ * menus, tray/menu_window.c) it gets there through `post`.
  */
 typedef struct awl_host_t {
     /** `AWL_PLUGIN_ABI` as awl was built */
@@ -150,6 +153,23 @@ typedef struct awl_host_t {
     /** `textwinmonitor()`: where the window is shown, NULL while hidden
      * (awl also hides it, on a press elsewhere or with its monitor) */
     Monitor* (*window_monitor)( awl_window_t* win );
+
+    /** `awl_post()`: runs fn( data ) on the main thread, soon; any thread.
+     * fn never runs if awl quits first. */
+    void (*post)( void (*fn)( void* data ), void* data );
+    /** `textwincreatekept()`: like window_create, for the tray's menus: the
+     * plugins detaching leave it, a press on the tray's windows doesn't hide
+     * it */
+    awl_window_t* (*window_create_kept)( void );
+    /** `monitornamed()`: the monitor of the output named name, NULL if none */
+    Monitor* (*monitor_named)( const char* name );
+    /** `popupconfig()`: config_plugins.h's popup_config (awl_window_draw.h)
+     * as it is now; valid until the next config reload */
+    const awl_popup_config_t* (*popup_config)( void );
+    /** `textwinsethidden()`: hidden( win, data ) whenever the window is
+     * hidden, by window_hide or by awl (a press elsewhere, its monitor
+     * going away); NULL: no more */
+    void (*window_set_hidden)( awl_window_t* win, void (*hidden)( awl_window_t* win, void* data ), void* data );
 } awl_host_t;
 
 /** `awl_dict_get()` on `awl_host_t.cfg`; valptr is an ``awl_dict_val_t*`` */

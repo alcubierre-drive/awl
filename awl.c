@@ -9,6 +9,7 @@
 #include "awl_desktop.h"
 #include "plugins/colors.h" /* config_plugins.h */
 #include "awl_redraw.h"
+#include "awl_post.h"
 #include "awl_lock.h"
 #include "awl_alert.h"
 #include "awl_window.h"
@@ -90,11 +91,11 @@ static void drawbars(void);
 static void drawalert(Monitor *m);
 static void drawalerts(void);
 static void textwinsupdate(Monitor *m);
-static void textwinshideall(void);
+static void textwinshideall(int kept);
 static awl_window_t *textwinat(double x, double y);
 static awl_window_t *textwinpointer(void);
 static int textwinmotion(void);
-static void textwinsdestroy(void);
+static void textwinsdestroy(int kept);
 static bool alert_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy);
 static Buffer *barbuffer(Monitor *m);
 static Buffer *newbarbuffer(Monitor *m);
@@ -135,6 +136,14 @@ static int redraw_fire( int fd, uint32_t mask, void* data ) {
     desktop_update_all();
     wallpapertake();
     drawalerts();
+    return 0;
+}
+
+/** what other threads post for the main thread: see awl_post.h */
+static struct wl_event_source* post_source = NULL;
+static int post_fire( int fd, uint32_t mask, void* data ) {
+    (void)fd; (void)mask; (void)data;
+    awl_post_run();
     return 0;
 }
 
@@ -313,6 +322,8 @@ static struct wlr_scene_tree *alert_tree;
 typedef struct {
     awl_window_t *win;
     struct wl_list link;
+    /** the tray's (textwincreatekept()): outlives the plugins */
+    int kept;
 } TextWin;
 static struct wl_list textwins = {&textwins, &textwins};
 static struct wlr_scene_tree *textwin_tree;
@@ -1183,11 +1194,17 @@ buttonpress(struct wl_listener *listener, void *data)
         return;
     }
     /* the other popups take no input; a press anywhere but on the bar (whose
-     * widgets toggle them) closes them, and goes on to what is below */
+     * widgets toggle them) closes them, and goes on to what is below. The
+     * tray's icons toggle its menus (the kept popups) the same way, but they
+     * are its own layer surfaces: a press there closes only the others. */
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&textwins)
             && !((node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL))
-                && (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer))
-        textwinshideall();
+                && (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer)) {
+        LayerSurface *l = NULL;
+        xytonode(cursor->x, cursor->y, NULL, NULL, &l, NULL, NULL);
+        textwinshideall(!(l && l->layer_surface->namespace
+                && !strncmp(l->layer_surface->namespace, "awl-tray:", 9)));
+    }
 
     click = ClkRoot; // TODO we don't treat these cases
     xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
@@ -1327,6 +1344,9 @@ cleanup(void)
     sigset_t quitsigs;
 
     if (redraw_source) wl_event_source_remove(redraw_source);
+    /* what the tray posts from now on waits, and is dropped below */
+    if (post_source) wl_event_source_remove(post_source);
+    post_source = NULL;
     if (lock_source) wl_event_source_remove(lock_source);
     if (logind_timer) wl_event_source_remove(logind_timer);
     if (covered_timer) wl_event_source_remove(covered_timer);
@@ -1411,7 +1431,7 @@ cleanup(void)
     wl_display_destroy(dpy);
     /* Destroy after the wayland display (when the monitors are already destroyed)
        to avoid destroying them with an invalid scene output. */
-    textwinsdestroy();
+    textwinsdestroy(1);
     textwin_tree = NULL;
     wlr_scene_node_destroy(&scene->tree.node);
     awl_draw_fini();
@@ -1421,6 +1441,7 @@ cleanup(void)
     cfgdict = NULL;
     /* only now nothing can request a redraw or a lock anymore */
     awl_redraw_fini();
+    awl_post_fini();
     awl_lock_fini();
 }
 
@@ -2429,8 +2450,9 @@ textwinfind(awl_window_t *win)
     return NULL;
 }
 
-awl_window_t *
-textwincreate(void)
+/** a new popup in textwins, see textwincreate() */
+static awl_window_t *
+textwinnew(int kept)
 {
     TextWin *tw;
     awl_window_style_t style;
@@ -2444,8 +2466,21 @@ textwincreate(void)
     style = textwinstyle();
     tw = ecalloc(1, sizeof(*tw));
     tw->win = awl_window_create(textwin_tree, &style);
+    tw->kept = kept;
     wl_list_insert(textwins.prev, &tw->link);
     return tw->win;
+}
+
+awl_window_t *
+textwincreate(void)
+{
+    return textwinnew(0);
+}
+
+awl_window_t *
+textwincreatekept(void)
+{
+    return textwinnew(1);
 }
 
 void
@@ -2506,6 +2541,13 @@ textwinsetscroll(awl_window_t *win,
 {
     if (textwinfind(win))
         awl_window_set_scroll(win, scroll, data);
+}
+
+void
+textwinsethidden(awl_window_t *win, void (*hidden)(awl_window_t *win, void *data), void *data)
+{
+    if (textwinfind(win))
+        awl_window_set_hidden(win, hidden, data);
 }
 
 void
@@ -2590,21 +2632,42 @@ textwinsupdate(Monitor *m)
         awl_window_update(tw->win, m);
 }
 
+/** the plugins' popups, and with kept the tray's too */
 static void
-textwinshideall(void)
+textwinshideall(int kept)
 {
     TextWin *tw;
     wl_list_for_each(tw, &textwins, link)
-        awl_window_hide(tw->win);
+        if (kept || !tw->kept)
+            awl_window_hide(tw->win);
 }
 
-/** the ones the plugins did not destroy themselves */
+/** the ones the plugins did not destroy themselves, and with kept the
+ * tray's too */
 static void
-textwinsdestroy(void)
+textwinsdestroy(int kept)
 {
     TextWin *tw, *tmp;
     wl_list_for_each_safe(tw, tmp, &textwins, link)
-        textwindestroy(tw->win);
+        if (kept || !tw->kept)
+            textwindestroy(tw->win);
+}
+
+Monitor *
+monitornamed(const char *name)
+{
+    Monitor *m;
+    if (name)
+        wl_list_for_each(m, &mons, link)
+            if (!strcmp(m->wlr_output->name, name))
+                return m;
+    return NULL;
+}
+
+const awl_popup_config_t *
+popupconfig(void)
+{
+    return cfg->popup;
 }
 
 void
@@ -4562,6 +4625,9 @@ setup(void)
     if (awl_redraw_init() >= 0)
         redraw_source = wl_event_loop_add_fd(event_loop, awl_redraw_fd(),
                 WL_EVENT_READABLE, redraw_fire, NULL);
+    if (awl_post_init() >= 0)
+        post_source = wl_event_loop_add_fd(event_loop, awl_post_fd(),
+                WL_EVENT_READABLE, post_fire, NULL);
     if (awl_lock_init() >= 0)
         lock_source = wl_event_loop_add_fd(event_loop, awl_lock_fd(),
                 WL_EVENT_READABLE, lockfire, NULL);
@@ -4867,7 +4933,7 @@ testwincmd(char *line)
             goto bad;
         textwinsetscroll(testwins[n], strcmp(onoff, "on") ? NULL : testwinscroll, (void *)(intptr_t)n);
     } else if (!strcmp(cmd, "hideall")) {
-        textwinshideall();
+        textwinshideall(1);
     } else if (!strcmp(cmd, "restart")) {
         plugin_restart(NULL);
     } else if (!strcmp(cmd, "dump") && *line) {
@@ -5674,7 +5740,7 @@ pluginsdetach(void)
         if (m->drw.m)
             awl_draw_widgets_clear(&m->drw);
     /* the popups the plugins left: nothing would update them any more */
-    textwinsdestroy();
+    textwinsdestroy(0);
     /* cfg points into the library */
     const Layout *old = cfg->layouts;
     size_t n_old = cfg->n_layouts;
@@ -5784,9 +5850,10 @@ xytonode(double x, double y, struct wlr_surface **psurface,
         /* Walk the tree to find a node that knows the client */
         for (pnode = node; pnode && !c; pnode = &pnode->parent->node)
             c = pnode->data;
+        /* the walk went on past the node that had it */
         if (c && c->type == LayerShell) {
+            l = (LayerSurface *)c;
             c = NULL;
-            l = pnode->data;
         }
     }
 

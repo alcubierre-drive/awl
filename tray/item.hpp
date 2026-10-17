@@ -1,13 +1,12 @@
 #pragma once
 
 #include "dbus-status-notifier-item.h"
+#include "menu.h"
 #include <giomm/dbusproxy.h>
 #include <glibmm/refptr.h>
 #include <gtkmm/eventbox.h>
 #include <gtkmm/icontheme.h>
 #include <gtkmm/image.h>
-#include <gtkmm/menu.h>
-#include <libdbusmenu-gtk/dbusmenu-gtk.h>
 #include <sigc++/trackable.h>
 
 #include <set>
@@ -23,7 +22,7 @@ struct ToolTip {
 class Item : public sigc::trackable {
 public:
     Item(const std::string&, const std::string&, Gtk::Window& win);
-    ~Item() = default;
+    ~Item();
 
     std::string bus_name;
     std::string object_path;
@@ -45,8 +44,8 @@ public:
     std::string icon_theme_path;
     std::string menu;
     ToolTip tooltip;
-    DbusmenuGtkMenu* dbus_menu = nullptr;
-    Gtk::Menu* gtk_menu = nullptr;
+    /** the menu at `menu` (menu.h), made on the first click */
+    awl_tray_menu_t* menu_ = nullptr;
     /**
      * ItemIsMenu flag means that the item only supports the context menu.
      * Default value is true because libappindicator supports neither ItemIsMenu nor Activate method
@@ -68,8 +67,7 @@ private:
     Glib::RefPtr<Gdk::Pixbuf> extractPixBuf(GVariant* variant);
     Glib::RefPtr<Gdk::Pixbuf> getIconPixbuf(int scale_factor);
     Glib::RefPtr<Gdk::Pixbuf> getIconByName(const std::string& name, int size);
-    static void onMenuDestroyed(Item* self, GObject* old_menu_pointer);
-    void makeMenu();
+    void toggleMenu();
     bool handleClick(GdkEventButton* const& /*ev*/);
     bool handleScroll(GdkEventScroll* const&);
 
@@ -80,6 +78,8 @@ private:
     // visibility of items with Status == Passive
     bool show_passive_ = false;
 
+    // the tray window the item is in: its monitor, where the menu goes
+    Gtk::Window& win_;
     Glib::RefPtr<Gio::DBus::Proxy> proxy_;
     Glib::RefPtr<Gio::Cancellable> cancellable_;
     std::set<std::string_view> update_pending_;

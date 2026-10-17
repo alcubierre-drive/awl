@@ -30,6 +30,8 @@ struct awl_window {
     void* click_data;
     awl_window_scroll_t scroll;
     void* scroll_data;
+    awl_window_hidden_t hidden;
+    void* hidden_data;
     int hover;
     /** draws itself instead of the text, if painter.paint is set */
     awl_window_painter_t painter;
@@ -238,6 +240,8 @@ void awl_window_hide( awl_window_t* win ) {
         win->drawn = 0;
     }
     wlr_scene_node_set_enabled( &win->tree->node, 0 );
+    /* last: it may show or destroy the window */
+    if (win->hidden) win->hidden( win, win->hidden_data );
 }
 
 Monitor* awl_window_monitor( const awl_window_t* win ) {
@@ -257,6 +261,11 @@ void awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* da
     win->click = click;
     win->click_data = data;
     if (!click) awl_window_pointer_leave( win );
+}
+
+void awl_window_set_hidden( awl_window_t* win, awl_window_hidden_t hidden, void* data ) {
+    win->hidden = hidden;
+    win->hidden_data = data;
 }
 
 void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data ) {

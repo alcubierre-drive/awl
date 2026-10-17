@@ -360,6 +360,10 @@ typedef struct awl_window awl_window_t;
  * tray's; NULL before setup(). The plugins' detaching destroys the ones they
  * left. Several can be shown at once. */
 awl_window_t *textwincreate(void);
+/** like textwincreate(), for the tray's menus (tray/menu_window.c): the
+ * plugins' detaching leaves it, and a press on the tray's own windows
+ * doesn't hide it (the tray toggles it itself) */
+awl_window_t *textwincreatekept(void);
 /** nothing if win is NULL or already destroyed */
 void textwindestroy(awl_window_t *win);
 /** shows win for a bar widget on m, centered on center_x (logical pixels
@@ -388,6 +392,14 @@ void textwinsetpainter(awl_window_t *win, const awl_window_painter_t *painter, v
 void textwinredraw(awl_window_t *win);
 /** the monitor win is shown on, NULL while hidden or if it is no popup */
 Monitor *textwinmonitor(awl_window_t *win);
+/** calls hidden whenever win is hidden, by anyone (`awl_window_set_hidden()`) */
+void textwinsethidden(awl_window_t *win, void (*hidden)(awl_window_t *win, void *data), void *data);
+/** the monitor whose output is named name, NULL if none */
+Monitor *monitornamed(const char *name);
+typedef struct awl_popup_config_t awl_popup_config_t;
+/** config_plugins.h's popup_config as it is now; valid until the next
+ * config reload (main thread) */
+const awl_popup_config_t *popupconfig(void);
 /**
  * which wallpaper the wallpaper action (`Arg.i`) and the timer switch to; the
  * ones after `WallpaperModeCount` are no timer modes: back to the one shown

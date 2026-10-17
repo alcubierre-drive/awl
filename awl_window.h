@@ -32,6 +32,10 @@ typedef void (*awl_window_click_t)( awl_window_t* win, int row, int col, uint32_
  * scrolling (a touchpad), which only has delta */
 typedef void (*awl_window_scroll_t)( awl_window_t* win, int row, int col, uint32_t orientation,
                                      double delta, int32_t value120, void* data );
+/** win was hidden: by awl_window_hide(), whoever called it, its monitor
+ * going away (awl_window_removemon()) included; not when it is destroyed,
+ * nor while its output is off (it comes back with it) */
+typedef void (*awl_window_hidden_t)( awl_window_t* win, void* data );
 
 /** A hidden, empty window in parent, an empty scene tree already placed in
  * the stacking order. */
@@ -80,6 +84,9 @@ void awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* da
 /** Gives win the pointer, scrolling going to scroll (with data); NULL lets
  * it through again unless there is a click callback. */
 void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data );
+/** Calls hidden (with data) whenever win is hidden from now on, NULL: no
+ * more. */
+void awl_window_set_hidden( awl_window_t* win, awl_window_hidden_t hidden, void* data );
 /** whether win is visible at lx, ly (layout coordinates) or in the margin
  * around it (awl_window_style_t's, the gap to the bar the pointer crosses
  * to get to it), whether or not it takes the pointer */

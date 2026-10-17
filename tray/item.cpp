@@ -2,10 +2,12 @@
 #include "../awl_log.h"
 
 #include <gdkmm/general.h>
+#include <gtk-layer-shell.h>
 #include <glibmm/main.h>
 #include <gtkmm/tooltip.h>
 #include <gtkmm/window.h>
 
+#include <cstring>
 #include <fstream>
 #include <map>
 
@@ -22,7 +24,8 @@ Item::Item(const std::string& bn, const std::string& op, Gtk::Window& win)
       object_path(op),
       icon_size(16),
       effective_icon_size(0),
-      icon_theme(Gtk::IconTheme::create()) {
+      icon_theme(Gtk::IconTheme::create()),
+      win_(win) {
     icon_size = 16;
     scroll_threshold_ = 10.0;
     show_passive_ = true;
@@ -43,6 +46,8 @@ Item::Item(const std::string& bn, const std::string& op, Gtk::Window& win)
                                      SNI_INTERFACE_NAME, sigc::mem_fun(*this, &Item::proxyReady),
                                      cancellable_, interface);
 }
+
+Item::~Item() { awl_tray_menu_free(menu_); }
 
 void Item::onConfigure(GdkEventConfigure* ev) { (void)ev; this->updateImage(); }
 
@@ -129,9 +134,14 @@ void Item::setProperty(const Glib::ustring& name, Glib::VariantBase& value) {
             if (!icon_theme_path.empty()) {
                 icon_theme->set_search_path({icon_theme_path});
             }
+            if (menu_) awl_tray_menu_set_theme_path(menu_, icon_theme_path.c_str());
         } else if (name == "Menu") {
-            menu = get_variant<std::string>(value);
-            makeMenu();
+            auto path = get_variant<std::string>(value);
+            if (path != menu) {
+                awl_tray_menu_free(menu_);
+                menu_ = nullptr;
+                menu = path;
+            }
         } else if (name == "ItemIsMenu") {
             item_is_menu = get_variant<bool>(value);
         }
@@ -423,34 +433,31 @@ Glib::RefPtr<Gdk::Pixbuf> Item::getIconByName(const std::string& name, int reque
                                                  Gtk::IconLookupFlags::ICON_LOOKUP_FORCE_SIZE);
 }
 
-void Item::onMenuDestroyed(Item* self, GObject* old_menu_pointer) {
-    if (old_menu_pointer == reinterpret_cast<GObject*>(self->dbus_menu)) {
-        self->gtk_menu = nullptr;
-        self->dbus_menu = nullptr;
-    }
-}
-
-void Item::makeMenu() {
-    if (gtk_menu == nullptr && !menu.empty()) {
-        dbus_menu = dbusmenu_gtkmenu_new(bus_name.data(), menu.data());
-        if (dbus_menu != nullptr) {
-            g_object_ref_sink(G_OBJECT(dbus_menu));
-            g_object_weak_ref(G_OBJECT(dbus_menu), (GWeakNotify)onMenuDestroyed, this);
-            gtk_menu = Glib::wrap(GTK_MENU(dbus_menu));
-            /* gtk_menu->attach_to_widget(event_box); */
-        }
-    }
+// The menu, awl's (menu.h): on the monitor of the window, under the icon.
+// The window's left margin is its x on the monitor (see Bridge::reposition()).
+void Item::toggleMenu() {
+    if (!menu_) menu_ = awl_tray_menu_new(bus_name.c_str(), menu.c_str(), icon_theme_path.c_str());
+    int x = 0, y = 0;
+    event_box.translate_coordinates(win_, event_box.get_allocated_width() / 2, 0, x, y);
+    x += gtk_layer_get_margin(win_.gobj(), GTK_LAYER_SHELL_EDGE_LEFT);
+    // "awl-tray:<monitor_id>", see Bridge::Bridge()
+    const char* ns = gtk_layer_get_namespace(win_.gobj());
+    const char* mon = ns && !strncmp(ns, "awl-tray:", 9) ? ns + 9 : "";
+    awl_tray_menu_toggle(menu_, mon, x);
 }
 
 // TODO
 bool Item::handleClick(GdkEventButton* const& ev) {
+    // a double or triple click also comes as GDK_2BUTTON_PRESS (and
+    // _3BUTTON_), after its presses: one action per press, or a menu
+    // would open and close at once
+    if (ev->type != GDK_BUTTON_PRESS) return true;
     auto parameters = Glib::VariantContainerBase::create_tuple(
         {Glib::Variant<int>::create(ev->x_root /*+ bar_.x_global */),
          Glib::Variant<int>::create(ev->y_root /*+ bar_.y_global */)});
     if ((ev->button == 1 && item_is_menu) || ev->button == 3) {
-        makeMenu();
-        if (gtk_menu != nullptr) {
-            gtk_menu->popup_at_pointer(reinterpret_cast<GdkEvent*>(ev));
+        if (!menu.empty()) {
+            toggleMenu();
             return true;
         } else {
             proxy_->call("ContextMenu", parameters);

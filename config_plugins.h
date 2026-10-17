@@ -56,8 +56,8 @@ static const awl_popup_config_t popup_config = {
      * the screen) */
     .margin       = 6,
     /* the font and its size, like font and fontsize (NULL, 0: the bar's) */
-    .font         = NULL,
-    .fontsize     = 0,
+    .font         = "sans:size=",
+    .fontsize     = 10,
     .calendar = {
         .today    = 0xb6ec52ff,
         .selected = 0xffffff33, /* the selected day's background */
@@ -69,8 +69,8 @@ static const awl_popup_config_t popup_config = {
 /* the desktop file list's font and its size, like font and fontsize (NULL,
  * 0: the bar's); it is blurred like the launcher (blur_launcher*) */
 static const awl_desktop_config_t desktop_config = {
-    .font         = NULL,
-    .fontsize     = 0,
+    .font         = "sans:size=",
+    .fontsize     = 10,
 };
 
 /* the wallpaper action ({.i = WallpaperNext, WallpaperPrev, WallpaperRand,
