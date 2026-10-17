@@ -115,14 +115,19 @@ static const struct wlr_buffer_impl buffer_impl = {
     .end_data_ptr_access = buffer_end,
 };
 
+/** what m's panel draws in: Monitor.desktopfont, else the bar's; NULL if none */
+static struct fcft_font* font_of( Monitor* m ) {
+    return m->desktopfont ? m->desktopfont : m->drw.font;
+}
+
 /** returns whether there is anything to show */
 static int draw( DesktopView* v, const awl_plugin_api_t* api ) {
     Monitor* m = v->m;
-    awl_draw_t* drw = m->drw;
+    struct fcft_font* font = font_of( m );
     const float s = m->wlr_output->scale;
     const int radius = (int)lroundf( desk.cfg.radius * s );
     int x, y, width, height;
-    api->desktop_measure( drw, (int)(m->w.width * s), (int)(m->w.height * s), radius, s,
+    api->desktop_measure( font, (int)(m->w.width * s), (int)(m->w.height * s), radius, s,
                           &x, &y, &width, &height );
     if (width <= 0 || height <= 0) return 0;
 
@@ -133,9 +138,11 @@ static int draw( DesktopView* v, const awl_plugin_api_t* api ) {
     b->h = height;
     wlr_buffer_init( &b->base, &buffer_impl, width, height );
 
-    awl_draw_prepare_drawing( drw, width, height, b->data, stride );
-    api->desktop_draw( drw, b->data, stride, width, height, radius, s );
-    awl_draw_finish_drawing( drw );
+    pixman_image_t* pix = awl_draw_image( width, height, b->data, stride );
+    if (pix) {
+        api->desktop_draw( pix, font, b->data, stride, width, height, radius, s );
+        pixman_image_unref( pix );
+    }
 
     const int lw = (int)lroundf( width / s ), lh = (int)lroundf( height / s );
     wlr_scene_buffer_set_buffer( v->buffer, &b->base );
@@ -163,7 +170,7 @@ void desktop_update( Monitor* m ) {
     v->key = key;
     v->drawn = 1;
 
-    int on = key.version && key.enabled && m->drw && m->drw->font && m->w.width > 0 && m->w.height > 0
+    int on = key.version && key.enabled && font_of( m ) && m->w.width > 0 && m->w.height > 0
           && draw( v, api );
     wlr_scene_node_set_enabled( &v->tree->node, on );
 }

@@ -21,14 +21,17 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "awl.h"
 #include "awl_draw.h"
+#include "awl_window_draw.h"
+#include "awl_desktop.h"
 #include "awl_dict_type.h"
 #include "awl_host.h"
 #include "tray/awl_tray.h"
 #include "plugins/wallpaper.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 19
+#define AWL_PLUGIN_ABI 22
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -109,6 +112,10 @@ typedef struct awl_config_t {
     enum libinput_config_tap_button_map button_map;
 
     const awl_tray_config_t* tray;
+    /** awl's own popups */
+    const awl_popup_config_t* popup;
+    /** the desktop file list (awl_desktop.h) */
+    const awl_desktop_config_t* desktop;
     const WallpaperConfig* wallpaper;
 } awl_config_t;
 
@@ -134,7 +141,7 @@ typedef struct awl_config_t {
     .scroll_method = scroll_method, .click_method = click_method, \
     .send_events_mode = send_events_mode, .accel_profile = accel_profile, \
     .accel_speed = accel_speed, .button_map = button_map, \
-    .tray = &tray_config, .wallpaper = &wallpaper_config, \
+    .tray = &tray_config, .popup = &popup_config, .desktop = &desktop_config, .wallpaper = &wallpaper_config, \
 }
 
 /** What the library provides. Main thread only. */
@@ -160,14 +167,16 @@ typedef struct awl_plugin_api_t {
      * toggles); 0: show nothing. Cheap, called on every redraw request.
      */
     uint64_t (*desktop_version)( void );
-    /** lays the panel out for the usable area avail_w x avail_h with corner
-     * radius r; returns its position in that area and its size (0: none) */
-    void (*desktop_measure)( awl_draw_t* drw, int avail_w, int avail_h, int r, float scale,
+    /** lays the panel out in font (Monitor.desktopfont,
+     * else the bar's; never NULL) for the usable
+     * area avail_w x avail_h with corner radius r; returns its position in
+     * that area and its size (0: none) */
+    void (*desktop_measure)( struct fcft_font* font, int avail_w, int avail_h, int r, float scale,
                              int* x, int* y, int* w, int* h );
     /** draws what the last measure laid out into data (premultiplied ARGB,
-     * cleared); awl has prepared drw for drawing into it */
-    void (*desktop_draw)( awl_draw_t* drw, uint32_t* data, int stride, int w, int h, int r,
-                          float scale );
+     * cleared), pix an image of it to draw text into, in the same font */
+    void (*desktop_draw)( pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride,
+                          int w, int h, int r, float scale );
     /** a click on the bare desktop, mods as WLR_MODIFIER_* without the ignored
      * ones; returns whether it was taken */
     int (*desktop_click)( int button, uint32_t mods );

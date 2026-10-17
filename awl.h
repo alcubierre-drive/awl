@@ -85,6 +85,7 @@
 
 // stupid SINCE_VERSION
 #include "xdg-shell-protocol.h"
+#include "awl_draw.h"
 
 /* macros */
 #ifndef MAX
@@ -103,7 +104,7 @@
 #define TAGMASK                 ((1u << LENGTH(tags)) - 1)
 #define LISTEN(E, L, H)         wl_signal_add((E), ((L)->notify = (H), (L)))
 #define LISTEN_STATIC(E, H)     do { struct wl_listener *_l = ecalloc(1, sizeof*_l); _l->notify = (H); wl_signal_add((E), _l); } while (0)
-#define TEXTW(mon, text)        (awl_draw_font_getwidth(mon->drw, text) + mon->lrpad)
+#define TEXTW(mon, text)        (awl_draw_text_width((mon)->drw.font, text) + (mon)->lrpad)
 
 /* enums */
 /** bordercolors[] */
@@ -207,8 +208,8 @@ typedef struct {
     struct wl_listener destroy;
 } KeyboardGroup;
 
-/** A layer-shell surface: panels, notifications, the launcher, the tray's
- * windows and the calendar. */
+/** A layer-shell surface: panels, notifications, the launcher and the tray's
+ * windows. */
 typedef struct {
     /* Must keep these three elements in this order */
     unsigned int type; /* LayerShell */
@@ -218,7 +219,7 @@ typedef struct {
     struct wlr_scene_tree *popups;
     struct wlr_scene_layer_surface_v1 *scene_layer;
     struct wl_list link;
-    short mapped, is_notification, is_launcher, is_popup;
+    short mapped, is_notification, is_launcher;
     struct wlr_layer_surface_v1 *layer_surface;
 
     struct wl_listener destroy;
@@ -235,7 +236,6 @@ typedef struct {
 } Layout;
 
 typedef struct Buffer Buffer;
-typedef struct awl_draw_t awl_draw_t;
 /** An output, with its bar. */
 struct Monitor {
     struct wl_list link;
@@ -288,8 +288,16 @@ struct Monitor {
         int nmaster;
     } ptlt[32];
     int asleep;
-    /** the bar's drawing state and widgets */
-    awl_draw_t *drw;
+    /** the bar: its font, its widgets and what they show; drw.m is NULL
+     * before createmon() sets it up and after cleanupmon() */
+    awl_draw_t drw;
+    /** the popups' font at this monitor's scale (awl_window.h,
+     * popup_config.font and .fontsize), from the font registry; NULL while
+     * they use the bar's */
+    struct fcft_font *popupfont;
+    /** the desktop file list's (awl_desktop.h, desktop_config.font and
+     * .fontsize), the same way; NULL while it uses the bar's */
+    struct fcft_font *desktopfont;
     /** the bar's text padding, left and right together */
     int lrpad;
 };
@@ -362,6 +370,24 @@ void textwinshow(awl_window_t *win, Monitor *m, int center_x, const char *text, 
 /** replaces win's text if it is shown; nothing while it is hidden */
 void textwinupdate(awl_window_t *win, const char *text);
 void textwinhide(awl_window_t *win);
+/** gives win the pointer, presses going to click; NULL lets it through
+ * again (`awl_window_set_click()`). A window that takes the pointer gets all
+ * of it: also the scrolling, dropped without textwinsetscroll()'s callback. */
+void textwinsetclick(awl_window_t *win,
+        void (*click)(awl_window_t *win, int row, int col, uint32_t button, void *data), void *data);
+/** gives win the pointer, scrolling going to scroll; NULL lets it through
+ * again unless it has a click callback (`awl_window_set_scroll()`) */
+void textwinsetscroll(awl_window_t *win,
+        void (*scroll)(awl_window_t *win, int row, int col, uint32_t orientation,
+                double delta, int32_t value120, void *data), void *data);
+typedef struct awl_window_painter_t awl_window_painter_t;
+/** makes win draw itself with painter instead of text, NULL for the text
+ * again (`awl_window_set_painter()`) */
+void textwinsetpainter(awl_window_t *win, const awl_window_painter_t *painter, void *data);
+/** what win's painter draws changed (`awl_window_redraw()`) */
+void textwinredraw(awl_window_t *win);
+/** the monitor win is shown on, NULL while hidden or if it is no popup */
+Monitor *textwinmonitor(awl_window_t *win);
 /**
  * which wallpaper the wallpaper action (`Arg.i`) and the timer switch to; the
  * ones after `WallpaperModeCount` are no timer modes: back to the one shown

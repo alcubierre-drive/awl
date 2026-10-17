@@ -5,7 +5,9 @@
 # $HOME whose Desktop is a fixture. It runs under gdb, which dumps every
 # thread's backtrace into the log if it crashes.
 #
-#   live.sh start           start, wait for the socket (LIVE_TIMEOUT s max)
+#   live.sh start [ARGS]    start, wait for the socket (LIVE_TIMEOUT s max);
+#                           ARGS go to awl, e.g. -d for its verbose log
+#                           (where the popups' pointer input goes, ...)
 #   live.sh stop            SIGTERM, wait for it to exit
 #   live.sh alive           exit status: is it running
 #   live.sh add | remove    add an output / remove the newest (AWL_TEST_OUTPUTS)
@@ -13,7 +15,12 @@
 #   live.sh randr [ARGS]    wlr-randr
 #   live.sh key ARGS        wtype, e.g. key -M alt -M ctrl r -m ctrl -m alt
 #   live.sh click X Y [BUTTON...]  move the pointer there in layout pixels and
-#                           click left|middle|right
+#                           click left|middle|right, or scroll wheel:N (N
+#                           notches down, negative up), hwheel:N (right),
+#                           finger:D (a touchpad's D down), see vptr.c
+#   live.sh win [CMD]       a command for awl's text popups (AWL_TEST_WINDOWS,
+#                           see testwincmd() in awl.c), e.g. win show 0
+#                           HEADLESS-1 640 'a\tb\nc'; then prints their state
 #   live.sh run CMD...      any client, with WAYLAND_DISPLAY etc. set
 #   live.sh log             the log so far
 #
@@ -31,9 +38,15 @@
 # home. awl gets -l '' (stderr, i.e. that log, only), so it leaves the real
 # awl's log file alone; arguments after start come after it. Desktop fixture:
 # $LIVE_DIR/home/Desktop, created on start if missing.
+#
+# LIVE_AWL=PATH runs another binary, relative to the source dir, e.g.
+# LIVE_AWL=dev/awl for make dev's unoptimized debug build, which picks up
+# dev/libawlplugins.so.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
-awl=$(cd "$here/.." && pwd)/awl
+src=$(cd "$here/.." && pwd)
+awl=${LIVE_AWL:-awl}
+case $awl in /*) ;; *) awl=$src/$awl ;; esac
 dir=${LIVE_DIR:-/tmp/awl-live-$UID}
 run=$dir/run
 log=$dir/awl.log
@@ -90,8 +103,10 @@ homelinks() {
 case ${1:-} in
 start)
 	pid >/dev/null && { echo "already running" >&2; exit 1; }
+	[ -x "$awl" ] || { echo "no $awl (make dev for dev/awl)" >&2; exit 1; }
 	mkdir -p "$run" && chmod 700 "$run"
-	rm -f "$run"/wayland-* "$dir/socket"
+	rm -f "$run"/wayland-* "$dir/socket" "$dir/ctl"
+	mkfifo "$dir/ctl"
 	fixture
 	homelinks
 	(
@@ -114,6 +129,7 @@ start)
 		export DBUS_SYSTEM_BUS_ADDRESS=${LIVE_SYSTEM_BUS:-unix:path=$dir/system_bus}
 		unset DISPLAY WAYLAND_SOCKET
 		export WLR_RENDERER=${WLR_RENDERER:-gles2} WLR_LIBINPUT_NO_DEVICES=1 AWL_TEST_OUTPUTS=1
+		export AWL_TEST_WINDOWS=$dir/ctl
 		cd "$dir"
 		exec setsid timeout -s TERM "${LIVE_TIMEOUT:-600}" dbus-run-session -- \
 			gdb -q -batch \
@@ -149,8 +165,18 @@ key) envs; shift; wtype "$@" ;;
 click)
 	e=$(extent)
 	envs; shift
-	[ -x "$here/vptr" ] || make -s -C "$here" vptr >&2 || exit 1
+	make -s -C "$here" vptr >&2 || exit 1
 	VPTR_EXTENT=$e "$here/vptr" "$@"
+	;;
+win)
+	shift
+	pid >/dev/null || { echo "not running" >&2; exit 1; }
+	# the dump comes after the command, in the same event loop round, so it
+	# shows its effect (a restart's only once the loop is idle: win again)
+	rm -f "$dir/windows"
+	printf '%s\ndump %s\n' "$*" "$dir/windows" >"$dir/ctl"
+	for i in $(seq 50); do [ -e "$dir/windows" ] && break; sleep 0.1; done
+	cat "$dir/windows"
 	;;
 run) envs; shift; "$@" ;;
 log) cat "$log" ;;

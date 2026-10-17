@@ -31,8 +31,9 @@ static awl_host_t host = {
     .lock_request = awl_lock_request,
     .logind_state = awl_lock_logind_state,
 
-    .text = awl_draw_text_color2,
-    .font_getwidth = awl_draw_font_getwidth,
+    .text = awl_draw_text,
+    .text_over = awl_draw_text_over,
+    .text_width = awl_draw_text_width,
 
     .actions = &awl_actions,
     .arranges = &awl_arranges,
@@ -41,18 +42,12 @@ static awl_host_t host = {
 
     .tray_width = awl_tray_width,
     .tray_set_widget_x = awl_tray_set_widget_x,
-    .calendar_toggle = awl_tray_calendar_toggle,
-    .calendar_show = awl_tray_calendar_show,
-    .calendar_hide = awl_tray_calendar_hide,
-    .calendar_scroll = awl_tray_calendar_scroll,
-    .popup_show = awl_tray_popup_show,
-    .popup_update = awl_tray_popup_update,
-    .popup_hide = awl_tray_popup_hide,
     .window_create = textwincreate,
     .window_destroy = textwindestroy,
     .window_show = textwinshow,
     .window_update = textwinupdate,
     .window_hide = textwinhide,
+    .window_set_click = textwinsetclick,
 
     .cfg = {
         .s_new = &awl_dict_new,
@@ -66,6 +61,11 @@ static awl_host_t host = {
         .s_lock = &awl_dict_lock,
         .s_unlock = &awl_dict_unlock,
     },
+
+    .window_set_scroll = textwinsetscroll,
+    .window_set_painter = textwinsetpainter,
+    .window_redraw = textwinredraw,
+    .window_monitor = textwinmonitor,
 };
 
 static void* handle = NULL;
@@ -116,7 +116,9 @@ out:
 
 /** The memfd stays open, in ``*out_fd``, until the library is unloaded: dlopen()
  * also hands back an already loaded library of the same name, and a closed
- * one's fd number, i.e. its /proc/self/fd/N, is the next memfd's. */
+ * one's fd number, i.e. its /proc/PID/fd/N, is the next memfd's. It is
+ * /proc/PID, not /proc/self: a debugger reads the library's symbols from the
+ * name the loader has, and its own /proc/self is a different process. */
 static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
     char path[PATH_MAX], fdpath[64];
     if (libpath( path, sizeof(path) )) {
@@ -128,7 +130,7 @@ static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
         awl_err_printf( "plugins: can't read %s: %s\n", path, strerror( errno ) );
         return NULL;
     }
-    snprintf( fdpath, sizeof(fdpath), "/proc/self/fd/%d", fd );
+    snprintf( fdpath, sizeof(fdpath), "/proc/%d/fd/%d", (int)getpid(), fd );
     void* h = dlopen( fdpath, RTLD_NOW | RTLD_LOCAL );
     if (!h) {
         awl_err_printf( "plugins: %s: %s\n", path, dlerror() );

@@ -4,8 +4,14 @@
  */
 #pragma once
 
-#include "awl.h"
+/*
+ * Two parts: text, drawn with a font from the font registry into any
+ * pixman image (awl_draw_text() & co.), and the bar, `awl_draw_t`, which
+ * is part of its Monitor (Monitor.drw) and has its own font and widgets.
+ * No wlroots here; awl.h includes this for Monitor.
+ */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <fcft/fcft.h>
 #include <pixman-1/pixman.h>
@@ -17,6 +23,8 @@
 typedef struct widget_t widget_t;
 typedef struct awl_draw_t awl_draw_t;
 typedef struct Client Client;
+typedef struct Monitor Monitor;
+typedef struct awl_window awl_window_t;
 
 /**
  * A part of the bar: the tags, the layout symbol, the task bar, the clock,
@@ -52,14 +60,17 @@ struct widget_t {
     /** called leave_delay_ms after the pointer has left a widget whose
      * callback_hover fired, unless it came back first (0: right away). While
      * the pointer is inside a layer surface whose namespace starts with
-     * popup_namespace (the popup the hover opened), it counts as still on the
-     * widget. A click on the widget cancels it, so a popup opened by click
-     * stays. */
+     * popup_namespace, or inside popup_window (the popup the hover opened),
+     * it counts as still on the widget. A click on the widget cancels it, so
+     * a popup opened by click stays. */
     void (*callback_leave)(widget_t* this);
     /** see `callback_leave` */
     uint32_t leave_delay_ms;
     /** see `callback_leave` */
     const char* popup_namespace;
+    /** see `callback_leave`: the widget's awl_window (awl_host_t's
+     * window_create()), if its popup is one; NULL if none */
+    awl_window_t* popup_window;
     /** awl's sum of scroll deltas since the last `callback_scroll`, which
      * comes once it is large enough */
     double scroll_amount;
@@ -86,9 +97,12 @@ typedef struct awl_draw_window_t {
     Client* c;
 } awl_draw_window_t;
 
-/** A bar: its font, its widgets and what awl tells them. */
+/** A bar, Monitor.drw: its font, its widgets and what awl tells them. */
 struct awl_draw_t {
+    /** the bar's image while awl draws it (between awl_draw_prepare_drawing()
+     * and awl_draw_finish_drawing()), else NULL */
     pixman_image_t *pix;
+    /** the bar's font, at its monitor's scale; NULL if none loads */
     struct fcft_font *font;
 
     widget_t widgets_left[32];
@@ -112,6 +126,8 @@ struct awl_draw_t {
     /** nonzero if the monitor gives each tag its own layout (Monitor.pertag) */
     int pertag;
 
+    /** the bar's monitor; NULL before awl_draw_setup() and after
+     * awl_draw_teardown(), while the monitor has no bar */
     Monitor* m;
 };
 
@@ -174,31 +190,78 @@ awl_draw_stride(unsigned int width)
     return (((PIXMAN_FORMAT_BPP(PIXMAN_a8r8g8b8) * width + 7) / 8 + 4 - 1) & -4);
 }
 
-/** fcft's setup, once */
+/** fcft's setup; once, later calls return the first's result */
 int awl_draw_init(void);
-/** m's bar, without font or widgets */
-awl_draw_t * awl_draw_create(Monitor* m);
-/** loads the first of fonts that fcft finds and makes it the bar's */
-struct fcft_font * awl_draw_load_font(awl_draw_t *drw, size_t fontcount,
-        const char *fonts[static fontcount], const char *attributes);
-void awl_draw_destroy_font(struct fcft_font *font);
-/** points the bar's pixman image at bits, w x h pixels of ARGB */
-void awl_draw_prepare_drawing(awl_draw_t *drw, unsigned int w, unsigned int h, uint32_t *bits, int stride);
-/** fills the box at x, y with bg and draws text into it, lpad from its left
- * edge, in fg; returns the x after the box */
-int awl_draw_text_color2(awl_draw_t *drw, int x, int y, unsigned int w, unsigned int h,
-        unsigned int lpad, const char *text, pixman_color_t fg, pixman_color_t bg);
-/** like `awl_draw_text_color2()`, but without padding and over what is
- * already there instead of a filled box; fg is 0xRRGGBBAA */
-int awl_draw_text_over(awl_draw_t *drw, int x, int y, unsigned int w, unsigned int h,
-        const char *text, uint32_t fg);
-/** width of text in pixels, kerning included */
-unsigned int awl_draw_font_getwidth(awl_draw_t *drw, const char *text);
+
+/** awl_font_get()'s last resort, as config_plugins.h's font and fontsize */
+#define AWL_FONT_FALLBACK "monospace:size="
+#define AWL_FONT_FALLBACK_SIZE 10
+
+/** the registry's size: at most this many fonts loaded (or failed) */
+#define AWL_FONT_SLOTS 32
+/** the longest font spec (name with size), NUL included */
+#define AWL_FONT_SPEC_MAX 128
+
+/**
+ * The font registry, every font awl draws with: one fcft instance per
+ * font, size and scale, shared by everyone asking for it. name is as
+ * config_plugins.h's font (size gets appended, as ":size=" unless name ends
+ * in '='), at size times scale and dpi 192 * scale. A size or scale that
+ * isn't positive and finite takes 10 or 1; huge ones are clamped.
+ *
+ * A static ring of AWL_FONT_SLOTS: past that the oldest font nobody holds
+ * is unloaded (one in use never is). A font given back stays loaded until
+ * then. One that doesn't load is logged once and not tried again until
+ * awl_font_retry().
+ *
+ * Returns that font, else AWL_FONT_FALLBACK at size, else at
+ * AWL_FONT_FALLBACK_SIZE; NULL only when fontconfig has no font at all, or
+ * all slots are in use (then awl draws no text). Give each back with
+ * awl_font_release(). Main thread; loading a new font blocks on fontconfig
+ * and the font files.
+ */
+struct fcft_font *awl_font_get(const char *name, float size, float scale);
+/** like awl_font_get(), but NULL instead of a fallback */
+struct fcft_font *awl_font_get_exact(const char *name, float size, float scale);
+/** gives back a font from awl_font_get(); NULL, or a font that isn't the
+ * registry's (logged), does nothing */
+void awl_font_release(struct fcft_font *font);
+/** makes the next get try the fonts that didn't load again (after a config
+ * reload: a font may have been installed meanwhile) */
+void awl_font_retry(void);
+
+/** an image to draw into: w x h pixels of premultiplied ARGB at bits, stride
+ * bytes a row, clipped to them. Give it back with pixman_image_unref(). */
+pixman_image_t *awl_draw_image(unsigned int w, unsigned int h, uint32_t *bits, int stride);
+/** fills the box at x, y of pix with bg and draws text into it in font, lpad
+ * from its left edge, in fg, cut with an ellipsis at w; returns the x after
+ * the box. NULL pix or font draws nothing. */
+int awl_draw_text(pixman_image_t *pix, struct fcft_font *font, int x, int y,
+        unsigned int w, unsigned int h, unsigned int lpad, const char *text,
+        pixman_color_t fg, pixman_color_t bg);
+/** like `awl_draw_text()`, but without padding and over what is already
+ * there instead of a filled box; fg is 0xRRGGBBAA */
+int awl_draw_text_over(pixman_image_t *pix, struct fcft_font *font, int x, int y,
+        unsigned int w, unsigned int h, const char *text, uint32_t fg);
+/** width of text in font in pixels, kerning included; 0 without a font */
+unsigned int awl_draw_text_width(struct fcft_font *font, const char *text);
+
+/** makes bar m's, without font or widgets (bar is m's drw, unused) */
+void awl_draw_setup(awl_draw_t *bar, Monitor *m);
+/** Makes the registry's font (awl_font_get(), or awl_font_get_exact() if
+ * !fallback) bar's, giving back its old one. Returns it; NULL (bar keeps
+ * its font) if none loads. */
+struct fcft_font *awl_draw_set_font(awl_draw_t *bar, const char *name, float size, float scale,
+        int fallback);
+/** makes bar->pix an image of bits, see awl_draw_image() */
+void awl_draw_prepare_drawing(awl_draw_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride);
 /** lets go of what `awl_draw_prepare_drawing()` pointed at */
-void awl_draw_finish_drawing(awl_draw_t *drw);
-void awl_draw_destroy(awl_draw_t *drw);
+void awl_draw_finish_drawing(awl_draw_t *bar);
+/** gives back bar's font and image, frees its widgets and empties it: its
+ * monitor has no bar anymore (bar->m is NULL) */
+void awl_draw_teardown(awl_draw_t *bar);
 /** Frees every widget's userdata and empties the widget lists, so nothing in
  * the bar points into ``libawlplugins.so`` anymore. */
-void awl_draw_widgets_clear(awl_draw_t *drw);
+void awl_draw_widgets_clear(awl_draw_t *bar);
 /** fcft's teardown */
 void awl_draw_fini(void);

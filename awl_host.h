@@ -23,9 +23,10 @@
 extern "C" {
 #endif
 
-typedef struct awl_draw_t awl_draw_t;
+struct fcft_font;
 typedef struct Monitor Monitor;
 typedef struct awl_window awl_window_t;
+typedef struct awl_window_painter_t awl_window_painter_t;
 typedef struct Client Client;
 typedef struct awl_actions_t awl_actions_t;
 typedef struct awl_arranges_t awl_arranges_t;
@@ -66,11 +67,17 @@ typedef struct awl_host_t {
      * that's less than it needs */
     void (*logind_state)( unsigned flags );
 
-    /** drawing: `awl_draw_text_color2()` */
-    int (*text)( awl_draw_t* drw, int x, int y, unsigned int w, unsigned int h,
-                 unsigned int lpad, const char* text, pixman_color_t fg, pixman_color_t bg );
-    /** drawing: `awl_draw_font_getwidth()` */
-    unsigned int (*font_getwidth)( awl_draw_t* drw, const char* text );
+    /** drawing: `awl_draw_text()`, text in font into pix, e.g. a bar
+     * widget's draw() with its pix and its bar's font */
+    int (*text)( pixman_image_t* pix, struct fcft_font* font, int x, int y, unsigned int w,
+                 unsigned int h, unsigned int lpad, const char* text, pixman_color_t fg,
+                 pixman_color_t bg );
+    /** drawing: `awl_draw_text_over()`, text in fg (0xRRGGBBAA) over what is
+     * in pix, e.g. in a painter's paint(); cut with an ellipsis at w */
+    int (*text_over)( pixman_image_t* pix, struct fcft_font* font, int x, int y, unsigned int w,
+                      unsigned int h, const char* text, uint32_t fg );
+    /** drawing: `awl_draw_text_width()` */
+    unsigned int (*text_width)( struct fcft_font* font, const char* text );
 
     /** actions: what config_plugins.h binds keys and buttons to */
     const awl_actions_t* actions;
@@ -85,20 +92,6 @@ typedef struct awl_host_t {
     uint32_t (*tray_width)( const char* monitor_id );
     /** tray: `awl_tray_set_widget_x()` */
     void (*tray_set_widget_x)( const char* monitor_id, uint32_t x );
-    /** tray: `awl_tray_calendar_toggle()` */
-    void (*calendar_toggle)( const char* monitor_id );
-    /** tray: `awl_tray_calendar_show()` */
-    void (*calendar_show)( const char* monitor_id );
-    /** tray: `awl_tray_calendar_hide()` */
-    void (*calendar_hide)( void );
-    /** tray: `awl_tray_calendar_scroll()` */
-    void (*calendar_scroll)( int amount );
-    /** tray: `awl_tray_popup_show()` */
-    void (*popup_show)( const char* monitor_id, int center_x, const char* text, int toggle );
-    /** tray: `awl_tray_popup_update()` */
-    void (*popup_update)( const char* text );
-    /** tray: `awl_tray_popup_hide()` */
-    void (*popup_hide)( void );
     /** awl's own text popups (awl_window.h): `textwincreate()`; a window
      * lives until window_destroy() or until the plugins detach */
     awl_window_t* (*window_create)( void );
@@ -110,6 +103,10 @@ typedef struct awl_host_t {
     void (*window_update)( awl_window_t* win, const char* text );
     /** `textwinhide()` */
     void (*window_hide)( awl_window_t* win );
+    /** `textwinsetclick()`: the window takes the pointer, presses go to
+     * click (row, col: the cell, -1 off the text; button a BTN_*) */
+    void (*window_set_click)( awl_window_t* win,
+            void (*click)( awl_window_t* win, int row, int col, uint32_t button, void* data ), void* data );
 
     /**
      * config values that can change while awl runs, by name. awl owns the
@@ -133,6 +130,26 @@ typedef struct awl_host_t {
      * `AWL_HOST_CFG_*` macros below go through this.
      */
     awl_dict_c cfg;
+
+    /** `textwinsetscroll()`: the window takes the pointer, scrolling goes
+     * to scroll (row, col as for window_set_click; orientation a
+     * WL_POINTER_AXIS_*, 0 vertical; delta positive down or right;
+     * value120 a wheel's in 120ths of a notch, 0 for a touchpad's). Like
+     * window_set_click, a window with either callback takes all of the
+     * pointer: presses and scrolling its callbacks don't take are dropped. */
+    void (*window_set_scroll)( awl_window_t* win,
+            void (*scroll)( awl_window_t* win, int row, int col, uint32_t orientation,
+                            double delta, int32_t value120, void* data ), void* data );
+    /** `textwinsetpainter()`: the window draws itself with painter
+     * (awl_window_draw.h; copied, with data) instead of its text, NULL for
+     * the text again. Its parts stand in for the cells: clicks and scrolls
+     * get the part as row, column 0. */
+    void (*window_set_painter)( awl_window_t* win, const awl_window_painter_t* painter, void* data );
+    /** `textwinredraw()`: what the painter draws changed */
+    void (*window_redraw)( awl_window_t* win );
+    /** `textwinmonitor()`: where the window is shown, NULL while hidden
+     * (awl also hides it, on a press elsewhere or with its monitor) */
+    Monitor* (*window_monitor)( awl_window_t* win );
 } awl_host_t;
 
 /** `awl_dict_get()` on `awl_host_t.cfg`; valptr is an ``awl_dict_val_t*`` */

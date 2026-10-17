@@ -36,25 +36,41 @@ static const uint32_t bordercolors[BorderLast] = {
     [BorderUrg]  = molokai_orange,
 };
 
-/* the tray and the calendar popup: colors 0xRRGGBBAA, sizes logical pixels */
+/* the tray: colors 0xRRGGBBAA */
 static const awl_tray_config_t tray_config = {
     .bg = 0x859394ff,
+};
+/* awl's own popups: the bar widgets' (the clock's calendar, the IP
+ * addresses) and awl's; colors 0xRRGGBBAA, sizes logical pixels */
+static const awl_popup_config_t popup_config = {
+    .bg           = 0x3c3c3c4d, /* awl blurs what is behind it */
+    .fg           = 0xf8f8f2ff,
+    .border       = molokai_blue,
+    .dim          = 0xf8f8f259, /* the calendar's neighbouring months' days */
+    .hover        = 0xffffff26, /* the buttons' background */
+    .pressed      = 0xffffff40,
+    .border_width = borderpx,
+    .radius       = blur_launcher_radius, /* the blur's corners */
+    .padding      = 8,
+    /* the gap to the bar and to the screen's sides (at most a quarter of
+     * the screen) */
+    .margin       = 6,
+    /* the font and its size, like font and fontsize (NULL, 0: the bar's) */
+    .font         = NULL,
+    .fontsize     = 0,
     .calendar = {
-        .bg           = 0x3c3c3c4d, /* awl blurs what is behind it */
-        .fg           = 0xf8f8f2ff,
-        .border       = molokai_blue,
-        .today        = 0xb6ec52ff,
-        .dim          = 0xf8f8f259, /* the neighbouring months' days */
-        .selected     = 0xffffff33, /* the selected day's background */
-        .hover        = 0xffffff26, /* the buttons' background */
-        .pressed      = 0xffffff40,
-        .border_width = borderpx,
-        .radius       = blur_launcher_radius, /* the blur's corners */
-        .padding      = 8,
+        .today    = 0xb6ec52ff,
+        .selected = 0xffffff33, /* the selected day's background */
         /* the event list, which scrolls beyond the maximum (0: none) */
         .list_min_height = 120,
         .list_max_height = 200,
     },
+};
+/* the desktop file list's font and its size, like font and fontsize (NULL,
+ * 0: the bar's); it is blurred like the launcher (blur_launcher*) */
+static const awl_desktop_config_t desktop_config = {
+    .font         = NULL,
+    .fontsize     = 0,
 };
 
 /* the wallpaper action ({.i = WallpaperNext, WallpaperPrev, WallpaperRand,

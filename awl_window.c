@@ -7,12 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/** between columns and rows, logical pixels (tray/textpopup.cpp's grid) */
-#define COLUMN_SPACING 12
-#define ROW_SPACING 2
-/** at most this many columns; the rest of a row goes into the last one */
-#define MAX_COLUMNS 16
-
 struct awl_window {
     struct wlr_scene_tree* tree; /* at the window's top left */
     struct wlr_scene_blur* blur;
@@ -28,6 +22,18 @@ struct awl_window {
     struct fcft_font* font;
     /** its size, logical pixels */
     int lw, lh;
+    /** what was drawn, for the pointer */
+    awl_window_layout_t layout;
+    /** takes the pointer if click or scroll is set; hover is the
+     * highlighted row (drawn only with click) */
+    awl_window_click_t click;
+    void* click_data;
+    awl_window_scroll_t scroll;
+    void* scroll_data;
+    int hover;
+    /** draws itself instead of the text, if painter.paint is set */
+    awl_window_painter_t painter;
+    void* painter_data;
 };
 
 /** like the bar's buffers in awl.c: read-only for the renderer */
@@ -83,6 +89,7 @@ awl_window_t* awl_window_create( struct wlr_scene_tree* parent, const awl_window
     win->tree = wlr_scene_tree_create( parent );
     win->buffer = wlr_scene_buffer_create( win->tree, NULL );
     win->buffer->point_accepts_input = accepts_input;
+    win->hover = -1;
     configure( win );
     wlr_scene_node_set_enabled( &win->tree->node, 0 );
     return win;
@@ -111,145 +118,75 @@ void awl_window_set_text( awl_window_t* win, const char* text ) {
     if (win->m) awl_window_update( win, win->m );
 }
 
-/** 0xRRGGBBAA as premultiplied floats, 0..1 */
-static void unpack( uint32_t c, float out[4] ) {
-    float a = (float)(c & 0xff) / 255.f;
-    out[0] = (float)((c >> 24) & 0xff) / 255.f * a;
-    out[1] = (float)((c >> 16) & 0xff) / 255.f * a;
-    out[2] = (float)((c >> 8) & 0xff) / 255.f * a;
-    out[3] = a;
+void awl_window_set_painter( awl_window_t* win, const awl_window_painter_t* painter, void* data ) {
+    win->painter = painter ? *painter : (awl_window_painter_t){ 0 };
+    win->painter_data = data;
+    win->hover = -1;
+    win->drawn = 0;
+    if (win->m) awl_window_update( win, win->m );
 }
 
-/** how much of the pixel centered at x, y the w x h box with corner radius r
- * at the origin covers, antialiased over a pixel */
-static float coverage( float x, float y, float w, float h, float r ) {
-    if (w <= 0 || h <= 0) return 0;
-    r = fminf( r, fminf( w, h ) / 2 );
-    float qx = fabsf( x - w / 2 ) - (w / 2 - r), qy = fabsf( y - h / 2 ) - (h / 2 - r);
-    float ox = fmaxf( qx, 0 ), oy = fmaxf( qy, 0 );
-    float d = sqrtf( ox * ox + oy * oy ) + fminf( fmaxf( qx, qy ), 0 ) - r;
-    return fminf( fmaxf( 0.5f - d, 0 ), 1 );
+void awl_window_redraw( awl_window_t* win ) {
+    win->drawn = 0;
+    if (win->m) awl_window_update( win, win->m );
 }
 
-/** the background: bg inside the border, the border around it */
-static void draw_frame( uint32_t* data, size_t stride, int w, int h, float bw, float r,
-                        uint32_t bg, uint32_t border ) {
-    float b[4], g[4];
-    unpack( bg, g );
-    unpack( border, b );
-    float ri = fmaxf( r - bw, 0 );
-    for (int y = 0; y < h; y++) {
-        uint32_t* row = (uint32_t*)((char*)data + (size_t)y * stride);
-        for (int x = 0; x < w; x++) {
-            float px = (float)x + 0.5f, py = (float)y + 0.5f;
-            float co = coverage( px, py, (float)w, (float)h, r );
-            float ci = bw > 0 ? coverage( px - bw, py - bw, (float)w - 2 * bw, (float)h - 2 * bw, ri ) : co;
-            float kb = co - ci, out[4];
-            for (int k = 0; k < 4; k++)
-                out[k] = fminf( b[k] * kb + g[k] * ci, 1 );
-            row[x] = (uint32_t)lroundf( out[3] * 255 ) << 24 | (uint32_t)lroundf( out[0] * 255 ) << 16 |
-                     (uint32_t)lroundf( out[1] * 255 ) << 8 | (uint32_t)lroundf( out[2] * 255 );
-        }
-    }
+/** what m's popups draw with: the popup font, else the bar's */
+static struct fcft_font* font_of( Monitor* m ) {
+    return m->popupfont ? m->popupfont : m->drw.font;
 }
 
-/** calls f for each cell of text with its row and column; from the last
- * column of MAX_COLUMNS on, the rest of the row is one cell */
-static void each_cell( const char* text, void (*f)( void* data, int row, int col, const char* s, size_t n ),
-                       void* data ) {
-    int row = 0, col = 0;
-    for (const char* p = text;;) {
-        size_t n = strcspn( p, col == MAX_COLUMNS - 1 ? "\n" : "\t\n" );
-        char sep = p[n];
-        f( data, row, col, p, n );
-        if (!sep) break;
-        p += n + 1;
-        if (sep == '\n') {
-            row++;
-            col = 0;
-        } else
-            col++;
-    }
+/** a painted window's layout, its frame around what the painter measures */
+static int layout_painted( awl_window_t* win, awl_window_layout_t* L, struct fcft_font* font, float s,
+                           int max_w, int max_h ) {
+    const int inset = awl_window_inset( &win->style, s );
+    int cw = 0, ch = 0;
+    if (max_w - 2 * inset <= 0 || max_h - 2 * inset <= 0) return 0;
+    if (!win->painter.measure( win->painter_data, font, s, max_w - 2 * inset, max_h - 2 * inset, &cw, &ch ))
+        return 0;
+    /* never more than allowed, whatever the painter says */
+    if (cw > max_w - 2 * inset) cw = max_w - 2 * inset;
+    if (ch > max_h - 2 * inset) ch = max_h - 2 * inset;
+    return awl_window_layout_frame( L, &win->style, s, cw, ch );
 }
 
-typedef struct {
-    awl_draw_t* drw;
-    int widths[MAX_COLUMNS];
-    int ncols, nrows;
-    /** drawing: where the rows and columns start, and the color */
-    int x0, y0, colsp, rowsp;
-    uint32_t fg;
-} layout_t;
-
-static void measure_cell( void* data, int row, int col, const char* s, size_t n ) {
-    layout_t* L = data;
-    char buf[1024];
-    if (n >= sizeof buf) n = sizeof buf - 1;
-    memcpy( buf, s, n );
-    buf[n] = 0;
-    int w = (int)awl_draw_font_getwidth( L->drw, buf );
-    if (w > L->widths[col]) L->widths[col] = w;
-    if (col + 1 > L->ncols) L->ncols = col + 1;
-    if (row + 1 > L->nrows) L->nrows = row + 1;
-}
-
-static void draw_cell( void* data, int row, int col, const char* s, size_t n ) {
-    layout_t* L = data;
-    char buf[1024];
-    if (!n) return;
-    if (n >= sizeof buf) n = sizeof buf - 1;
-    memcpy( buf, s, n );
-    buf[n] = 0;
-    int x = L->x0;
-    for (int c = 0; c < col; c++) x += L->widths[c] + L->colsp;
-    int h = L->drw->font->height;
-    awl_draw_text_over( L->drw, x, L->y0 + row * (h + L->rowsp), (unsigned)L->widths[col], (unsigned)h,
-                        buf, L->fg );
+/** the painter's content into data, its frame first */
+static void paint_painted( awl_window_t* win, const awl_window_layout_t* L, struct fcft_font* font, float s,
+                           uint32_t* data, int32_t stride ) {
+    awl_window_paint_frame( L, &win->style, data, stride );
+    pixman_image_t* pix = awl_draw_image( (unsigned)L->width, (unsigned)L->height, data, stride );
+    if (!pix) return;
+    win->painter.paint( win->painter_data, pix, font, s, L->x0, L->y0, win->click ? win->hover : -1 );
+    pixman_image_unref( pix );
 }
 
 /** returns whether there is anything to show */
 static int draw( awl_window_t* win ) {
     Monitor* m = win->m;
-    awl_draw_t* drw = m->drw;
+    struct fcft_font* font = font_of( m );
     const float s = m->wlr_output->scale;
-    if (!drw || !drw->font) return 0;
+    awl_window_layout_t L;
+    /* room for awl_window_place()'s margins */
+    const int w = m->m.width - 2 * awl_window_margin( win->style.margin, m->m.width );
+    const int h = m->w.height - 2 * awl_window_margin( win->style.margin, m->w.height );
+    if (win->painter.paint ? !layout_painted( win, &L, font, s, (int)(w * s), (int)(h * s) )
+                           : !awl_window_layout( &L, win->text, &win->style, font, s, (int)(w * s), (int)(h * s) ))
+        return 0;
 
-    layout_t L = { .drw = drw };
-    each_cell( win->text ? win->text : "", measure_cell, &L );
-    L.colsp = (int)lroundf( COLUMN_SPACING * s );
-    L.rowsp = (int)lroundf( ROW_SPACING * s );
-    const int bw = (int)lroundf( fmaxf( (float)win->style.border_width, 0 ) * s );
-    const int pad = (int)lroundf( fmaxf( (float)win->style.padding, 0 ) * s );
-    L.x0 = L.y0 = bw + pad;
-    L.fg = win->style.fg;
-
-    int width = 2 * L.x0 + (L.ncols - 1) * L.colsp;
-    for (int c = 0; c < L.ncols; c++) width += L.widths[c];
-    int height = 2 * L.y0 + L.nrows * drw->font->height + (L.nrows - 1) * L.rowsp;
-    /* wider than the screen: the last column is cut off */
-    const int maxw = (int)(m->m.width * s);
-    if (width > maxw) {
-        L.widths[L.ncols - 1] -= width - maxw;
-        if (L.widths[L.ncols - 1] < 0) L.widths[L.ncols - 1] = 0;
-        width = maxw;
-    }
-    if (width <= 0 || height <= 0) return 0;
-
-    int32_t stride = awl_draw_stride( width );
-    Buffer* b = ecalloc( 1, sizeof(Buffer) + (size_t)stride * height );
+    int32_t stride = awl_draw_stride( L.width );
+    Buffer* b = ecalloc( 1, sizeof(Buffer) + (size_t)stride * L.height );
     b->stride = stride;
-    b->w = width;
-    b->h = height;
-    wlr_buffer_init( &b->base, &buffer_impl, width, height );
+    b->w = L.width;
+    b->h = L.height;
+    wlr_buffer_init( &b->base, &buffer_impl, L.width, L.height );
+    if (win->painter.paint)
+        paint_painted( win, &L, font, s, b->data, stride );
+    else
+        awl_window_paint( &L, win->text, &win->style, font, win->click ? win->hover : -1, b->data, stride );
+    win->layout = L;
 
-    draw_frame( b->data, b->stride, width, height, (float)bw,
-                fmaxf( (float)win->style.radius, 0 ) * s, win->style.bg, win->style.border );
-    awl_draw_prepare_drawing( drw, width, height, b->data, stride );
-    each_cell( win->text ? win->text : "", draw_cell, &L );
-    awl_draw_finish_drawing( drw );
-
-    win->lw = (int)lroundf( width / s );
-    win->lh = (int)lroundf( height / s );
+    win->lw = (int)lroundf( L.width / s );
+    win->lh = (int)lroundf( L.height / s );
     wlr_scene_buffer_set_buffer( win->buffer, &b->base );
     wlr_scene_buffer_set_dest_size( win->buffer, win->lw, win->lh );
     wlr_buffer_drop( &b->base ); /* the scene holds it now */
@@ -259,24 +196,23 @@ static int draw( awl_window_t* win ) {
 
 static void place( awl_window_t* win ) {
     Monitor* m = win->m;
-    int x = win->center_x - win->lw / 2;
-    if (x > m->m.width - win->lw) x = m->m.width - win->lw;
-    if (x < 0) x = 0;
-    int y = win->top ? m->w.y : m->w.y + m->w.height - win->lh;
-    wlr_scene_node_set_position( &win->tree->node, m->m.x + x, y );
+    int x, y;
+    awl_window_place( m->m.x, m->m.width, m->w.y, m->w.height, win->lw, win->lh,
+                      win->center_x, win->top, win->style.margin, &x, &y );
+    wlr_scene_node_set_position( &win->tree->node, x, y );
 }
 
 void awl_window_update( awl_window_t* win, Monitor* m ) {
     if (!win || win->m != m || !m) return;
-    if (!m->wlr_output->enabled || !m->drw || !m->drw->font) {
+    if (!m->wlr_output->enabled || !m->drw.m || !font_of( m )) {
         wlr_scene_node_set_enabled( &win->tree->node, 0 );
         return;
     }
     const float s = m->wlr_output->scale;
-    if (!win->drawn || win->scale != s || win->font != m->drw->font) {
+    if (!win->drawn || win->scale != s || win->font != font_of( m )) {
         win->drawn = draw( win );
         win->scale = s;
-        win->font = m->drw->font;
+        win->font = font_of( m );
     }
     if (!win->drawn) {
         wlr_scene_node_set_enabled( &win->tree->node, 0 );
@@ -297,6 +233,10 @@ void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top ) {
 void awl_window_hide( awl_window_t* win ) {
     if (!win->m) return;
     win->m = NULL;
+    if (win->hover != -1) {
+        win->hover = -1;
+        win->drawn = 0;
+    }
     wlr_scene_node_set_enabled( &win->tree->node, 0 );
 }
 
@@ -304,6 +244,111 @@ Monitor* awl_window_monitor( const awl_window_t* win ) {
     return win->m;
 }
 
+int awl_window_box( const awl_window_t* win, struct wlr_box* box ) {
+    *box = (struct wlr_box){ win->tree->node.x, win->tree->node.y, win->lw, win->lh };
+    return win->tree->node.enabled;
+}
+
 void awl_window_removemon( awl_window_t* win, Monitor* m ) {
     if (win && win->m == m) awl_window_hide( win );
+}
+
+void awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* data ) {
+    win->click = click;
+    win->click_data = data;
+    if (!click) awl_window_pointer_leave( win );
+}
+
+void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data ) {
+    win->scroll = scroll;
+    win->scroll_data = data;
+    if (!scroll && !win->click) awl_window_pointer_leave( win );
+}
+
+/** whether win is visible at lx, ly, or less than gx, gy beside it */
+static int inside( const awl_window_t* win, double lx, double ly, int gx, int gy ) {
+    if (!win->m || !win->drawn || !win->tree->node.enabled) return 0;
+    struct wlr_box box = { win->tree->node.x - gx, win->tree->node.y - gy, win->lw + 2 * gx,
+                           win->lh + 2 * gy };
+    return wlr_box_contains_point( &box, lx, ly );
+}
+
+int awl_window_contains( const awl_window_t* win, double lx, double ly ) {
+    return win->m && inside( win, lx, ly, awl_window_margin( win->style.margin, win->m->m.width ),
+                             awl_window_margin( win->style.margin, win->m->w.height ) );
+}
+
+int awl_window_takes_pointer( const awl_window_t* win, double lx, double ly ) {
+    return (win->click || win->scroll) && inside( win, lx, ly, 0, 0 );
+}
+
+/** the cell at layout coordinates lx, ly, see awl_window_cell_at() */
+static int cell_at( const awl_window_t* win, double lx, double ly, int* row, int* col ) {
+    *row = *col = -1;
+    if (!win->m || !win->drawn) return 0;
+    if (win->painter.paint) {
+        const awl_window_layout_t* L = &win->layout;
+        int px = (int)((lx - win->tree->node.x) * win->scale) - L->x0;
+        int py = (int)((ly - win->tree->node.y) * win->scale) - L->y0;
+        if (px < 0 || py < 0 || px >= L->width - 2 * L->x0 || py >= L->height - 2 * L->y0 || !win->painter.hit)
+            return 0;
+        *row = win->painter.hit( win->painter_data, px, py );
+        if (*row < 0) *row = -1;
+        else *col = 0;
+        return *row >= 0;
+    }
+    return awl_window_cell_at( &win->layout, (int)((lx - win->tree->node.x) * win->scale),
+                               (int)((ly - win->tree->node.y) * win->scale), row, col );
+}
+
+int awl_window_pointer_motion( awl_window_t* win, double lx, double ly ) {
+    int row, col;
+    cell_at( win, lx, ly, &row, &col );
+    if (row != win->hover) {
+        win->hover = row;
+        win->drawn = 0;
+        awl_window_update( win, win->m );
+    }
+    return row;
+}
+
+void awl_window_pointer_leave( awl_window_t* win ) {
+    if (win->hover == -1) return;
+    win->hover = -1;
+    win->drawn = 0;
+    if (win->m) awl_window_update( win, win->m );
+}
+
+void awl_window_pointer_button( awl_window_t* win, double lx, double ly, uint32_t button, int* row, int* col ) {
+    cell_at( win, lx, ly, row, col );
+    if (win->click) win->click( win, *row, *col, button, win->click_data );
+}
+
+void awl_window_pointer_axis( awl_window_t* win, double lx, double ly, uint32_t orientation,
+                              double delta, int32_t value120, int* row, int* col ) {
+    cell_at( win, lx, ly, row, col );
+    if (win->scroll) win->scroll( win, *row, *col, orientation, delta, value120, win->scroll_data );
+}
+
+int awl_window_hover_row( const awl_window_t* win ) {
+    return win->hover;
+}
+
+int awl_window_cell_center( const awl_window_t* win, int row, int col, double* lx, double* ly ) {
+    int x, y, w, h;
+    if (win->painter.paint) {
+        if (!win->m || !win->drawn || !win->painter.box || col != 0 ||
+            !win->painter.box( win->painter_data, row, &x, &y, &w, &h ))
+            return 0;
+        *lx = win->tree->node.x + (win->layout.x0 + x + w / 2.0) / win->scale;
+        *ly = win->tree->node.y + (win->layout.y0 + y + h / 2.0) / win->scale;
+        return 1;
+    }
+    if (!win->m || !win->drawn || !awl_window_cell_box( &win->layout, row, col, &x, &y, &w, &h )) return 0;
+    /* the cell itself, not the gaps after it */
+    w = win->layout.widths[col];
+    h = win->layout.fh;
+    *lx = win->tree->node.x + (x + w / 2.0) / win->scale;
+    *ly = win->tree->node.y + (y + h / 2.0) / win->scale;
+    return 1;
 }

@@ -6,8 +6,8 @@ its own:
 
 - a built-in bar with tags, a task bar, the layout, and status widgets (CPU,
   memory and swap graphs, temperature, battery, volume, IP address, clock)
-- a system tray (StatusNotifierItem) with a calendar popup that shows
-  evolution-data-server events
+- a system tray (StatusNotifierItem)
+- a calendar popup on the clock that shows evolution-data-server events
 - a wallpaper with timed changes and fades
 - a panel listing the files in `~/Desktop`
 - blur and rounded corners for layer surfaces (scenefx)
@@ -25,8 +25,10 @@ Dependencies:
 
 - awl: wlroots 0.20, scenefx 0.5, wayland, xkbcommon, libinput, pixman,
   fcft, libpulse, libsystemd, and xcb and xcb-icccm for XWayland
-- the tray (`tray/`): gtkmm 3, gtk-layer-shell, dbusmenu-gtk3,
-  and optionally libecal for calendar events
+- the tray (`tray/`): gtkmm 3, gtk-layer-shell, dbusmenu-gtk3
+- calendar events: evolution-data-server (libecal), at run time only: the
+  plugins load it if it is there, without it the calendar has no events
+  (`make ECAL_CHECK=1` checks plugins/cal_eds.c against its headers)
 
 scenefx is looked up under `~/Desktop/awl-libs` (`AWL_LIBS` in config.mk).
 Then:
@@ -67,7 +69,11 @@ manager, copy `awl.desktop` to `/usr/share/wayland-sessions/`.
 
 `test/live.sh` runs a headless instance for testing, see the comment at its
 top. It keeps the instance off the real system bus; `test/live-nm.sh` does the
-same but lets it read NetworkManager through `xdg-dbus-proxy`.
+same but lets it read NetworkManager through `xdg-dbus-proxy`. `make dev`
+builds `dev/awl`, unoptimized with full debug info, for
+`LIVE_AWL=dev/awl test/live.sh start`; `test/windows.sh` runs the scenario
+test of awl's popups in such an instance, `make check` the unit test of their
+drawing, which needs no compositor.
 
 ## Documentation
 

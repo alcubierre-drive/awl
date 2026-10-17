@@ -9,6 +9,7 @@
 #include "plugins/poller.h"
 #include "plugins/persistent.h"
 #include "plugins/logind.h"
+#include "plugins/calpopup.h"
 #include "plugins_git.h"
 
 #include <stddef.h>
@@ -109,11 +110,13 @@ static void api_init( int paused ) {
     awl_plugin_start( plugin_data );
     awl_desktop_start();
     awl_wallpaper_start();
+    awl_calpopup_start();
 }
 
 static int api_fini( void ) {
     if (!plugin_data) return 0;
-    int stuck = awl_desktop_stop();
+    int stuck = awl_calpopup_stop();
+    stuck |= awl_desktop_stop();
     stuck |= awl_wallpaper_stop();
     stuck |= awl_logind_stop();
     awl_plugin_stop( plugin_data );

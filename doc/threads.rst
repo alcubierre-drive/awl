@@ -30,6 +30,10 @@ The threads
    * - ``wallpaper``
      - plugins/wallpaper.c
      - lists the wallpaper directory, picks one, decodes it
+   * - ``calendar``
+     - plugins/calendar.c
+     - the clock popup's events: loads libecal on the first month asked
+       for and queries evolution-data-server over D-Bus, which blocks
    * - ``logind``
      - plugins/logind.c
      - listens to systemd-logind on the system bus: asks awl to lock on
@@ -37,8 +41,7 @@ The threads
        suspend wait for it
    * - tray
      - tray/
-     - the GTK main loop: StatusNotifier host and watcher, the tray windows,
-       the calendar
+     - the GTK main loop: StatusNotifier host and watcher, the tray windows
 
 The rules
 ---------
@@ -135,7 +138,9 @@ The life of a thread
 Every thread of the library is an `awl_thread_t`, started and stopped the
 same way. Only the poller is waited for without a limit: the only files it
 reads are in ``/proc`` and ``/sys``, which can't hang like a remote mount.
-The logind thread touches no files at all; it gets 2 s.
+The logind thread touches no files at all; it gets 2 s. The calendar
+thread cancels its query (a D-Bus call to evolution-data-server) and gets
+1 s.
 
 .. mermaid::
 

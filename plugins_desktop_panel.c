@@ -20,7 +20,7 @@
 #include <sys/inotify.h>
 #include <unistd.h>
 
-/** calendar style (tray/calendar.cpp) */
+/** the popups' style (config_plugins.h's popup_config) */
 static const uint32_t panel_bg = 0x3c3c3c4c,
                       col_file = 0xf8f8f2ff,
                       col_dir = molokai_blue,
@@ -250,14 +250,14 @@ static uint32_t color( const Filename* f ) {
     return f->ishidden ? fade( c, hidden_alpha ) : c;
 }
 
-static int textw( awl_draw_t* drw, const char* text ) {
-    return (int)awl_host->font_getwidth( drw, text );
+static int textw( struct fcft_font* font, const char* text ) {
+    return (int)awl_host->text_width( font, text );
 }
 
-void awl_desktop_measure( awl_draw_t* drw, int avail_w, int avail_h, int radius, float s,
+void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int radius, float s,
                           int* x, int* y, int* w, int* h ) {
     PanelLayout* l = &desk.lay;
-    const int fh = drw->font->height,
+    const int fh = font->height,
               margin = (int)lroundf( panel_margin * s );
     l->row_h = fh + (int)lroundf( 4 * s );
     l->pad = MAX( fh / 2, radius / 2 );
@@ -276,14 +276,14 @@ void awl_desktop_measure( awl_draw_t* drw, int avail_w, int avail_h, int radius,
     int width = 2 * l->pad;
     l->ncols = l->shown = 0;
     if (l->n == 0) {
-        l->col_w[l->ncols++] = textw( drw, "(empty)" );
+        l->col_w[l->ncols++] = textw( font, "(empty)" );
         width += l->col_w[0];
     }
     while (l->shown < l->n) {
         int cw = 0, end = MIN( l->n, l->shown + l->rows );
         for (int i = l->shown; i < end; i++) {
             label( &desk.files[l->idx[i]], buf, sizeof(buf) );
-            cw = MAX( cw, textw( drw, buf ) );
+            cw = MAX( cw, textw( font, buf ) );
         }
         cw = MIN( cw, max_col_w );
         if (l->ncols && width + l->gap + cw > avail_w) break;
@@ -295,7 +295,7 @@ void awl_desktop_measure( awl_draw_t* drw, int avail_w, int avail_h, int radius,
     l->more[0] = 0;
     if (l->shown < l->n) {
         snprintf( l->more, sizeof(l->more), "… %d more", l->n - l->shown + 1 );
-        int extra = textw( drw, l->more ) - l->col_w[l->ncols - 1];
+        int extra = textw( font, l->more ) - l->col_w[l->ncols - 1];
         extra = MIN( extra, avail_w - width );
         if (extra > 0) {
             l->col_w[l->ncols - 1] += extra;
@@ -341,23 +341,24 @@ static void panel_under( uint32_t* data, int stride, int w, int h, float r, uint
     }
 }
 
-static void text( awl_draw_t* drw, int x, int y, int w, int h, const char* s, uint32_t fg ) {
-    awl_host->text( drw, x, y, w, h, 0, s, color_8bit_to_16bit( fg ), color_8bit_to_16bit( 0 ) );
+static void text( pixman_image_t* pix, struct fcft_font* font, int x, int y, int w, int h,
+                  const char* s, uint32_t fg ) {
+    awl_host->text( pix, font, x, y, w, h, 0, s, color_8bit_to_16bit( fg ), color_8bit_to_16bit( 0 ) );
 }
 
-void awl_desktop_draw( awl_draw_t* drw, uint32_t* data, int stride, int w, int h, int radius,
-                       float s ) {
+void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride,
+                       int w, int h, int radius, float s ) {
     const PanelLayout* l = &desk.lay;
     char buf[sizeof(desk.files[0].name) + 2];
 
     if (l->n == 0)
-        text( drw, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( col_file, hidden_alpha ) );
+        text( pix, font, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( col_file, hidden_alpha ) );
     for (int c = 0, i = 0, x = l->pad; c < l->ncols && i < l->shown; x += l->col_w[c++] + l->gap) {
         for (int r = 0; r < l->rows && i < l->shown; r++, i++) {
             const Filename* f = &desk.files[l->idx[i]];
             int is_more = l->more[0] && i == l->shown - 1;
             label( f, buf, sizeof(buf) );
-            text( drw, x, l->pad + r * l->row_h, l->col_w[c], l->row_h,
+            text( pix, font, x, l->pad + r * l->row_h, l->col_w[c], l->row_h,
                   is_more ? l->more : buf, is_more ? fade( col_file, hidden_alpha ) : color( f ) );
         }
     }

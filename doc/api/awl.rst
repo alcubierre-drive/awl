@@ -35,3 +35,8 @@ awl_window.h
 ------------
 
 .. c:autodoc:: awl_window.h
+
+awl_window_draw.h
+-----------------
+
+.. c:autodoc:: awl_window_draw.h

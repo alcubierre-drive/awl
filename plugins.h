@@ -61,11 +61,11 @@ int awl_desktop_stop( void );
 /** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_version` */
 uint64_t awl_desktop_version( void );
 /** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_measure` */
-void awl_desktop_measure( awl_draw_t* drw, int avail_w, int avail_h, int r, float scale,
+void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int r, float scale,
                           int* x, int* y, int* w, int* h );
 /** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_draw` */
-void awl_desktop_draw( awl_draw_t* drw, uint32_t* data, int stride, int w, int h, int r,
-                       float scale );
+void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride,
+                       int w, int h, int r, float scale );
 /** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_click` */
 int awl_desktop_click( int button, uint32_t mods );
 

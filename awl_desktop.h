@@ -17,6 +17,14 @@
 
 #include "awl.h"
 
+/** config_plugins.h's desktop_config */
+typedef struct awl_desktop_config_t {
+    /** the font, as config_plugins.h's font and fontsize (size appended to
+     * font); NULL and 0 each take the bar's */
+    const char* font;
+    int fontsize;
+} awl_desktop_config_t;
+
 /** How the panels look; awl fills it from config_plugins.h's ``blur_launcher*``
  * and ``locked_blur_config``. */
 typedef struct {
@@ -34,14 +42,16 @@ void desktop_init( struct wlr_scene_tree* tree, const desktop_config_t* cfg );
 /** config_plugins.h was reloaded */
 void desktop_configure( const desktop_config_t* cfg );
 
-/** m->drw must have its font loaded */
+/** m's bar must have its font loaded (m->drw.font); the panel draws in
+ * m->desktopfont, else in that */
 void desktop_addmon( Monitor* m );
 /** drops m's panel */
 void desktop_removemon( Monitor* m );
 /** redraws m's panel if anything it shows changed (the library's content,
  * usable area, scale), hides it if m is disabled; cheap otherwise */
 void desktop_update( Monitor* m );
-/** m->drw's font was reloaded (scale or config change). Not part of
+/** m's bar font (m->drw.font) or m->desktopfont was reloaded (scale or
+ * config change). Not part of
  * `desktop_update()`'s check: a new font can land at the old one's address,
  * and on a scale change the layout is arranged before ``updatebar()``
  * reloads it */

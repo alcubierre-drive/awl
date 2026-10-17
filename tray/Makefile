@@ -7,12 +7,6 @@ CXX ?= g++
 LD := g++
 
 PKGLIST := gtkmm-3.0 gtk-layer-shell-0 dbusmenu-gtk3-0.4
-# calendar events (calendar.cpp) are optional: without evolution-data-server
-# the popup is a plain calendar
-ifeq ($(shell pkg-config --exists libecal-2.0 && echo y),y)
-PKGLIST += libecal-2.0
-FLAGS += -DAWL_HAVE_ECAL
-endif
 
 CFLAGS += -Wall -Wextra -pedantic -fPIC
 CXXFLAGS += -Wall -Wextra -pedantic -fPIC
@@ -23,7 +17,7 @@ FLAGS += -MMD -MP
 # reaches awl only through awl_host (../awl_host.h)
 FLAGS += -DAWL_HOSTED
 # --as-needed drops the libraries pkg-config lists only because another one
-# (libecal above all) links them
+# links them
 LDFLAGS += -shared -Wl,--as-needed $(shell pkg-config --libs $(PKGLIST))
 
 SRC := $(wildcard *.cpp)

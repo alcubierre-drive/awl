@@ -13,6 +13,7 @@
 #include "awl_alert.h"
 #include "awl_window.h"
 #include "tray/awl_tray.h"
+#include <fcntl.h>
 #include <limits.h>
 #include <wlr/backend/headless.h>
 #include <wlr/backend/multi.h>
@@ -90,6 +91,9 @@ static void drawalert(Monitor *m);
 static void drawalerts(void);
 static void textwinsupdate(Monitor *m);
 static void textwinshideall(void);
+static awl_window_t *textwinat(double x, double y);
+static awl_window_t *textwinpointer(void);
+static int textwinmotion(void);
 static void textwinsdestroy(void);
 static bool alert_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy);
 static Buffer *barbuffer(Monitor *m);
@@ -193,6 +197,7 @@ static void tag(const Arg *arg);
 static void tagmon(const Arg *arg);
 static int testoutputadd(int signo, void *data);
 static int testoutputremove(int signo, void *data);
+static int testwinctl(int fd, uint32_t mask, void *data);
 static void tile(Monitor *m);
 static void togglebar_mon(Monitor* m);
 static void togglebar(const Arg *arg);
@@ -212,6 +217,7 @@ static void unmapnotify(struct wl_listener *listener, void *data);
 static void updatemons(struct wl_listener *listener, void *data);
 static void updatepluginpause(void);
 static void updatebar(Monitor *m);
+static void updatefonts(Monitor *m);
 static void updatetitle(struct wl_listener *listener, void *data);
 static void urgent(struct wl_listener *listener, void *data);
 static void virtualkeyboard(struct wl_listener *listener, void *data);
@@ -310,6 +316,11 @@ typedef struct {
 } TextWin;
 static struct wl_list textwins = {&textwins, &textwins};
 static struct wlr_scene_tree *textwin_tree;
+/** AWL_TEST_WINDOWS' popups by number, see testwincmd(); textwindestroy()
+ * clears a slot, so a plugin reload leaves none dangling */
+static awl_window_t *testwins[8];
+/** the popup the pointer is over, if it takes the pointer */
+static awl_window_t *textwin_hovered;
 static struct wlr_session_lock_manager_v1 *session_lock_mgr;
 static struct wlr_scene_blur *locked_bg_blur = NULL;
 static struct wlr_session_lock_v1 *cur_lock;
@@ -410,6 +421,10 @@ static struct AppliedConfig {
     int repeat_rate, repeat_delay;
     char *font;
     int fontsize;
+    char *popupfont; /* popup_config's */
+    int popupfontsize;
+    char *desktopfont; /* desktop_config's */
+    int desktopfontsize;
     unsigned int borderpx;
     unsigned int wallpaper_interval;
     WallpaperMode wallpaper_mode;
@@ -693,11 +708,11 @@ arrangelayers(Monitor *m)
     textwinsupdate(m);
 
     /* a loop of its own: the focus search below stops at the first
-     * keyboard-interactive surface (e.g. the calendar), which would leave
+     * keyboard-interactive surface (e.g. a launcher), which would leave
      * the blur of anything after it (a new notification) unsized */
     for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
         wl_list_for_each(l, &m->layers[layers_above_shell[i]], link) {
-            if ((l->is_notification || l->is_launcher || l->is_popup) && l->blur && l->layer_surface) {
+            if ((l->is_notification || l->is_launcher) && l->blur && l->layer_surface) {
                 /* arrangelayers() runs on every layer-surface commit (e.g.
                  * every redrawn frame of a notification/launcher), not just
                  * on actual resizes; only touch the blur node's size when it
@@ -719,11 +734,7 @@ arrangelayers(Monitor *m)
         wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
             if (locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
                 continue;
-            /* Deactivate the focused client, except for our own tray popups:
-             * the client keeps its border color and activated state, only
-             * the keyboard moves to the popup (unmap gives it back) */
-            if (!l->is_popup)
-                focusclient(NULL, 0);
+            focusclient(NULL, 0);
             exclusive_focus = l;
             client_notify_enter(l->layer_surface->surface, wlr_seat_get_keyboard(seat));
             return;
@@ -752,10 +763,10 @@ barwidgetat(Monitor *m, double cx, double cy)
     struct wlr_scene_node *node;
     struct wlr_scene_buffer *buffer;
     unsigned int cursor_x, xpos = 0;
-    awl_draw_t *d = m->drw;
+    awl_draw_t *d = &m->drw;
     int i;
 
-    if (!d || !(node = wlr_scene_node_at(&layers[LyrBottom]->node, cx, cy, NULL, NULL))
+    if (!d->m || !(node = wlr_scene_node_at(&layers[LyrBottom]->node, cx, cy, NULL, NULL))
             || !(buffer = wlr_scene_buffer_from_node(node)) || buffer != m->scene_buffer)
         return NULL;
     cursor_x = (unsigned int)((cx - m->m.x) * m->wlr_output->scale);
@@ -809,7 +820,7 @@ static int
 hovertimeout(void *data)
 {
     (void)data;
-    /* not while a popup such as the calendar holds the keyboard */
+    /* not while a layer surface (e.g. a launcher) holds the keyboard */
     if (!hover_widget || locked || exclusive_focus)
         return 0;
     if (hover_active && hover_active != hover_widget) {
@@ -849,10 +860,19 @@ pointerinpopup(const char *ns)
     return 0;
 }
 
+static TextWin *textwinfind(awl_window_t *win);
+
+/** whether the pointer is over win, one of awl's own popups (textwins) */
+static int
+pointerintextwin(awl_window_t *win)
+{
+    /* the plugin may have destroyed it without clearing popup_window */
+    return textwinfind(win) && awl_window_contains(win, cursor->x, cursor->y);
+}
+
 /** c is the client under the pointer, which may cover the bar. Exclusive
- * focus (e.g. the calendar popup) deliberately doesn't reset the hover
- * state, so the click that closes the popup over its widget doesn't make it
- * pop up again right away. */
+ * focus (e.g. a launcher) deliberately doesn't reset the hover
+ * state. */
 static void
 updatehover(Client *c)
 {
@@ -868,7 +888,8 @@ updatehover(Client *c)
         w = NULL;
     if (hover_active)
         setleavepending(w != hover_active && !(hover_active->popup_namespace
-                && pointerinpopup(hover_active->popup_namespace)));
+                && pointerinpopup(hover_active->popup_namespace))
+                && !pointerintextwin(hover_active->popup_window));
     if (w == hover_widget)
         return;
     hover_widget = w;
@@ -898,6 +919,22 @@ axisnotify(struct wl_listener *listener, void *data)
     Client* c = NULL;
     struct wlr_scene_buffer *buffer;
     struct wlr_scene_node *node;
+    awl_window_t *twin;
+    int row, col;
+
+    /* A popup that takes the pointer gets the scrolling, as it gets the
+     * presses; one with only a click callback drops it: its motion took the
+     * pointer focus from what is below anyway. An open xdg_popup's grab
+     * comes first, as for the buttons. */
+    if (!wlr_seat_pointer_has_grab(seat) && (twin = textwinpointer())) {
+        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: axis %d %g (%d/120) at %.0f,%.0f\n", (void *)twin,
+                event->orientation, event->delta, event->delta_discrete, cursor->x, cursor->y);
+        /* the callback may destroy it */
+        awl_window_pointer_axis(twin, cursor->x, cursor->y, event->orientation, event->delta,
+                event->delta_discrete, &row, &col);
+        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: that is row %d, column %d\n", (void *)twin, row, col);
+        return;
+    }
     xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
     if (!c && !exclusive_focus &&
         (node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL)) &&
@@ -909,26 +946,26 @@ axisnotify(struct wl_listener *listener, void *data)
         cursor_y *= selmon->wlr_output->scale;
         (void)cursor_y;
         unsigned int xpos = 0;
-        for (int i=0; i<selmon->drw->n_widgets_left; ++i) {
-            if (cursor_x >= xpos && cursor_x < xpos + selmon->drw->widgets_left[i].width) {
-                widget_wrap_scroll_callback( &selmon->drw->widgets_left[i], cursor_x - xpos, event->delta );
+        for (int i=0; i<selmon->drw.n_widgets_left; ++i) {
+            if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.widgets_left[i].width) {
+                widget_wrap_scroll_callback( &selmon->drw.widgets_left[i], cursor_x - xpos, event->delta );
                 return;
             }
-            xpos += selmon->drw->widgets_left[i].width;
+            xpos += selmon->drw.widgets_left[i].width;
         }
-        xpos = selmon->drw->center_widget_start;
-        if (cursor_x >= xpos && cursor_x < xpos + selmon->drw->center_widget_space)
-            if (selmon->drw->has_center_widget) {
-                widget_wrap_scroll_callback( &selmon->drw->center_widget, cursor_x - xpos, event->delta );
+        xpos = selmon->drw.center_widget_start;
+        if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.center_widget_space)
+            if (selmon->drw.has_center_widget) {
+                widget_wrap_scroll_callback( &selmon->drw.center_widget, cursor_x - xpos, event->delta );
                 return;
             }
-        xpos += selmon->drw->center_widget_space;
-        for (int i=selmon->drw->n_widgets_right-1; i>=0; --i) {
-            if (cursor_x >= xpos && cursor_x < xpos + selmon->drw->widgets_right[i].width) {
-                widget_wrap_scroll_callback( &selmon->drw->widgets_right[i], cursor_x - xpos, event->delta );
+        xpos += selmon->drw.center_widget_space;
+        for (int i=selmon->drw.n_widgets_right-1; i>=0; --i) {
+            if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.widgets_right[i].width) {
+                widget_wrap_scroll_callback( &selmon->drw.widgets_right[i], cursor_x - xpos, event->delta );
                 return;
             }
-            xpos += selmon->drw->widgets_right[i].width;
+            xpos += selmon->drw.widgets_right[i].width;
         }
     }
     /* TODO: allow usage of scroll whell for mousebindings, it can be implemented
@@ -1110,15 +1147,13 @@ buttonpress(struct wl_listener *listener, void *data)
     uint32_t mods;
     Client *c;
     const Button *b;
+    awl_window_t *twin;
     static int swallow_release;
 
     wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
-    /* The calendar and text popups (tray/calendar.cpp, tray/textpopup.cpp)
-     * take exclusive keyboard focus while shown, which also keeps clicks
-     * from reaching the bar's widgets.
-     * Like a menu, a press anywhere outside it only closes it; the matching
-     * release is swallowed too, so nothing below sees half a click. */
+    /* a press an awl window took (below) swallows its release too, so
+     * nothing below sees half a click */
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED && swallow_release) {
         swallow_release = 0;
         return;
@@ -1135,26 +1170,19 @@ buttonpress(struct wl_listener *listener, void *data)
                 event->time_msec, event->button, event->state);
         return;
     }
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && exclusive_focus
-            && ((LayerSurface *)exclusive_focus)->type == LayerShell
-            && ((LayerSurface *)exclusive_focus)->is_popup) {
-        /* compare against the popup's own rect: xytonode()'s parent walk
-         * overshoots by one node for layer surfaces, so its LayerSurface
-         * isn't reliable here */
-        LayerSurface *l = exclusive_focus;
-        int lx, ly;
-        wlr_scene_node_coords(&l->scene->node, &lx, &ly);
-        struct wlr_box box = { lx, ly, l->layer_surface->surface->current.width,
-                l->layer_surface->surface->current.height };
-        if (!wlr_box_contains_point(&box, cursor->x, cursor->y)) {
-            awl_tray_calendar_hide();
-            awl_tray_popup_hide();
-            swallow_release = 1;
-            return;
-        }
+    /* a popup that takes the pointer gets the press, and its release */
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !locked
+            && (twin = textwinat(cursor->x, cursor->y))) {
+        int row, col;
+        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: button %u at %.0f,%.0f\n", (void *)twin,
+                event->button, cursor->x, cursor->y);
+        /* the callback may destroy it */
+        awl_window_pointer_button(twin, cursor->x, cursor->y, event->button, &row, &col);
+        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: that is row %d, column %d\n", (void *)twin, row, col);
+        swallow_release = 1;
+        return;
     }
-
-    /* awl's popups take no input; a press anywhere but on the bar (whose
+    /* the other popups take no input; a press anywhere but on the bar (whose
      * widgets toggle them) closes them, and goes on to what is below */
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&textwins)
             && !((node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL))
@@ -1182,39 +1210,39 @@ buttonpress(struct wl_listener *listener, void *data)
         cursor_y *= selmon->wlr_output->scale;
         (void)cursor_y;
         unsigned int xpos = 0;
-        for (int i=0; i<selmon->drw->n_widgets_left; ++i) {
-            if (cursor_x >= xpos && cursor_x < xpos + selmon->drw->widgets_left[i].width) {
+        for (int i=0; i<selmon->drw.n_widgets_left; ++i) {
+            if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.widgets_left[i].width) {
                 click = ClkBar;
-                if (selmon->drw->widgets_left[i].callback_click) {
-                    (*selmon->drw->widgets_left[i].callback_click)(&selmon->drw->widgets_left[i],
+                if (selmon->drw.widgets_left[i].callback_click) {
+                    (*selmon->drw.widgets_left[i].callback_click)(&selmon->drw.widgets_left[i],
                             cursor_x - xpos, event->button);
                     return;
                 }
             }
-            xpos += selmon->drw->widgets_left[i].width;
+            xpos += selmon->drw.widgets_left[i].width;
         }
-        xpos = selmon->drw->center_widget_start;
-        if (cursor_x >= xpos && cursor_x < xpos + selmon->drw->center_widget_space) {
+        xpos = selmon->drw.center_widget_start;
+        if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.center_widget_space) {
             click = ClkBar;
-            if (selmon->drw->has_center_widget) {
-                if (selmon->drw->center_widget.callback_click) {
-                    (*selmon->drw->center_widget.callback_click)(&selmon->drw->center_widget,
+            if (selmon->drw.has_center_widget) {
+                if (selmon->drw.center_widget.callback_click) {
+                    (*selmon->drw.center_widget.callback_click)(&selmon->drw.center_widget,
                             cursor_x - xpos, event->button);
                     return;
                 }
             }
         }
-        xpos += selmon->drw->center_widget_space;
-        for (int i=selmon->drw->n_widgets_right-1; i>=0; --i) {
-            if (cursor_x >= xpos && cursor_x < xpos + selmon->drw->widgets_right[i].width) {
+        xpos += selmon->drw.center_widget_space;
+        for (int i=selmon->drw.n_widgets_right-1; i>=0; --i) {
+            if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.widgets_right[i].width) {
                 click = ClkBar;
-                if (selmon->drw->widgets_right[i].callback_click) {
-                    (*selmon->drw->widgets_right[i].callback_click)(&selmon->drw->widgets_right[i],
+                if (selmon->drw.widgets_right[i].callback_click) {
+                    (*selmon->drw.widgets_right[i].callback_click)(&selmon->drw.widgets_right[i],
                             cursor_x - xpos, event->button);
                     return;
                 }
             }
-            xpos += selmon->drw->widgets_right[i].width;
+            xpos += selmon->drw.widgets_right[i].width;
         }
     }
 
@@ -1416,21 +1444,22 @@ cleanupmon(struct wl_listener *listener, void *data)
             wlr_layer_surface_v1_destroy(l->layer_surface);
     }
     /* hover_widget points into m->drw */
-    if (hover_widget && (char *)hover_widget >= (char *)m->drw
-            && (char *)hover_widget < (char *)(m->drw + 1)) {
+    if (hover_widget && (char *)hover_widget >= (char *)&m->drw
+            && (char *)hover_widget < (char *)(&m->drw + 1)) {
         hover_widget = NULL;
         wl_event_source_timer_update(hover_timer, 0);
     }
-    if (hover_active && (char *)hover_active >= (char *)m->drw
-            && (char *)hover_active < (char *)(m->drw + 1)) {
+    if (hover_active && (char *)hover_active >= (char *)&m->drw
+            && (char *)hover_active < (char *)(&m->drw + 1)) {
         setleavepending(0);
         hover_active = NULL;
     }
-    awl_draw_destroy(m->drw);
-    /* closemon() below checks m->drw to decide whether to touch the bar;
-     * without nulling it here that check sees a dangling pointer into the
-     * awl_draw_t we just freed. */
-    m->drw = NULL;
+    awl_font_release(m->popupfont);
+    m->popupfont = NULL;
+    awl_font_release(m->desktopfont);
+    m->desktopfont = NULL;
+    /* closemon() below checks m->drw.m to decide whether to touch the bar */
+    awl_draw_teardown(&m->drw);
 
     wl_list_remove(&m->destroy.link);
     wl_list_remove(&m->frame.link);
@@ -1502,7 +1531,7 @@ cleanuplisteners(void)
 void
 closemon(Monitor *m)
 {
-    if (m && m->drw && m->showbar) { togglebar_mon(m); m->closedbar=1; }
+    if (m && m->drw.m && m->showbar) { togglebar_mon(m); m->closedbar=1; }
     /* update selmon if needed and
      * move closed monitor's clients to the focused one */
     Client *c;
@@ -1759,12 +1788,8 @@ createlayersurface(struct wl_listener *listener, void *data)
      * that output here, before the generic "no output requested -> selmon"
      * fallback below would otherwise land every monitor's tray window on
      * whichever one happens to be selmon. */
-    /* The calendar and text popups from the same library do the same with
-     * "awl-calendar:<monitor_id>" and "awl-popup:<monitor_id>". */
     if (!layer_surface->output && layer_surface->namespace &&
-            (!strncmp(layer_surface->namespace, "awl-tray:", 9) ||
-             !strncmp(layer_surface->namespace, "awl-calendar:", 13) ||
-             !strncmp(layer_surface->namespace, "awl-popup:", 10))) {
+            !strncmp(layer_surface->namespace, "awl-tray:", 9)) {
         const char *want = strchr(layer_surface->namespace, ':') + 1;
         Monitor *tm;
         wl_list_for_each(tm, &mons, link) {
@@ -1783,17 +1808,6 @@ createlayersurface(struct wl_listener *listener, void *data)
     l = layer_surface->data = ecalloc(1, sizeof(*l));
     l->is_notification = cfg->blur_notifications && !strcmp(layer_surface->namespace, "notifications");
     l->is_launcher = cfg->blur_launcher && !strcmp(layer_surface->namespace, "launcher");
-    /* the calendar and text popups (tray/calendar.cpp, tray/textpopup.cpp)
-     * are translucent; they follow the launcher's blur settings */
-    l->is_popup = layer_surface->namespace && (!strncmp(layer_surface->namespace, "awl-calendar:", 13)
-            || !strncmp(layer_surface->namespace, "awl-popup:", 10));
-    /* the namespace is client-chosen; the tray runs in-process, so only
-     * trust it from our own pid (is_popup keeps the focused client active) */
-    if (l->is_popup) {
-        pid_t pid = 0;
-        wl_client_get_credentials(wl_resource_get_client(layer_surface->resource), &pid, NULL, NULL);
-        l->is_popup = pid == getpid();
-    }
     l->type = LayerShell;
     LISTEN(&surface->events.commit, &l->surface_commit, commitlayersurfacenotify);
     LISTEN(&surface->events.unmap, &l->unmap, unmaplayersurfacenotify);
@@ -1803,9 +1817,9 @@ createlayersurface(struct wl_listener *listener, void *data)
     l->mon = layer_surface->output->data;
     l->scene_layer = wlr_scene_layer_surface_v1_create(scene_layer, layer_surface);
     l->scene = l->scene_layer->tree;
-    if (l->is_notification || l->is_launcher || (l->is_popup && cfg->blur_launcher)) {
+    if (l->is_notification || l->is_launcher) {
         l->blur = wlr_scene_blur_create(l->scene, l->scene->node.x, l->scene->node.y);
-        if (l->is_launcher || l->is_popup) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_launcher_radius);
+        if (l->is_launcher) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_launcher_radius);
         if (l->is_notification) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_notifications_radius);
         wlr_scene_blur_set_size(l->blur, l->layer_surface->current.desired_width, l->layer_surface->current.desired_height);
         wlr_scene_blur_set_strength(l->blur, cfg->blur[0]);
@@ -1905,9 +1919,8 @@ createmon(struct wl_listener *listener, void *data)
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
 
-    if (!(m->drw = awl_draw_create(m)))
-        die("failed to create awl_draw context");
-    awl_plugins_bar_widgets(m->drw);
+    awl_draw_setup(&m->drw, m);
+    awl_plugins_bar_widgets(&m->drw);
 
     /* LyrBottom sits below LyrTile/LyrFloat, so floating windows dragged
      * over the bar's area render on top of it -- intentional: the tray
@@ -2281,7 +2294,7 @@ drawbar(Monitor *m)
      * above it); destroylock() redraws all bars once on unlock */
     if (locked) return;
     if (!m) return;
-    if (!m->drw) return;
+    if (!m->drw.m) return;
     int x = 0;
     uint32_t occ = 0, urg = 0;
     Client *c;
@@ -2291,8 +2304,8 @@ drawbar(Monitor *m)
 
     Client* ct;
 
-    memset( m->drw->tagwindows, 0, sizeof(m->drw->tagwindows) );
-    m->drw->n_tagwindows = 0;
+    memset( m->drw.tagwindows, 0, sizeof(m->drw.tagwindows) );
+    m->drw.n_tagwindows = 0;
 
     if (!m->showbar)
         return;
@@ -2302,7 +2315,7 @@ drawbar(Monitor *m)
         buf = newbarbuffer(m);
     memset(buf->data, 0, buf->stride * buf->h);
 
-    awl_draw_prepare_drawing(m->drw, m->b.width, m->b.height, buf->data, buf->stride);
+    awl_draw_prepare_drawing(&m->drw, m->b.width, m->b.height, buf->data, buf->stride);
 
     ct = focustop(m);
     wl_list_for_each(c, &clients, link) {
@@ -2311,61 +2324,61 @@ drawbar(Monitor *m)
         occ |= c->tags;
         if (c->isurgent)
             urg |= c->tags;
-        if ( (c->tags & m->tagset[m->seltags]) && (m->drw->n_tagwindows < (int)LENGTH(m->drw->tagwindows)) ) {
-            strncpy( m->drw->tagwindows[m->drw->n_tagwindows].name, client_get_title(c),
-                    sizeof(m->drw->tagwindows[m->drw->n_tagwindows].name)-1 );
-            m->drw->tagwindows[m->drw->n_tagwindows].floating = c->isfloating;
-            m->drw->tagwindows[m->drw->n_tagwindows].urgent = c->isurgent;
-            m->drw->tagwindows[m->drw->n_tagwindows].fullscreen = c->isfullscreen;
-            m->drw->tagwindows[m->drw->n_tagwindows].visible = c->isvisible;
-            m->drw->tagwindows[m->drw->n_tagwindows].maximized = c->ismaximized;
-            m->drw->tagwindows[m->drw->n_tagwindows].ontop = c->isontop;
-            m->drw->tagwindows[m->drw->n_tagwindows].focused = (c == ct);
-            m->drw->tagwindows[m->drw->n_tagwindows].c = c;
-            m->drw->n_tagwindows++;
+        if ( (c->tags & m->tagset[m->seltags]) && (m->drw.n_tagwindows < (int)LENGTH(m->drw.tagwindows)) ) {
+            strncpy( m->drw.tagwindows[m->drw.n_tagwindows].name, client_get_title(c),
+                    sizeof(m->drw.tagwindows[m->drw.n_tagwindows].name)-1 );
+            m->drw.tagwindows[m->drw.n_tagwindows].floating = c->isfloating;
+            m->drw.tagwindows[m->drw.n_tagwindows].urgent = c->isurgent;
+            m->drw.tagwindows[m->drw.n_tagwindows].fullscreen = c->isfullscreen;
+            m->drw.tagwindows[m->drw.n_tagwindows].visible = c->isvisible;
+            m->drw.tagwindows[m->drw.n_tagwindows].maximized = c->ismaximized;
+            m->drw.tagwindows[m->drw.n_tagwindows].ontop = c->isontop;
+            m->drw.tagwindows[m->drw.n_tagwindows].focused = (c == ct);
+            m->drw.tagwindows[m->drw.n_tagwindows].c = c;
+            m->drw.n_tagwindows++;
         }
     }
-    m->drw->occ = occ;
-    m->drw->urg = urg;
-    m->drw->sel = m->tagset[m->seltags];
-    m->drw->ntags = LENGTH(tags);
-    m->drw->selmon = (m == selmon);
-    if (wl_list_length(&mons) == 1) m->drw->selmon = -1;
-    m->drw->pertag = m->pertag;
+    m->drw.occ = occ;
+    m->drw.urg = urg;
+    m->drw.sel = m->tagset[m->seltags];
+    m->drw.ntags = LENGTH(tags);
+    m->drw.selmon = (m == selmon);
+    if (wl_list_length(&mons) == 1) m->drw.selmon = -1;
+    m->drw.pertag = m->pertag;
 
-    for (int ww=0; ww<m->drw->n_widgets_left; ++ww) {
-        if (m->drw->widgets_left[ww].draw)
-            m->drw->widgets_left[ww].width = m->drw->widgets_left[ww].draw(
-                    &m->drw->widgets_left[ww], x, m->drw->pix );
-        x += m->drw->widgets_left[ww].width;
+    for (int ww=0; ww<m->drw.n_widgets_left; ++ww) {
+        if (m->drw.widgets_left[ww].draw)
+            m->drw.widgets_left[ww].width = m->drw.widgets_left[ww].draw(
+                    &m->drw.widgets_left[ww], x, m->drw.pix );
+        x += m->drw.widgets_left[ww].width;
     }
-    m->drw->center_widget_start = x;
+    m->drw.center_widget_start = x;
 
     uint32_t x_end = m->b.width;
-    for (int ww=0; ww<m->drw->n_widgets_right; ++ww) {
-        widget_t *w = &m->drw->widgets_right[ww];
+    for (int ww=0; ww<m->drw.n_widgets_right; ++ww) {
+        widget_t *w = &m->drw.widgets_right[ww];
         /* width first, so the widget lands at its final position right away */
         w->width = w->measure ? w->measure(w) : 0;
         x_end = w->width < x_end ? x_end - w->width : 0;
         if (w->draw && w->width)
-            w->draw(w, x_end, m->drw->pix);
+            w->draw(w, x_end, m->drw.pix);
     }
 
-    m->drw->center_widget_space = x_end > m->drw->center_widget_start ? x_end - m->drw->center_widget_start : 0;
-    if (m->drw->has_center_widget) {
-        if (m->drw->center_widget.draw)
-            m->drw->center_widget.width = m->drw->center_widget.draw( &m->drw->center_widget, x, m->drw->pix );
+    m->drw.center_widget_space = x_end > m->drw.center_widget_start ? x_end - m->drw.center_widget_start : 0;
+    if (m->drw.has_center_widget) {
+        if (m->drw.center_widget.draw)
+            m->drw.center_widget.width = m->drw.center_widget.draw( &m->drw.center_widget, x, m->drw.pix );
     }
 
-    awl_draw_finish_drawing(m->drw);
+    awl_draw_finish_drawing(&m->drw);
     wlr_scene_buffer_set_dest_size(m->scene_buffer,
         m->b.real_width, m->b.real_height);
     wlr_scene_node_set_position(&m->scene_buffer->node, m->m.x,
         m->m.y + (topbar ? 0 : m->m.height - m->b.real_height));
     /* the window list's box, from buffer to logical pixels */
     if (m->b.width) {
-        uint32_t cx = m->drw->has_center_widget ? m->drw->center_widget_start : 0,
-                 cw = m->drw->has_center_widget ? m->drw->center_widget.width : 0;
+        uint32_t cx = m->drw.has_center_widget ? m->drw.center_widget_start : 0,
+                 cw = m->drw.has_center_widget ? m->drw.center_widget.width : 0;
         int bx = (int)((uint64_t)cx * m->b.real_width / m->b.width),
             bw = (int)((uint64_t)(cx + cw) * m->b.real_width / m->b.width) - bx;
         wlr_scene_blur_set_size(m->bar_blur, bw, m->b.real_height);
@@ -2393,10 +2406,13 @@ static awl_window_style_t
 textwinstyle(void)
 {
     return (awl_window_style_t){
-            .bg = cfg->tray->calendar.bg, .fg = cfg->tray->calendar.fg,
-            .border = cfg->tray->calendar.border,
-            .border_width = cfg->tray->calendar.border_width,
-            .radius = cfg->tray->calendar.radius, .padding = cfg->tray->calendar.padding,
+            .bg = cfg->popup->bg, .fg = cfg->popup->fg,
+            .border = cfg->popup->border,
+            /* fg, faint */
+            .highlight = (cfg->popup->fg & 0xffffff00) | 0x30,
+            .border_width = cfg->popup->border_width,
+            .radius = cfg->popup->radius, .padding = cfg->popup->padding,
+            .margin = cfg->popup->margin,
             .blur = cfg->blur_launcher,
             .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] };
 }
@@ -2438,6 +2454,11 @@ textwindestroy(awl_window_t *win)
     TextWin *tw = textwinfind(win);
     if (!tw)
         return;
+    for (size_t i = 0; i < LENGTH(testwins); i++)
+        if (testwins[i] == win)
+            testwins[i] = NULL;
+    if (textwin_hovered == win)
+        textwin_hovered = NULL;
     wl_list_remove(&tw->link);
     awl_window_destroy(tw->win);
     free(tw);
@@ -2468,6 +2489,96 @@ textwinhide(awl_window_t *win)
 {
     if (textwinfind(win))
         awl_window_hide(win);
+}
+
+void
+textwinsetclick(awl_window_t *win,
+        void (*click)(awl_window_t *win, int row, int col, uint32_t button, void *data), void *data)
+{
+    if (textwinfind(win))
+        awl_window_set_click(win, click, data);
+}
+
+void
+textwinsetscroll(awl_window_t *win,
+        void (*scroll)(awl_window_t *win, int row, int col, uint32_t orientation,
+                double delta, int32_t value120, void *data), void *data)
+{
+    if (textwinfind(win))
+        awl_window_set_scroll(win, scroll, data);
+}
+
+void
+textwinsetpainter(awl_window_t *win, const awl_window_painter_t *painter, void *data)
+{
+    if (textwinfind(win))
+        awl_window_set_painter(win, painter, data);
+}
+
+void
+textwinredraw(awl_window_t *win)
+{
+    if (textwinfind(win))
+        awl_window_redraw(win);
+}
+
+Monitor *
+textwinmonitor(awl_window_t *win)
+{
+    return textwinfind(win) ? awl_window_monitor(win) : NULL;
+}
+
+/** the topmost popup that takes the pointer at x, y, NULL if none */
+static awl_window_t *
+textwinat(double x, double y)
+{
+    TextWin *tw;
+    /* the newest is on top */
+    wl_list_for_each_reverse(tw, &textwins, link)
+        if (awl_window_takes_pointer(tw->win, x, y))
+            return tw->win;
+    return NULL;
+}
+
+/** the popup that has the pointer: textwinat() the cursor, unless the
+ * screen is locked or the pointer busy (moving, resizing, pressed on a
+ * client, dragging) */
+static awl_window_t *
+textwinpointer(void)
+{
+    if (cursor_mode != CurNormal || seat->drag || locked)
+        return NULL;
+    return textwinat(cursor->x, cursor->y);
+}
+
+/** The pointer moved: over a popup that takes it, that popup gets it and
+ * nothing below does; returns whether it did. Logs (at verbose, -d) where
+ * it goes. */
+static int
+textwinmotion(void)
+{
+    awl_window_t *win = textwinpointer();
+    int row;
+
+    if (textwin_hovered && textwin_hovered != win) {
+        awl_window_pointer_leave(textwin_hovered);
+        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: pointer left\n", (void *)textwin_hovered);
+    }
+    if (!win) {
+        textwin_hovered = NULL;
+        return 0;
+    }
+    if (textwin_hovered != win) {
+        wlr_seat_pointer_notify_clear_focus(seat);
+        wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
+        updatehover(NULL);
+        textwin_hovered = win;
+    }
+    row = awl_window_hover_row(win);
+    if (awl_window_pointer_motion(win, cursor->x, cursor->y) != row)
+        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: pointer on row %d at %.0f,%.0f\n", (void *)win,
+                awl_window_hover_row(win), cursor->x, cursor->y);
+    return 1;
 }
 
 /** m was arranged, or its font or scale changed */
@@ -2524,9 +2635,8 @@ drawalert(Monitor *m)
     const char *text = awl_alert_text();
     const float s = m->wlr_output->scale;
     unsigned int version = awl_alert_version();
-    char font[128], attrs[16];
-    const char *pfont = font;
-    awl_draw_t *drw;
+    struct fcft_font *font;
+    pixman_image_t *pix;
     Buffer *buf;
     int pad, w, h;
 
@@ -2538,27 +2648,23 @@ drawalert(Monitor *m)
     m->alert_version = version;
     m->alert_scale = s;
     m->alert_area = m->m;
-    if (!text || !m->wlr_output->enabled || m->m.width <= 0 || !cfg->font) {
+    if (!text || !m->wlr_output->enabled || m->m.width <= 0) {
         wlr_scene_node_set_enabled(&m->alert->node, 0);
         return;
     }
 
-    /* a font of its own, only while drawing: alerts are rare */
-    if (!(drw = awl_draw_create(m)))
-        return;
-    snprintf(attrs, sizeof(attrs), "dpi=%.2f", 96. * 2. * s);
-    snprintf(font, sizeof(font), "%s%.0f", cfg->font, cfg->fontsize * ALERT_FONT_SCALE * s);
-    if (!awl_draw_load_font(drw, 1, &pfont, attrs)) {
-        awl_draw_destroy(drw);
+    /* the font only while drawing; the registry keeps it loaded */
+    if (!(font = awl_font_get(cfg->font, cfg->fontsize * ALERT_FONT_SCALE, s))) {
+        wlr_scene_node_set_enabled(&m->alert->node, 0);
         return;
     }
-    pad = drw->font->height * 6 / 10;
-    h = drw->font->height + pad;
-    w = (int)awl_draw_font_getwidth(drw, text) + 2 * pad;
+    pad = font->height * 6 / 10;
+    h = font->height + pad;
+    w = (int)awl_draw_text_width(font, text) + 2 * pad;
     if (w > (int)(m->m.width * s) - 2 * (int)(ALERT_MARGIN * s))
         w = (int)(m->m.width * s) - 2 * (int)(ALERT_MARGIN * s);
     if (w <= 0) {
-        awl_draw_destroy(drw);
+        awl_font_release(font);
         wlr_scene_node_set_enabled(&m->alert->node, 0);
         return;
     }
@@ -2568,10 +2674,11 @@ drawalert(Monitor *m)
     buf->w = w;
     buf->h = h;
     wlr_buffer_init(&buf->base, &buffer_impl, w, h);
-    awl_draw_prepare_drawing(drw, w, h, buf->data, buf->stride);
-    awl_draw_text_color2(drw, 0, 0, w, h, pad, text, fg, bg);
-    awl_draw_finish_drawing(drw);
-    awl_draw_destroy(drw);
+    if ((pix = awl_draw_image(w, h, buf->data, buf->stride))) {
+        awl_draw_text(pix, font, 0, 0, w, h, pad, text, fg, bg);
+        pixman_image_unref(pix);
+    }
+    awl_font_release(font);
 
     wlr_scene_buffer_set_buffer(m->alert, &buf->base);
     wlr_buffer_drop(&buf->base); /* the scene holds it now */
@@ -3529,6 +3636,10 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
         return;
     }
 
+    /* awl's popups that take the pointer keep it from what is below */
+    if (textwinmotion())
+        return;
+
     /* If there's no client surface under the cursor, set the cursor image to a
      * default. This is what makes the cursor image appear when you move it
      * off of a client or over its border. */
@@ -4221,6 +4332,15 @@ setup(void)
         wl_event_loop_add_signal(event_loop, SIGUSR1, testoutputadd, NULL);
         wl_event_loop_add_signal(event_loop, SIGUSR2, testoutputremove, NULL);
     }
+    /* for testing (test/live.sh's win, test/windows.sh): a FIFO of commands
+     * for the text popups, see testwincmd(); O_RDWR, so it never reads EOF
+     * while no writer has it open */
+    if (getenv("AWL_TEST_WINDOWS")) {
+        int fd = open(getenv("AWL_TEST_WINDOWS"), O_RDWR | O_NONBLOCK | O_CLOEXEC);
+        if (fd < 0)
+            die("AWL_TEST_WINDOWS %s:", getenv("AWL_TEST_WINDOWS"));
+        wl_event_loop_add_fd(event_loop, fd, WL_EVENT_READABLE, testwinctl, NULL);
+    }
 
     /* Initialize the scene graph used to lay out windows */
     scene = wlr_scene_create();
@@ -4620,6 +4740,221 @@ testoutputremove(int signo, void *data)
     return 0;
 }
 
+/** what testwincmd()'s dump reports as clicks and scrolls */
+static char testclicks[2048];
+
+/** input N on: N's click callback, data is N */
+static void
+testwinclick(awl_window_t *win, int row, int col, uint32_t button, void *data)
+{
+    size_t len = strlen(testclicks);
+    snprintf(testclicks + len, sizeof(testclicks) - len, "click %d %d %d %u\n",
+            (int)(intptr_t)data, row, col, button);
+}
+
+/** scroll N on: N's scroll callback, data is N */
+static void
+testwinscroll(awl_window_t *win, int row, int col, uint32_t orientation, double delta,
+        int32_t value120, void *data)
+{
+    size_t len = strlen(testclicks);
+    snprintf(testclicks + len, sizeof(testclicks) - len, "scroll %d %d %d %u %d %d\n",
+            (int)(intptr_t)data, row, col, orientation, value120, delta > 0 ? 1 : delta < 0 ? -1 : 0);
+}
+
+/** \n, \t and \\ in s, in place */
+static void
+testunescape(char *s)
+{
+    char *o = s;
+    for (; *s; s++) {
+        if (*s == '\\' && s[1]) {
+            s++;
+            *o++ = *s == 'n' ? '\n' : *s == 't' ? '\t' : *s;
+        } else {
+            *o++ = *s;
+        }
+    }
+    *o = 0;
+}
+
+/** One line of AWL_TEST_WINDOWS' FIFO, driving the text popups the way a
+ * plugin does through awl_host. N is a slot of testwins, MON an output's
+ * name, X logical pixels from its left edge, TEXT the rest of the line with
+ * \n, \t and \\ escapes:
+ *
+ *   show N MON X TEXT      textwinshow(), creating N first if it is empty
+ *   toggle N MON X TEXT    the same with toggle
+ *   update N TEXT | hide N | destroy N | hideall
+ *   input N on|off         N takes the pointer, its presses are recorded
+ *   scroll N on|off        N takes the pointer, its scrolling is recorded
+ *   restart                the plugin_restart action (destroys them all)
+ *   dump PATH              writes PATH.tmp, then renames it to PATH:
+ *                            mon NAME X Y W H WX WY WW WH SCALE ENABLED
+ *                            win N MON|- X Y W H VISIBLE HOVERROW
+ *                            cell N ROW COL X Y (a cell's center, visible
+ *                              windows' first 8 rows)
+ *                            click N ROW COL BUTTON (pressed since the last
+ *                              dump, if it takes the pointer)
+ *                            scroll N ROW COL ORIENTATION VALUE120 SIGN
+ *                              (likewise; SIGN the delta's, -1, 0 or 1)
+ *                            pwin I MON|- X Y W H VISIBLE (the plugins')
+ *                            hover MON NAMESPACE|- X Y (the center of a bar
+ *                              widget with callback_hover)
+ *                            margin PX (popup_config.margin)
+ *                            errors COUNT (lines rejected so far)
+ */
+static void
+testwincmd(char *line)
+{
+    static int errors;
+    char cmd[16] = "", mon[64] = "", tmp[PATH_MAX], onoff[4] = "";
+    double cx, cy;
+    int n = -1, x = 0, off = 0, args = 0, toggle;
+    Monitor *m = NULL, *it;
+    struct wlr_box box;
+    TextWin *tw;
+    awl_draw_t *d;
+    unsigned int xpos;
+    int bx, by, i;
+    FILE *f;
+
+    if (sscanf(line, "%15s%n", cmd, &off) != 1)
+        return;
+    line += off;
+    if (*line == ' ')
+        line++;
+    toggle = !strcmp(cmd, "toggle");
+    if (toggle || !strcmp(cmd, "show")) {
+        if (sscanf(line, "%d %63s %d%n", &n, mon, &x, &args) != 3)
+            goto bad;
+    } else if (!strcmp(cmd, "update") || !strcmp(cmd, "hide") || !strcmp(cmd, "destroy")) {
+        if (sscanf(line, "%d%n", &n, &args) != 1)
+            goto bad;
+    } else if (!strcmp(cmd, "input") || !strcmp(cmd, "scroll")) {
+        if (sscanf(line, "%d %3s%n", &n, onoff, &args) != 2
+                || (strcmp(onoff, "on") && strcmp(onoff, "off")))
+            goto bad;
+    }
+    if (n != -1 && (n < 0 || n >= (int)LENGTH(testwins)))
+        goto bad;
+    line += args;
+    if (*line == ' ')
+        line++;
+    testunescape(line);
+
+    if (toggle || !strcmp(cmd, "show")) {
+        wl_list_for_each(it, &mons, link)
+            if (!strcmp(it->wlr_output->name, mon))
+                m = it;
+        if (!m)
+            goto bad;
+        if (!testwins[n])
+            testwins[n] = textwincreate();
+        textwinshow(testwins[n], m, x, line, toggle);
+    } else if (!strcmp(cmd, "update")) {
+        textwinupdate(testwins[n], line);
+    } else if (!strcmp(cmd, "hide")) {
+        textwinhide(testwins[n]);
+    } else if (!strcmp(cmd, "destroy")) {
+        textwindestroy(testwins[n]);
+    } else if (!strcmp(cmd, "input")) {
+        if (!testwins[n])
+            goto bad;
+        textwinsetclick(testwins[n], strcmp(onoff, "on") ? NULL : testwinclick, (void *)(intptr_t)n);
+    } else if (!strcmp(cmd, "scroll")) {
+        if (!testwins[n])
+            goto bad;
+        textwinsetscroll(testwins[n], strcmp(onoff, "on") ? NULL : testwinscroll, (void *)(intptr_t)n);
+    } else if (!strcmp(cmd, "hideall")) {
+        textwinshideall();
+    } else if (!strcmp(cmd, "restart")) {
+        plugin_restart(NULL);
+    } else if (!strcmp(cmd, "dump") && *line) {
+        snprintf(tmp, sizeof(tmp), "%s.tmp", line);
+        if (!(f = fopen(tmp, "w")))
+            goto bad;
+        wl_list_for_each(it, &mons, link)
+            fprintf(f, "mon %s %d %d %d %d %d %d %d %d %g %d\n", it->wlr_output->name,
+                    it->m.x, it->m.y, it->m.width, it->m.height,
+                    it->w.x, it->w.y, it->w.width, it->w.height,
+                    it->wlr_output->scale, it->wlr_output->enabled);
+        for (n = 0; n < (int)LENGTH(testwins); n++) {
+            if (!testwins[n])
+                continue;
+            x = awl_window_box(testwins[n], &box);
+            m = awl_window_monitor(testwins[n]);
+            fprintf(f, "win %d %s %d %d %d %d %d %d\n", n, m ? m->wlr_output->name : "-",
+                    box.x, box.y, box.width, box.height, x, awl_window_hover_row(testwins[n]));
+            for (int r = 0; x && r < 8 && awl_window_cell_center(testwins[n], r, 0, &cx, &cy); r++)
+                for (int c = 0; awl_window_cell_center(testwins[n], r, c, &cx, &cy); c++)
+                    fprintf(f, "cell %d %d %d %.0f %.0f\n", n, r, c, cx, cy);
+        }
+        fputs(testclicks, f);
+        testclicks[0] = 0;
+        n = 0;
+        wl_list_for_each(tw, &textwins, link) {
+            for (i = 0; i < (int)LENGTH(testwins) && testwins[i] != tw->win; i++);
+            if (i < (int)LENGTH(testwins))
+                continue;
+            x = awl_window_box(tw->win, &box);
+            m = awl_window_monitor(tw->win);
+            fprintf(f, "pwin %d %s %d %d %d %d %d\n", n++, m ? m->wlr_output->name : "-",
+                    box.x, box.y, box.width, box.height, x);
+        }
+        /* barwidgetat()'s layout of the right-hand widgets */
+        wl_list_for_each(it, &mons, link) {
+            d = &it->drw;
+            if (!d->m || !it->scene_buffer || !it->wlr_output->enabled)
+                continue;
+            wlr_scene_node_coords(&it->scene_buffer->node, &bx, &by);
+            xpos = d->center_widget_start + d->center_widget_space;
+            for (i = d->n_widgets_right - 1; i >= 0; --i) {
+                if (d->widgets_right[i].callback_hover && d->widgets_right[i].width)
+                    fprintf(f, "hover %s %s %d %d\n", it->wlr_output->name,
+                            d->widgets_right[i].popup_namespace ? d->widgets_right[i].popup_namespace : "-",
+                            it->m.x + (int)((xpos + d->widgets_right[i].width / 2) / it->wlr_output->scale),
+                            by + it->b.real_height / 2);
+                xpos += d->widgets_right[i].width;
+            }
+        }
+        fprintf(f, "margin %d\n", cfg->popup->margin);
+        fprintf(f, "errors %d\n", errors);
+        fclose(f);
+        rename(tmp, line);
+    } else {
+        goto bad;
+    }
+    return;
+bad:
+    errors++;
+    awl_dbg_printf(awl_loglevel_err, "AWL_TEST_WINDOWS: bad command: %s %s\n", cmd, line);
+}
+
+/** AWL_TEST_WINDOWS' FIFO is readable: runs its complete lines */
+int
+testwinctl(int fd, uint32_t mask, void *data)
+{
+    static char buf[4096];
+    static size_t len;
+    char *line, *nl;
+    ssize_t r;
+
+    while ((r = read(fd, buf + len, sizeof(buf) - 1 - len)) > 0) {
+        len += (size_t)r;
+        buf[len] = 0;
+        for (line = buf; (nl = strchr(line, '\n')); line = nl + 1) {
+            *nl = 0;
+            testwincmd(line);
+        }
+        len -= (size_t)(line - buf);
+        memmove(buf, line, len);
+        if (len == sizeof(buf) - 1) /* an overlong line */
+            len = 0;
+    }
+    return 0;
+}
+
 void
 tile(Monitor *m)
 {
@@ -4837,6 +5172,7 @@ updatemons(struct wl_listener *listener, void *data)
         desktop_update(m);
         background_update(m);
         drawalert(m);
+        textwinsupdate(m);
     }
     /* Insert outputs that need to */
     wl_list_for_each(m, &mons, link) {
@@ -4930,35 +5266,57 @@ updatemons(struct wl_listener *listener, void *data)
     updatepluginpause();
 }
 
+/** (re)loads *f, a font of m's other than the bar's, at m's scale: font
+ * and size (NULL, 0: the bar's, cfg->font and ->fontsize); NULL if both are
+ * the bar's, or it doesn't load (what says whose, for the warning) */
+static void
+updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const char *what)
+{
+    const char *name = font ? font : cfg->font;
+
+    awl_font_release(*f);
+    *f = NULL;
+    if ((!font && size <= 0) || !name)
+        return;
+    if (!(*f = awl_font_get_exact(name, (float)(size > 0 ? size : cfg->fontsize),
+                m->wlr_output->scale)))
+        awl_wrn_printf("%s font %s not found, using the bar's\n", what, name);
+}
+
+/** (re)loads m's popup and desktop fonts (Monitor.popupfont, .desktopfont) */
+static void
+updatefonts(Monitor *m)
+{
+    updatefont(m, &m->popupfont, cfg->popup->font, cfg->popup->fontsize, "popup");
+    updatefont(m, &m->desktopfont, cfg->desktop->font, cfg->desktop->fontsize, "desktop");
+}
+
 void
 updatebar(Monitor *m)
 {
     int rw, rh;
-    char fontattrs[12];
 
     wlr_output_transformed_resolution(m->wlr_output, &rw, &rh);
     m->b.width = rw;
     m->b.real_width = (int)((float)m->b.width / m->wlr_output->scale);
 
-    if (m->b.scale == m->wlr_output->scale && m->drw) {
+    if (m->b.scale == m->wlr_output->scale && m->drw.m) {
         /* x/y are monitor-local -- see the comment on the other call below. */
         awl_tray_set_bar_geometry(m->wlr_output->name, 0, (topbar ? 0 : m->m.height - m->b.real_height),
                 m->b.real_width, m->b.real_height, m->b.scale);
         return;
     }
 
-    awl_draw_destroy_font(m->drw->font);
-    snprintf(fontattrs, sizeof(fontattrs), "dpi=%.2f", 96. * 2. * m->wlr_output->scale);
-    char _font[128] = {0};
-    snprintf( _font, sizeof(_font), "%s%.0f", cfg->font, (float)cfg->fontsize*m->wlr_output->scale );
-    const char* _pfont = _font;
-    if (!(awl_draw_load_font(m->drw, 1, &_pfont, fontattrs)))
-        die("Could not load font");
+    /* falls back to monospace; keeps the old font if even that fails */
+    awl_draw_set_font(&m->drw, cfg->font, (float)cfg->fontsize, m->wlr_output->scale, 1);
 
     m->b.scale = m->wlr_output->scale;
-    m->lrpad = m->drw->font->height;
-    m->b.height = m->drw->font->height + 2;
+    /* no font at all: an empty bar of a monospace:size=10's height */
+    m->lrpad = m->drw.font ? m->drw.font->height
+            : (int)lroundf(AWL_FONT_FALLBACK_SIZE * 2 * m->wlr_output->scale);
+    m->b.height = m->lrpad + 2;
     m->b.real_height = (int)((float)m->b.height / m->wlr_output->scale);
+    updatefonts(m);
     desktop_fontchanged(m);
     textwinsupdate(m);
 
@@ -5153,16 +5511,43 @@ configapply(void)
             configurepointer(wlr_pointer_from_input_device(d->device));
 
     /* the bars' font, and with it their height */
+    awl_font_retry();
     if (!streqnull(cfg->font, applied.font) || cfg->fontsize != applied.fontsize) {
         free(applied.font);
         applied.font = strdupnull(cfg->font);
         applied.fontsize = cfg->fontsize;
         wl_list_for_each(m, &mons, link) {
-            if (!m->drw)
+            if (!m->drw.m)
                 continue;
             m->b.scale = 0; /* updatebar() reloads it */
             updatebar(m);
             arrangelayers(m);
+        }
+    }
+    /* the popups' (updatebar() above reloaded it too, no harm) */
+    if (!streqnull(cfg->popup->font, applied.popupfont)
+            || cfg->popup->fontsize != applied.popupfontsize) {
+        free(applied.popupfont);
+        applied.popupfont = strdupnull(cfg->popup->font);
+        applied.popupfontsize = cfg->popup->fontsize;
+        wl_list_for_each(m, &mons, link) {
+            if (!m->drw.m || !m->drw.font)
+                continue;
+            updatefont(m, &m->popupfont, cfg->popup->font, cfg->popup->fontsize, "popup");
+            textwinsupdate(m);
+        }
+    }
+    /* the desktop file list's, the same way */
+    if (!streqnull(cfg->desktop->font, applied.desktopfont)
+            || cfg->desktop->fontsize != applied.desktopfontsize) {
+        free(applied.desktopfont);
+        applied.desktopfont = strdupnull(cfg->desktop->font);
+        applied.desktopfontsize = cfg->desktop->fontsize;
+        wl_list_for_each(m, &mons, link) {
+            if (!m->drw.m || !m->drw.font)
+                continue;
+            updatefont(m, &m->desktopfont, cfg->desktop->font, cfg->desktop->fontsize, "desktop");
+            desktop_fontchanged(m);
         }
     }
 
@@ -5286,8 +5671,8 @@ pluginsdetach(void)
     if (hover_timer)
         wl_event_source_timer_update(hover_timer, 0);
     wl_list_for_each(m, &mons, link)
-        if (m->drw)
-            awl_draw_widgets_clear(m->drw);
+        if (m->drw.m)
+            awl_draw_widgets_clear(&m->drw);
     /* the popups the plugins left: nothing would update them any more */
     textwinsdestroy();
     /* cfg points into the library */
@@ -5304,8 +5689,8 @@ pluginsattach(void)
 
     configuse();
     wl_list_for_each(m, &mons, link)
-        if (m->drw)
-            awl_plugins_bar_widgets(m->drw);
+        if (m->drw.m)
+            awl_plugins_bar_widgets(&m->drw);
     drawbars();
     desktop_reloaded();
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * The system tray and the calendar popup, ``libawltray.so`` (tray/, C++,
+ * The system tray, ``libawltray.so`` (tray/, C++,
  * gtkmm). awl links it directly; it isn't part of the reloadable plugin
  * library, which reaches it through `awl_host_t`. The other way round, the
  * tray reaches awl only through that same host table (awl_host.h), handed
@@ -18,30 +18,14 @@ extern "C" {
 
 typedef struct awl_host_t awl_host_t;
 
-/** The tray's settings, config_plugins.h's tray_config. Colors are 0xRRGGBBAA, sizes
- * logical pixels. The tray keeps a copy, so the struct only has to live for
- * the call that hands it over. */
+/** The tray's settings, config_plugins.h's tray_config. Colors are 0xRRGGBBAA.
+ * The tray keeps a copy, so the struct only has to live for the call that
+ * hands it over. */
 typedef struct awl_tray_config_t {
     /** Background of the tray windows. The bar fills the systray widget's
      * slot with it too: the window can only sit on whole logical pixels, so
      * at fractional scales it misses the slot by up to a pixel. */
     uint32_t bg;
-    /** calendar: the calendar popup */
-    struct awl_tray_calendar_config_t {
-        uint32_t bg, fg, border;
-        /** today's date */
-        uint32_t today;
-        /** the neighbouring months' days */
-        uint32_t dim;
-        /** background of the selected day */
-        uint32_t selected;
-        /** hover and pressed: background of the buttons */
-        uint32_t hover, pressed;
-        int border_width, radius, padding;
-        /** list_min_height and list_max_height: height of the event list, which scrolls beyond the maximum;
-         * a maximum of 0 means none */
-        int list_min_height, list_max_height;
-    } calendar;
 } awl_tray_config_t;
 
 /** Starts the tray's background thread: a GTK/GLib main loop hosting the
@@ -84,8 +68,8 @@ int awl_tray_join(void);
  * destroyed -- its global type-wrapper registration tables don't come
  * back, and the next D-Bus proxy object the tray tries to wrap crashes.)
  * awl calls it from plugin_restart, after reloading libawlplugins.so.
- * Also applies ``config`` (colors, sizes and the calendar's CSS) to the
- * windows that exist and those created later.
+ * Also applies ``config`` to the windows that exist and those created
+ * later.
  * No-op if the tray was never started. */
 void awl_tray_reload(const awl_tray_config_t *config);
 
@@ -122,47 +106,6 @@ void awl_tray_set_bar_geometry(const char *monitor_id, int32_t x, int32_t y, uin
  * own buffer, so hiding the bar (m->showbar) doesn't hide it on its own --
  * call this from wherever awl toggles bar visibility for a monitor. */
 void awl_tray_set_visible(const char *monitor_id, int visible);
-
-/** Shows the calendar popup (month view plus the selected day's events from
- * evolution-data-server, see tray/calendar.hpp) next to the given monitor's
- * bar, or hides it if it is already shown there. Escape also hides it.
- * Fire-and-forget, safe to call from any thread. */
-void awl_tray_calendar_toggle(const char *monitor_id);
-
-/** Like `awl_tray_calendar_toggle()`, but leaves the popup shown if it already
- * is on that monitor (moves it there if it is shown elsewhere). */
-void awl_tray_calendar_show(const char *monitor_id);
-
-/** Hides the calendar popup if it is shown. Its layer surface's namespace
- * starts with "awl-calendar:" (followed by the monitor_id, like the tray's
- * "awl-tray:"), so awl can recognize it and call this on a click anywhere
- * else. Fire-and-forget, safe to call from any thread. */
-void awl_tray_calendar_hide(void);
-
-/** Moves the calendar popup, if it is shown, a month forward (amount > 0) or
- * back (amount < 0), keeping the day of the month where it can. For
- * scrolling on the bar's clock. Fire-and-forget, safe to call from any
- * thread. */
-void awl_tray_calendar_scroll(int amount);
-
-/** Shows the text popup (tray/textpopup.hpp) for a bar widget on the given
- * monitor, on the bar's side of the screen, centered on center_x (logical
- * pixels from the screen's left edge) as far as the screen allows: text is
- * a table, rows separated by
- * '\n', columns by '\t', each cell Pango markup. With toggle, hides it
- * instead if it is already shown there. Hides the calendar popup; it looks
- * like it (config.calendar) and also closes on Escape. Its layer surface's
- * namespace is "awl-popup:<monitor_id>". Fire-and-forget, safe to call from
- * any thread. */
-void awl_tray_popup_show(const char *monitor_id, int center_x, const char *text, int toggle);
-
-/** Replaces the text of the shown text popup; does nothing while it is
- * hidden. Fire-and-forget, safe to call from any thread. */
-void awl_tray_popup_update(const char *text);
-
-/** Hides the text popup if it is shown. Fire-and-forget, safe to call from
- * any thread. */
-void awl_tray_popup_hide(void);
 
 /** Tears down the given monitor's tray overlay window (if one was ever
  * created for it) -- call when a monitor is being destroyed (e.g.

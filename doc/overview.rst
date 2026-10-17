@@ -10,7 +10,7 @@ awl is three binaries:
    Wayland event loop and is the only one that touches wlroots.
 
 ``tray/libawltray.so``
-   The system tray and the calendar popup (C++, gtkmm). Linked into awl and
+   The system tray and its menus (C++, gtkmm). Linked into awl and
    running on its own GTK thread; it draws into real layer-shell windows of
    its own, placed over the bar's systray slot. Like the plugin library, it
    reaches awl only through `awl_host_t` (handed over by `awl_tray_init()`).

@@ -17,7 +17,7 @@ static const pixman_color_t white = {.red = 0xFFFF, .green = 0xFFFF, .blue = 0xF
 
 /** pixman's color as 0xRRGGBBAA */
 static inline uint32_t color_16bit_to_8bit( pixman_color_t c ) {
-    return (c.red >> 8) << 24 |
+    return (uint32_t)(c.red >> 8) << 24 |
            (c.green >> 8) << 16 |
            (c.blue >> 8) << 8 |
            (c.alpha >> 8) << 0;
