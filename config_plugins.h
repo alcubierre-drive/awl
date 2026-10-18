@@ -45,7 +45,8 @@ static const awl_tray_config_t tray_config = {
 static const awl_popup_config_t popup_config = {
     .bg           = 0x3c3c3c4d, /* awl blurs what is behind it */
     .fg           = 0xf8f8f2ff,
-    .border       = molokai_blue,
+    // .border       = molokai_blue,
+    .border       = molokai_light_gray,
     .dim          = 0xf8f8f259, /* the calendar's neighbouring months' days */
     .hover        = 0xffffff26, /* the buttons' background */
     .pressed      = 0xffffff40,
@@ -64,6 +65,18 @@ static const awl_popup_config_t popup_config = {
         /* the event list, which scrolls beyond the maximum (0: none) */
         .list_min_height = 120,
         .list_max_height = 200,
+    },
+    /* the tray's menus (all left out: the popups' look) */
+    .menu = {
+        .bg           = 0x3c3c3c4d, /* the popups' (bg, fg, dim, hover) */
+        .fg           = 0xf8f8f2ff,
+        .border       = 0x859394ff,
+        .dim          = 0xf8f8f259, /* disabled entries, shortcuts, separators */
+        .highlight    = 0xffffff26,
+        .highlight_fg = 0, /* fg */
+        .border_width = 2,
+        .radius       = 4,
+        .blur         = 1,
     },
 };
 /* the desktop file list's font and its size, like font and fontsize (NULL,

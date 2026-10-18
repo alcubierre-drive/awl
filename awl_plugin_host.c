@@ -73,6 +73,13 @@ static awl_host_t host = {
     .monitor_named = monitornamed,
     .popup_config = popupconfig,
     .window_set_hidden = textwinsethidden,
+    .window_show_beside = textwinshowbeside,
+    .window_set_hover = textwinsethover,
+    .window_part_box = textwinpartbox,
+    .timer_add = timeradd,
+    .timer_set = timerset,
+    .timer_remove = timerremove,
+    .window_set_menu_style = textwinsetmenustyle,
 };
 
 static void* handle = NULL;

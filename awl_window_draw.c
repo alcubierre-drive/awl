@@ -250,3 +250,22 @@ void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int
     *x = mon_x + dx;
     *y = top ? area_y + my : area_y + area_h - lh - my;
 }
+
+void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
+                              int ax, int ay, int aw, int left, int margin, int* x, int* y ) {
+    int mx = awl_window_margin( margin, mon_w ), my = awl_window_margin( margin, area_h );
+    if (mx > (mon_w - lw) / 2) mx = lw < mon_w ? (mon_w - lw) / 2 : 0;
+    if (my > (area_h - lh) / 2) my = lh < area_h ? (area_h - lh) / 2 : 0;
+    const int right = mon_x + mon_w - mx - (ax + aw);
+    const int room_left = ax - (mon_x + mx);
+    int go_left;
+    if (lw <= (left ? room_left : right)) go_left = left;
+    else if (lw <= (left ? right : room_left)) go_left = !left;
+    else go_left = room_left > right;
+    *x = go_left ? ax - lw : ax + aw;
+    if (*x > mon_x + mon_w - mx - lw) *x = mon_x + mon_w - mx - lw;
+    if (*x < mon_x + mx) *x = mon_x + mx;
+    *y = ay;
+    if (*y > area_y + area_h - my - lh) *y = area_y + area_h - my - lh;
+    if (*y < area_y + my) *y = area_y + my;
+}

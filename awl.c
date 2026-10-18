@@ -324,6 +324,8 @@ typedef struct {
     struct wl_list link;
     /** the tray's (textwincreatekept()): outlives the plugins */
     int kept;
+    /** looks like a menu (textwinsetmenustyle()) */
+    int menu;
 } TextWin;
 static struct wl_list textwins = {&textwins, &textwins};
 static struct wlr_scene_tree *textwin_tree;
@@ -1194,9 +1196,10 @@ buttonpress(struct wl_listener *listener, void *data)
         return;
     }
     /* the other popups take no input; a press anywhere but on the bar (whose
-     * widgets toggle them) closes them, and goes on to what is below. The
-     * tray's icons toggle its menus (the kept popups) the same way, but they
-     * are its own layer surfaces: a press there closes only the others. */
+     * widgets close their own on a press, see below) closes them, and goes on
+     * to what is below. The tray's icons close their menus (the kept popups)
+     * the same way, but they are its own layer surfaces: a press there closes
+     * only the others. */
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&textwins)
             && !((node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL))
                 && (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer)) {
@@ -1215,11 +1218,15 @@ buttonpress(struct wl_listener *listener, void *data)
         (node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL)) &&
         (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer
         && event->state == WL_POINTER_BUTTON_STATE_PRESSED && !locked) {
-        /* a click on the hovered widget takes over from the hover, so
-         * whatever it opens doesn't close on leave */
-        if (hover_active && barwidgetat(selmon, cursor->x, cursor->y) == hover_active) {
+        /* hover popups are hover only: a press on the widget closes what
+         * its hover opened, or keeps it from opening, until the pointer
+         * leaves and comes back */
+        widget_t *pressed = barwidgetat(selmon, cursor->x, cursor->y);
+        if (pressed && pressed == hover_widget)
+            wl_event_source_timer_update(hover_timer, 0);
+        if (hover_active && pressed == hover_active) {
             setleavepending(0);
-            hover_active = NULL;
+            leavetimeout(NULL);
         }
         unsigned int cursor_x = cursor->x, cursor_y = cursor->y;
         cursor_x -= selmon->m.x;
@@ -2422,11 +2429,11 @@ drawbar(Monitor *m)
         wlr_buffer_drop(&buf->base);
 }
 
-/** the popups' look, from config_plugins.h */
+/** the popups' look, from config_plugins.h; a menu's its own (popup_config.menu) */
 static awl_window_style_t
-textwinstyle(void)
+textwinstyle(int menu)
 {
-    return (awl_window_style_t){
+    awl_window_style_t s = {
             .bg = cfg->popup->bg, .fg = cfg->popup->fg,
             .border = cfg->popup->border,
             /* fg, faint */
@@ -2436,6 +2443,17 @@ textwinstyle(void)
             .margin = cfg->popup->margin,
             .blur = cfg->blur_launcher,
             .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] };
+    if (menu) {
+        struct awl_popup_menu_config_t c = awl_popup_menu_config(cfg->popup, cfg->blur_launcher);
+        s.bg = c.bg;
+        s.fg = c.fg;
+        s.border = c.border;
+        s.highlight = c.highlight;
+        s.border_width = c.border_width;
+        s.radius = c.radius;
+        s.blur = c.blur;
+    }
+    return s;
 }
 
 /** win's entry in textwins, NULL if it is not (or no longer) one of them */
@@ -2463,7 +2481,7 @@ textwinnew(int kept)
         textwin_tree = wlr_scene_tree_create(&scene->tree);
         wlr_scene_node_place_above(&textwin_tree->node, &layers[LyrTop]->node);
     }
-    style = textwinstyle();
+    style = textwinstyle(0);
     tw = ecalloc(1, sizeof(*tw));
     tw->win = awl_window_create(textwin_tree, &style);
     tw->kept = kept;
@@ -2668,6 +2686,88 @@ const awl_popup_config_t *
 popupconfig(void)
 {
     return cfg->popup;
+}
+
+void
+textwinshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left)
+{
+    if (m && textwinfind(win))
+        awl_window_show_beside(win, m, &(struct wlr_box){x, y, w, h}, left);
+}
+
+void
+textwinsetmenustyle(awl_window_t *win)
+{
+    TextWin *tw = textwinfind(win);
+    awl_window_style_t style;
+    if (!tw)
+        return;
+    tw->menu = 1;
+    style = textwinstyle(1);
+    awl_window_set_style(win, &style);
+}
+
+void
+textwinsethover(awl_window_t *win, void (*hover)(awl_window_t *win, int row, int inside, void *data), void *data)
+{
+    if (textwinfind(win))
+        awl_window_set_hover(win, hover, data);
+}
+
+int
+textwinpartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h)
+{
+    struct wlr_box box;
+    if (!textwinfind(win) || !awl_window_part_box(win, part, &box))
+        return 0;
+    *x = box.x;
+    *y = box.y;
+    *w = box.width;
+    *h = box.height;
+    return 1;
+}
+
+struct awl_timer {
+    struct wl_event_source *source;
+    void (*fn)(void *data);
+    void *data;
+};
+
+static int
+timerfire(void *data)
+{
+    awl_timer_t *t = data;
+    t->fn(t->data);
+    return 0;
+}
+
+awl_timer_t *
+timeradd(void (*fn)(void *data), void *data)
+{
+    awl_timer_t *t;
+    if (!event_loop || !fn)
+        return NULL;
+    t = ecalloc(1, sizeof(*t));
+    t->fn = fn;
+    t->data = data;
+    t->source = wl_event_loop_add_timer(event_loop, timerfire, t);
+    return t;
+}
+
+void
+timerset(awl_timer_t *t, int ms)
+{
+    if (t)
+        wl_event_source_timer_update(t->source, ms > 0 ? ms : 0);
+}
+
+void
+timerremove(awl_timer_t *t)
+{
+    if (!t)
+        return;
+    wl_event_source_remove(t->source);
+    free(t);
 }
 
 void
@@ -5683,10 +5783,9 @@ configapply(void)
     desktop_configure(&(desktop_config_t){
             .blur = cfg->blur_launcher, .radius = cfg->blur_launcher_radius,
             .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] });
-    if (!wl_list_empty(&textwins)) {
-        style = textwinstyle();
-        wl_list_for_each(tw, &textwins, link)
-            awl_window_set_style(tw->win, &style);
+    wl_list_for_each(tw, &textwins, link) {
+        style = textwinstyle(tw->menu);
+        awl_window_set_style(tw->win, &style);
     }
 
     drawbars();

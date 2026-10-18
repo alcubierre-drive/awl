@@ -44,13 +44,25 @@ typedef struct {
     uint64_t serial;
     char* monitor;
     int center_x;
+    int on_icon;
 } toggle_t;
 
 static void main_toggle( void* data ) {
     toggle_t* t = data;
-    awl_tray_menu_window_toggle( t->serial, t->monitor, t->center_x );
+    awl_tray_menu_window_toggle( t->serial, t->monitor, t->center_x, t->on_icon );
     free( t->monitor );
     free( t );
+}
+
+typedef struct {
+    uint64_t serial;
+    int inside;
+} pointer_t;
+
+static void main_pointer( void* data ) {
+    pointer_t* p = data;
+    awl_tray_menu_window_pointer( p->serial, p->inside );
+    free( p );
 }
 
 static void main_snap( void* data ) {
@@ -453,10 +465,20 @@ void awl_tray_menu_set_theme_path( awl_tray_menu_t* menu, const char* theme_path
     menu->theme_path = strdup( theme_path ? theme_path : "" );
 }
 
-void awl_tray_menu_toggle( awl_tray_menu_t* menu, const char* monitor, int center_x ) {
+void awl_tray_menu_toggle( awl_tray_menu_t* menu, const char* monitor, int center_x, int on_icon ) {
     toggle_t* t = malloc( sizeof(*t) );
-    *t = (toggle_t){ menu->serial, strdup( monitor ? monitor : "" ), center_x };
+    *t = (toggle_t){ menu->serial, strdup( monitor ? monitor : "" ), center_x, on_icon };
     awl_host->post( main_toggle, t );
+}
+
+void awl_tray_menu_pointer( awl_tray_menu_t* menu, int inside ) {
+    pointer_t* p = malloc( sizeof(*p) );
+    *p = (pointer_t){ menu->serial, inside };
+    awl_host->post( main_pointer, p );
+}
+
+int awl_tray_menu_is_open( const awl_tray_menu_t* menu ) {
+    return menu && menu->open;
 }
 
 /* ---- from the main thread ---- */

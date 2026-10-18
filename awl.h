@@ -400,6 +400,25 @@ typedef struct awl_popup_config_t awl_popup_config_t;
 /** config_plugins.h's popup_config as it is now; valid until the next
  * config reload (main thread) */
 const awl_popup_config_t *popupconfig(void);
+/** shows win on m beside the box x, y, w, h, a row of another popup, on
+ * its right unless left (`awl_window_show_beside()`) */
+void textwinshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
+/** makes win look like a menu, popup_config.menu, from now on (config
+ * reloads too) */
+void textwinsetmenustyle(awl_window_t *win);
+/** calls hover whenever the row under the pointer changes
+ * (`awl_window_set_hover()`) */
+void textwinsethover(awl_window_t *win, void (*hover)(awl_window_t *win, int row, int inside, void *data), void *data);
+/** where part of win's painter is, 0 if it is not shown
+ * (`awl_window_part_box()`) */
+int textwinpartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h);
+typedef struct awl_timer awl_timer_t;
+/** a timer on the main loop that calls fn( data ), unarmed */
+awl_timer_t *timeradd(void (*fn)(void *data), void *data);
+/** fn in ms milliseconds, instead of when it was due; 0 disarms it */
+void timerset(awl_timer_t *t, int ms);
+/** NULL is fine */
+void timerremove(awl_timer_t *t);
 /**
  * which wallpaper the wallpaper action (`Arg.i`) and the timer switch to; the
  * ones after `WallpaperModeCount` are no timer modes: back to the one shown

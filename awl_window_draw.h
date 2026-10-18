@@ -10,6 +10,7 @@
 #include "awl_draw.h"
 
 #include <stdint.h>
+#include <string.h> /* memcmp, awl_popup_menu_config() */
 
 /** between columns and rows, logical pixels */
 #define AWL_WINDOW_COLUMN_SPACING 12
@@ -46,7 +47,32 @@ typedef struct awl_popup_config_t {
          * which scrolls beyond the maximum; a maximum of 0 means none */
         int list_min_height, list_max_height;
     } calendar;
+    /** the tray's menus, their own look; all of it 0 (left out): the
+     * popups' (bg, fg, border, dim, hover, border_width, radius, blur) */
+    struct awl_popup_menu_config_t {
+        uint32_t bg, fg, border;
+        /** disabled entries, shortcuts, separators */
+        uint32_t dim;
+        /** the entry under the pointer, the one whose submenu is open: its
+         * background and its text (0: fg) */
+        uint32_t highlight, highlight_fg;
+        int border_width, radius;
+        /** blur what is behind them, as the launcher (blur_launcher) */
+        int blur;
+    } menu;
 } awl_popup_config_t;
+
+/** c's menu look with what is left out filled in: everything (all 0) from
+ * the popups', highlight_fg from fg; blur_launcher is the popups' blur */
+static inline struct awl_popup_menu_config_t awl_popup_menu_config( const awl_popup_config_t* c, int blur_launcher ) {
+    struct awl_popup_menu_config_t m = c->menu;
+    static const struct awl_popup_menu_config_t none = { 0 };
+    if (!memcmp( &m, &none, sizeof m ))
+        m = (struct awl_popup_menu_config_t){ .bg = c->bg, .fg = c->fg, .border = c->border, .dim = c->dim,
+                .highlight = c->hover, .border_width = c->border_width, .radius = c->radius, .blur = blur_launcher };
+    if (!m.highlight_fg) m.highlight_fg = m.fg;
+    return m;
+}
 
 /** How a window looks; awl fills it from popup_config. Colors are
  * 0xRRGGBBAA, sizes logical pixels. */
@@ -162,3 +188,13 @@ int awl_window_margin( int margin, int extent );
  * at the monitor's left edge, the area's top or bottom edge. */
 void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
                        int center_x, int top, int margin, int* x, int* y );
+
+/** Where a lw x lh window (logical pixels) goes beside the box ax, ay, aw
+ * wide (layout coordinates; a submenu's beside the menu, at the row that
+ * opened it): right of the box (left of it if left) if it fits there within
+ * the monitor at mon_x, mon_w, awl_window_margin() of margin away from its
+ * side, else on the other side if it fits there, else on the side with more
+ * room, as far from the box as the monitor allows. Its top at ay, but
+ * within the window area area_y, area_h as for awl_window_place(). */
+void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
+                              int ax, int ay, int aw, int left, int margin, int* x, int* y );

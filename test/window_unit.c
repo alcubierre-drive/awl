@@ -252,6 +252,33 @@ static void test_place( void ) {
     CHECK( x == 1280 && y == 637 );
     awl_window_place( 1280, 1280, 0, 687, 100, 50, 10, 0, 100000, &x, &y );
     CHECK( x == 1280 + 320 && y == 687 - 50 - 171 );
+
+    printf( "-- place beside\n" );
+    /* right of a menu at 1280 + 100, 120 wide, the row at y 40 */
+    awl_window_place_beside( 1280, 1280, 0, 687, 100, 50, 1380, 40, 120, 0, 6, &x, &y );
+    CHECK( x == 1500 && y == 40 );
+    /* no room on the right: on the left */
+    awl_window_place_beside( 1280, 1280, 0, 687, 100, 50, 2400, 40, 120, 0, 6, &x, &y );
+    CHECK( x == 2300 );
+    /* room on neither side: the right, which has more, as far as it goes */
+    awl_window_place_beside( 1280, 1280, 0, 687, 700, 50, 1280 + 400, 40, 300, 0, 6, &x, &y );
+    CHECK( x == 1280 + 1280 - 6 - 700 );
+    /* the left has more */
+    awl_window_place_beside( 1280, 1280, 0, 687, 700, 50, 1280 + 600, 40, 300, 0, 6, &x, &y );
+    CHECK( x == 1280 + 6 );
+    /* kept within the area, at its bottom, at its top */
+    awl_window_place_beside( 1280, 1280, 33, 654, 100, 50, 1380, 670, 120, 0, 6, &x, &y );
+    CHECK( y == 33 + 654 - 6 - 50 );
+    awl_window_place_beside( 1280, 1280, 33, 654, 100, 50, 1380, 0, 120, 0, 6, &x, &y );
+    CHECK( y == 33 + 6 );
+    /* left first: there if it fits, else the right */
+    awl_window_place_beside( 1280, 1280, 0, 687, 100, 50, 1500, 40, 120, 1, 6, &x, &y );
+    CHECK( x == 1400 );
+    awl_window_place_beside( 1280, 1280, 0, 687, 100, 50, 1300, 40, 120, 1, 6, &x, &y );
+    CHECK( x == 1420 );
+    /* taller than the area: its top */
+    awl_window_place_beside( 1280, 1280, 33, 654, 100, 900, 1380, 100, 120, 0, 6, &x, &y );
+    CHECK( y == 33 );
 }
 
 int main( void ) {

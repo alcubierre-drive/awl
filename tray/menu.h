@@ -80,8 +80,15 @@ void awl_tray_menu_free( awl_tray_menu_t* menu );
 void awl_tray_menu_set_theme_path( awl_tray_menu_t* menu, const char* theme_path );
 /** A click on the item: opens the menu on the monitor of the output named
  * monitor, centered on center_x (logical pixels from its left edge), or
- * closes it if it is open there. */
-void awl_tray_menu_toggle( awl_tray_menu_t* menu, const char* monitor, int center_x );
+ * closes it if it is open there. on_icon: the pointer is on the item's tray
+ * window (see awl_tray_menu_pointer()). */
+void awl_tray_menu_toggle( awl_tray_menu_t* menu, const char* monitor, int center_x, int on_icon );
+/** The pointer came onto the item's tray window (inside) or left it: the
+ * menu open closes once the pointer is off both it and the tray for a
+ * moment. */
+void awl_tray_menu_pointer( awl_tray_menu_t* menu, int inside );
+/** whether the main thread shows it */
+int awl_tray_menu_is_open( const awl_tray_menu_t* menu );
 
 /* ---- any thread, run on the tray's GTK thread ---- */
 
@@ -94,11 +101,15 @@ void awl_tray_menu_event( uint64_t serial, int32_t id, const char* event );
 /* ---- awl's main thread (menu_window.c), through awl_host->post() ---- */
 
 /** the click awl_tray_menu_toggle() got */
-void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x );
+void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x, int on_icon );
+/** what awl_tray_menu_pointer() got */
+void awl_tray_menu_window_pointer( uint64_t serial, int inside );
 /** a snapshot for the main thread, which takes it */
 void awl_tray_menu_window_snap( awl_tray_menu_snap_t* snap );
 /** serial's menu is gone: closes it, without events */
 void awl_tray_menu_window_gone( uint64_t serial );
+/** whether a menu is open, or being opened */
+int awl_tray_menu_window_is_open( void );
 
 #ifdef __cplusplus
 }

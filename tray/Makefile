@@ -24,7 +24,7 @@ FLAGS += -DAWL_HOSTED
 LDFLAGS += -shared -Wl,--as-needed $(shell pkg-config --libs $(PKGLIST))
 
 SRC := $(wildcard *.cpp)
-CSRC := menu.c menu_window.c
+CSRC := menu.c menu_window.c tooltip.c
 OBJ := $(patsubst %.cpp,%.cpp.o,$(SRC)) $(patsubst %.c,%.c.o,$(CSRC))
 
 DBUS_SRC := dbus-menu.c dbus-status-notifier-item.c dbus-status-notifier-watcher.c

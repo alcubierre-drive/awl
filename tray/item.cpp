@@ -1,4 +1,5 @@
 #include "item.hpp"
+#include "tooltip.h"
 #include "../awl_log.h"
 
 #include <gdkmm/general.h>
@@ -31,9 +32,15 @@ Item::Item(const std::string& bn, const std::string& op, Gtk::Window& win)
     show_passive_ = true;
 
     win.signal_configure_event().connect_notify(sigc::mem_fun(*this, &Item::onConfigure));
+    win.add_events(Gdk::ENTER_NOTIFY_MASK | Gdk::LEAVE_NOTIFY_MASK);
+    win.signal_enter_notify_event().connect(sigc::mem_fun(*this, &Item::handleTrayCrossing));
+    win.signal_leave_notify_event().connect(sigc::mem_fun(*this, &Item::handleTrayCrossing));
     event_box.add(image);
-    event_box.add_events(Gdk::BUTTON_PRESS_MASK | Gdk::SCROLL_MASK | Gdk::SMOOTH_SCROLL_MASK);
+    event_box.add_events(Gdk::BUTTON_PRESS_MASK | Gdk::SCROLL_MASK | Gdk::SMOOTH_SCROLL_MASK |
+                         Gdk::ENTER_NOTIFY_MASK | Gdk::LEAVE_NOTIFY_MASK);
     event_box.signal_button_press_event().connect(sigc::mem_fun(*this, &Item::handleClick));
+    event_box.signal_enter_notify_event().connect(sigc::mem_fun(*this, &Item::handleEnter));
+    event_box.signal_leave_notify_event().connect(sigc::mem_fun(*this, &Item::handleLeave));
     event_box.signal_scroll_event().connect(sigc::mem_fun(*this, &Item::handleScroll));
     // initial visibility
     event_box.show_all();
@@ -47,7 +54,11 @@ Item::Item(const std::string& bn, const std::string& op, Gtk::Window& win)
                                      cancellable_, interface);
 }
 
-Item::~Item() { awl_tray_menu_free(menu_); }
+Item::~Item() {
+    cancellable_->cancel();
+    awl_tray_tooltip_leave(tooltip_);
+    awl_tray_menu_free(menu_);
+}
 
 void Item::onConfigure(GdkEventConfigure* ev) { (void)ev; this->updateImage(); }
 
@@ -89,11 +100,7 @@ ToolTip get_variant<ToolTip>(const Glib::VariantBase& value) {
     auto container = value.cast_dynamic<Glib::VariantContainerBase>(value);
     result.icon_name = get_variant<Glib::ustring>(container.get_child(0));
     result.text = get_variant<Glib::ustring>(container.get_child(2));
-    auto description = get_variant<Glib::ustring>(container.get_child(3));
-    if (!description.empty()) {
-        result.text = std::string("<b>") + result.text + std::string("</b>\n") + description;
-        /* result.text = fmt::format("<b>{}</b>\n{}", result.text, description); */
-    }
+    result.description = get_variant<Glib::ustring>(container.get_child(3));
     return result;
 }
 
@@ -105,9 +112,6 @@ void Item::setProperty(const Glib::ustring& name, Glib::VariantBase& value) {
             id = get_variant<std::string>(value);
         } else if (name == "Title") {
             title = get_variant<std::string>(value);
-            if (tooltip.text.empty()) {
-                event_box.set_tooltip_markup(title);
-            }
         } else if (name == "Status") {
             setStatus(get_variant<Glib::ustring>(value));
         } else if (name == "IconName") {
@@ -126,9 +130,6 @@ void Item::setProperty(const Glib::ustring& name, Glib::VariantBase& value) {
             attention_movie_name = get_variant<std::string>(value);
         } else if (name == "ToolTip") {
             tooltip = get_variant<ToolTip>(value);
-            if (!tooltip.text.empty()) {
-                event_box.set_tooltip_markup(tooltip.text);
-            }
         } else if (name == "IconThemePath") {
             icon_theme_path = get_variant<std::string>(value);
             if (!icon_theme_path.empty()) {
@@ -433,25 +434,90 @@ Glib::RefPtr<Gdk::Pixbuf> Item::getIconByName(const std::string& name, int reque
                                                  Gtk::IconLookupFlags::ICON_LOOKUP_FORCE_SIZE);
 }
 
-// The menu, awl's (menu.h): on the monitor of the window, under the icon.
 // The window's left margin is its x on the monitor (see Bridge::reposition()).
-void Item::toggleMenu() {
-    if (!menu_) menu_ = awl_tray_menu_new(bus_name.c_str(), menu.c_str(), icon_theme_path.c_str());
-    int x = 0, y = 0;
+void Item::where(std::string& monitor, int& x) {
+    int y = 0;
+    x = 0;
     event_box.translate_coordinates(win_, event_box.get_allocated_width() / 2, 0, x, y);
     x += gtk_layer_get_margin(win_.gobj(), GTK_LAYER_SHELL_EDGE_LEFT);
     // "awl-tray:<monitor_id>", see Bridge::Bridge()
     const char* ns = gtk_layer_get_namespace(win_.gobj());
-    const char* mon = ns && !strncmp(ns, "awl-tray:", 9) ? ns + 9 : "";
-    awl_tray_menu_toggle(menu_, mon, x);
+    monitor = ns && !strncmp(ns, "awl-tray:", 9) ? ns + 9 : "";
 }
 
-// TODO
+// The menu, awl's (menu.h): on the monitor of the window, under the icon.
+void Item::toggleMenu() {
+    if (!menu_) menu_ = awl_tray_menu_new(bus_name.c_str(), menu.c_str(), icon_theme_path.c_str());
+    std::string mon;
+    int x;
+    where(mon, x);
+    awl_tray_menu_toggle(menu_, mon.c_str(), x, in_tray_);
+}
+
+// An item that says it is no menu (ItemIsMenu false) but can't be activated
+// after all (no Activate, or it fails): its menu, as for one that is.
+void Item::activateDone(Glib::RefPtr<Gio::AsyncResult>& result) {
+    try {
+        proxy_->call_finish(result);
+    } catch (const Glib::Error& err) {
+        // gone, or the app hangs: nothing
+        if (err.domain() == G_IO_ERROR && (err.code() == G_IO_ERROR_CANCELLED || err.code() == G_IO_ERROR_TIMED_OUT))
+            return;
+        awl_vrb_printf("tray: item '%s': Activate failed (%s), its menu instead\n", id.c_str(), err.what().c_str());
+        if (!menu.empty()) toggleMenu();
+    }
+}
+
+std::string Item::name() const {
+    if (!tooltip.text.empty()) return tooltip.text;
+    if (!title.empty()) return title;
+    return id;
+}
+
+bool Item::handleEnter(GdkEventCrossing* const& ev) {
+    // from or to the icon inside: still on the item
+    if (ev->detail == GDK_NOTIFY_INFERIOR) return false;
+    awl_tray_tooltip_leave(tooltip_);
+    std::string mon;
+    int x;
+    where(mon, x);
+    tooltip_ = awl_tray_tooltip_enter(mon.c_str(), x, name().c_str());
+    return false;
+}
+
+bool Item::handleLeave(GdkEventCrossing* const& ev) {
+    if (ev->detail == GDK_NOTIFY_INFERIOR) return false;
+    awl_tray_tooltip_leave(tooltip_);
+    tooltip_ = 0;
+    return false;
+}
+
+// The menu stays open while the pointer is anywhere on the tray window, not
+// just the item: from or to an icon (inferior) is still on it.
+bool Item::handleTrayCrossing(GdkEventCrossing* const& ev) {
+    if (ev->detail == GDK_NOTIFY_INFERIOR) return false;
+    in_tray_ = ev->type == GDK_ENTER_NOTIFY;
+    if (menu_) awl_tray_menu_pointer(menu_, in_tray_);
+    return false;
+}
+
+// Right: the menu. Left: what the item does when activated, unless it says
+// it is a menu (ItemIsMenu, also when it doesn't say: libappindicator's
+// items have no Activate), or it has none after all: then its menu too.
+// Middle: SecondaryActivate. An item without a menu draws its own on
+// ContextMenu. With its menu open, any press only closes it.
 bool Item::handleClick(GdkEventButton* const& ev) {
     // a double or triple click also comes as GDK_2BUTTON_PRESS (and
     // _3BUTTON_), after its presses: one action per press, or a menu
     // would open and close at once
     if (ev->type != GDK_BUTTON_PRESS) return true;
+    awl_tray_tooltip_leave(tooltip_);
+    tooltip_ = 0;
+    if (!proxy_) return true;
+    if (awl_tray_menu_is_open(menu_)) {
+        toggleMenu();
+        return true;
+    }
     auto parameters = Glib::VariantContainerBase::create_tuple(
         {Glib::Variant<int>::create(ev->x_root /*+ bar_.x_global */),
          Glib::Variant<int>::create(ev->y_root /*+ bar_.y_global */)});
@@ -464,7 +530,7 @@ bool Item::handleClick(GdkEventButton* const& ev) {
             return true;
         }
     } else if (ev->button == 1) {
-        proxy_->call("Activate", parameters);
+        proxy_->call("Activate", sigc::mem_fun(*this, &Item::activateDone), cancellable_, parameters);
         return true;
     } else if (ev->button == 2) {
         proxy_->call("SecondaryActivate", parameters);

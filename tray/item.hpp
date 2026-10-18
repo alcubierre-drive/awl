@@ -16,7 +16,9 @@ namespace SNI {
 
 struct ToolTip {
     Glib::ustring icon_name;
+    /** its title (plain text) and description (may have markup) */
     Glib::ustring text;
+    Glib::ustring description;
 };
 
 class Item : public sigc::trackable {
@@ -67,7 +69,16 @@ private:
     Glib::RefPtr<Gdk::Pixbuf> extractPixBuf(GVariant* variant);
     Glib::RefPtr<Gdk::Pixbuf> getIconPixbuf(int scale_factor);
     Glib::RefPtr<Gdk::Pixbuf> getIconByName(const std::string& name, int size);
+    // the monitor of the window, the icon's center on it
+    void where(std::string& monitor, int& x);
     void toggleMenu();
+    void activateDone(Glib::RefPtr<Gio::AsyncResult>& result);
+    // what the tooltip shows
+    std::string name() const;
+    bool handleEnter(GdkEventCrossing* const&);
+    bool handleLeave(GdkEventCrossing* const&);
+    // the pointer came onto the tray window or left it
+    bool handleTrayCrossing(GdkEventCrossing* const&);
     bool handleClick(GdkEventButton* const& /*ev*/);
     bool handleScroll(GdkEventScroll* const&);
 
@@ -75,6 +86,10 @@ private:
     gdouble scroll_threshold_ = 0;
     gdouble distance_scrolled_x_ = 0;
     gdouble distance_scrolled_y_ = 0;
+    // the tooltip shown or about to be (tooltip.h), 0 none
+    uint32_t tooltip_ = 0;
+    // the pointer is on the tray window: its menu stays open (menu.h)
+    bool in_tray_ = false;
     // visibility of items with Status == Passive
     bool show_passive_ = false;
 

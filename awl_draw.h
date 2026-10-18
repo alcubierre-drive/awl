@@ -61,8 +61,9 @@ struct widget_t {
      * callback_hover fired, unless it came back first (0: right away). While
      * the pointer is inside a layer surface whose namespace starts with
      * popup_namespace, or inside popup_window (the popup the hover opened),
-     * it counts as still on the widget. A click on the widget cancels it, so
-     * a popup opened by click stays. */
+     * it counts as still on the widget. A press on the widget calls it at
+     * once (and cancels a hover not yet fired); hovering fires again only
+     * after the pointer has left and come back. */
     void (*callback_leave)(widget_t* this);
     /** see `callback_leave` */
     uint32_t leave_delay_ms;

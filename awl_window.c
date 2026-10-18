@@ -16,6 +16,9 @@ struct awl_window {
     /** where it is shown, NULL while hidden */
     Monitor* m;
     int center_x, top;
+    /** shown beside anchor instead (awl_window_show_beside()) */
+    int beside, left;
+    struct wlr_box anchor;
     /** what the buffer was drawn for; drawn = 0 forces a redraw */
     int drawn;
     float scale;
@@ -32,7 +35,12 @@ struct awl_window {
     void* scroll_data;
     awl_window_hidden_t hidden;
     void* hidden_data;
+    awl_window_hover_t hover_cb;
+    void* hover_data;
     int hover;
+    /** the pointer is on it (awl_window_pointer_motion() since the last
+     * awl_window_pointer_leave()) */
+    int pointer_in;
     /** draws itself instead of the text, if painter.paint is set */
     awl_window_painter_t painter;
     void* painter_data;
@@ -199,8 +207,14 @@ static int draw( awl_window_t* win ) {
 static void place( awl_window_t* win ) {
     Monitor* m = win->m;
     int x, y;
-    awl_window_place( m->m.x, m->m.width, m->w.y, m->w.height, win->lw, win->lh,
-                      win->center_x, win->top, win->style.margin, &x, &y );
+    if (win->beside)
+        /* the content's top at the anchor's */
+        awl_window_place_beside( m->m.x, m->m.width, m->w.y, m->w.height, win->lw, win->lh, win->anchor.x,
+                                 win->anchor.y - (int)lroundf( win->layout.y0 / win->scale ), win->anchor.width,
+                                 win->left, win->style.margin, &x, &y );
+    else
+        awl_window_place( m->m.x, m->m.width, m->w.y, m->w.height, win->lw, win->lh,
+                          win->center_x, win->top, win->style.margin, &x, &y );
     wlr_scene_node_set_position( &win->tree->node, x, y );
 }
 
@@ -229,6 +243,16 @@ void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top ) {
     win->m = m;
     win->center_x = center_x;
     win->top = top;
+    win->beside = 0;
+    awl_window_update( win, m );
+}
+
+void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left ) {
+    if (win->m != m) win->drawn = 0;
+    win->m = m;
+    win->beside = 1;
+    win->left = left;
+    win->anchor = *anchor;
     awl_window_update( win, m );
 }
 
@@ -266,6 +290,11 @@ void awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* da
 void awl_window_set_hidden( awl_window_t* win, awl_window_hidden_t hidden, void* data ) {
     win->hidden = hidden;
     win->hidden_data = data;
+}
+
+void awl_window_set_hover( awl_window_t* win, awl_window_hover_t hover, void* data ) {
+    win->hover_cb = hover;
+    win->hover_data = data;
 }
 
 void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data ) {
@@ -313,19 +342,28 @@ static int cell_at( const awl_window_t* win, double lx, double ly, int* row, int
 int awl_window_pointer_motion( awl_window_t* win, double lx, double ly ) {
     int row, col;
     cell_at( win, lx, ly, &row, &col );
+    const int entered = !win->pointer_in;
+    win->pointer_in = 1;
     if (row != win->hover) {
         win->hover = row;
         win->drawn = 0;
         awl_window_update( win, win->m );
-    }
+    } else if (!entered)
+        return row;
+    /* last: it may hide or show windows, this one too */
+    if (win->hover_cb) win->hover_cb( win, row, 1, win->hover_data );
     return row;
 }
 
 void awl_window_pointer_leave( awl_window_t* win ) {
-    if (win->hover == -1) return;
-    win->hover = -1;
-    win->drawn = 0;
-    if (win->m) awl_window_update( win, win->m );
+    const int was_in = win->pointer_in;
+    win->pointer_in = 0;
+    if (win->hover != -1) {
+        win->hover = -1;
+        win->drawn = 0;
+        if (win->m) awl_window_update( win, win->m );
+    }
+    if (was_in && win->hover_cb) win->hover_cb( win, -1, 0, win->hover_data );
 }
 
 void awl_window_pointer_button( awl_window_t* win, double lx, double ly, uint32_t button, int* row, int* col ) {
@@ -341,6 +379,19 @@ void awl_window_pointer_axis( awl_window_t* win, double lx, double ly, uint32_t 
 
 int awl_window_hover_row( const awl_window_t* win ) {
     return win->hover;
+}
+
+int awl_window_part_box( const awl_window_t* win, int part, struct wlr_box* box ) {
+    int x, y, w, h;
+    if (!win->m || !win->drawn || !win->painter.paint || !win->painter.box ||
+        !win->painter.box( win->painter_data, part, &x, &y, &w, &h ))
+        return 0;
+    const double s = win->scale;
+    box->x = win->tree->node.x + (int)lround( (win->layout.x0 + x) / s );
+    box->y = win->tree->node.y + (int)lround( (win->layout.y0 + y) / s );
+    box->width = (int)lround( w / s );
+    box->height = (int)lround( h / s );
+    return 1;
 }
 
 int awl_window_cell_center( const awl_window_t* win, int row, int col, double* lx, double* ly ) {

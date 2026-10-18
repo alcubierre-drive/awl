@@ -37,6 +37,10 @@ typedef void (*awl_window_scroll_t)( awl_window_t* win, int row, int col, uint32
  * nor while its output is off (it comes back with it) */
 typedef void (*awl_window_hidden_t)( awl_window_t* win, void* data );
 
+/** the pointer moved onto row (part) of win, -1: none (something that
+ * can't be chosen, or off win); inside: whether it is on win at all */
+typedef void (*awl_window_hover_t)( awl_window_t* win, int row, int inside, void* data );
+
 /** A hidden, empty window in parent, an empty scene tree already placed in
  * the stacking order. */
 awl_window_t* awl_window_create( struct wlr_scene_tree* parent, const awl_window_style_t* style );
@@ -64,6 +68,11 @@ void awl_window_redraw( awl_window_t* win );
  * pixels from m's left edge) but kept within m. It draws in m->popupfont,
  * else in the bar's font; with neither it stays hidden. */
 void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top );
+/** Shows the window on m, or moves it there, beside anchor (layout
+ * coordinates; a row of another window, of the menu a submenu belongs to):
+ * right of it (left, if left), else on the other side, where it fits on m,
+ * its content's top at anchor's (awl_window_place_beside()). */
+void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left );
 void awl_window_hide( awl_window_t* win );
 /** the monitor it is shown on, NULL while hidden */
 Monitor* awl_window_monitor( const awl_window_t* win );
@@ -87,6 +96,10 @@ void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void*
 /** Calls hidden (with data) whenever win is hidden from now on, NULL: no
  * more. */
 void awl_window_set_hidden( awl_window_t* win, awl_window_hidden_t hidden, void* data );
+/** Calls hover (with data) whenever the highlighted row changes, or the
+ * pointer comes onto win or leaves it, which needs a click callback; NULL:
+ * no more. */
+void awl_window_set_hover( awl_window_t* win, awl_window_hover_t hover, void* data );
 /** whether win is visible at lx, ly (layout coordinates) or in the margin
  * around it (awl_window_style_t's, the gap to the bar the pointer crosses
  * to get to it), whether or not it takes the pointer */
@@ -107,6 +120,9 @@ void awl_window_pointer_axis( awl_window_t* win, double lx, double ly, uint32_t 
                               double delta, int32_t value120, int* row, int* col );
 /** the highlighted row, -1 none */
 int awl_window_hover_row( const awl_window_t* win );
+/** where a painted window's part is, layout coordinates and logical size;
+ * 0 if it is not shown */
+int awl_window_part_box( const awl_window_t* win, int part, struct wlr_box* box );
 /** the center of cell row, col in layout coordinates (of part row, col 0,
  * of a painted window), for tests; 0 if it is not shown */
 int awl_window_cell_center( const awl_window_t* win, int row, int col, double* lx, double* ly );

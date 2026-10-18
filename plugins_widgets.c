@@ -35,7 +35,6 @@ static uint32_t textsnap_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 
 static uint32_t clockwidget_measure( widget_t* w );
 static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void clockwidget_click( widget_t* w, uint32_t x, int button );
 static void clockwidget_hover( widget_t* w );
 static void clockwidget_leave( widget_t* w );
 static void clockwidget_scroll( widget_t* w, uint32_t x, int amount );
@@ -56,7 +55,6 @@ static uint32_t dockwidget_measure( widget_t* w );
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t ipwidget_measure( widget_t* w );
 static uint32_t ipwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void ipwidget_click( widget_t* w, uint32_t x, int button );
 static void ipwidget_hover( widget_t* w );
 static void ipwidget_leave( widget_t* w );
 static void ipwidget_free( void* userdata );
@@ -91,7 +89,6 @@ void awl_widgets_create( awl_draw_t* drw ) {
         .bar = drw,
         .measure = &clockwidget_measure,
         .draw = &clockwidget_draw,
-        .callback_click = &clockwidget_click,
         .callback_hover = &clockwidget_hover,
         .hover_delay_ms = 100,
         .callback_leave = &clockwidget_leave,
@@ -140,7 +137,6 @@ void awl_widgets_create( awl_draw_t* drw ) {
         .bar = drw,
         .measure = &ipwidget_measure,
         .draw = &ipwidget_draw,
-        .callback_click = &ipwidget_click,
         .callback_hover = &ipwidget_hover,
         .hover_delay_ms = 100,
         .callback_leave = &ipwidget_leave,
@@ -794,11 +790,6 @@ static void ipwidget_popup( widget_t* w, int toggle ) {
     awl_host->window_show( u->win, m, (int)(center / m->wlr_output->scale + 0.5f), "", toggle );
 }
 
-static void ipwidget_click( widget_t* w, uint32_t x, int button ) {
-    (void)x; (void)button;
-    ipwidget_popup( w, 1 );
-}
-
 static void ipwidget_hover( widget_t* w ) {
     ipwidget_popup( w, 0 );
 }
@@ -880,11 +871,6 @@ static int clockwidget_center( widget_t* w ) {
     clockwidget_userdata_t* u = w->userdata;
     float center = (float)(u ? u->x : 0) + (float)w->width / 2.0f;
     return (int)(center / w->bar->m->wlr_output->scale + 0.5f);
-}
-
-static void clockwidget_click( widget_t* w, uint32_t x, int button ) {
-    (void)x; (void)button;
-    awl_calpopup_toggle( w, clockwidget_center( w ) );
 }
 
 static void clockwidget_hover( widget_t* w ) {

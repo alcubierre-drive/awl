@@ -28,6 +28,7 @@ typedef struct Monitor Monitor;
 typedef struct awl_window awl_window_t;
 typedef struct awl_window_painter_t awl_window_painter_t;
 typedef struct awl_popup_config_t awl_popup_config_t;
+typedef struct awl_timer awl_timer_t;
 typedef struct Client Client;
 typedef struct awl_actions_t awl_actions_t;
 typedef struct awl_arranges_t awl_arranges_t;
@@ -170,6 +171,29 @@ typedef struct awl_host_t {
      * hidden, by window_hide or by awl (a press elsewhere, its monitor
      * going away); NULL: no more */
     void (*window_set_hidden)( awl_window_t* win, void (*hidden)( awl_window_t* win, void* data ), void* data );
+    /** `textwinshowbeside()`: shows the window on m beside the box x, y, w,
+     * h (layout coordinates, logical size), a row of another window: a
+     * submenu beside its menu, on the right unless left, else where it fits */
+    void (*window_show_beside)( awl_window_t* win, Monitor* m, int x, int y, int w, int h, int left );
+    /** `textwinsethover()`: hover( win, row, inside, data ) whenever the
+     * row under the pointer changes (-1: none) or it comes onto the window
+     * or leaves it (inside); needs window_set_click's callback */
+    void (*window_set_hover)( awl_window_t* win,
+            void (*hover)( awl_window_t* win, int row, int inside, void* data ), void* data );
+    /** `textwinpartbox()`: where part of the window's painter is, layout
+     * coordinates and logical size; 0 if it is not shown */
+    int (*window_part_box)( awl_window_t* win, int part, int* x, int* y, int* w, int* h );
+    /** `timeradd()`: a timer on awl's main loop calling fn( data ), unarmed;
+     * NULL before setup() */
+    awl_timer_t* (*timer_add)( void (*fn)( void* data ), void* data );
+    /** `timerset()`: fn in ms milliseconds, instead of when it was due; 0
+     * disarms it */
+    void (*timer_set)( awl_timer_t* t, int ms );
+    /** `timerremove()`: NULL is fine */
+    void (*timer_remove)( awl_timer_t* t );
+    /** `textwinsetmenustyle()`: the window looks like a menu,
+     * popup_config.menu (awl_popup_menu_config()), from now on */
+    void (*window_set_menu_style)( awl_window_t* win );
 } awl_host_t;
 
 /** `awl_dict_get()` on `awl_host_t.cfg`; valptr is an ``awl_dict_val_t*`` */

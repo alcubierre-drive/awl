@@ -7,13 +7,22 @@
  * check box and radio buttons (clicking them toggles them and sends
  * LayoutUpdated, as real menus do), a disabled entry, separators (also ones
  * the tray has to collapse), a shortcut, a mnemonic, and a submenu that is
- * empty until its AboutToShow, as Qt's are. Every call is printed to stdout:
- * "event <id> <name>", "about-to-show <id>", "get-layout <parent>". */
+ * empty until its AboutToShow, as Qt's are, and "Network", a submenu with
+ * one of its own. Every call is printed to stdout: "event <id> <name>",
+ * "about-to-show <id>", "get-layout <parent>", "item <method>".
+ *
+ * The environment changes it:
+ *   SNI_MENU_REBUILD=<ms>  every ms, rebuilds "Network" as nm-applet's
+ *                          rescans do: a layout without it, 100 ms later
+ *                          one with it again, its entries' ids all new
+ *   SNI_MENU_IS_MENU=1     ItemIsMenu true (a left click opens the menu)
+ *   SNI_MENU_NO_ACTIVATE=1 Activate fails, as for items that have none */
 
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gio/gio.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -27,6 +36,7 @@ static const char item_xml[] =
     "<property name='IconThemePath' type='s' access='read'/>"
     "<property name='Menu' type='o' access='read'/>"
     "<property name='ItemIsMenu' type='b' access='read'/>"
+    "<property name='ToolTip' type='(sa(iiay)ss)' access='read'/>"
     "<method name='Activate'><arg type='i' direction='in'/><arg type='i' direction='in'/></method>"
     "<method name='SecondaryActivate'><arg type='i' direction='in'/><arg type='i' direction='in'/></method>"
     "<method name='ContextMenu'><arg type='i' direction='in'/><arg type='i' direction='in'/></method>"
@@ -57,6 +67,8 @@ enum { ID_OPEN = 1, ID_PNG, ID_CHECK, ID_RADIO_A, ID_RADIO_B, ID_DISABLED, ID_SE
 static GDBusConnection* bus;
 static guint revision = 1;
 static int checked = 1, radio = ID_RADIO_A, sub_filled = 0;
+/** SNI_MENU_REBUILD: "Network" is being rebuilt; its ids' generation */
+static int rebuilding = 0, net_gen = 0;
 static GBytes* png;
 
 static GVariant* entry( int id, GVariantBuilder* props, GVariant* kids ) {
@@ -135,6 +147,39 @@ static GVariant* layout( void ) {
     g_variant_builder_add( &kids, "v", entry( ID_MORE, p, g_variant_builder_end( &sub ) ) );
     g_variant_builder_unref( p );
 
+    /* a submenu with a submenu, filled from the start; its ids change
+     * with each rebuild */
+    if (!rebuilding) {
+        const int base = 1000 + 100 * net_gen;
+        GVariantBuilder net, deep;
+        g_variant_builder_init( &net, G_VARIANT_TYPE( "av" ) );
+        g_variant_builder_init( &deep, G_VARIANT_TYPE( "av" ) );
+        const char* deep_labels[] = { "Deep 1", "Deep 2", "Deep 3" };
+        for (int i = 0; i < 3; i++) {
+            GVariantBuilder* q = props( deep_labels[i] );
+            g_variant_builder_add( &deep, "v", entry( base + 10 + i, q, NULL ) );
+            g_variant_builder_unref( q );
+        }
+        const char* net_labels[] = { "Wi-Fi A", "Wi-Fi B", NULL, "Wi-Fi C" };
+        for (int i = 0; i < 4; i++) {
+            if (!net_labels[i]) {
+                g_variant_builder_add( &net, "v", separator( base + 1 + i ) );
+                continue;
+            }
+            GVariantBuilder* q = props( net_labels[i] );
+            g_variant_builder_add( &net, "v", entry( base + 1 + i, q, NULL ) );
+            g_variant_builder_unref( q );
+        }
+        GVariantBuilder* q = props( "Deeper" );
+        g_variant_builder_add( q, "{sv}", "children-display", g_variant_new_string( "submenu" ) );
+        g_variant_builder_add( &net, "v", entry( base + 9, q, g_variant_builder_end( &deep ) ) );
+        g_variant_builder_unref( q );
+        p = props( "Network" );
+        g_variant_builder_add( p, "{sv}", "children-display", g_variant_new_string( "submenu" ) );
+        g_variant_builder_add( &kids, "v", entry( base, p, g_variant_builder_end( &net ) ) );
+        g_variant_builder_unref( p );
+    }
+
     g_variant_builder_add( &kids, "v", separator( ID_SEP1 + 100 ) );
 
     p = props( "_Quit" );
@@ -208,7 +253,26 @@ static void item_call( GDBusConnection* c, const char* sender, const char* path,
                        const char* method, GVariant* args, GDBusMethodInvocation* inv, gpointer data ) {
     printf( "item %s\n", method );
     fflush( stdout );
-    g_dbus_method_invocation_return_value( inv, NULL );
+    if (!strcmp( method, "Activate" ) && getenv( "SNI_MENU_NO_ACTIVATE" ))
+        g_dbus_method_invocation_return_dbus_error( inv, "org.freedesktop.DBus.Error.UnknownMethod", method );
+    else
+        g_dbus_method_invocation_return_value( inv, NULL );
+}
+
+static gboolean rebuilt( gpointer data ) {
+    rebuilding = 0;
+    changed();
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean rebuild( gpointer data ) {
+    printf( "rebuild\n" );
+    fflush( stdout );
+    rebuilding = 1;
+    net_gen++;
+    changed();
+    g_timeout_add( 100, rebuilt, NULL );
+    return G_SOURCE_CONTINUE;
 }
 
 static GVariant* item_prop( GDBusConnection* c, const char* sender, const char* path, const char* iface,
@@ -220,7 +284,10 @@ static GVariant* item_prop( GDBusConnection* c, const char* sender, const char* 
     if (!strcmp( name, "IconName" )) return g_variant_new_string( "dialog-information" );
     if (!strcmp( name, "IconThemePath" )) return g_variant_new_string( "" );
     if (!strcmp( name, "Menu" )) return g_variant_new_object_path( "/MenuBar" );
-    if (!strcmp( name, "ItemIsMenu" )) return g_variant_new_boolean( FALSE );
+    if (!strcmp( name, "ItemIsMenu" )) return g_variant_new_boolean( getenv( "SNI_MENU_IS_MENU" ) != NULL );
+    if (!strcmp( name, "ToolTip" ))
+        return g_variant_new( "(s@a(iiay)ss)", "", g_variant_new_array( G_VARIANT_TYPE( "(iiay)" ), NULL, 0 ),
+                              "sni_menu tooltip", "its <i>description</i>" );
     return NULL;
 }
 
@@ -277,6 +344,8 @@ int main( void ) {
                             "org.kde.StatusNotifierWatcher", "RegisterStatusNotifierItem",
                             g_variant_new( "(s)", name ), NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, registered,
                             NULL );
+    const char* every = getenv( "SNI_MENU_REBUILD" );
+    if (every && atoi( every ) > 0) g_timeout_add( (guint)atoi( every ), rebuild, NULL );
     printf( "sni_menu %s\n", name );
     fflush( stdout );
     g_main_loop_run( g_main_loop_new( NULL, FALSE ) );

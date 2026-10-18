@@ -1,11 +1,17 @@
 /* The main thread's half of the items' menus (see menu.h): the menu open, in
- * one of awl's popups, kept across plugin reloads (window_create_kept). One
- * menu at a time; a submenu opens in its place, with a row back to its
- * parent first. Everything here runs on awl's main thread: what the tray
- * thread sends comes through awl_host->post(), awl_window's callbacks are
- * awl's. */
+ * awl's popups, kept across plugin reloads (window_create_kept), one per
+ * level: the menu, and each submenu open beside the row it belongs to. One
+ * menu at a time. Hovering a submenu's row opens it after OPEN_DELAY;
+ * hovering another row closes it after CLOSE_DELAY, unless the pointer gets
+ * back into it first (on the way there, across the rows between). A new
+ * layout that no longer has a submenu open waits LAYOUT_GRACE for one that
+ * does (apps that rebuild their menus, network-manager-applet's rescans).
+ * Off the menu, its submenus and its item's tray for LEAVE_DELAY, it closes.
+ * Everything here runs on awl's main thread: what the tray thread sends
+ * comes through awl_host->post(), awl_window's callbacks are awl's. */
 
 #include "menu.h"
+#include "tooltip.h"
 #include "../awl_log.h"
 #include "../awl_window_draw.h"
 
@@ -13,11 +19,22 @@
 #include <linux/input-event-codes.h>
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/** a row shown: node -1 is the one back to the parent */
+enum {
+    /** levels: the menu and its submenus */
+    MAX_LEVELS = 8,
+    /** ms */
+    OPEN_DELAY = 200,
+    CLOSE_DELAY = 400,
+    LAYOUT_GRACE = 600,
+    LEAVE_DELAY = 300,
+};
+
+/** a row shown, one of the level's node's children */
 typedef struct {
     int node;
     /** from the content's top, physical pixels; y of rows above top is
@@ -25,8 +42,25 @@ typedef struct {
     int y, h;
 } row_t;
 
-static struct {
+/** the menu (level 0) or a submenu open */
+typedef struct {
     awl_window_t* win;
+    /** the node whose children are shown */
+    int node;
+    /** the first row shown, of more than fit; scrolling not yet in rows */
+    int top;
+    /** a submenu went left of its menu: its own go there too */
+    int left;
+    double acc;
+
+    /* measure()'s layout, physical pixels; x0 paint()'s */
+    float scale;
+    row_t* rows;
+    int nrows, shown;
+    int w, x0, pad, gap, check_w, icon_w, label_w, arrow_w;
+} level_t;
+
+static struct {
     /** the menu shown or being opened, 0: none */
     uint64_t serial;
     char monitor[64];
@@ -35,25 +69,36 @@ static struct {
     uint32_t gen;
     /** NULL while it is being opened */
     awl_tray_menu_snap_t* snap;
-    /** the node whose children are shown; the first row shown, of more
-     * than fit; scrolling not yet in rows */
-    int level, top;
-    double acc;
     /** the snapshot's icons decoded at icon_px, by node; tried: decoded or
      * failed */
     pixman_image_t** icons;
     char* tried;
     int icon_px;
 
-    /* measure()'s layout, physical pixels */
-    float scale;
-    row_t* rows;
-    int nrows, shown;
-    int w, pad, gap, check_w, icon_w, label_w, arrow_w;
-} M;
+    level_t lv[MAX_LEVELS];
+    /** the levels shown, 0 .. depth - 1; 0 while it is being opened */
+    int depth;
+    /** what hovering asked for, when timer fires: row of level pend_level
+     * opens its submenu, or with pend_row -1 the level's submenus close;
+     * pend_level -1 nothing */
+    awl_timer_t* timer;
+    int pend_level, pend_row;
+    /** the levels the pointer is on; on_icon: on the item's tray window */
+    char inside[MAX_LEVELS];
+    int on_icon;
+    /** fires LEAVE_DELAY after the pointer got off all of them; leaving:
+     * armed */
+    awl_timer_t* leave_timer;
+    int leaving;
+    /** hiding a level that stays open (its row scrolled away) */
+    int quiet;
+    /** a layout that would close submenus open, waiting for a better one */
+    awl_tray_menu_snap_t* held;
+    awl_timer_t* held_timer;
+} M = { .pend_level = -1 };
 
-static int px( float v ) {
-    return (int)lroundf( v * M.scale );
+static int px( const level_t* L, float v ) {
+    return (int)lroundf( v * L->scale );
 }
 
 static int tw( struct fcft_font* font, const char* s ) {
@@ -180,35 +225,26 @@ static pixman_image_t* icon( int i ) {
     return M.icons[i];
 }
 
-/* ---- the painter ---- */
+/* ---- the painter, one per level (data) ---- */
 
-static const char BACK[] = "‹", MORE[] = "›";
-
-static const char* row_label( const row_t* r ) {
-    return M.snap->nodes[r->node < 0 ? M.level : r->node].label;
-}
-
-static uint32_t row_flags( const row_t* r ) {
-    return r->node < 0 ? 0 : M.snap->nodes[r->node].flags;
-}
+static const char MORE[] = "›";
 
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
-    if (!M.snap) return 0;
-    M.scale = scale;
-    const awl_tray_menu_node_t* lv = &M.snap->nodes[M.level];
+    level_t* L = data;
+    if (!M.snap || L->node < 0 || L->node >= M.snap->nnodes) return 0;
+    L->scale = scale;
+    const awl_tray_menu_node_t* lv = &M.snap->nodes[L->node];
     const int fh = font->height;
-    const int rh = fh + 2 * px( 3 ), sep_h = px( 9 );
+    const int rh = fh + 2 * px( L, 3 ), sep_h = px( L, 9 );
 
-    free( M.rows );
-    M.nrows = lv->n + (M.level != 0);
-    M.rows = calloc( (size_t)(M.nrows ? M.nrows : 1), sizeof(*M.rows) );
-    int k = 0;
-    if (M.level != 0) M.rows[k++] = (row_t){ -1, 0, rh };
+    free( L->rows );
+    L->nrows = lv->n;
+    L->rows = calloc( (size_t)(L->nrows ? L->nrows : 1), sizeof(*L->rows) );
     int checks = 0, icons = 0, subs = 0, label_w = 0, shortcut_w = 0;
     for (int i = 0; i < lv->n; i++) {
         const awl_tray_menu_node_t* n = &M.snap->nodes[lv->first + i];
         int sep = !!(n->flags & AWL_TRAY_MENU_SEPARATOR);
-        M.rows[k++] = (row_t){ lv->first + i, 0, sep ? sep_h : rh };
+        L->rows[i] = (row_t){ lv->first + i, 0, sep ? sep_h : rh };
         if (sep) continue;
         checks |= !!(n->flags & (AWL_TRAY_MENU_CHECK | AWL_TRAY_MENU_RADIO));
         icons |= !!n->icon;
@@ -217,177 +253,364 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
         if (lw > label_w) label_w = lw;
         if (n->shortcut && (lw = tw( font, n->shortcut )) > shortcut_w) shortcut_w = lw;
     }
-    if (!M.nrows) return 0;
+    if (!L->nrows) return 0;
 
-    M.pad = px( 6 );
-    M.gap = px( 8 );
-    M.check_w = checks ? (int)lroundf( fh * 0.7f ) + M.gap : 0;
+    L->pad = px( L, 6 );
+    L->gap = px( L, 8 );
+    L->check_w = checks ? (int)lroundf( fh * 0.7f ) + L->gap : 0;
     if (M.icon_px != fh) {
         icons_clear();
         M.icon_px = fh;
     }
-    M.icon_w = icons ? M.icon_px + M.gap : 0;
-    M.arrow_w = subs ? tw( font, MORE ) + M.gap : 0;
-    if (M.level != 0) {
-        int bw = tw( font, BACK ) + M.gap + tw( font, lv->label ) - M.check_w - M.icon_w;
-        if (bw > label_w) label_w = bw;
-    }
-    M.label_w = label_w;
-    int W = 2 * M.pad + M.check_w + M.icon_w + label_w + (shortcut_w ? 2 * M.gap + shortcut_w : 0) + M.arrow_w;
-    if (W < px( 120 )) W = px( 120 );
+    L->icon_w = icons ? M.icon_px + L->gap : 0;
+    L->arrow_w = subs ? tw( font, MORE ) + L->gap : 0;
+    L->label_w = label_w;
+    int W = 2 * L->pad + L->check_w + L->icon_w + label_w + (shortcut_w ? 2 * L->gap + shortcut_w : 0) +
+            L->arrow_w;
+    if (W < px( L, 120 )) W = px( L, 120 );
     if (W > max_w) W = max_w;
-    M.w = W;
+    L->w = W;
 
     /* as many rows as fit from top on, top as low as lets the last one in */
     int total = 0;
-    for (int i = 0; i < M.nrows; i++) total += M.rows[i].h;
-    if (total <= max_h) M.top = 0;
+    for (int i = 0; i < L->nrows; i++) total += L->rows[i].h;
+    if (total <= max_h) L->top = 0;
     else {
-        int last_top = M.nrows - 1, hh = M.rows[last_top].h;
-        while (last_top > 0 && hh + M.rows[last_top - 1].h <= max_h) hh += M.rows[--last_top].h;
-        if (M.top > last_top) M.top = last_top;
-        if (M.top < 0) M.top = 0;
+        int last_top = L->nrows - 1, hh = L->rows[last_top].h;
+        while (last_top > 0 && hh + L->rows[last_top - 1].h <= max_h) hh += L->rows[--last_top].h;
+        if (L->top > last_top) L->top = last_top;
+        if (L->top < 0) L->top = 0;
     }
     int y = 0;
-    M.shown = 0;
-    for (int i = M.top; i < M.nrows && y + M.rows[i].h <= max_h; i++, M.shown++) {
-        M.rows[i].y = y;
-        y += M.rows[i].h;
+    L->shown = 0;
+    for (int i = L->top; i < L->nrows && y + L->rows[i].h <= max_h; i++, L->shown++) {
+        L->rows[i].y = y;
+        y += L->rows[i].h;
     }
-    if (!M.shown) return 0;
+    if (!L->shown) return 0;
     *w = W;
     *h = y;
     return 1;
 }
 
+/** the level after L, if it is open: the submenu of one of L's rows */
+static const level_t* child_of( const level_t* L ) {
+    int k = (int)(L - M.lv);
+    return k + 1 < M.depth ? &M.lv[k + 1] : NULL;
+}
+
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
                    int hover ) {
-    const awl_popup_config_t* c = awl_host->popup_config();
-    for (int i = M.top; i < M.top + M.shown; i++) {
-        const row_t* r = &M.rows[i];
-        const uint32_t flags = row_flags( r );
+    level_t* L = data;
+    /* the blur is the window's (window_set_menu_style) */
+    const struct awl_popup_menu_config_t c = awl_popup_menu_config( awl_host->popup_config(), 0 );
+    const level_t* sub = child_of( L );
+    L->x0 = x0;
+    for (int i = L->top; i < L->top + L->shown; i++) {
+        const row_t* r = &L->rows[i];
+        const awl_tray_menu_node_t* n = &M.snap->nodes[r->node];
+        const uint32_t flags = n->flags;
         const int y = y0 + r->y;
         if (flags & AWL_TRAY_MENU_SEPARATOR) {
-            float t = fmaxf( 1, (float)px( 1 ) );
-            fill_shape( pix, (float)(x0 + M.pad), (float)y + ((float)r->h - t) / 2, (float)(M.w - 2 * M.pad), t, 0, 0,
-                        c->dim );
+            float t = fmaxf( 1, (float)px( L, 1 ) );
+            fill_shape( pix, (float)(x0 + L->pad), (float)y + ((float)r->h - t) / 2, (float)(L->w - 2 * L->pad), t,
+                        0, 0, c.dim );
             continue;
         }
-        if (i == hover) fill_shape( pix, (float)x0, (float)y, (float)M.w, (float)r->h, (float)px( 4 ), 0, c->hover );
-        const uint32_t fg = (flags & AWL_TRAY_MENU_DISABLED) ? c->dim : c->fg;
-        int x = x0 + M.pad;
-        if (r->node < 0) {
-            /* back to the parent: the arrow where checks and icons go */
-            int bw = tw( font, BACK );
-            awl_host->text_over( pix, font, x, y, (unsigned)bw, (unsigned)r->h, BACK, c->fg );
-            x += bw + M.gap;
-            awl_host->text_over( pix, font, x, y, (unsigned)(x0 + M.w - M.pad - x), (unsigned)r->h, row_label( r ),
-                                 c->fg );
-            continue;
-        }
-        if (M.check_w && (flags & (AWL_TRAY_MENU_CHECK | AWL_TRAY_MENU_RADIO))) {
-            float s = (float)(M.check_w - M.gap);
+        /* the row whose submenu is open stays highlighted */
+        const int lit = i == hover || (sub && sub->node == r->node);
+        /* rounded as the frame, at most 4 */
+        if (lit)
+            fill_shape( pix, (float)x0, (float)y, (float)L->w, (float)r->h, (float)px( L, c.radius < 4 ? c.radius : 4 ),
+                        0, c.highlight );
+        const uint32_t fg = (flags & AWL_TRAY_MENU_DISABLED) ? c.dim : lit ? c.highlight_fg : c.fg;
+        int x = x0 + L->pad;
+        if (L->check_w && (flags & (AWL_TRAY_MENU_CHECK | AWL_TRAY_MENU_RADIO))) {
+            float s = (float)(L->check_w - L->gap);
             draw_check( pix, flags, (float)x, (float)y + ((float)r->h - s) / 2, s, fg );
         }
-        x += M.check_w;
-        pixman_image_t* img = M.icon_w ? icon( r->node ) : NULL;
+        x += L->check_w;
+        pixman_image_t* img = L->icon_w ? icon( r->node ) : NULL;
         if (img) {
             int iw = pixman_image_get_width( img ), ih = pixman_image_get_height( img );
             pixman_image_composite32( PIXMAN_OP_OVER, img, NULL, pix, 0, 0, 0, 0, x + (M.icon_px - iw) / 2,
                                       y + (r->h - ih) / 2, iw, ih );
         }
-        x += M.icon_w;
-        const awl_tray_menu_node_t* n = &M.snap->nodes[r->node];
-        int right = x0 + M.w - M.pad - M.arrow_w;
+        x += L->icon_w;
+        int right = x0 + L->w - L->pad - L->arrow_w;
         if (n->shortcut) {
             int sw = tw( font, n->shortcut );
-            if (right - sw > x + M.gap) {
-                awl_host->text_over( pix, font, right - sw, y, (unsigned)sw, (unsigned)r->h, n->shortcut, c->dim );
-                right -= sw + 2 * M.gap;
+            if (right - sw > x + L->gap) {
+                awl_host->text_over( pix, font, right - sw, y, (unsigned)sw, (unsigned)r->h, n->shortcut, c.dim );
+                right -= sw + 2 * L->gap;
             }
         }
         if (right > x) awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)r->h, n->label, fg );
         if (flags & AWL_TRAY_MENU_SUBMENU) {
             int aw = tw( font, MORE );
-            awl_host->text_over( pix, font, x0 + M.w - M.pad - aw, y, (unsigned)aw, (unsigned)r->h, MORE, fg );
+            awl_host->text_over( pix, font, x0 + L->w - L->pad - aw, y, (unsigned)aw, (unsigned)r->h, MORE, fg );
         }
     }
 }
 
 /** the row at px, py, -1 none or one that can't be chosen */
 static int hit( void* data, int x, int y ) {
-    if (x < 0 || x >= M.w) return -1;
-    for (int i = M.top; i < M.top + M.shown; i++) {
-        const row_t* r = &M.rows[i];
+    level_t* L = data;
+    if (x < 0 || x >= L->w) return -1;
+    for (int i = L->top; i < L->top + L->shown; i++) {
+        const row_t* r = &L->rows[i];
         if (y >= r->y && y < r->y + r->h)
-            return (row_flags( r ) & (AWL_TRAY_MENU_SEPARATOR | AWL_TRAY_MENU_DISABLED)) ? -1 : i;
+            return (M.snap->nodes[r->node].flags & (AWL_TRAY_MENU_SEPARATOR | AWL_TRAY_MENU_DISABLED)) ? -1 : i;
     }
     return -1;
 }
 
+/** a row, across the whole window (its frame too: where a submenu goes
+ * beside it) */
 static int box( void* data, int part, int* x, int* y, int* w, int* h ) {
-    if (part < M.top || part >= M.top + M.shown) return 0;
-    *x = 0;
-    *y = M.rows[part].y;
-    *w = M.w;
-    *h = M.rows[part].h;
+    level_t* L = data;
+    if (part < L->top || part >= L->top + L->shown) return 0;
+    *x = -L->x0;
+    *y = L->rows[part].y;
+    *w = L->w + 2 * L->x0;
+    *h = L->rows[part].h;
     return 1;
 }
 
 static const awl_window_painter_t painter = { measure, paint, hit, box };
 
+/* ---- the levels ---- */
+
+static void pend( int level, int row, int ms ) {
+    M.pend_level = level;
+    M.pend_row = row;
+    awl_host->timer_set( M.timer, ms );
+}
+
+static void pend_cancel( void ) {
+    M.pend_level = -1;
+    awl_host->timer_set( M.timer, 0 );
+}
+
+static void level_free( level_t* L ) {
+    free( L->rows );
+    L->rows = NULL;
+    L->nrows = L->shown = 0;
+    L->node = -1;
+    L->top = 0;
+    L->left = 0;
+    L->acc = 0;
+}
+
+static void leave_check( void );
+
+/** hides levels k and up; with events, tells the menu the submenus closed */
+static void close_from( int k, int events ) {
+    if (k < 1) k = 1;
+    if (M.depth <= k) return;
+    /* what's pending for them, or closes them, too */
+    if (M.pend_level >= k || (M.pend_level == k - 1 && M.pend_row < 0)) pend_cancel();
+    while (M.depth > k) {
+        level_t* L = &M.lv[--M.depth];
+        /* first: hiding calls hidden() */
+        int32_t id = M.snap && L->node >= 0 && L->node < M.snap->nnodes ? M.snap->nodes[L->node].id : 0;
+        level_free( L );
+        M.inside[M.depth] = 0;
+        awl_host->window_hide( L->win );
+        if (events && id) awl_tray_menu_event( M.serial, id, "closed" );
+    }
+    /* the row that had it open isn't highlighted any more */
+    if (M.depth > 0) awl_host->window_redraw( M.lv[M.depth - 1].win );
+    /* the pointer may have been on them */
+    leave_check();
+}
+
+/** the row of level k showing node, -1 none */
+static int row_of( int k, int node ) {
+    const level_t* L = &M.lv[k];
+    for (int i = 0; i < L->nrows; i++)
+        if (L->rows[i].node == node) return i;
+    return -1;
+}
+
+/** shows level k (>= 1) beside its row in level k - 1; hidden while the row
+ * isn't (scrolled away), or while there are no entries yet (the menu's
+ * filling it, AboutToShow) */
+static void place_level( int k ) {
+    level_t* L = &M.lv[k];
+    Monitor* m = awl_host->window_monitor( M.lv[0].win );
+    int x, y, w, h;
+    int row = row_of( k - 1, L->node );
+    if (!m || row < 0 || !awl_host->window_part_box( M.lv[k - 1].win, row, &x, &y, &w, &h )) {
+        M.inside[k] = 0;
+        M.quiet++;
+        awl_host->window_hide( L->win );
+        M.quiet--;
+        return;
+    }
+    awl_host->window_redraw( L->win );
+    awl_host->window_show_beside( L->win, m, x, y, w, h, M.lv[k - 1].left );
+    int cx, cy, cw, ch;
+    if (L->shown && awl_host->window_part_box( L->win, L->top, &cx, &cy, &cw, &ch )) L->left = cx < x;
+}
+
+static void click( awl_window_t* win, int row, int col, uint32_t button, void* data );
+static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, double delta, int32_t value120,
+                    void* data );
+static void hover( awl_window_t* win, int row, int inside, void* data );
+static void hidden( awl_window_t* win, void* data );
+
+/** level k's window, made on first use; NULL before awl is set up */
+static awl_window_t* window( int k ) {
+    level_t* L = &M.lv[k];
+    if (L->win) return L->win;
+    if (!(L->win = awl_host->window_create_kept())) return NULL;
+    void* data = (void*)(intptr_t)k;
+    awl_host->window_set_painter( L->win, &painter, L );
+    awl_host->window_set_click( L->win, click, data );
+    awl_host->window_set_scroll( L->win, scroll, data );
+    awl_host->window_set_hover( L->win, hover, data );
+    awl_host->window_set_hidden( L->win, hidden, data );
+    awl_host->window_set_menu_style( L->win );
+    return L->win;
+}
+
+/** opens the submenu of level k's row beside it, closing what's open
+ * beside k */
+static void open_sub( int k, int row ) {
+    const level_t* P = &M.lv[k];
+    if (row < 0 || row >= P->nrows) return;
+    int node = P->rows[row].node;
+    if (M.depth > k + 1 && M.lv[k + 1].node == node) return;
+    close_from( k + 1, 1 );
+    if (k + 1 >= MAX_LEVELS || !window( k + 1 )) return;
+    level_t* L = &M.lv[k + 1];
+    level_free( L );
+    L->node = node;
+    M.depth = k + 2;
+    /* lazy menus (Qt's) fill it now: a new layout comes */
+    awl_tray_menu_event( M.serial, M.snap->nodes[node].id, "opened" );
+    /* setting it again forgets the hovered row of the one shown before */
+    awl_host->window_set_painter( L->win, &painter, L );
+    awl_host->window_redraw( P->win );
+    place_level( k + 1 );
+}
+
+static void pend_fire( void* data ) {
+    int k = M.pend_level, row = M.pend_row;
+    M.pend_level = -1;
+    if (!M.snap || k < 0 || k >= M.depth) return;
+    if (row >= 0) {
+        open_sub( k, row );
+        return;
+    }
+    /* not while the pointer's on them */
+    for (int j = k + 1; j < M.depth; j++)
+        if (M.inside[j]) return;
+    close_from( k + 1, 1 );
+}
+
 /* ---- the menu open ---- */
 
 static void reset( void ) {
+    pend_cancel();
+    awl_host->timer_set( M.leave_timer, 0 );
+    M.leaving = 0;
+    M.on_icon = 0;
+    awl_host->timer_set( M.held_timer, 0 );
+    awl_tray_menu_snap_free( M.held );
+    M.held = NULL;
     icons_clear();
     awl_tray_menu_snap_free( M.snap );
-    free( M.rows );
     M.snap = NULL;
-    M.rows = NULL;
-    M.nrows = M.shown = 0;
+    for (int k = 0; k < MAX_LEVELS; k++) level_free( &M.lv[k] );
+    memset( M.inside, 0, sizeof M.inside );
     M.serial = 0;
-    M.level = M.top = 0;
-    M.acc = 0;
 }
 
-/** hides it; with events, tells the menu it closed if it was open */
+/** hides it; with events, tells the menu it closed (its submenus first) if
+ * it was open */
 static void close_menu( int events ) {
     uint64_t serial = M.serial;
     int open = M.snap != NULL;
+    if (open) close_from( 1, events );
+    M.depth = 0;
     /* first: hiding calls hidden() */
     reset();
-    if (M.win) awl_host->window_hide( M.win );
+    if (M.lv[0].win) awl_host->window_hide( M.lv[0].win );
     if (events && open) awl_tray_menu_event( serial, 0, "closed" );
 }
 
 /** awl hides its popups by itself too (a press elsewhere, the monitor
- * going away); close_menu() has reset everything before it hides it */
+ * going away): the whole menu closes. Levels close_from() and close_menu()
+ * hide are no longer open by then. */
 static void hidden( awl_window_t* win, void* data ) {
-    if (M.snap) awl_tray_menu_event( M.serial, 0, "closed" );
-    reset();
+    int k = (int)(intptr_t)data;
+    if (M.snap && k < M.depth && !M.quiet) close_menu( 1 );
 }
 
-static void show_level( int level ) {
-    M.level = level;
-    M.top = 0;
-    M.acc = 0;
-    /* setting it again forgets the hovered row, another one's now; redraws */
-    awl_host->window_set_painter( M.win, &painter, NULL );
+/** whether the pointer is off the menu, its submenus and its tray */
+static int pointer_off( void ) {
+    if (M.on_icon) return 0;
+    for (int k = 0; k < M.depth; k++)
+        if (M.inside[k]) return 0;
+    return 1;
+}
+
+/** arms the leave timer once the pointer got off, disarms it when it's back */
+static void leave_check( void ) {
+    if (!M.serial || !M.leave_timer) return;
+    const int off = pointer_off();
+    if (off == M.leaving) return;
+    M.leaving = off;
+    awl_host->timer_set( M.leave_timer, off ? LEAVE_DELAY : 0 );
+}
+
+static void leave_fire( void* data ) {
+    M.leaving = 0;
+    if (M.serial && pointer_off()) {
+        awl_vrb_printf( "tray: menu %llu: pointer left, closing\n", (unsigned long long)M.serial );
+        close_menu( 1 );
+    }
+}
+
+static void hover( awl_window_t* win, int row, int inside, void* data ) {
+    int k = (int)(intptr_t)data;
+    if (!M.snap || k >= M.depth || row >= M.lv[k].nrows) return;
+    M.inside[k] = (char)inside;
+    leave_check();
+    /* into a submenu in time: what hovering its menus asked for doesn't
+     * happen */
+    if (inside && M.pend_level >= 0 && M.pend_level < k) pend_cancel();
+    const level_t* L = &M.lv[k];
+    const int node = row >= 0 ? L->rows[row].node : -1;
+    const int open = M.depth > k + 1;
+    if (node >= 0 && (M.snap->nodes[node].flags & AWL_TRAY_MENU_SUBMENU)) {
+        /* back on the row whose submenu is open: it stays */
+        if (open && M.lv[k + 1].node == node) pend_cancel();
+        /* with another one open, as long as for closing it */
+        else pend( k, row, open ? CLOSE_DELAY : OPEN_DELAY );
+        return;
+    }
+    if (row < 0) {
+        /* off the rows (into the submenu, off the menu): what's open stays,
+         * what hovering would have opened doesn't */
+        if (M.pend_level == k && M.pend_row >= 0) pend_cancel();
+        return;
+    }
+    if (open) pend( k, -1, CLOSE_DELAY );
+    else pend_cancel();
 }
 
 static void click( awl_window_t* win, int row, int col, uint32_t button, void* data ) {
-    if (!M.snap || row < 0 || row >= M.nrows || (button != BTN_LEFT && button != BTN_RIGHT)) return;
-    const row_t* r = &M.rows[row];
-    if (r->node < 0) {
-        awl_tray_menu_event( M.serial, M.snap->nodes[M.level].id, "closed" );
-        show_level( M.snap->nodes[M.level].parent );
+    int k = (int)(intptr_t)data;
+    if (!M.snap || k >= M.depth || row < 0 || row >= M.lv[k].nrows || (button != BTN_LEFT && button != BTN_RIGHT))
         return;
-    }
-    const awl_tray_menu_node_t* n = &M.snap->nodes[r->node];
+    const awl_tray_menu_node_t* n = &M.snap->nodes[M.lv[k].rows[row].node];
     if (n->flags & (AWL_TRAY_MENU_SEPARATOR | AWL_TRAY_MENU_DISABLED)) return;
     if (n->flags & AWL_TRAY_MENU_SUBMENU) {
-        awl_tray_menu_event( M.serial, n->id, "opened" );
-        show_level( r->node );
+        pend_cancel();
+        open_sub( k, row );
         return;
     }
     awl_tray_menu_event( M.serial, n->id, "clicked" );
@@ -396,42 +619,123 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
 
 static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, double delta, int32_t value120,
                     void* data ) {
-    if (!M.snap || orientation != 0) return;
-    M.acc += value120 ? value120 / 120.0 : delta / 10.0;
-    int steps = (int)M.acc;
+    int k = (int)(intptr_t)data;
+    if (!M.snap || k >= M.depth || orientation != 0) return;
+    level_t* L = &M.lv[k];
+    L->acc += value120 ? value120 / 120.0 : delta / 10.0;
+    int steps = (int)L->acc;
     if (!steps) return;
-    M.acc -= steps;
-    M.top += steps;
-    if (M.top < 0) M.top = 0;
-    awl_host->window_redraw( M.win );
+    L->acc -= steps;
+    L->top += steps;
+    if (L->top < 0) L->top = 0;
+    awl_host->window_redraw( L->win );
+    /* its submenu moves with its row */
+    if (k + 1 < M.depth) place_level( k + 1 );
 }
 
-/** the window, made on first use; NULL before awl is set up */
-static awl_window_t* window( void ) {
-    if (M.win) return M.win;
-    if (!(M.win = awl_host->window_create_kept())) return NULL;
-    awl_host->window_set_painter( M.win, &painter, NULL );
-    awl_host->window_set_click( M.win, click, NULL );
-    awl_host->window_set_scroll( M.win, scroll, NULL );
-    awl_host->window_set_hidden( M.win, hidden, NULL );
-    return M.win;
+/** snap's node for level k (>= 1), whose parent level is snap's node
+ * parent: the same id, else the same label (apps that rebuild their menus
+ * give the entries new ids); -1 if snap has no such submenu */
+static int match( const awl_tray_menu_snap_t* snap, int parent, int k ) {
+    const awl_tray_menu_node_t* old = &M.snap->nodes[M.lv[k].node];
+    const awl_tray_menu_node_t* p = &snap->nodes[parent];
+    for (int pass = 0; pass < 2; pass++)
+        for (int i = p->first; i < p->first + p->n; i++) {
+            const awl_tray_menu_node_t* n = &snap->nodes[i];
+            if ((n->flags & AWL_TRAY_MENU_SUBMENU) &&
+                (pass ? !strcmp( n->label, old->label ) : n->id == old->id))
+                return i;
+        }
+    return -1;
 }
 
-void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x ) {
+/** how many of the levels open snap has too, their nodes into nodes */
+static int matched( const awl_tray_menu_snap_t* snap, int* nodes ) {
+    if (!snap->nodes[0].n) return 0;
+    nodes[0] = 0;
+    int k = 1;
+    for (; k < M.depth && (nodes[k] = match( snap, nodes[k - 1], k )) >= 0; k++)
+        ;
+    return k;
+}
+
+/** makes snap the layout shown, closing what it doesn't have */
+static void apply( awl_tray_menu_snap_t* snap ) {
+    int nodes[MAX_LEVELS];
+    int keep = matched( snap, nodes );
+    awl_host->timer_set( M.held_timer, 0 );
+    if (M.held != snap) awl_tray_menu_snap_free( M.held );
+    M.held = NULL;
+    if (!keep) {
+        awl_tray_menu_snap_free( snap );
+        close_menu( 1 );
+        return;
+    }
+    /* the ones it doesn't have are gone, their ids too: no events */
+    close_from( keep, 0 );
+    /* a submenu about to open: the same one in the new layout, if it has it */
+    const int pk = M.pend_level;
+    int32_t pid = 0;
+    char* plabel = NULL;
+    if (pk >= 0 && M.pend_row >= 0) {
+        const awl_tray_menu_node_t* n = &M.snap->nodes[M.lv[pk].rows[M.pend_row].node];
+        pid = n->id;
+        plabel = strdup( n->label );
+    }
+    icons_clear();
+    awl_tray_menu_snap_free( M.snap );
+    M.snap = snap;
+    for (int k = 0; k < M.depth; k++) {
+        M.lv[k].node = nodes[k];
+        awl_host->window_redraw( M.lv[k].win );
+        if (k) place_level( k );
+    }
+    if (plabel) {
+        int row = -1;
+        const level_t* L = &M.lv[pk];
+        for (int pass = 0; pass < 2 && row < 0; pass++)
+            for (int i = 0; i < L->nrows && row < 0; i++) {
+                const awl_tray_menu_node_t* n = &snap->nodes[L->rows[i].node];
+                if ((n->flags & AWL_TRAY_MENU_SUBMENU) && (pass ? !strcmp( n->label, plabel ) : n->id == pid))
+                    row = i;
+            }
+        if (row >= 0) M.pend_row = row;
+        else pend_cancel();
+        free( plabel );
+    }
+}
+
+static void held_fire( void* data ) {
+    if (M.held) apply( M.held );
+}
+
+void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x, int on_icon ) {
     static uint32_t gen;
     awl_vrb_printf( "tray: menu %llu: toggle on %s at %d (open: %llu)\n", (unsigned long long)serial, monitor,
                     center_x, (unsigned long long)M.serial );
+    awl_tray_tooltip_hide();
     if (M.serial == serial && !strcmp( M.monitor, monitor )) {
         close_menu( 1 );
         return;
     }
     close_menu( 1 );
-    if (!window()) return;
+    if (!window( 0 )) return;
+    if (!M.timer) M.timer = awl_host->timer_add( pend_fire, NULL );
+    if (!M.held_timer) M.held_timer = awl_host->timer_add( held_fire, NULL );
+    if (!M.leave_timer) M.leave_timer = awl_host->timer_add( leave_fire, NULL );
     M.serial = serial;
+    M.on_icon = on_icon;
     snprintf( M.monitor, sizeof M.monitor, "%s", monitor );
     M.center_x = center_x;
     M.gen = ++gen;
     awl_tray_menu_request( serial, M.gen );
+    leave_check();
+}
+
+void awl_tray_menu_window_pointer( uint64_t serial, int inside ) {
+    if (serial != M.serial) return;
+    M.on_icon = inside;
+    leave_check();
 }
 
 void awl_tray_menu_window_snap( awl_tray_menu_snap_t* snap ) {
@@ -442,34 +746,41 @@ void awl_tray_menu_window_snap( awl_tray_menu_snap_t* snap ) {
         awl_tray_menu_snap_free( snap );
         return;
     }
-    const int opening = !M.snap;
-    /* a new layout of the menu shown: the same submenu, if it still has it */
-    int32_t level_id = opening ? 0 : M.snap->nodes[M.level].id;
-    icons_clear();
-    awl_tray_menu_snap_free( M.snap );
-    M.snap = snap;
-    M.level = 0;
-    for (int i = 0; i < snap->nnodes; i++)
-        if (snap->nodes[i].id == level_id && (i == 0 || (snap->nodes[i].flags & AWL_TRAY_MENU_SUBMENU))) {
-            M.level = i;
-            break;
+    if (M.snap) {
+        /* a new layout of the menu shown: its submenus open, if it still has
+         * them, else the newest layout once they've had time to come back */
+        int nodes[MAX_LEVELS];
+        if (matched( snap, nodes ) < M.depth) {
+            awl_vrb_printf( "tray: menu %llu: layout %u lacks a submenu open, held\n",
+                            (unsigned long long)M.serial, snap->revision );
+            if (!M.held) awl_host->timer_set( M.held_timer, LAYOUT_GRACE );
+            awl_tray_menu_snap_free( M.held );
+            M.held = snap;
+            return;
         }
-    if (!opening) {
-        awl_host->window_redraw( M.win );
+        apply( snap );
         return;
     }
+    M.snap = snap;
     Monitor* m = awl_host->monitor_named( M.monitor );
     if (!m || !snap->nodes[0].n) {
         if (m) awl_log_printf( "tray: menu has no entries\n" );
         reset();
         return;
     }
-    awl_host->window_redraw( M.win );
-    awl_host->window_show( M.win, m, M.center_x, NULL, 0 );
+    level_free( &M.lv[0] );
+    M.lv[0].node = 0;
+    M.depth = 1;
+    awl_host->window_set_painter( M.lv[0].win, &painter, &M.lv[0] );
+    awl_host->window_show( M.lv[0].win, m, M.center_x, NULL, 0 );
     awl_tray_menu_event( M.serial, 0, "opened" );
 }
 
 void awl_tray_menu_window_gone( uint64_t serial ) {
     awl_vrb_printf( "tray: menu %llu: gone\n", (unsigned long long)serial );
     if (serial == M.serial) close_menu( 0 );
+}
+
+int awl_tray_menu_window_is_open( void ) {
+    return M.serial != 0;
 }
