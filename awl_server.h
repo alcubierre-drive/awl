@@ -8,7 +8,7 @@
  * awl_cursor.h's cursor, ...). Main thread only.
  */
 
-#include "awl.h"
+#include "awl_core.h"
 #include "awl_util.h"
 
 /** listens to E with L, calling H */

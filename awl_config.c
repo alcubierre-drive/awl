@@ -1,4 +1,5 @@
 #include "awl_config.h"
+#include "awl_alert.h"
 #include "awl_bar.h"
 #include "awl_client.h"
 #include "awl_desktop.h"
@@ -11,12 +12,8 @@
 #include "awl_plugin_host.h"
 #include "awl_popup.h"
 #include "awl_wallpaper.h"
-#include "plugins/colors.h" /* config_plugins.h */
 #include "tray/awl_tray.h"
 #include <limits.h>
-
-/* the defaults, for while no library (and so no config_plugins.h) is loaded */
-#include "config_plugins.def.h"
 
 static void configapply(void);
 static void pluginsdetach(void);
@@ -31,15 +28,9 @@ const awl_arranges_t awl_arranges = { AWL_ARRANGES(AWL_ACTION_INIT) };
 
 const awl_config_t *cfg;
 awl_dict_t *cfgdict;
+/** the library's, cfg while it is loaded */
+static awl_config_t loaded;
 static struct wl_event_source *plugin_restart_source;
-
-const awl_config_t *
-builtinconfig(void)
-{
-    static awl_config_t c;
-    c = AWL_CONFIG_TABLE;
-    return &c;
-}
 
 void
 configinit(void)
@@ -72,10 +63,10 @@ cfgdictdefaults(void)
     snprintf(dir, sizeof(dir), "%s/Desktop", home ? home : "/tmp");
     awl_dict_set(cfgdict, "desktop_dir", &AWL_DICT_STR(dir));
 
-    /* "wallpaper_dir": the folder the wallpapers come from, the built-in
-     * config_plugins.h's wallpaper_config.dir, relative to $HOME unless absolute;
+    /* "wallpaper_dir": the folder the wallpapers come from, the default
+     * cfg->wallpaper.dir, relative to $HOME unless absolute;
      * none for a NULL one, then there's no wallpaper */
-    const char *wp = cfg->wallpaper->dir;
+    const char *wp = cfg->wallpaper.dir;
     if (wp) {
         if (wp[0] == '/')
             snprintf(dir, sizeof(dir), "%s", wp);
@@ -102,7 +93,7 @@ cfgdictdefaults(void)
     awl_dict_set(cfgdict, "state_home", &AWL_DICT_STR(dir));
 
     /* "wallpaper_mode": the timer's mode by name (wallpaper_mode_names),
-     * config_plugins.h's to begin with; awl keeps it current, and a plugin may set
+     * cfg->wallpaper.mode to begin with; awl keeps it current, and a plugin may set
      * it. plugins/wallpaper.c saves it in plugins/persistent.h's file and
      * at the start loads the saved one over this. */
     wallpapermodeinit();
@@ -112,8 +103,28 @@ cfgdictdefaults(void)
      * and, like "wallpaper_mode", saved */
     awl_dict_set(cfgdict, "desktop_file_mode", &AWL_DICT_STR("on"));
 
-    /* "lock_on_suspend": config_awl.h's, for plugins/logind.c */
-    awl_dict_set(cfgdict, "lock_on_suspend", &AWL_DICT_NUM(lock_on_suspend));
+    /* "lock_on_suspend": cfg->lock.on_suspend, for plugins/logind.c; the
+     * library sets it from its own config before its logind thread starts */
+    awl_dict_set(cfgdict, "lock_on_suspend", &AWL_DICT_NUM(cfg->lock.on_suspend));
+}
+
+/* wlroots' (and scenefx') messages; wlroots drops those above its level */
+static void
+wlrlog(enum wlr_log_importance importance, const char *fmt, va_list ap)
+{
+    char msg[1024];
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    awl_dbg_printf(importance == WLR_ERROR ? awl_loglevel_err
+            : importance == WLR_INFO ? awl_loglevel_log : awl_loglevel_vrb, "wlr: %s\n", msg);
+}
+
+void
+wlrloginit(void)
+{
+    int level = cfg->wlr_log_level;
+    if (awl_log_level() >= awl_loglevel_vrb) /* awl -d */
+        level = WLR_DEBUG;
+    wlr_log_init(level < WLR_SILENT ? WLR_SILENT : level > WLR_DEBUG ? WLR_DEBUG : level, wlrlog);
 }
 
 void
@@ -126,7 +137,7 @@ updatepluginpause(void)
     awl_plugins_set_paused(locked || !visible);
 }
 
-/** Brings everything that was set up from config_plugins.h up to
+/** Brings everything that was set up from the config up to
  * date with cfg, after it changed. What's only read when it's needed (key
  * and button bindings, rules, focus behaviour, which new layer surfaces get
  * blurred) needs nothing here. */
@@ -135,19 +146,22 @@ configapply(void)
 {
     Monitor *m;
 
+    wlrloginit();
     inputconfigure();
+    tagsconfigure();
     barconfigure();
     clientsconfigure();
-    wlr_scene_rect_set_color(root_bg, cfg->rootcolor);
+    wlr_scene_rect_set_color(root_bg, (float[4])RGBA(cfg->rootcolor));
     wl_list_for_each(m, &mons, link)
-        wlr_scene_rect_set_color(m->fullscreen_bg, cfg->fullscreen_bg);
+        wlr_scene_rect_set_color(m->fullscreen_bg, (float[4])RGBA(cfg->fullscreen_bg));
     layersconfigure();
     lockconfigure();
     wallpaperconfigure();
-    desktop_configure(&(desktop_config_t){
-            .blur = cfg->blur_launcher, .radius = cfg->blur_launcher_radius,
-            .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] });
+    desktop_configure(&(desktop_style_t){
+            .blur = cfg->blur.launcher, .radius = cfg->blur.launcher_radius,
+            .blur_strength = cfg->blur.strength, .blur_alpha = cfg->blur.alpha });
     popupsrestyle();
+    awl_alert_configure();
 
     drawbars();
 }
@@ -156,9 +170,16 @@ void
 configuse(void)
 {
     const awl_plugin_api_t *api = awl_plugins_api();
-    const Layout *old = cfg->layouts;
-    size_t n_old = cfg->n_layouts;
-    cfg = api ? api->config() : builtinconfig();
+    const Layout *old = cfg->layouts.v;
+    size_t n_old = cfg->layouts.n;
+    if (api) {
+        /* the old one's lists point into the library, so only its layouts'
+         * address survives this, for layoutsmoved() */
+        api->config(&loaded);
+        cfg = &loaded;
+    } else {
+        cfg = builtinconfig();
+    }
     layoutsmoved(old, n_old);
     configapply();
 }
@@ -167,8 +188,8 @@ configuse(void)
 static void
 pluginsdetach(void)
 {
-    const Layout *old = cfg->layouts;
-    size_t n_old = cfg->n_layouts;
+    const Layout *old = cfg->layouts.v;
+    size_t n_old = cfg->layouts.n;
 
     barwidgetsclear();
     /* the popups stay until the library's fini gives them back (or
@@ -195,8 +216,8 @@ pluginrestart(void *data)
      * one this is a plain restart of the plugin threads */
     awl_plugins_reload(pluginsdetach, pluginsattach);
 
-    /* the reloaded config_plugins.h's tray_config */
-    awl_tray_app_set_theme(cfg->tray->icon_theme);
+    /* the reloaded config's tray icon theme */
+    awl_tray_app_set_theme(cfg->tray.icon_theme);
 }
 
 /** The plugin_restart action: reloads ``libawlplugins.so`` (its tray widget

@@ -38,3 +38,8 @@ plugins_config.c
 ----------------
 
 .. c:autodoc:: plugins_config.c
+
+plugins_defaults.c
+------------------
+
+.. c:autodoc:: plugins_defaults.c

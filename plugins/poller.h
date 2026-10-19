@@ -28,8 +28,11 @@ int poller_start( awl_poller_t* p );
  * resuming re-reads everything and requests a redraw. Any thread; no-op for
  * NULL. */
 void poller_set_paused( awl_poller_t* p, int paused );
-/** Returns once the thread has exited, if it was started. The other plugins
- * free their event sources after this, then `poller_free()`. No-op for NULL. */
-void poller_stop( awl_poller_t* p );
+/** Stops the thread, if it was started, waiting up to 2 s. Returns 0 once it
+ * has exited (or for NULL): the other plugins free their event sources after
+ * this, then `poller_free()`. Nonzero if it is stuck (in a sysfs read, say)
+ * and left running: then nothing it polls or runs may be freed, the loop
+ * included, and the library must stay mapped (`awl_thread_stop()`). */
+int poller_stop( awl_poller_t* p );
 /** Frees the loop; after `poller_stop()`. */
 void poller_free( awl_poller_t* p );

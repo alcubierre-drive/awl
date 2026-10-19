@@ -285,7 +285,7 @@ void awl_wallpaper_start( void ) {
             && dir.kind == AWL_DICT_KIND_STR)
         snprintf( n->dir, sizeof(n->dir), "%s", dir.str );
     AWL_HOST_CFG_UNLOCK( awl_host );
-    if (!n->dir[0]) { /* config_plugins.h's dir is NULL: no wallpaper */
+    if (!n->dir[0]) { /* the config's dir is NULL: no wallpaper */
         free( n );
         return;
     }

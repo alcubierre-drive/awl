@@ -34,26 +34,35 @@ Then:
 
     make
 
-This builds `awl`, `libawltray-env.so` (see `TRAY_ICONS` in config_awl.def.h)
-and `libawlplugins.so`. On the first
-build, config_awl.h and config_plugins.h are copied from their .def.h.
+This builds `awl`, `libawltray-env.so` (see `TRAY_ICONS` in awl.h)
+and `libawlplugins.so`.
 
 ## Configuration
 
 The configuration is in two files:
 
-- config_awl.h is read once at startup, so a change there needs a restart
-- config_plugins.h is built into `libawlplugins.so` too, so `make` followed by
-  `plugin_restart` (MOD+Ctrl+r) applies it to the running awl
+- config.mk holds compile-time switches of the awl binary (its `CUSTOM`
+  parts), so a change there needs a rebuild and a restart
+- plugins_config.c is built into `libawlplugins.so`, so `make` followed by
+  `plugin_restart` (MOD+Ctrl+r) applies it to the running awl. Only its
+  part between the `CUSTOM` markers is configuration: there,
+  `configure(c, p)` gets awl's defaults (awl_defaults.c) in `c` and the
+  plugins' (plugins_defaults.c) in `p`, and changes only what it wants,
+  e.g. `c->modkey = WLR_MODIFIER_LOGO;`, `SETLIST(c->keys, keys);` for
+  bindings of its own, or `p->colors.bg = ...;` for the bar; `awl_config_t`
+  in awl.h and `awl_plugin_config_t` in plugins.h list everything there
+  is.
 
-config_awl.h has the screen locker: `locker`, the ext-session-lock client to
-run, `lock_at_start`, and `lock_on_suspend`, which makes suspend wait until
+The config's `lock` has the screen locker: `locker`, the ext-session-lock
+client to run, `at_start`, and `on_suspend`, which makes suspend wait until
 the locker covers every output (through a logind delay inhibitor). With
 that, no separate lock handler (`xss-lock`, a `sleep.target` unit calling
 `loginctl lock-session`) is needed; `loginctl lock-session` still works.
 
-config_plugins.h covers keys, buttons, rules, layouts, colors, font, borders,
-blur, input devices, the keymap, and the tray and wallpaper settings.
+Its `CUSTOM` part covers keys, buttons, rules, layouts, tags, colors, font,
+borders, blur, input devices, the keymap, the bar's place, the screen lock,
+the programs started with awl, wlroots' log level, the alert, the popups,
+the tray and wallpaper settings, and the bar's widgets and colors.
 
 ## Running
 

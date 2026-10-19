@@ -7,7 +7,7 @@
  * For each item it keeps its properties (re-read on the item's New*
  * signals), picks the icon to show (the attention one while the item needs
  * attention, if it has one) and reads its file, looked up in the item's
- * IconThemePath and the tray's themes (tray_config.icon_theme, the
+ * IconThemePath and the tray's themes (`awl_config_t.tray`'s icon_theme, the
  * desktop's, Adwaita, hicolor; icons/icon.h), or takes its pixmaps. What
  * the bar shows of it all is an `awl_sni_snap_t`, immutable once made: the
  * bar widget (plugins_widgets.c) takes the newest one on the main thread

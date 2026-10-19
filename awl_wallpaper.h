@@ -13,9 +13,9 @@
 /** the timer, unarmed until configapply() */
 void wallpaperinit(void);
 void wallpaperfini(void);
-/** cfgdict's "wallpaper_mode": config_plugins.h's mode */
+/** cfgdict's "wallpaper_mode": cfg->wallpaper.mode */
 void wallpapermodeinit(void);
-/** after config_plugins.h changed: its interval and mode */
+/** after plugins_config.c changed: its interval and mode */
 void wallpaperconfigure(void);
 /** shows a wallpaper the library has decoded since, if any */
 void wallpapertake(void);

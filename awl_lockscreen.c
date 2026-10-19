@@ -68,8 +68,10 @@ static struct wl_event_source *lock_source = NULL;
 static struct wl_event_source *logind_timer = NULL;
 /** the most a lock waits for its first frame on every output */
 static struct wl_event_source *covered_timer = NULL;
-/** the locker lockscreen() started, until it exits; 0 if none */
+/** the locker lockscreen() started, until it exits; 0 if none; and its
+ * argv[0], as cfg->lock.locker was then */
 static pid_t locker_pid = 0;
+static char locker_name[64];
 /** it has locked the session at least once */
 static int locker_locked = 0;
 /** what the logind thread last said it listens for, awl_logind_flags */
@@ -231,24 +233,30 @@ lockfire(int fd, uint32_t mask, void *data)
     return 0;
 }
 
-/** Starts config_awl.h's locker, unless a lock is in place (a locker holds
+/** Starts cfg->lock.locker, unless a lock is in place (a locker holds
  * it) or the one started last is still running and yet to lock. While
  * locked without a lock (the locker crashed), a new locker takes over. */
 void
 lockscreen(const Arg *arg)
 {
+    const char *const *argv = cfg->lock.locker;
     pid_t pid;
     if (cur_lock)
         return;
     if (locker_pid > 0) {
-        awl_log_printf("lock: %s (%d) is still starting\n", locker[0], (int)locker_pid);
+        awl_log_printf("lock: %s (%d) is still starting\n", locker_name, (int)locker_pid);
         return;
     }
-    if ((pid = spawn_pid(&(Arg){.v = locker})) > 0) {
+    if (!argv || !argv[0]) {
+        awl_alert_set(AwlAlertLocker, "no locker configured");
+        return;
+    }
+    if ((pid = spawn_pid(&(Arg){.v = argv})) > 0) {
         locker_pid = pid;
         locker_locked = 0;
+        snprintf(locker_name, sizeof(locker_name), "%s", argv[0]);
     } else {
-        awl_alert_set(AwlAlertLocker, "can't start %s", locker[0]);
+        awl_alert_set(AwlAlertLocker, "can't start %s", argv[0]);
     }
 }
 
@@ -268,7 +276,7 @@ lockwake(void)
 unsigned
 logindneeded(void)
 {
-    return AWL_LOGIND_LOCK | (lock_on_suspend ? AWL_LOGIND_SLEEP : 0);
+    return AWL_LOGIND_LOCK | (cfg->lock.on_suspend ? AWL_LOGIND_SLEEP : 0);
 }
 
 /** The logind alert: up once the logind thread hasn't listened for all of
@@ -311,7 +319,7 @@ locksession(struct wl_listener *listener, void *data)
     struct wlr_session_lock_v1 *session_lock = data;
     SessionLock *lock;
     Monitor *m;
-    if (locked_bg_blur) {
+    if (locked_bg_blur && cfg->lock.blur) {
         wlr_scene_node_set_enabled(&locked_bg_blur->node, 1);
         AWL_wlr_scene_blur_set_shatter(locked_bg_blur, 0.01);
     }
@@ -354,12 +362,13 @@ unlocksession(struct wl_listener *listener, void *data)
 void
 lockinit(void)
 {
-    if (locked_blur) {
+    /* made either way, cfg->lock.blur can change with a reload */
+    {
         locked_bg_blur = wlr_scene_blur_create( layers[LyrBlock], sgeom.width, sgeom.height );
         wlr_scene_node_set_position(&locked_bg_blur->node, sgeom.x, sgeom.y);
         wlr_scene_blur_set_size(locked_bg_blur, sgeom.width, sgeom.height);
-        wlr_scene_blur_set_strength( locked_bg_blur, cfg->blur[0] );
-        wlr_scene_blur_set_alpha( locked_bg_blur, cfg->blur[1] );
+        wlr_scene_blur_set_strength( locked_bg_blur, cfg->blur.strength );
+        wlr_scene_blur_set_alpha( locked_bg_blur, cfg->blur.alpha );
         wlr_scene_blur_set_should_only_blur_bottom_layer( locked_bg_blur, 0 );
         wlr_scene_node_set_enabled(&locked_bg_blur->node, 0);
         wlr_scene_node_lower_to_bottom(&locked_bg_blur->node);
@@ -418,14 +427,16 @@ lockerexited(pid_t pid)
         return;
     locker_pid = 0;
     if (!locker_locked)
-        awl_alert_set(AwlAlertLocker, "%s exited without locking", locker[0]);
+        awl_alert_set(AwlAlertLocker, "%s exited without locking", locker_name);
 }
 
 void
 lockconfigure(void)
 {
     if (locked_bg_blur) {
-        wlr_scene_blur_set_strength(locked_bg_blur, cfg->blur[0]);
-        wlr_scene_blur_set_alpha(locked_bg_blur, cfg->blur[1]);
+        wlr_scene_blur_set_strength(locked_bg_blur, cfg->blur.strength);
+        wlr_scene_blur_set_alpha(locked_bg_blur, cfg->blur.alpha);
+        if (locked)
+            wlr_scene_node_set_enabled(&locked_bg_blur->node, cfg->lock.blur);
     }
 }

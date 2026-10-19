@@ -11,13 +11,13 @@
  * No wlroots here; awl.h includes this for Monitor.
  */
 
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <fcft/fcft.h>
 #include <pixman-1/pixman.h>
 
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
-#define NTAGS 9
 
 
 typedef struct widget_t widget_t;
@@ -173,15 +173,68 @@ utf8decode(const char *c, uint32_t *u)
     return len;
 }
 
+/** 0xRRGGBBAA as pixman's color */
 static inline pixman_color_t
-convert_color(uint32_t clr)
+color_8bit_to_16bit(uint32_t c)
 {
     return (pixman_color_t){
-        ((clr >> 24) & 0xFF) * 0x101,
-        ((clr >> 16) & 0xFF) * 0x101,
-        ((clr >> 8) & 0xFF) * 0x101,
-        (clr & 0xFF) * 0x101
+        ((c >> 24) & 0xFF) * 0x101,
+        ((c >> 16) & 0xFF) * 0x101,
+        ((c >> 8) & 0xFF) * 0x101,
+        (c & 0xFF) * 0x101
     };
+}
+
+/** pixman's color as 0xRRGGBBAA */
+static inline uint32_t
+color_16bit_to_8bit(pixman_color_t c)
+{
+    return (uint32_t)(c.red >> 8) << 24 | (c.green >> 8) << 16 | (c.blue >> 8) << 8 | (c.alpha >> 8);
+}
+
+/** How much of the pixel centered at x, y the w x h box with corner radius
+ * r at the origin covers, antialiased over a pixel: the frame's, and the
+ * painters' rounded shapes (the menus' rows, the calendar's days). */
+static inline float awl_shape_coverage( float x, float y, float w, float h, float r ) {
+    if (w <= 0 || h <= 0) return 0;
+    r = fminf( r, fminf( w, h ) / 2 );
+    float qx = fabsf( x - w / 2 ) - (w / 2 - r), qy = fabsf( y - h / 2 ) - (h / 2 - r);
+    float ox = fmaxf( qx, 0 ), oy = fmaxf( qy, 0 );
+    float d = sqrtf( ox * ox + oy * oy ) + fminf( fmaxf( qx, qy ), 0 ) - r;
+    return fminf( fmaxf( 0.5f - d, 0 ), 1 );
+}
+
+/** c (0xRRGGBBAA) over pix (premultiplied ARGB) in the w x h box at x, y
+ * with corner radius r, antialiased; with t > 0 only its outline, t wide.
+ * Physical pixels, for a painter's paint(). */
+static inline void awl_fill_shape( pixman_image_t* pix, float x, float y, float w, float h, float r, float t,
+                                   uint32_t c ) {
+    if (!pix || w <= 0 || h <= 0) return;
+    uint32_t* data = pixman_image_get_data( pix );
+    int stride = pixman_image_get_stride( pix ) / 4;
+    int iw = pixman_image_get_width( pix ), ih = pixman_image_get_height( pix );
+    float a = (float)(c & 0xff) / 255.f;
+    float col[3] = { (float)(c >> 24) / 255.f * a, (float)((c >> 16) & 0xff) / 255.f * a,
+                     (float)((c >> 8) & 0xff) / 255.f * a };
+    for (int yy = (int)floorf( y ); yy < (int)ceilf( y + h ); yy++) {
+        if (yy < 0 || yy >= ih) continue;
+        for (int xx = (int)floorf( x ); xx < (int)ceilf( x + w ); xx++) {
+            if (xx < 0 || xx >= iw) continue;
+            float fx = (float)xx + 0.5f - x, fy = (float)yy + 0.5f - y;
+            float k = awl_shape_coverage( fx, fy, w, h, r );
+            if (t > 0) k -= awl_shape_coverage( fx - t, fy - t, w - 2 * t, h - 2 * t, fmaxf( r - t, 0 ) );
+            if (k <= 0) continue;
+            uint32_t d = data[yy * stride + xx];
+            const int shift[4] = { 16, 8, 0, 24 };
+            const float src[4] = { col[0] * k, col[1] * k, col[2] * k, a * k };
+            uint32_t out = 0;
+            for (int i = 0; i < 4; i++) {
+                float v = src[i] * 255 + (float)((d >> shift[i]) & 0xff) * (1 - a * k);
+                out |= (uint32_t)lroundf( fminf( v, 255 ) ) << shift[i];
+            }
+            data[yy * stride + xx] = out;
+        }
+    }
 }
 
 static inline int
@@ -193,7 +246,7 @@ awl_draw_stride(unsigned int width)
 /** fcft's setup; once, later calls return the first's result */
 int awl_draw_init(void);
 
-/** awl_font_get()'s last resort, as config_plugins.h's font and fontsize */
+/** awl_font_get()'s last resort, as `awl_config_t.font` and fontsize */
 #define AWL_FONT_FALLBACK "monospace:size="
 #define AWL_FONT_FALLBACK_SIZE 10
 
@@ -205,7 +258,7 @@ int awl_draw_init(void);
 /**
  * The font registry, every font awl draws with: one fcft instance per
  * font, size and scale, shared by everyone asking for it. name is as
- * config_plugins.h's font (size gets appended, as ":size=" unless name ends
+ * `awl_config_t.font` (size gets appended, as ":size=" unless name ends
  * in '='), at size times scale and dpi 192 * scale. A size or scale that
  * isn't positive and finite takes 10 or 1; huge ones are clamped.
  *

@@ -15,18 +15,9 @@
  * clicks go right through them.
  */
 
-#include "awl.h"
+#include "awl_core.h"
 
-/** config_plugins.h's desktop_config */
-typedef struct awl_desktop_config_t {
-    /** the font, as config_plugins.h's font and fontsize (size appended to
-     * font); NULL and 0 each take the bar's */
-    const char* font;
-    int fontsize;
-} awl_desktop_config_t;
-
-/** How the panels look; awl fills it from config_plugins.h's ``blur_launcher*``
- * and ``locked_blur_config``. */
+/** How the panels look; awl fills it from cfg->blur (the launcher's). */
 typedef struct {
     /** blur the wallpaper behind the panel */
     int blur;
@@ -34,13 +25,13 @@ typedef struct {
     float blur_strength, blur_alpha;
     /** corner radius, logical pixels */
     int radius;
-} desktop_config_t;
+} desktop_style_t;
 
 /** tree: an empty scene tree, already placed in the stacking order */
-void desktop_init( struct wlr_scene_tree* tree, const desktop_config_t* cfg );
+void desktop_init( struct wlr_scene_tree* tree, const desktop_style_t* cfg );
 
-/** config_plugins.h was reloaded */
-void desktop_configure( const desktop_config_t* cfg );
+/** plugins_config.c was reloaded */
+void desktop_configure( const desktop_style_t* cfg );
 
 /** m's bar must have its font loaded (m->drw.font); the panel draws in
  * m->desktopfont, else in that */

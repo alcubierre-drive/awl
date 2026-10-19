@@ -20,14 +20,9 @@
 #include <sys/inotify.h>
 #include <unistd.h>
 
-/** the popups' style (config_plugins.h's popup_config) */
-static const uint32_t panel_bg = 0x3c3c3c4c,
-                      col_file = 0xf8f8f2ff,
-                      col_dir = molokai_blue,
-                      col_broken = molokai_red;
-/** hidden entries, "(empty)" and "… N more" keep their color at this opacity */
-static const uint32_t hidden_alpha = 0xa0;
-static const float panel_margin = 10; /* logical pixels, to the usable area's corner */
+/** the look, `awl_plugin_config_t.desktop`; hidden entries, "(empty)" and
+ * "… N more" keep their color at its hidden_alpha */
+#define DESK (&awl_plugin_config()->desktop)
 
 #define NFILES (sizeof(((DesktopFiles*)0)->files) / sizeof(Filename))
 
@@ -246,8 +241,8 @@ static uint32_t fade( uint32_t c, uint32_t a ) {
 }
 
 static uint32_t color( const Filename* f ) {
-    uint32_t c = f->isbroken ? col_broken : f->isdir ? col_dir : col_file;
-    return f->ishidden ? fade( c, hidden_alpha ) : c;
+    uint32_t c = f->isbroken ? DESK->broken : f->isdir ? DESK->dir : DESK->file;
+    return f->ishidden ? fade( c, DESK->hidden_alpha ) : c;
 }
 
 static int textw( struct fcft_font* font, const char* text ) {
@@ -258,7 +253,7 @@ void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int 
                           int* x, int* y, int* w, int* h ) {
     PanelLayout* l = &desk.lay;
     const int fh = font->height,
-              margin = (int)lroundf( panel_margin * s );
+              margin = (int)lroundf( DESK->margin * s );
     l->row_h = fh + (int)lroundf( 4 * s );
     l->pad = MAX( fh / 2, radius / 2 );
     l->gap = fh;
@@ -352,17 +347,17 @@ void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* da
     char buf[sizeof(desk.files[0].name) + 2];
 
     if (l->n == 0)
-        text( pix, font, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( col_file, hidden_alpha ) );
+        text( pix, font, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( DESK->file, DESK->hidden_alpha ) );
     for (int c = 0, i = 0, x = l->pad; c < l->ncols && i < l->shown; x += l->col_w[c++] + l->gap) {
         for (int r = 0; r < l->rows && i < l->shown; r++, i++) {
             const Filename* f = &desk.files[l->idx[i]];
             int is_more = l->more[0] && i == l->shown - 1;
             label( f, buf, sizeof(buf) );
             text( pix, font, x, l->pad + r * l->row_h, l->col_w[c], l->row_h,
-                  is_more ? l->more : buf, is_more ? fade( col_file, hidden_alpha ) : color( f ) );
+                  is_more ? l->more : buf, is_more ? fade( DESK->file, DESK->hidden_alpha ) : color( f ) );
         }
     }
-    panel_under( data, stride, w, h, radius, panel_bg );
+    panel_under( data, stride, w, h, radius, DESK->bg );
 }
 
 /* plain clicks change the wallpaper, Shift+clicks the panel and the timer */

@@ -22,21 +22,23 @@ pointerinpopup(awl_window_t *win)
     return popupfind(win) && awl_window_contains(win, cursor->x, cursor->y);
 }
 
-/** the popups' look, from config_plugins.h; a menu's its own (popup_config.menu) */
+/** the popups' look, from cfg->popup; a menu's its own (cfg->popup.menu) */
 static awl_window_style_t
 popupstyle(int menu)
 {
     awl_window_style_t s = {
-            .bg = cfg->popup->bg, .fg = cfg->popup->fg,
-            .border = cfg->popup->border,
-            .highlight = cfg->popup->hover,
-            .border_width = cfg->popup->border_width,
-            .radius = cfg->popup->radius, .padding = cfg->popup->padding,
-            .margin = cfg->popup->margin,
-            .blur = cfg->blur_launcher,
-            .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] };
+            .bg = cfg->popup.bg, .fg = cfg->popup.fg,
+            .border = cfg->popup.border,
+            .highlight = cfg->popup.hover,
+            .border_width = cfg->popup.border_width,
+            .radius = cfg->popup.radius, .padding = cfg->popup.padding,
+            .margin = cfg->popup.margin,
+            .column_spacing = cfg->popup.column_spacing,
+            .row_spacing = cfg->popup.row_spacing,
+            .blur = cfg->blur.launcher,
+            .blur_strength = cfg->blur.strength, .blur_alpha = cfg->blur.alpha };
     if (menu) {
-        struct awl_popup_menu_config_t c = awl_popup_menu_config(cfg->popup, cfg->blur_launcher);
+        struct awl_popup_menu_config_t c = awl_popup_menu_config(&cfg->popup, cfg->blur.launcher);
         s.bg = c.bg;
         s.fg = c.fg;
         s.border = c.border;
@@ -113,7 +115,7 @@ popupshow(awl_window_t *win, Monitor *m, int center_x)
         wl_list_for_each(o, &popups, link)
             if (o->menu && awl_window_monitor(o->win))
                 awl_window_hide(o->win);
-    awl_window_show(win, m, center_x, topbar);
+    awl_window_show(win, m, center_x, cfg->bar.top);
 }
 
 awl_window_t *
@@ -176,12 +178,6 @@ popupshideall(void)
     Popup *p;
     wl_list_for_each(p, &popups, link)
         awl_window_hide(p->win);
-}
-
-const awl_popup_config_t *
-popupconfig(void)
-{
-    return cfg->popup;
 }
 
 void

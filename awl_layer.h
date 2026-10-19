@@ -14,5 +14,5 @@ void createlayersurface(struct wl_listener *listener, void *data);
 /** places m's layer surfaces and sizes their blur; arranges m if the window
  * area changed */
 void arrangelayers(Monitor *m);
-/** after config_plugins.h changed: the blur of notifications and launchers */
+/** after plugins_config.c changed: the blur of notifications and launchers */
 void layersconfigure(void);

@@ -108,7 +108,7 @@ testunescape(char *s)
  *                            pwin I MON|- X Y W H VISIBLE (the plugins')
  *                            hover MON X Y (the center of a bar widget
  *                              with callback_hover)
- *                            margin PX (popup_config.margin)
+ *                            margin PX (cfg->popup.margin)
  *                            errors COUNT (lines rejected so far)
  */
 static void
@@ -230,7 +230,7 @@ testwincmd(char *line)
                 xpos += d->widgets_right[i].width;
             }
         }
-        fprintf(f, "margin %d\n", cfg->popup->margin);
+        fprintf(f, "margin %d\n", cfg->popup.margin);
         fprintf(f, "errors %d\n", errors);
         fclose(f);
         rename(tmp, line);

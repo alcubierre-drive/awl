@@ -1,30 +1,16 @@
 #pragma once
 
 /**
- * What awl's core keeps of the tray: its settings, config_plugins.h's
- * tray_config, which the bar's tray widget (plugins/sni.h) reads, and the
- * icon theme of the programs awl starts with config_awl.h's TRAY_ICONS
- * (app_env.c, libawltray-env.so from env_shim.c). Main thread only.
+ * What awl's core keeps of the tray: the icon theme of the programs awl
+ * starts with TRAY_ICONS (awl.h), `awl_config_t.tray` (awl.h)'s
+ * icon_theme (app_env.c, libawltray-env.so from env_shim.c). The bar's tray
+ * widget is the library's (plugins/sni.h). Main thread only.
  */
 
 #include <stdint.h>
 
-/** The tray's settings, config_plugins.h's tray_config (awl_config_t's
- * tray). Colors are 0xRRGGBBAA. */
-typedef struct awl_tray_config_t {
-    /** the background of the bar's tray widget */
-    uint32_t bg;
-    /** The icon theme of the tray's icons and their menus, e.g.
-     * "Papirus-Dark" (NULL or "": the desktop's). An icon it lacks, or all
-     * of them if it isn't installed, comes from the desktop's theme
-     * (gtk-3.0/settings.ini), then Adwaita and hicolor. Programs keep their
-     * theme, unless started with TRAY_ICONS. Icons an item sends as images,
-     * or looks up in its own IconThemePath, stay as they are. */
-    const char *icon_theme;
-} awl_tray_config_t;
-
 /** What a program awl starts that asks for the tray's icon theme
- * (config_awl.h's TRAY_ICONS) gets: a dconf profile of its own, the one it
+ * (TRAY_ICONS, awl.h) gets: a dconf profile of its own, the one it
  * would have had, but with org.gnome.desktop.interface's icon-theme set to
  * the config's icon_theme (and locked, over the user's value), so GTK
  * programs draw their icons, the ones they send the tray as images too, in

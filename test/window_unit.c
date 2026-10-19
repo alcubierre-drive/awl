@@ -21,6 +21,7 @@ static int fh;
 static const awl_window_style_t style = {
     .bg = 0x101010ff, .fg = 0xffffffff, .border = 0x00ff00ff, .highlight = 0xff000080,
     .border_width = 2, .radius = 8, .padding = 4,
+    .column_spacing = AWL_WINDOW_COLUMN_SPACING, .row_spacing = AWL_WINDOW_ROW_SPACING,
 };
 
 static int gw( const char* s ) {

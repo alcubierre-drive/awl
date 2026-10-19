@@ -179,8 +179,8 @@ monocle(Monitor *m)
 int
 layoutindex(const Layout *l)
 {
-    uintptr_t p = (uintptr_t)l, first = (uintptr_t)cfg->layouts;
-    if (p < first || p >= first + cfg->n_layouts * sizeof(Layout))
+    uintptr_t p = (uintptr_t)l, first = (uintptr_t)cfg->layouts.v;
+    if (p < first || p >= first + cfg->layouts.n * sizeof(Layout))
         return -1;
     return (int)((p - first) / sizeof(Layout));
 }
@@ -229,26 +229,28 @@ togglepertag(const Arg *arg)
     drawbar(selmon);
 }
 
-/** the next (arg->i > 0) or previous (< 0) of config_plugins.h's layouts on selmon */
+/** the next (arg->i > 0) or previous (< 0) of cfg->layouts on selmon */
 void
 cycle_layout(const Arg* arg)
 {
-    int i, n = (int)cfg->n_layouts;
+    int i, n = (int)cfg->layouts.n;
     if (!selmon || !arg || !arg->i)
         return;
     i = layoutindex(sellayout(selmon)) + (arg->i > 0 ? 1 : -1);
-    setlayout(&(Arg){.v = &cfg->layouts[(i % n + n) % n]});
+    setlayout(&(Arg){.i = (i % n + n) % n});
 }
 
-/** like dwm: arg->v, one of config_plugins.h's layouts (&layouts[n]), for selmon;
- * without one (or with the one it has), back to its previous layout */
+/** like dwm: cfg->layouts.v[arg->i] for selmon; with a negative arg->i (or
+ * the one it has), back to its previous layout */
 void
 setlayout(const Arg *arg)
 {
-    const Layout *l = arg ? arg->v : NULL;
+    const Layout *l = NULL;
     struct PertagLayout *ml;
-    if (!selmon || (l && layoutindex(l) < 0))
+    if (!selmon || !arg || arg->i >= (int)cfg->layouts.n)
         return;
+    if (arg->i >= 0)
+        l = &cfg->layouts.v[arg->i];
     ml = monlt(selmon);
     if (!l || l != ml->lt[ml->sellt])
         ml->sellt ^= 1;
@@ -264,7 +266,22 @@ static const Layout *
 layoutmoved(const Layout *l, const Layout *old, size_t n_old)
 {
     size_t idx = l >= old && l < old + n_old ? (size_t)(l - old) : 0;
-    return &cfg->layouts[MIN(idx, cfg->n_layouts - 1)];
+    return &cfg->layouts.v[MIN(idx, cfg->layouts.n - 1)];
+}
+
+void
+tagsconfigure(void)
+{
+    Monitor *m;
+    Client *c;
+    size_t i;
+    wl_list_for_each(m, &mons, link)
+        for (i = 0; i < LENGTH(m->tagset); i++)
+            if (!(m->tagset[i] &= TAGMASK))
+                m->tagset[i] = 1;
+    wl_list_for_each(c, &clients, link)
+        if (!(c->tags &= TAGMASK))
+            c->tags = 1;
 }
 
 void
@@ -397,7 +414,7 @@ cycle_view(const Arg* arg)
     if (arg->i == 0) return;
     int tmax = -1;
     int tmin = 32;
-    int nt = LENGTH(tags);
+    int nt = TAGCOUNT;
     for (int t=0; t<nt; ++t)
         if (selmon->tagset[selmon->seltags] & (1 << t)) {
             tmax = MAX(tmax, t);

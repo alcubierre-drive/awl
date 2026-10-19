@@ -13,11 +13,6 @@
 /** whether client C is on monitor M and one of its shown tags */
 #define VISIBLEON(C, M)         ((M) && (C)->mon == (M) && ((C)->tags & (M)->tagset[(M)->seltags]))
 #define VISIBLEON_ACTIVE(C, M)  (VISIBLEON(C, M) && (C)->isvisible)
-/** a 0xRRGGBBAA color as wlroots' 4 floats, like config_plugins.h's COLOR() */
-#define RGBA(hex)               { ((hex >> 24) & 0xFF) / 255.0f, \
-                                  ((hex >> 16) & 0xFF) / 255.0f, \
-                                  ((hex >> 8) & 0xFF) / 255.0f, \
-                                  (hex & 0xFF) / 255.0f }
 
 /** the managed clients, Client.link: tiling order */
 extern struct wl_list clients;
@@ -54,7 +49,7 @@ void setfullscreen(Client *c, int fullscreen);
 void setmon(Client *c, Monitor *m, uint32_t newtags);
 /** wlr_scene_node_for_each_buffer()'s: data's (a Client's) translucency */
 void scenebuffersetopacity(struct wlr_scene_buffer *buffer, int sx, int sy, void *data);
-/** after config_plugins.h changed: border widths and colors, the blur */
+/** after plugins_config.c changed: border widths and colors, the blur */
 void clientsconfigure(void);
 
 /*

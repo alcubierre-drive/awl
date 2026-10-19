@@ -22,7 +22,10 @@
 #include <time.h>
 
 static void awl_plugin_start( awl_plugin_data_t* p ) {
-    p->awl_colors = awl_colors();
+    const awl_plugin_config_t* pc = awl_plugin_config();
+#define AWL_BAR_COLOR_SET( name ) p->colors.name = color_8bit_to_16bit( pc->colors.name );
+    AWL_BAR_COLORS( AWL_BAR_COLOR_SET )
+#undef AWL_BAR_COLOR_SET
 
     p->ip = ip_init();
     p->stats = stats_init( 16, 16, 16 );
@@ -32,20 +35,19 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     // the EC and costs ~2ms per read, so it is only the fallback
     if (temp_find_hwmon( "coretemp", "Package id", p->temp->f_files[p->temp->f_ntemps],
                          sizeof(p->temp->f_files[0]) )) {
-        // idles around 50, throttles at TjMax (110)
-        p->temp->f_t_max[p->temp->f_ntemps] = 100;
-        p->temp->f_t_min[p->temp->f_ntemps] = 50;
+        p->temp->f_t_max[p->temp->f_ntemps] = pc->temperature.coretemp.max;
+        p->temp->f_t_min[p->temp->f_ntemps] = pc->temperature.coretemp.min;
     } else {
         strcpy( p->temp->f_files[p->temp->f_ntemps], "/sys/class/thermal/thermal_zone0/temp" );
-        p->temp->f_t_max[p->temp->f_ntemps] = 90;
-        p->temp->f_t_min[p->temp->f_ntemps] = 40;
+        p->temp->f_t_max[p->temp->f_ntemps] = pc->temperature.thermal_zone.max;
+        p->temp->f_t_min[p->temp->f_ntemps] = pc->temperature.thermal_zone.min;
     }
     strcpy( p->temp->f_labels[p->temp->f_ntemps++], "" );
     // here could go another thermal zone
     temp_init(p->temp);
     p->temp_color = &temp_color;
 
-    p->bat = bat_init();
+    p->bat = bat_init( pc->battery.dir );
     p->date = date_init();
     // one thread for all of them, see plugins/poller.h
     p->poller = poller_new( p->stats, p->temp, p->date, p->bat, p->ip );
@@ -68,8 +70,19 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     }
 }
 
-static void awl_plugin_stop( awl_plugin_data_t* p ) {
-    poller_stop(p->poller);
+/** returns nonzero if the poller is stuck (poller_stop()) */
+static int awl_plugin_stop( awl_plugin_data_t* p ) {
+    if (poller_stop(p->poller)) {
+        awl_wrn_printf( "plugins: the poller thread is stuck, leaking what it uses\n" );
+        /* its loop still holds pulse, backlight, sni and ip's nm, and it polls
+         * stats, temp, bat, date and ip: all leaked with the library, which
+         * stays mapped. The tray's popups are the main thread's and only
+         * queue to sni under its lock, so they still go; sni's poll timer
+         * goes with pluginsreap(). Nothing here reads p itself. */
+        awl_tray_menu_window_fini();
+        awl_tray_tooltip_fini();
+        return 1;
+    }
     pulse_free(p->pulse);
     backlight_free(p->backlight);
     /* the tray's popups and timers, main thread's; a menu open queues its
@@ -83,6 +96,7 @@ static void awl_plugin_stop( awl_plugin_data_t* p ) {
     free(p->temp);
     bat_free(p->bat);
     date_free(p->date);
+    return 0;
 }
 
 /* everything below is the library's side of awl_plugin_abi.h */
@@ -110,6 +124,8 @@ static void loaded_stamp( void ) {
 }
 
 static void api_init( int paused ) {
+    /* first: everything below reads it */
+    awl_config_init();
     loaded_stamp();
     /* this library's git revision, see plugins_git.h in the Makefile */
     AWL_HOST_CFG_SET( awl_host, "plugins_git", AWL_DICT_STR( PLUGINS_GIT ) );
@@ -117,6 +133,9 @@ static void api_init( int paused ) {
     plugin_data->paused = paused;
     /* plugins/persistent.h's file: $XDG_STATE_HOME/awl/persistent */
     AWL_HOST_CFG_SET( awl_host, AWL_PERSISTENT_KEY, AWL_DICT_STR( "awl/persistent" ) );
+    /* what the logind thread reads on connecting; awl's own is its
+     * defaults' until it takes this library's config */
+    AWL_HOST_CFG_SET( awl_host, "lock_on_suspend", AWL_DICT_NUM( awl_config()->lock.on_suspend ) );
     /* first: the lock before suspend matters more than anything below */
     awl_logind_start();
     awl_plugin_start( plugin_data );
@@ -131,7 +150,8 @@ static int api_fini( void ) {
     stuck |= awl_desktop_stop();
     stuck |= awl_wallpaper_stop();
     stuck |= awl_logind_stop();
-    awl_plugin_stop( plugin_data );
+    stuck |= awl_plugin_stop( plugin_data );
+    /* even if stuck: the poller has its own pointers, never this */
     free( plugin_data );
     plugin_data = NULL;
     return stuck;
@@ -278,7 +298,7 @@ static void api_wallpaper_mode( WallpaperMode mode ) {
         [WallpaperRand] = "rand", [WallpaperNext] = "next", [WallpaperPrev] = "prev",
         [WallpaperModeCount] = "",
     };
-    const char* off = awl_config()->wallpaper->interval ? "" : " (timer off)";
+    const char* off = awl_config()->wallpaper.interval ? "" : " (timer off)";
     char body[64];
     int cur, n;
     /* where it stands now, as awl_notify_wallpaper_shown() tells it */
@@ -303,7 +323,7 @@ static const awl_plugin_api_t api = {
     .wallpaper_take = api_wallpaper_take,
     .wallpaper_mode = api_wallpaper_mode,
     .session_covered = awl_logind_covered,
-    .config = awl_config,
+    .config = awl_config_fill,
 };
 
 __attribute__((visibility("default")))
@@ -313,7 +333,8 @@ const awl_plugin_api_t* awl_plugin_entry( const awl_host_t* host ) {
         host->sizeof_draw != sizeof(awl_draw_t) ||
         host->sizeof_widget != sizeof(widget_t) ||
         host->sizeof_monitor != sizeof(Monitor) ||
-        host->sizeof_client != sizeof(Client))
+        host->sizeof_client != sizeof(Client) ||
+        host->sizeof_config != sizeof(awl_config_t))
         return NULL;
     awl_host = host;
     return &api;

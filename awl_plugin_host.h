@@ -45,10 +45,10 @@ void awl_plugins_set_covered( int covered );
 void awl_plugins_bar_widgets( awl_draw_t* bar );
 
 typedef struct awl_actions_t awl_actions_t;
-/** awl's functions config_plugins.h binds keys to, for the library */
+/** awl's functions plugins_config.c binds keys to, for the library */
 extern const awl_actions_t awl_actions;
 typedef struct awl_arranges_t awl_arranges_t;
-/** awl's functions config_plugins.h's layouts arrange with, for the library */
+/** awl's functions the config's layouts arrange with, for the library */
 extern const awl_arranges_t awl_arranges;
 
 typedef struct awl_host_t awl_host_t;

@@ -102,7 +102,7 @@ createmon(struct wl_listener *listener, void *data)
      * monitor) becomes available. */
     struct wlr_output *wlr_output = data;
     const MonitorRule *r;
-    size_t i;
+    size_t i, li;
     struct wlr_output_state state;
     Monitor *m;
 
@@ -122,16 +122,16 @@ createmon(struct wl_listener *listener, void *data)
     m->m.x = m->m.y = -1;
     m->ptlt[0].mfact = 0.55f;
     m->ptlt[0].nmaster = 1;
-    m->ptlt[0].lt[0] = m->ptlt[0].lt[1] = &cfg->layouts[0];
-    for (r = cfg->monrules; r < cfg->monrules + cfg->n_monrules; r++) {
+    m->ptlt[0].lt[0] = m->ptlt[0].lt[1] = &cfg->layouts.v[0];
+    for (r = cfg->monrules.v; r < cfg->monrules.v + cfg->monrules.n; r++) {
         if (!r->name || strstr(wlr_output->name, r->name)) {
             m->m.x = r->x;
             m->m.y = r->y;
             m->ptlt[0].mfact = r->mfact;
             m->ptlt[0].nmaster = r->nmaster;
-            if (layoutindex(r->lt) >= 0)
-                m->ptlt[0].lt[0] = r->lt;
-            m->ptlt[0].lt[1] = &cfg->layouts[cfg->n_layouts > 1 && r->lt != &cfg->layouts[1]];
+            li = r->layout > 0 && (size_t)r->layout < cfg->layouts.n ? (size_t)r->layout : 0;
+            m->ptlt[0].lt[0] = &cfg->layouts.v[li];
+            m->ptlt[0].lt[1] = &cfg->layouts.v[cfg->layouts.n > 1 && li != 1];
             m->pertag = !!r->pertag;
             wlr_output_state_set_scale(&state, r->scale);
             wlr_output_state_set_transform(&state, r->rr);
@@ -174,7 +174,7 @@ createmon(struct wl_listener *listener, void *data)
      *
      */
     /* updatemons() will resize and set correct position */
-    m->fullscreen_bg = wlr_scene_rect_create(layers[LyrFS], 0, 0, cfg->fullscreen_bg);
+    m->fullscreen_bg = wlr_scene_rect_create(layers[LyrFS], 0, 0, (float[4])RGBA(cfg->fullscreen_bg));
     wlr_scene_node_set_enabled(&m->fullscreen_bg->node, 0);
 
     /* Adds this to the output layout in the order it was configured.

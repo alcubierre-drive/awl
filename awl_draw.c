@@ -1,5 +1,4 @@
 #include "awl_draw.h"
-#include "plugins/colors.h"
 
 #include "awl_log.h"
 
@@ -202,7 +201,7 @@ static void rect_color(pixman_image_t *pix, int x, int y, unsigned int w, unsign
     pixman_color_t clr;
 
     /* the image is premultiplied ARGB, color is not */
-    clr = convert_color(color);
+    clr = color_8bit_to_16bit(color);
     clr.red = (uint32_t)clr.red * clr.alpha / 0xffff;
     clr.green = (uint32_t)clr.green * clr.alpha / 0xffff;
     clr.blue = (uint32_t)clr.blue * clr.alpha / 0xffff;
@@ -248,7 +247,7 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
 
     /* pixman's colors are premultiplied, fg is not (a translucent fg
      * would come out too bright) */
-    clr = convert_color(fg);
+    clr = color_8bit_to_16bit(fg);
     clr.red = (uint32_t)clr.red * clr.alpha / 0xffff;
     clr.green = (uint32_t)clr.green * clr.alpha / 0xffff;
     clr.blue = (uint32_t)clr.blue * clr.alpha / 0xffff;

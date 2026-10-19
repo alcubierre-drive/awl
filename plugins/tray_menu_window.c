@@ -12,7 +12,7 @@
 #include "tray_menu.h"
 #include "tray_tooltip.h"
 #include "../awl_log.h"
-#include "../awl_window_draw.h"
+#include "../plugins.h" /* awl_config() */
 #include "../icons/icon.h"
 
 #include <linux/input-event-codes.h>
@@ -226,7 +226,10 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
                    int hover ) {
     level_t* L = data;
     /* the blur is the window's (window_set_menu_style) */
-    const struct awl_popup_menu_config_t c = awl_popup_menu_config( awl_host->popup_config(), 0 );
+    const struct awl_popup_menu_config_t c = awl_popup_menu_config( &awl_config()->popup, 0 );
+    const awl_plugin_config_t* pc = awl_plugin_config();
+    const uint32_t dim = pc->popup.menu.dim ? pc->popup.menu.dim : pc->popup.dim,
+                   highlight_fg = pc->popup.menu.highlight_fg ? pc->popup.menu.highlight_fg : c.fg;
     const level_t* sub = child_of( L );
     L->x0 = x0;
     for (int i = L->top; i < L->top + L->shown; i++) {
@@ -237,7 +240,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         if (flags & AWL_TRAY_MENU_SEPARATOR) {
             float t = fmaxf( 1, (float)px( L, 1 ) );
             awl_fill_shape( pix, (float)(x0 + L->pad), (float)y + ((float)r->h - t) / 2, (float)(L->w - 2 * L->pad), t,
-                        0, 0, c.dim );
+                        0, 0, dim );
             continue;
         }
         /* the row whose submenu is open stays highlighted */
@@ -246,7 +249,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         if (lit)
             awl_fill_shape( pix, (float)x0, (float)y, (float)L->w, (float)r->h, (float)px( L, c.radius < 4 ? c.radius : 4 ),
                         0, c.highlight );
-        const uint32_t fg = (flags & AWL_TRAY_MENU_DISABLED) ? c.dim : lit ? c.highlight_fg : c.fg;
+        const uint32_t fg = (flags & AWL_TRAY_MENU_DISABLED) ? dim : lit ? highlight_fg : c.fg;
         int x = x0 + L->pad;
         if (L->check_w && (flags & (AWL_TRAY_MENU_CHECK | AWL_TRAY_MENU_RADIO))) {
             float s = (float)(L->check_w - L->gap);
@@ -275,7 +278,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         if (n->shortcut) {
             int sw = tw( font, n->shortcut );
             if (right - sw > x + L->gap) {
-                awl_host->text_over( pix, font, right - sw, y, (unsigned)sw, (unsigned)r->h, n->shortcut, c.dim );
+                awl_host->text_over( pix, font, right - sw, y, (unsigned)sw, (unsigned)r->h, n->shortcut, dim );
                 right -= sw + 2 * L->gap;
             }
         }

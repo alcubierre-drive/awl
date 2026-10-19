@@ -25,7 +25,7 @@ struct fcft_font;
 typedef struct Monitor Monitor;
 typedef struct awl_window awl_window_t;
 typedef struct awl_window_painter_t awl_window_painter_t;
-typedef struct awl_popup_config_t awl_popup_config_t;
+typedef struct awl_config_t awl_config_t;
 typedef struct awl_timer awl_timer_t;
 typedef struct Client Client;
 typedef struct awl_actions_t awl_actions_t;
@@ -37,7 +37,7 @@ typedef enum awl_logind_flags {
     /** our session's ``Lock`` signal (``loginctl lock-session``) */
     AWL_LOGIND_LOCK = 1,
     /** ``PrepareForSleep``, with a delay inhibitor held, so suspend waits
-     * for the lock; only with config_awl.h's lock_on_suspend */
+     * for the lock; only with the config's lock.on_suspend */
     AWL_LOGIND_SLEEP = 2,
 } awl_logind_flags_t;
 
@@ -49,9 +49,10 @@ typedef enum awl_logind_flags {
 typedef struct awl_host_t {
     /** `AWL_PLUGIN_ABI` as awl was built */
     uint32_t abi;
-    /** sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor and
-     * sizeof_client: the layouts the library compiles against */
-    size_t sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor, sizeof_client;
+    /** sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor,
+     * sizeof_client and sizeof_config: the layouts the library compiles
+     * against */
+    size_t sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor, sizeof_client, sizeof_config;
 
     /* ---- any thread ---- */
 
@@ -61,7 +62,7 @@ typedef struct awl_host_t {
      * expand to it */
     void (*log)( awl_loglevel_t loglevel, const char* fmt, ... )
         __attribute__(( format( printf, 2, 3 ) ));
-    /** `awl_lock_request()`: lock the screen (config_awl.h's locker),
+    /** `awl_lock_request()`: lock the screen (the config's lock.locker),
      * unless it is or is about to be */
     void (*lock_request)( void );
     /** `awl_lock_logind_state()`: what the logind thread listens for now,
@@ -107,9 +108,13 @@ typedef struct awl_host_t {
 
     /* ---- awl's state and actions ---- */
 
-    /** what config_plugins.h binds keys and buttons to */
+    /** `configdefaults()`: fills in c with awl's defaults (awl_defaults.c),
+     * which plugins_config.c changes; they point into awl, so they stay
+     * valid */
+    void (*config_defaults)( awl_config_t* c );
+    /** what plugins_config.c binds keys and buttons to */
     const awl_actions_t* actions;
-    /** what config_plugins.h's layouts arrange with */
+    /** what the config's layouts arrange with */
     const awl_arranges_t* arranges;
     /** `focusclient()` */
     void (*focusclient)( Client* c, int lift );
@@ -120,9 +125,6 @@ typedef struct awl_host_t {
 
     /* ---- popups (awl_window.h), NULL windows are fine everywhere ---- */
 
-    /** `popupconfig()`: config_plugins.h's popup_config (awl_window_draw.h)
-     * as it is now; valid until the next config reload */
-    const awl_popup_config_t* (*popup_config)( void );
     /** `popupcreate()`: a hidden, empty popup, NULL before awl is set up.
      * The library destroys what it made before it is unloaded (its fini);
      * awl removes what it left then, with a warning */
@@ -130,13 +132,13 @@ typedef struct awl_host_t {
     /** `popupdestroy()` */
     void (*window_destroy)( awl_window_t* win );
     /** `popupsetmenustyle()`: the window looks like a menu,
-     * popup_config.menu (awl_popup_menu_config()), from now on */
+     * `awl_config_t.popup`'s menu (awl_popup_menu_config()), from now on */
     void (*window_set_menu_style)( awl_window_t* win );
     /** `awl_window_set_text()`: rows separated by '\n', columns by '\t';
      * a shown window follows at once */
     void (*window_set_text)( awl_window_t* win, const char* text );
     /** `awl_window_set_painter()`: the window draws itself with painter
-     * (awl_window_draw.h; copied, with data) instead of its text, NULL for
+     * (awl.h; copied, with data) instead of its text, NULL for
      * the text again. Its parts stand in for the cells: clicks and scrolls
      * get the part as row, column 0. */
     void (*window_set_painter)( awl_window_t* win, const awl_window_painter_t* painter, void* data );

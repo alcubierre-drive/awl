@@ -53,7 +53,7 @@ arrangelayers(Monitor *m)
 
     if (m->showbar) {
         usable_area.height -= m->b.real_height;
-        usable_area.y += topbar ? m->b.real_height : 0;
+        usable_area.y += cfg->bar.top ? m->b.real_height : 0;
     }
 
     /* Arrange exclusive surfaces from top->bottom */
@@ -158,8 +158,8 @@ createlayersurface(struct wl_listener *listener, void *data)
         return;
     }
     l = layer_surface->data = ecalloc(1, sizeof(*l));
-    l->is_notification = cfg->blur_notifications && !strcmp(layer_surface->namespace, "notifications");
-    l->is_launcher = cfg->blur_launcher && !strcmp(layer_surface->namespace, "launcher");
+    l->is_notification = cfg->blur.notifications && !strcmp(layer_surface->namespace, "notifications");
+    l->is_launcher = cfg->blur.launcher && !strcmp(layer_surface->namespace, "launcher");
     l->type = LayerShell;
     LISTEN(&surface->events.commit, &l->surface_commit, commitlayersurfacenotify);
     LISTEN(&surface->events.unmap, &l->unmap, unmaplayersurfacenotify);
@@ -171,11 +171,11 @@ createlayersurface(struct wl_listener *listener, void *data)
     l->scene = l->scene_layer->tree;
     if (l->is_notification || l->is_launcher) {
         l->blur = wlr_scene_blur_create(l->scene, l->scene->node.x, l->scene->node.y);
-        if (l->is_launcher) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_launcher_radius);
-        if (l->is_notification) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_notifications_radius);
+        if (l->is_launcher) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur.launcher_radius);
+        if (l->is_notification) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur.notifications_radius);
         wlr_scene_blur_set_size(l->blur, l->layer_surface->current.desired_width, l->layer_surface->current.desired_height);
-        wlr_scene_blur_set_strength(l->blur, cfg->blur[0]);
-        wlr_scene_blur_set_alpha(l->blur, cfg->blur[1]);
+        wlr_scene_blur_set_strength(l->blur, cfg->blur.strength);
+        wlr_scene_blur_set_alpha(l->blur, cfg->blur.alpha);
         wlr_scene_blur_set_should_only_blur_bottom_layer(l->blur, 0);
         wlr_scene_node_set_enabled(&l->blur->node, 1);
         wlr_scene_node_lower_to_bottom(&l->blur->node);
@@ -231,10 +231,10 @@ layersconfigure(void)
             wl_list_for_each(l, &m->layers[i], link) {
                 if (!l->blur)
                     continue;
-                wlr_scene_blur_set_strength(l->blur, cfg->blur[0]);
-                wlr_scene_blur_set_alpha(l->blur, cfg->blur[1]);
+                wlr_scene_blur_set_strength(l->blur, cfg->blur.strength);
+                wlr_scene_blur_set_alpha(l->blur, cfg->blur.alpha);
                 wlr_scene_blur_set_corner_radius(l->blur, l->is_notification
-                        ? cfg->blur_notifications_radius : cfg->blur_launcher_radius);
+                        ? cfg->blur.notifications_radius : cfg->blur.launcher_radius);
             }
         }
     }

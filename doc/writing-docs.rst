@@ -18,7 +18,7 @@ Then, after every change::
 
 and open ``doc/_build/html/index.html``. The sources are parsed with the
 Makefile's flags (pkg-config, scenefx, ``-DXWAYLAND``), so the generated
-protocol headers, config_awl.h and config_plugins.h have to exist: run ``make`` first.
+protocol headers have to exist: run ``make`` first.
 
 Doc comments
 ------------

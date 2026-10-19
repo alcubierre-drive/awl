@@ -251,8 +251,8 @@ The desktop scanner
 Locking before suspend
 ----------------------
 
-The logind thread holds a delay inhibitor whenever config_awl.h's
-``lock_on_suspend`` is set, so logind sends ``PrepareForSleep(true)`` and then
+The logind thread holds a delay inhibitor whenever the config's
+``lock.on_suspend`` is set, so logind sends ``PrepareForSleep(true)`` and then
 waits, up to its ``InhibitDelayMaxSec`` (5 s by default), for the inhibitor's
 fd to be closed. "Covered" means every enabled output has shown a frame with
 the locker's surface (`lockcovered()`), or ``LOCK_COVER_MS`` passed.
@@ -269,7 +269,7 @@ the locker's surface (`lockcovered()`), or ``LOCK_COVER_MS`` passed.
      L->>T: PrepareForSleep(true)
      T-->>M: awl_host->lock_request()
      M->>M: lockfire(): lockscreen()
-     M->>K: spawn config_awl.h's locker
+     M->>K: spawn cfg->lock.locker
      K->>M: ext-session-lock: lock, surfaces
      M->>M: locksession(), then rendermon():<br/>a frame with its surface on every output
      M->>T: lockcovered(): session_covered(1), wake

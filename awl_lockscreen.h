@@ -2,11 +2,11 @@
 
 /**
  * The screen lock, part of awl (awl_lockscreen.c). awl locks with an
- * ext-session-lock client, config_awl.h's ``locker``, started on a lock
+ * ext-session-lock client, ``cfg->lock.locker``, started on a lock
  * request (``loginctl lock-session`` and before suspend, through the
  * plugins' logind thread, or the lockscreen action). While the
  * session is locked only the locker's surfaces are shown (over a blur,
- * config_awl.h's ``locked_blur``) and get input. A lock covers the screen
+ * cfg->lock.blur) and get input. A lock covers the screen
  * once every output has shown it; before a suspend, the logind thread waits
  * for that. While the logind thread doesn't listen for all it should, an
  * alert is up (awl_alert.h).
@@ -43,7 +43,7 @@ void lockresize(void);
 void lockkeystroke(void);
 /** pid, a child, exited: if it was the locker, it may never have locked */
 void lockerexited(pid_t pid);
-/** after config_plugins.h changed: the blur */
+/** after plugins_config.c changed: the blur */
 void lockconfigure(void);
 
 /** Asks awl to lock the screen. Any thread. */

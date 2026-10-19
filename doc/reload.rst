@@ -2,8 +2,8 @@ Live reload
 ===========
 
 ``make`` builds ``awl`` and ``libawlplugins.so``. With awl running,
-``plugin_restart`` (MOD+Ctrl+r in config_plugins.def.h) swaps in the freshly
-built library: new widgets, new plugin code and config_plugins.h,
+``plugin_restart`` (MOD+Ctrl+r by default) swaps in the freshly
+built library: new widgets, new plugin code and plugins_config.c,
 without restarting awl or any client.
 
 What a reload picks up
@@ -17,13 +17,14 @@ What a reload picks up
      - Needs a restart of awl
    * - plugins_widgets.c, plugins_desktop_panel.c, plugins.c, plugins/
      - awl.c and its parts, awl_*.c (awl_sni.c is the tray's watcher), tray/
-   * - config_plugins.h: keys, buttons, rules, layouts,
+   * - plugins_config.c: keys, buttons, rules, layouts,
        colors, font, borders, blur, input devices, keymap, tray and
        wallpaper settings
-     - config_awl.h: tags, the bar's position, autostarts, logging
+     - config.mk: compile-time switches
    * -
      - any change to `awl_host_t`, `awl_plugin_api_t` or to a struct both
-       sides read (`Monitor`, `Client`, `awl_draw_t`, `widget_t`, `Arg`), i.e.
+       sides read (`Monitor`, `Client`, `awl_config_t`, `awl_draw_t`,
+       `widget_t`, `Arg`; all in awl.h), i.e.
        anything that bumps `AWL_PLUGIN_ABI`
 
 Monitor rules apply to outputs that appear after the reload. A library that
@@ -121,7 +122,8 @@ on a reload and at exit:
 
 What ``api->init()`` and ``api->fini()`` do (plugins.c). The scanner and the
 wallpaper thread may get stuck on a dead mount, so they are given 500 ms;
-the poller is joined without a limit.
+the poller, which may hang in a sysfs read, 2 s. A stuck poller's plugins
+(everything on its loop or polled by it) are leaked, not freed.
 
 .. mermaid::
 
@@ -135,8 +137,11 @@ the poller is joined without a limit.
      subgraph fini["api->fini()"]
        direction TB
        f1["awl_desktop_stop():<br/>up to 500 ms"] --> f2["awl_wallpaper_stop():<br/>up to 500 ms"]
-       f2 --> f3["poller_stop(): joined"] --> f4["pulse_free(), backlight_free(),<br/>poller_free(), the rest freed"]
+       f2 --> f3["poller_stop():<br/>up to 2 s"]
+       f3 -- exited --> f4["pulse_free(), backlight_free(),<br/>poller_free(), the rest freed"]
+       f3 -- stuck --> f5["only the tray's popups go,<br/>the rest is leaked"]
        f4 --> stuck{"a thread<br/>left running?"}
+       f5 --> stuck
        stuck -- no --> r0["returns 0:<br/>the library may be closed"]
        stuck -- yes --> r1["returns nonzero:<br/>the library stays mapped"]
      end
@@ -145,19 +150,37 @@ the poller is joined without a limit.
 The config split
 ----------------
 
-awl's modules include config_awl.h (through awl_config.h); awl_config.c
-includes config_plugins.def.h as the fallback for while no library is loaded. plugins_config.c includes config_plugins.h and turns
-it into an `awl_config_t` with `AWL_CONFIG_TABLE`; awl_config.c does the same with
-config_plugins.def.h. Only the library ever sees config_plugins.h.
+config.mk's compile-time switches (``-DSCENEFX_HAS_SHATTER``) only a rebuild
+and restart of awl apply. Everything else is two structs: `awl_config_t`
+(awl.h) holds what awl itself reads (the library may read it too),
+`awl_plugin_config_t` (plugins.h) what only the library reads: the bar's
+widgets and colors, the tray widget's look, the calendar's, the desktop
+file list's, the temperature scales, the battery.
 
-The functions config_plugins.h binds keys to are awl's; in the library, they
-are same-named wrappers that call awl through `awl_host_t.actions`, so the
-file reads like a dwl config.h. A function it binds has to be listed in
+awl_defaults.c holds awl's defaults; awl runs with them while no library is
+loaded, and hands them to the library as `awl_host_t.config_defaults`.
+plugins_defaults.c holds the library's. The ``CUSTOM`` part of
+plugins_config.c is the configuration: its ``configure(c, p)`` changes what it wants in both: a
+value (``c->borderpx = 2``), a part (``c->popup.font = "sans:size="``,
+``p->colors.win_focused = ...``), or a list, pointed at its own array with
+``SETLIST(c->keys, keys)`` or ``SETLIST(p->widgets, widgets)``. On every
+(re)load awl fills its copy of `awl_config_t` through
+`awl_plugin_api_t.config`; `awl_plugin_config_t` never leaves the library.
+Only the library ever sees it.
+
+In bindings, ``MODKEY`` stands for ``c->modkey``, whatever it is when the
+binding is pressed, so changing the modifier needs no new bindings. Monitor
+rules and ``setlayout`` take a layout's index, so awl's default bindings and
+rules work with the library's layouts too.
+
+The functions the configuration binds keys to are awl's; in the library, they
+are same-named wrappers that call awl through `awl_host_t.actions`, so its
+``CUSTOM`` part reads like a dwl config.h. A function it binds has to be listed in
 `AWL_ACTIONS` (or `AWL_ARRANGES` for layouts), or be one of the library's own
-actions, which plugins_config.c defines next to the wrappers (``notifyconfig``,
-``backlighttoggle``). The wrappers and those actions aren't static, so any
-of them may stay unbound without a warning, and the library exports none of
-them. config_plugins.def.h, which awl itself is built with, can bind only
+actions, defined next to the wrappers (``notifyconfig``,
+``backlighttoggle``), or be defined in the ``CUSTOM`` part. The wrappers and
+those actions aren't static, so any of them may stay unbound without a
+warning, and the library exports none of them. awl's defaults can bind only
 `AWL_ACTIONS`.
 
 Adding to the ABI

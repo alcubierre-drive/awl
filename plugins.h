@@ -17,6 +17,98 @@
 
 #include "plugins/colors.h"
 
+/** the widgets the bar can show right of the task bar,
+ * `awl_plugin_config_t.widgets` */
+enum {
+    AwlWidgetClock,       /* the time, a seconds meter; hover: the calendar */
+    AwlWidgetTray,        /* the status notifier items (plugins/sni.h) */
+    AwlWidgetVolume,      /* the default sink's volume (PulseAudio) */
+    AwlWidgetStats,       /* graphs of CPU, I/O, memory and swap */
+    AwlWidgetTemperature,
+    AwlWidgetDock,        /* a Thunderbolt dock */
+    AwlWidgetBattery,
+    AwlWidgetNetwork,     /* the address; hover: all of them */
+    AwlWidgetBacklight,   /* the backlight daemon's state */
+};
+
+/**
+ * The bar's colors, `awl_plugin_config_t.colors` (0xRRGGBBAA) and as
+ * pixman's `awl_plugin_data_t.colors`:
+ * bg and fg: the layout symbol's, the clock's and the status widgets';
+ * tag_bg, and over it in this order (its alpha says how much)
+ * tag_occupied, tag_urgent, tag_selected: the tags;
+ * selmon: the selected monitor's mark under the first tag;
+ * pertag: the frame around a per-tag layout's symbol;
+ * win_bg, win_focused, win_urgent, win_minimized and win_fg: the task bar's
+ * windows (shown, focused, urgent, minimized) and their titles;
+ * clock_meter: the clock's seconds;
+ * stats_bg, cpu, io, mem and swap: the graphs;
+ * good, warning and bad: the volume's, battery's, network's and
+ * backlight's states.
+ */
+#define AWL_BAR_COLORS( X ) \
+    X( bg ) X( fg ) X( tag_bg ) X( tag_occupied ) X( tag_urgent ) X( tag_selected ) X( selmon ) \
+    X( pertag ) X( win_bg ) X( win_focused ) X( win_urgent ) X( win_minimized ) X( win_fg ) \
+    X( clock_meter ) X( stats_bg ) X( cpu ) X( io ) X( mem ) X( swap ) X( good ) X( warning ) X( bad )
+
+#define AWL_BAR_COLOR_U32( name ) uint32_t name;
+#define AWL_BAR_COLOR_PIXMAN( name ) pixman_color_t name;
+
+/**
+ * What only the plugin library reads of the configuration: its defaults
+ * (plugins_defaults.c) with plugins_config.c's changes, next to
+ * `awl_config_t` (awl.h), which awl reads. Colors are 0xRRGGBBAA, sizes
+ * logical pixels. Main thread.
+ */
+typedef struct awl_plugin_config_t {
+    /** the bar's widgets right of the task bar, AwlWidget*, from the right
+     * edge in; set with SETLIST() */
+    struct { const int* v; size_t n; } widgets;
+    struct { AWL_BAR_COLORS( AWL_BAR_COLOR_U32 ) } colors;
+    /** the tray widget: its background, its icons' size and the gap
+     * between them */
+    struct {
+        uint32_t bg;
+        float icon_size, icon_gap;
+    } tray;
+    /** the plugins' popups, beyond `awl_config_t.popup` */
+    struct {
+        /** what matters less: the calendar's neighbouring months' days, the
+         * IP popup's missing routes */
+        uint32_t dim;
+        /** the clock's calendar: today's date, the selected day's
+         * background; list_min_height and list_max_height: the event list,
+         * which scrolls beyond the maximum (0: none) */
+        struct {
+            uint32_t today, selected;
+            int list_min_height, list_max_height;
+        } calendar;
+        /** the tray's menus: disabled entries, shortcuts and separators
+         * (0: dim), and the text of the entry under the pointer (0: the
+         * menu's fg) */
+        struct {
+            uint32_t dim, highlight_fg;
+        } menu;
+    } popup;
+    /** the desktop file list: its background, the names of files, folders
+     * and broken links, the alpha of hidden files' names, its distance
+     * from the usable area's corner */
+    struct {
+        uint32_t bg, file, dir, broken;
+        uint8_t hidden_alpha;
+        float margin;
+    } desktop;
+    /** the temperature's color scale, °C: of the CPU package sensor
+     * (coretemp), else of ACPI's thermal_zone0 */
+    struct {
+        struct { float min, max; } coretemp, thermal_zone;
+    } temperature;
+    /** the battery's sysfs directory, with a trailing '/' */
+    struct {
+        const char* dir;
+    } battery;
+} awl_plugin_config_t;
+
 /** The running plugins' state, see `awl_plugin_get()`. */
 typedef struct awl_plugin_data_t {
     float refresh_sec;
@@ -34,7 +126,8 @@ typedef struct awl_plugin_data_t {
     awl_sni_t* sni;
     int paused;
 
-    struct awl_colors awl_colors;
+    /** `awl_plugin_config_t.colors` as pixman's */
+    struct { AWL_BAR_COLORS( AWL_BAR_COLOR_PIXMAN ) } colors;
 } awl_plugin_data_t;
 
 /** The running plugins' state; NULL while the plugins aren't running. */
@@ -72,5 +165,17 @@ void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* da
 /** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_click` */
 int awl_desktop_click( int button, uint32_t mods );
 
-/** plugins_config.c: `awl_plugin_api_t.config` */
+/** plugins_config.c: makes both configs, awl's defaults
+ * (`awl_host_t.config_defaults`) and the plugins' with configure() (the
+ * CUSTOM part of plugins_config.c) applied; first thing in `awl_plugin_api_t.init`, so before
+ * anything reads them */
+void awl_config_init( void );
+/** plugins_config.c: the config `awl_config_init()` made; valid until the
+ * library is unloaded */
 const awl_config_t* awl_config( void );
+/** plugins_config.c: the plugins' config `awl_config_init()` made */
+const awl_plugin_config_t* awl_plugin_config( void );
+/** plugins_defaults.c: fills in p with the plugins' defaults */
+void awl_plugin_config_defaults( awl_plugin_config_t* p );
+/** plugins_config.c: `awl_plugin_api_t.config`, a copy of `awl_config()` */
+void awl_config_fill( awl_config_t* c );

@@ -180,8 +180,8 @@ spawnstartup(const char *cmd)
 void
 autostartall(void)
 {
-    for (unsigned i=0; i<LENGTH(Autostarts); ++i) {
-        if (!Autostarts[i][0]) continue; /* { NULL }: an empty list */
-        autostart(Autostarts[i]);
+    for (size_t i = 0; i < cfg->autostart.n; ++i) {
+        if (!cfg->autostart.v[i][0]) continue; /* { NULL }: an empty entry */
+        autostart(cfg->autostart.v[i]);
     }
 }

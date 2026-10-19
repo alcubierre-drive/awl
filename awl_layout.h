@@ -9,15 +9,20 @@
 
 #include "awl_config.h"
 
-/** config_awl.h's tags, as a mask */
-#define TAGMASK                 ((1u << LENGTH(tags)) - 1)
+/** how many tags there are, cfg->ntags kept to 1..31 */
+#define TAGCOUNT                (cfg->ntags < 1 ? 1 : cfg->ntags > 31 ? 31 : cfg->ntags)
+/** the tags, as a mask */
+#define TAGMASK                 ((1u << TAGCOUNT) - 1)
 
 /** lays out m's windows with its layout */
 void arrange(Monitor *m);
 /** m's selected layout */
 const Layout *sellayout(Monitor *m);
-/** l's index in config_plugins.h's layouts, -1 if it isn't one of them */
+/** l's index in cfg->layouts, -1 if it isn't one of them */
 int layoutindex(const Layout *l);
 /** After cfg changed: the monitors' layouts point into the old table (which
  * may be about to be unloaded); same index in the new one, or its first */
 void layoutsmoved(const Layout *old, size_t n_old);
+/** After cfg changed: the views and windows on tags beyond TAGCOUNT go to
+ * the first tag */
+void tagsconfigure(void);

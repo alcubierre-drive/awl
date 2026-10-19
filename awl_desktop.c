@@ -26,12 +26,12 @@ typedef struct DesktopView {
 
 static struct {
     struct wlr_scene_tree* tree;
-    desktop_config_t cfg;
+    desktop_style_t cfg;
     struct wl_list views; /* DesktopView.link */
     unsigned reloads;     /* versions of different libraries don't compare */
 } desk;
 
-void desktop_init( struct wlr_scene_tree* tree, const desktop_config_t* cfg ) {
+void desktop_init( struct wlr_scene_tree* tree, const desktop_style_t* cfg ) {
     desk.tree = tree;
     desk.cfg = *cfg;
     wl_list_init( &desk.views );
@@ -61,7 +61,7 @@ static DesktopView* view_of( Monitor* m ) {
     return NULL;
 }
 
-void desktop_configure( const desktop_config_t* cfg ) {
+void desktop_configure( const desktop_style_t* cfg ) {
     desk.cfg = *cfg;
     DesktopView* v;
     wl_list_for_each( v, &desk.views, link ) {

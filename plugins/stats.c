@@ -77,17 +77,7 @@ static float cpu_idle( uint64_t* sizes_table, float* io ) {
     *io = (float)(s[4] - (s+10)[4])/(float)total;
 
     // return idle percentage
-    #ifndef AWL_STATS_FORCE_CPU_MULT
     float result = (float)idle/(float)total;
-    #else
-    // #cpus, determined once
-    static float ncpus = 0.0;
-    if (ncpus < 1.0) {
-        long n = sysconf( _SC_NPROCESSORS_ONLN );
-        ncpus = n > 0 ? (float)n : 1.0;
-    }
-    float result = (float)idle/(float)total * ncpus;
-    #endif
     return result > 0.0 ? (result < 1.0 ? result : 1.0) : 0.0;
 }
 

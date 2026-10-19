@@ -20,6 +20,9 @@
  * without an event of its own. */
 #define BAT_SETTLE_TICKS 10
 #define IP_FALLBACK_TICKS 5
+/** How long poller_stop() waits for the thread, which may hang in a sysfs
+ * read (an ACPI thermal zone goes through the EC); like logind's. */
+#define STOP_TIMEOUT_MS 2000
 
 struct awl_poller_t {
     awl_stats_t* stats;
@@ -175,10 +178,11 @@ void poller_set_paused( awl_poller_t* p, int paused ) {
     if (p->started) awl_thread_wake( &p->thread );
 }
 
-void poller_stop( awl_poller_t* p ) {
-    if (!p || !p->started) return;
-    awl_thread_stop( &p->thread, -1 );
+int poller_stop( awl_poller_t* p ) {
+    if (!p || !p->started) return 0;
+    if (awl_thread_stop( &p->thread, STOP_TIMEOUT_MS )) return 1;
     p->started = 0;
+    return 0;
 }
 
 void poller_free( awl_poller_t* p ) {

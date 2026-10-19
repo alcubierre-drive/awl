@@ -3,7 +3,7 @@
 /**
  * awl's own popups (awl_window.h), part of awl: the plugins' (the bar
  * widgets' hover popups, the tray's menus) and AWL_TEST_WINDOWS'
- * (awl_test.h), styled by config_plugins.h's popup_config, in a tree of
+ * (awl_test.h), styled by cfg->popup, in a tree of
  * their own right above LyrTop; made with the first one, so until a plugin
  * asks for a popup none of this runs (awl_popup.c). A popup that takes the
  * pointer gets its motion, presses and wheel before anything below it.
@@ -29,7 +29,7 @@ extern struct wl_list popups;
  * NULL before setup() */
 awl_window_t *popupnew(int plugin);
 /** a new, hidden popup for the plugins, styled by
- * popup_config; NULL before setup(). The library gives back what it made
+ * cfg->popup; NULL before setup(). The library gives back what it made
  * before it is unloaded; pluginsreap() destroys what it left. Several can be
  * shown at once. The host table hands the plugins the rest of
  * awl_window.h as it is. */
@@ -43,16 +43,11 @@ void popupshow(awl_window_t *win, Monitor *m, int center_x);
 /** shows win on m beside the box x, y, w, h, a row of another popup, on
  * its right unless left (`awl_window_show_beside()`) */
 void popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
-/** makes win look like a menu, popup_config.menu, from now on */
+/** makes win look like a menu, cfg->popup.menu, from now on */
 void popupsetmenustyle(awl_window_t *win);
 /** where part of win's painter is, 0 if it is not shown
  * (`awl_window_part_box()`) */
 int popuppartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h);
-typedef struct awl_popup_config_t awl_popup_config_t;
-/** config_plugins.h's popup_config as it is now; valid until the next
- * config reload */
-const awl_popup_config_t *popupconfig(void);
-
 /** whether the pointer is over win, one of the popups */
 int pointerinpopup(awl_window_t *win);
 /** the topmost popup that takes the pointer at x, y, NULL if none */
@@ -70,7 +65,7 @@ void popupsupdate(Monitor *m);
 void popupshideall(void);
 /** m is going */
 void popupsremovemon(Monitor *m);
-/** after config_plugins.h changed: every popup's look */
+/** after plugins_config.c changed: every popup's look */
 void popupsrestyle(void);
 /** destroys every popup (a reload, see pluginsreap()); returns how many were
  * the plugins' */

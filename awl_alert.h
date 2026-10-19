@@ -19,7 +19,7 @@ typedef enum awl_alert_id {
      * before suspend */
     AwlAlertLogind,
     /** the locker lockscreen() started exited before it ever locked: a
-     * wrong config_awl.h locker, or it crashed */
+     * wrong cfg->lock.locker, or it crashed */
     AwlAlertLocker,
     AwlAlertLast,
 } awl_alert_id_t;
@@ -42,11 +42,13 @@ const char* awl_alert_text( void );
 void awl_alert_init( void );
 /** m's alert, hidden until `awl_alert_draw()` */
 void awl_alert_addmon( Monitor* m );
-/** The alert on m: white on red at ALERT_ALPHA, in the bar's font at
- * ALERT_FONT_SCALE times its size, in the bottom left corner, ALERT_MARGIN
- * logical pixels from the edges, above everything, the lock screen
+/** The alert on m, as cfg->alert says (by default white on red at 0.9
+ * opacity, in the bar's font at 1.5 times its size): in the bottom left
+ * corner, cfg->alert.margin logical pixels from the edges, above everything, the lock screen
  * included. Redrawn only when the alert, m's area or its scale changed;
  * called on every redraw request and whenever m is arranged. */
 void awl_alert_draw( Monitor* m );
+/** after the config changed: the alerts' look */
+void awl_alert_configure( void );
 /** `awl_alert_draw()` on every monitor */
 void awl_alert_draw_all( void );

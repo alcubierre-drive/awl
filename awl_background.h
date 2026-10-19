@@ -11,8 +11,7 @@
  * ``layers[]``, so ``xytonode()`` and clicks go right through them.
  */
 
-#include "awl.h"
-#include "plugins/wallpaper.h"
+#include "awl_core.h"
 
 /** tree: an empty scene tree, already placed in the stacking order; loop
  * runs the fades */

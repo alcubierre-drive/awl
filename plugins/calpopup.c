@@ -4,7 +4,6 @@
 #include "calpopup.h"
 #include "calendar.h"
 #include "plugins.h"
-#include "awl_window_draw.h"
 
 #include <langinfo.h>
 #include <locale.h>
@@ -162,7 +161,7 @@ static void set_part( int p, int x, int y, int w, int h ) {
 }
 
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
-    const awl_popup_config_t* cfg = awl_config()->popup;
+    const awl_plugin_config_t* pc = awl_plugin_config();
     if (!font) return 0;
     C.scale = scale;
     if (C.font != font) {
@@ -243,8 +242,8 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
         y += gap;
         C.list_y = y;
         int natural = (n > 0 ? n : 1) * C.row_h;
-        int lo = px( (float)(cfg->calendar.list_min_height > 0 ? cfg->calendar.list_min_height : 0) );
-        int hi = cfg->calendar.list_max_height > 0 ? px( (float)cfg->calendar.list_max_height ) : max_h;
+        int lo = px( (float)(pc->popup.calendar.list_min_height > 0 ? pc->popup.calendar.list_min_height : 0) );
+        int hi = pc->popup.calendar.list_max_height > 0 ? px( (float)pc->popup.calendar.list_max_height ) : max_h;
         if (hi < lo) hi = lo;
         C.list_h = natural < lo ? lo : natural > hi ? hi : natural;
         if (y + C.list_h > max_h) C.list_h = max_h - y;
@@ -266,7 +265,8 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
 
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
                    int hover ) {
-    const awl_popup_config_t* c = awl_config()->popup;
+    const awl_popup_config_t* c = &awl_config()->popup;
+    const awl_plugin_config_t* pc = awl_plugin_config();
     char buf[128];
     const float r = (float)px( 4 );
     if (hover >= 0 && hover != P_LIST && C.has[hover]) {
@@ -293,7 +293,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     for (int col = 0; col < 7; col++) {
         strtime( buf, sizeof buf, "%a", awl_calendar_day_start( 2024, 0, 7 + (ws + col) % 7 ) );
         box_t b = { C.part[P_DAY0 + col].x, C.names_y, cw, C.cell_h };
-        text_center( pix, font, x0, y0, b, buf, c->dim );
+        text_center( pix, font, x0, y0, b, buf, pc->popup.dim );
     }
     awl_cal_month_t* events = C.plain ? NULL : cached( month_key( C.year, C.month ) );
     const int today = today_ymd(), thursday = (4 - ws + 7) % 7;
@@ -306,12 +306,12 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             /* ISO week number, of the week's Thursday */
             strtime( buf, sizeof buf, "%V", awl_calendar_day_start( C.year, C.month, i - offset + 1 + thursday ) );
             box_t wb = { b.x - cw, b.y, cw, b.h };
-            text_center( pix, font, x0, y0, wb, buf[0] == '0' ? buf + 1 : buf, c->dim );
+            text_center( pix, font, x0, y0, wb, buf[0] == '0' ? buf + 1 : buf, pc->popup.dim );
         }
         const int other = t.tm_mon != C.month, sel = !other && t.tm_mday == C.day;
         if (sel)
-            awl_fill_shape( pix, (float)(x0 + b.x + 1), (float)(y0 + b.y), (float)(b.w - 2), (float)b.h, r, 0, c->calendar.selected );
-        uint32_t fg = ymd( &t ) == today ? c->calendar.today : other ? c->dim : c->fg;
+            awl_fill_shape( pix, (float)(x0 + b.x + 1), (float)(y0 + b.y), (float)(b.w - 2), (float)b.h, r, 0, pc->popup.calendar.selected );
+        uint32_t fg = ymd( &t ) == today ? pc->popup.calendar.today : other ? pc->popup.dim : c->fg;
         snprintf( buf, sizeof buf, "%d", t.tm_mday );
         text_center( pix, font, x0, y0, b, buf, fg );
         /* a dot under the days with events */
@@ -339,7 +339,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     const awl_cal_event_t** ev = day_events( &n );
     if (!ev) return;
     if (!n) {
-        awl_host->text_over( pix, font, x0, y0 + C.list_y, (unsigned)C.w, (unsigned)C.row_h, "No events", c->dim );
+        awl_host->text_over( pix, font, x0, y0 + C.list_y, (unsigned)C.w, (unsigned)C.row_h, "No events", pc->popup.dim );
         return;
     }
     for (int i = C.list_top, row = 0; i < n && row < C.rows_fit; i++, row++) {
@@ -366,7 +366,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         room -= sw;
         if (*e->location && room > tw( font, " · …" )) {
             snprintf( buf, sizeof buf, " · %s", e->location );
-            awl_host->text_over( pix, font, x + sw, y, (unsigned)room, (unsigned)C.row_h, buf, c->dim );
+            awl_host->text_over( pix, font, x + sw, y, (unsigned)room, (unsigned)C.row_h, buf, pc->popup.dim );
         }
     }
 }

@@ -8,13 +8,6 @@
 #include <stdio.h>
 #include <string.h>
 
-/** the alert's look, see `awl_alert_draw()`: its font size relative to the
- * bar's, its distance from the bottom left corner in logical pixels, its
- * opacity */
-#define ALERT_FONT_SCALE 1.5
-#define ALERT_MARGIN 12
-#define ALERT_ALPHA 0.9f
-
 static void notify( const char* text );
 
 static const char* names[AwlAlertLast] = {
@@ -84,14 +77,25 @@ void awl_alert_init( void ) {
 void awl_alert_addmon( Monitor* m ) {
     m->alert = wlr_scene_buffer_create( tree, NULL );
     m->alert->point_accepts_input = accepts_input;
-    wlr_scene_buffer_set_opacity( m->alert, ALERT_ALPHA );
+    wlr_scene_buffer_set_opacity( m->alert, cfg->alert.opacity );
     wlr_scene_node_set_enabled( &m->alert->node, 0 );
     m->alert_version = (unsigned int)-1;
 }
 
+void awl_alert_configure( void ) {
+    Monitor* m;
+    wl_list_for_each( m, &mons, link ) {
+        if (!m->alert) continue;
+        wlr_scene_buffer_set_opacity( m->alert, cfg->alert.opacity );
+        m->alert_version = (unsigned int)-1;
+    }
+    awl_alert_draw_all();
+}
+
 void awl_alert_draw( Monitor* m ) {
-    static const pixman_color_t fg = { 0xffff, 0xffff, 0xffff, 0xffff },
-                                bg = { 0xc000, 0x0000, 0x0000, 0xffff };
+    const pixman_color_t fg = color_8bit_to_16bit( cfg->alert.fg ),
+                         bg = color_8bit_to_16bit( cfg->alert.bg );
+    const int margin = cfg->alert.margin;
     const char* text = awl_alert_text();
     const float s = m->wlr_output->scale;
     struct fcft_font* font;
@@ -113,15 +117,15 @@ void awl_alert_draw( Monitor* m ) {
     }
 
     /* the font only while drawing; the registry keeps it loaded */
-    if (!(font = awl_font_get( cfg->font, cfg->fontsize * ALERT_FONT_SCALE, s ))) {
+    if (!(font = awl_font_get( cfg->font, cfg->fontsize * cfg->alert.font_scale, s ))) {
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
         return;
     }
     pad = font->height * 6 / 10;
     h = font->height + pad;
     w = (int)awl_draw_text_width( font, text ) + 2 * pad;
-    if (w > (int)(m->m.width * s) - 2 * (int)(ALERT_MARGIN * s))
-        w = (int)(m->m.width * s) - 2 * (int)(ALERT_MARGIN * s);
+    if (w > (int)(m->m.width * s) - 2 * (int)(margin * s))
+        w = (int)(m->m.width * s) - 2 * (int)(margin * s);
     if (w <= 0) {
         awl_font_release( font );
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
@@ -138,8 +142,8 @@ void awl_alert_draw( Monitor* m ) {
     wlr_scene_buffer_set_buffer( m->alert, &buf->base );
     wlr_buffer_drop( &buf->base ); /* the scene holds it now */
     wlr_scene_buffer_set_dest_size( m->alert, (int)(w / s), (int)(h / s) );
-    wlr_scene_node_set_position( &m->alert->node, m->m.x + ALERT_MARGIN,
-            m->m.y + m->m.height - ALERT_MARGIN - (int)(h / s) );
+    wlr_scene_node_set_position( &m->alert->node, m->m.x + margin,
+            m->m.y + m->m.height - margin - (int)(h / s) );
     wlr_scene_node_raise_to_top( &tree->node );
     wlr_scene_node_set_enabled( &m->alert->node, 1 );
 }

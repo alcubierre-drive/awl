@@ -37,6 +37,10 @@ void awl_log_set_level( awl_loglevel_t l ) {
     loglevel = l;
 }
 
+awl_loglevel_t awl_log_level( void ) {
+    return loglevel;
+}
+
 /* one write() of "<color>[awl:level]<reset> message" */
 static void emit( int fd, awl_loglevel_t l, int color, const char* msg, size_t mlen ) {
     char line[1152];

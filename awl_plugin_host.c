@@ -83,6 +83,7 @@ static awl_host_t host = {
     .sizeof_widget = sizeof(widget_t),
     .sizeof_monitor = sizeof(Monitor),
     .sizeof_client = sizeof(Client),
+    .sizeof_config = sizeof(awl_config_t),
 
     .redraw_request = awl_redraw_request,
     .log = awl_dbg_printf,
@@ -105,13 +106,13 @@ static awl_host_t host = {
     .text_over = awl_draw_text_over,
     .text_width = awl_draw_text_width,
 
+    .config_defaults = configdefaults,
     .actions = &awl_actions,
     .arranges = &awl_arranges,
     .focusclient = focusclient,
     .arrange = arrange,
     .monitor_named = monitornamed,
 
-    .popup_config = popupconfig,
     .window_create = popupcreate,
     .window_destroy = popupdestroy,
     .window_set_menu_style = popupsetmenustyle,

@@ -32,8 +32,8 @@ files (icons/icon.h), awl's main thread draws it and decodes the icons at
 the monitor's scale. Each submenu is a popup of its own, beside the row it
 belongs to; hovering opens and closes them after a short delay, and a new
 layout that drops a submenu open (an app rebuilding its menu) waits a moment
-for one that has it again. The menus look as config_plugins.h's
-``popup_config.menu`` says (left out: like the other popups).
+for one that has it again. The menus look as ``c->popup.menu``
+says (left out: like the other popups).
 ``test/sni_menu`` is an item with a menu of every kind of entry, for trying
 it in test/live.sh's session.
 
@@ -55,8 +55,8 @@ plugins/tray_tooltip.h
 Settings and the programs' icon theme
 -------------------------------------
 
-config_plugins.h's ``tray_config``, and what awl's core keeps of the tray:
-the icon theme of the programs started with config_awl.h's ``TRAY_ICONS``
+`awl_config_t.tray` (awl.h), and what awl's core keeps of the tray:
+the icon theme of the programs started with awl.h's ``TRAY_ICONS``
 (tray/app_env.c, and ``libawltray-env.so``, built next to awl from
 tray/env_shim.c and preloaded into them).
 

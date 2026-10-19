@@ -11,6 +11,8 @@
 
 /** the modifier mask without Caps Lock, as keys and buttons are matched */
 #define CLEANMASK(mask)         (mask & ~WLR_MODIFIER_CAPS)
+/** a binding's mod (`Key.mod`, `Button.mod`) with MODKEY as cfg->modkey */
+uint32_t bindmods(uint32_t mod);
 
 extern struct wlr_idle_inhibit_manager_v1 *idle_inhibit_mgr;
 
@@ -18,7 +20,7 @@ extern struct wlr_idle_inhibit_manager_v1 *idle_inhibit_mgr;
  * list of devices configapply() reconfigures */
 void inputinit(void);
 void inputfini(void);
-/** after config_plugins.h changed: the keymap, key repeat, and the
+/** after the config changed: the keymap, key repeat, and the
  * pointers' libinput settings */
 void inputconfigure(void);
 

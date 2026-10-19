@@ -3,7 +3,7 @@
 /**
  * Popups that awl draws itself, part of awl: a box of text, or what a
  * painter (awl_window_draw.h) draws, like the plugins' calendar, next to
- * the bar, styled by config_plugins.h's ``popup_config`` (colors, border,
+ * the bar, styled by ``cfg->popup`` (colors, border,
  * corner radius, padding; blurred behind like the launcher), in its
  * ``font`` (by default the bar's), its ``margin`` away from the bar and the
  * monitor's sides. Not a client: no Wayland
@@ -20,7 +20,7 @@
  * for win and does nothing.
  */
 
-#include "awl.h"
+#include "awl_core.h"
 #include "awl_window_draw.h" /* awl_window_style_t, the drawing */
 
 typedef struct awl_window awl_window_t;
@@ -48,7 +48,7 @@ typedef void (*awl_window_hover_t)( awl_window_t* win, int row, int inside, void
 awl_window_t* awl_window_create( struct wlr_scene_tree* parent, const awl_window_style_t* style );
 void awl_window_destroy( awl_window_t* win );
 
-/** config_plugins.h was reloaded */
+/** plugins_config.c was reloaded */
 void awl_window_set_style( awl_window_t* win, const awl_window_style_t* style );
 
 /** Replaces the text: rows separated by '\n', columns by '\t', plain text

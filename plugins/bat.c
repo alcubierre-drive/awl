@@ -8,7 +8,6 @@
 #include <sys/socket.h>
 #include <linux/netlink.h>
 
-static const char bat_prefix[] = "/sys/class/power_supply/BAT0/";
 static const char tb_devices[] = "/sys/bus/thunderbolt/devices";
 
 /* The kernel sends a uevent whenever a power_supply device changes: the AC
@@ -25,8 +24,9 @@ static int uevent_open( void ) {
     return fd;
 }
 
-awl_battery_t* bat_init( void ) {
+awl_battery_t* bat_init( const char* dir ) {
     awl_battery_t* b = calloc(1, sizeof(awl_battery_t));
+    snprintf( b->dir, sizeof(b->dir), "%s", dir ? dir : "" );
     atomic_init( &b->charge, 0 );
     atomic_init( &b->charging, -1 );
     atomic_init( &b->docked, -1 );
@@ -99,7 +99,7 @@ int bat_dock_update( awl_battery_t* b ) {
 }
 
 int bat_update( awl_battery_t* b ) {
-    char bat_file[128];
+    char bat_file[sizeof(b->dir) + 16];
 
     FILE* f = NULL;
     unsigned long u = 0;
@@ -107,22 +107,19 @@ int bat_update( awl_battery_t* b ) {
 
     float charge = 0.0;
     int charging = 0;
-    strcpy( bat_file, bat_prefix );
-    strcat( bat_file, "energy_now" );
+    snprintf( bat_file, sizeof(bat_file), "%senergy_now", b->dir );
     if ((f = fopen( bat_file, "r" ))) {
         if (fscanf(f, "%lu", &u) == 1) charge = u;
         fclose(f);
         set++;
     }
-    strcpy( bat_file, bat_prefix );
-    strcat( bat_file, "energy_full" );
+    snprintf( bat_file, sizeof(bat_file), "%senergy_full", b->dir );
     if ((f = fopen( bat_file, "r" ))) {
         if (fscanf(f, "%lu", &u) == 1) charge /= (u > 0) ? (float)u : 1.0;
         fclose(f);
         set++;
     }
-    strcpy( bat_file, bat_prefix );
-    strcat( bat_file, "status" );
+    snprintf( bat_file, sizeof(bat_file), "%sstatus", b->dir );
     if ((f = fopen( bat_file, "r" ))) {
         memset( bat_file, 0, sizeof(bat_file) );
         if (fread( bat_file, 1, sizeof(bat_file)-1, f )) {}

@@ -4,6 +4,7 @@
 #include "awl_cursor.h"
 #include "awl_desktop.h"
 #include "awl_layer.h"
+#include "awl_layout.h"
 #include "awl_lockscreen.h"
 #include "awl_log.h"
 #include "awl_output.h"
@@ -40,11 +41,13 @@ static const struct wlr_buffer_impl buffer_impl = {
 static struct {
     char *font;
     int fontsize;
-    char *popupfont; /* popup_config's */
+    char *popupfont; /* cfg->popup's */
     int popupfontsize;
-    char *desktopfont; /* desktop_config's */
+    char *desktopfont; /* cfg->desktop's */
     int desktopfontsize;
-} applied;
+    /* cfg->bar's, -1 before the first */
+    int show, top;
+} applied = { .show = -1, .top = -1 };
 
 /** Bar widget hover (widget_t.callback_hover): hover_widget is the widget
  * under the pointer if it has a hover callback, hover_timer fires its
@@ -316,7 +319,7 @@ drawbar(Monitor *m)
     m->drw.occ = occ;
     m->drw.urg = urg;
     m->drw.sel = m->tagset[m->seltags];
-    m->drw.ntags = LENGTH(tags);
+    m->drw.ntags = TAGCOUNT;
     m->drw.selmon = (m == selmon);
     if (wl_list_length(&mons) == 1) m->drw.selmon = -1;
     m->drw.pertag = m->pertag;
@@ -350,7 +353,7 @@ drawbar(Monitor *m)
     wlr_scene_buffer_set_dest_size(m->scene_buffer,
         m->b.real_width, m->b.real_height);
     wlr_scene_node_set_position(&m->scene_buffer->node, m->m.x,
-        m->m.y + (topbar ? 0 : m->m.height - m->b.real_height));
+        m->m.y + (cfg->bar.top ? 0 : m->m.height - m->b.real_height));
     /* the window list's box, from buffer to logical pixels */
     if (m->b.width) {
         uint32_t cx = m->drw.has_center_widget ? m->drw.center_widget_start : 0,
@@ -359,8 +362,8 @@ drawbar(Monitor *m)
             bw = (int)((uint64_t)(cx + cw) * m->b.real_width / m->b.width) - bx;
         wlr_scene_blur_set_size(m->bar_blur, bw, m->b.real_height);
         wlr_scene_node_set_position(&m->bar_blur->node, m->m.x + bx,
-            m->m.y + (topbar ? 0 : m->m.height - m->b.real_height));
-        wlr_scene_node_set_enabled(&m->bar_blur->node, cfg->blur_windowlist && bw > 0);
+            m->m.y + (cfg->bar.top ? 0 : m->m.height - m->b.real_height));
+        wlr_scene_node_set_enabled(&m->bar_blur->node, cfg->blur.windowlist && bw > 0);
     }
     /* only hand the scene a new buffer if the pixels actually changed, and
      * only damage the output where they did (usually just the clock and the
@@ -507,8 +510,8 @@ updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const c
 static void
 updatefonts(Monitor *m)
 {
-    updatefont(m, &m->popupfont, cfg->popup->font, cfg->popup->fontsize, "popup");
-    updatefont(m, &m->desktopfont, cfg->desktop->font, cfg->desktop->fontsize, "desktop");
+    updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize, "popup");
+    updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize, "desktop");
 }
 
 void
@@ -571,13 +574,13 @@ baraddmon(Monitor *m)
     m->scene_buffer = wlr_scene_buffer_create(layers[LyrBottom], NULL);
     m->scene_buffer->point_accepts_input = bar_accepts_input;
     /* frosts the window list's translucent entries; drawbar() fits it and
-     * enables it with cfg->blur_windowlist */
+     * enables it with cfg->blur.windowlist */
     m->bar_blur = wlr_scene_blur_create(layers[LyrBottom], 0, 0);
     wlr_scene_node_place_below(&m->bar_blur->node, &m->scene_buffer->node);
-    wlr_scene_blur_set_strength(m->bar_blur, cfg->blur[0]);
-    wlr_scene_blur_set_alpha(m->bar_blur, cfg->blur[1]);
+    wlr_scene_blur_set_strength(m->bar_blur, cfg->blur.strength);
+    wlr_scene_blur_set_alpha(m->bar_blur, cfg->blur.alpha);
 
-    m->showbar = showbar;
+    m->showbar = !!cfg->bar.show;
     updatebar(m);
     drawbar(m);
 }
@@ -655,35 +658,50 @@ barconfigure(void)
             arrangelayers(m);
         }
     }
+    /* the bars' place, and whether they're shown: every bar follows a
+     * change (togglebar's state otherwise stays) */
+    if (applied.top >= 0 && !!cfg->bar.top != applied.top)
+        wl_list_for_each(m, &mons, link)
+            if (m->drw.m) {
+                arrangelayers(m);
+                popupsupdate(m);
+            }
+    applied.top = !!cfg->bar.top;
+    if (applied.show >= 0 && !!cfg->bar.show != applied.show)
+        wl_list_for_each(m, &mons, link)
+            if (m->drw.m && m->showbar != !!cfg->bar.show)
+                togglebar_mon(m);
+    applied.show = !!cfg->bar.show;
+
     /* the popups' (updatebar() above reloaded it too, no harm) */
-    if (!streqnull(cfg->popup->font, applied.popupfont)
-            || cfg->popup->fontsize != applied.popupfontsize) {
+    if (!streqnull(cfg->popup.font, applied.popupfont)
+            || cfg->popup.fontsize != applied.popupfontsize) {
         free(applied.popupfont);
-        applied.popupfont = strdupnull(cfg->popup->font);
-        applied.popupfontsize = cfg->popup->fontsize;
+        applied.popupfont = strdupnull(cfg->popup.font);
+        applied.popupfontsize = cfg->popup.fontsize;
         wl_list_for_each(m, &mons, link) {
             if (!m->drw.m || !m->drw.font)
                 continue;
-            updatefont(m, &m->popupfont, cfg->popup->font, cfg->popup->fontsize, "popup");
+            updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize, "popup");
             popupsupdate(m);
         }
     }
     /* the desktop file list's, the same way */
-    if (!streqnull(cfg->desktop->font, applied.desktopfont)
-            || cfg->desktop->fontsize != applied.desktopfontsize) {
+    if (!streqnull(cfg->desktop.font, applied.desktopfont)
+            || cfg->desktop.fontsize != applied.desktopfontsize) {
         free(applied.desktopfont);
-        applied.desktopfont = strdupnull(cfg->desktop->font);
-        applied.desktopfontsize = cfg->desktop->fontsize;
+        applied.desktopfont = strdupnull(cfg->desktop.font);
+        applied.desktopfontsize = cfg->desktop.fontsize;
         wl_list_for_each(m, &mons, link) {
             if (!m->drw.m || !m->drw.font)
                 continue;
-            updatefont(m, &m->desktopfont, cfg->desktop->font, cfg->desktop->fontsize, "desktop");
+            updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize, "desktop");
             desktop_fontchanged(m);
         }
     }
     wl_list_for_each(m, &mons, link) {
-        wlr_scene_blur_set_strength(m->bar_blur, cfg->blur[0]);
-        wlr_scene_blur_set_alpha(m->bar_blur, cfg->blur[1]);
+        wlr_scene_blur_set_strength(m->bar_blur, cfg->blur.strength);
+        wlr_scene_blur_set_alpha(m->bar_blur, cfg->blur.alpha);
     }
 }
 

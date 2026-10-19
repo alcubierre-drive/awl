@@ -155,8 +155,8 @@ buttonpress(struct wl_listener *listener, void *data)
 
         keyboard = wlr_seat_get_keyboard(seat);
         mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
-        for (b = cfg->buttons; b < cfg->buttons + cfg->n_buttons; b++) {
-            if (CLEANMASK(mods) == CLEANMASK(b->mod) &&
+        for (b = cfg->buttons.v; b < cfg->buttons.v + cfg->buttons.n; b++) {
+            if (CLEANMASK(mods) == CLEANMASK(bindmods(b->mod)) &&
                     event->button == b->button && b->func) {
                 if (b->click == click) {
                     b->func(&b->arg);

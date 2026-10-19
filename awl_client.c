@@ -22,7 +22,7 @@ struct wl_list clients;
 struct wl_list fstack;
 void *exclusive_focus;
 uint32_t borders[BorderLast];
-/** the border width config_plugins.h had, to tell whether a reload changed
+/** the border width plugins_config.c had, to tell whether a reload changed
  * it */
 static unsigned int applied_borderpx;
 void
@@ -78,7 +78,7 @@ applyrules(Client *c)
     int apply_resize = 0;
     struct wlr_box rbox;
 
-    for (r = cfg->rules; r < cfg->rules + cfg->n_rules; r++) {
+    for (r = cfg->rules.v; r < cfg->rules.v + cfg->rules.n; r++) {
         if ((!r->title || strstr(title, r->title))
                 && (!r->id || strstr(appid, r->id))) {
             c->isfloating = r->isfloating;
@@ -117,8 +117,8 @@ attachblur(Client *c)
     if (!c->blur) {
         c->blur = wlr_scene_blur_create(tree, 0, 0);
         wlr_scene_blur_set_size(c->blur, c->geom.width, c->geom.height);
-        wlr_scene_blur_set_strength(c->blur, cfg->blur[0]);
-        wlr_scene_blur_set_alpha(c->blur, cfg->blur[1]);
+        wlr_scene_blur_set_strength(c->blur, cfg->blur.strength);
+        wlr_scene_blur_set_alpha(c->blur, cfg->blur.alpha);
         wlr_scene_blur_set_should_only_blur_bottom_layer(c->blur, 0);
         wlr_scene_node_lower_to_bottom(&c->blur->node);
         wlr_scene_node_set_enabled(&c->blur->node, 1);
@@ -694,6 +694,7 @@ setmon(Client *c, Monitor *m, uint32_t newtags)
     if (m) {
         /* Make sure window actually overlaps with the monitor */
         resize(c, c->geom, 0);
+        newtags &= TAGMASK;
         c->tags = newtags ? newtags : m->tagset[m->seltags]; /* assign tags of target monitor */
         setfullscreen(c, c->isfullscreen); /* This will call arrange(c->mon) */
         setfloating(c, c->isfloating);
@@ -868,7 +869,7 @@ clientsconfigure(void)
             arrange(m);
     }
 
-    memcpy(borders, *cfg->bordercolors, sizeof(borders));
+    memcpy(borders, cfg->bordercolors, sizeof(borders));
     wl_list_for_each(c, &clients, link)
         if (c->border[0])
             client_set_border_color(c, (float[])RGBA(borders[c->isurgent ? BorderUrg
@@ -878,7 +879,7 @@ clientsconfigure(void)
     wl_list_for_each(c, &clients, link) {
         if (!c->blur)
             continue;
-        wlr_scene_blur_set_strength(c->blur, cfg->blur[0]);
-        wlr_scene_blur_set_alpha(c->blur, cfg->blur[1]);
+        wlr_scene_blur_set_strength(c->blur, cfg->blur.strength);
+        wlr_scene_blur_set_alpha(c->blur, cfg->blur.alpha);
     }
 }

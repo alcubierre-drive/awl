@@ -13,7 +13,7 @@ awl is two binaries:
    Everything that is meant to change often: the plugin threads that collect
    what the bar shows, the bar widgets (the tray among them, see
    :doc:`api/tray`), the desktop panel's contents, picking
-   and decoding the wallpaper, and config_plugins.h. awl loads
+   and decoding the wallpaper, and plugins_config.c. awl loads
    it at startup and swaps in a rebuilt one on ``plugin_restart``. See
    :doc:`reload` and :doc:`api/plugin-abi`.
 
@@ -23,12 +23,14 @@ What lives where
 The file names say which binary a file belongs to: ``awl_*`` (and awl.c,
 awl.h) to ``awl``, where awl.c starts and ends it and each awl_*.c is one of
 its parts (see :doc:`api/awl`), ``plugins_*`` and plugins/ (and plugins.c, plugins.h) to
-``libawlplugins.so``; tray/ is awl's, the tray's settings and the icon theme
-of the programs it starts with ``TRAY_ICONS``. The headers that make up
-awl's side of the interface (awl_host.h, awl_plugin_abi.h, awl_draw.h,
-awl_log.h, awl_dict_type.h) are included by the libraries too. config_awl.h
-belongs to ``awl``, config_plugins.h to the library (awl builds in
-config_plugins.def.h only as a fallback).
+``libawlplugins.so``; tray/ is awl's, the icon theme of the programs it
+starts with ``TRAY_ICONS``. Every type the library shares with awl is in
+awl.h; the headers that make up awl's side of the interface (awl.h,
+awl_host.h, awl_plugin_abi.h, awl_draw.h, awl_log.h, awl_dict_type.h) are
+included by the libraries too, awl's own types are in awl_core.h.
+config.mk's compile-time switches belong to ``awl``, plugins_config.c to the library, which
+changes awl's defaults (awl_defaults.c) and its own (plugins_defaults.c)
+with it.
 
 .. list-table::
    :header-rows: 1
@@ -56,8 +58,10 @@ config_plugins.def.h only as a fallback).
      - scans ``desktop_dir``, lays out and draws the list, handles
        clicks on the bare desktop (plugins_desktop_panel.c)
    * - Config
-     - config_awl.h, and config_plugins.def.h as a fallback
-     - config_plugins.h (plugins_config.c)
+     - config.mk's switches, and `awl_config_t` with its defaults (awl_defaults.c)
+     - `awl_plugin_config_t` with its defaults (plugins_defaults.c), and
+       the configuration's changes to both (plugins_config.c, its ``CUSTOM``
+       part)
    * - Notifications
      - alerts (awl_alert.c)
      - spawns ``notify-send`` (plugins.c)
@@ -96,7 +100,7 @@ A redraw, end to end
 Locking
 -------
 
-awl locks with an ext-session-lock client, config_awl.h's ``locker``
+awl locks with an ext-session-lock client, ``cfg->lock.locker``
 (swaylock by default), started by `lockscreen()`: as the ``lockscreen``
 action, at start with ``lock_at_start``, and on request of the plugins'
 logind thread, which listens for ``loginctl lock-session`` and for an
@@ -116,5 +120,7 @@ Where to start reading
 * plugins/thread.h and awl_redraw.h: how every background thread starts,
   stops and reports.
 * awl_draw.h: `widget_t`, the unit the bar is made of.
-* config_awl.def.h and config_plugins.def.h: the configuration, read at
-  startup and reloadable.
+* config.mk (compile-time switches), awl.h's `awl_config_t` (defaults in awl_defaults.c)
+  and plugins.h's `awl_plugin_config_t` (defaults in plugins_defaults.c),
+  both changed by plugins_config.c's ``CUSTOM`` part: the configuration, read at startup and
+  reloadable.

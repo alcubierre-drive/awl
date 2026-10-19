@@ -38,6 +38,8 @@ typedef enum {
 void awl_log_init( const char* path );
 /** discards every message above loglevel */
 void awl_log_set_level( awl_loglevel_t loglevel );
+/** what `awl_log_set_level()` set */
+awl_loglevel_t awl_log_level( void );
 
 /** prints fmt with the prefix of loglevel; fmt ends in its own newline */
 void awl_dbg_printf( awl_loglevel_t loglevel, const char* fmt, ... )

@@ -98,8 +98,8 @@ int awl_window_layout( awl_window_layout_t* L, const char* text, const awl_windo
     if (!font) return 0;
     if (!text) text = "";
     const int fh = L->fh = font->height;
-    L->colsp = (int)lroundf( AWL_WINDOW_COLUMN_SPACING * s );
-    L->rowsp = (int)lroundf( AWL_WINDOW_ROW_SPACING * s );
+    L->colsp = (int)lroundf( fmaxf( (float)style->column_spacing, 0 ) * s );
+    L->rowsp = (int)lroundf( fmaxf( (float)style->row_spacing, 0 ) * s );
     L->border_width = (int)lroundf( fmaxf( (float)style->border_width, 0 ) * s );
     L->radius = fmaxf( (float)style->radius, 0 ) * s;
     L->x0 = L->y0 = awl_window_inset( style, s );

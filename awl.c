@@ -32,7 +32,6 @@ static void gpureset(struct wl_listener *listener, void *data);
 static int handlesigquit(int signo, void *data);
 static void run(char *startup_cmd);
 static void setup(void);
-static void wlrlog(enum wlr_log_importance importance, const char *fmt, va_list ap);
 
 struct wl_display *dpy;
 struct wl_event_loop *event_loop;
@@ -266,7 +265,7 @@ run(char *startup_cmd)
     awl_dict_unlock(cfgdict);
 
     /* the icon theme of the programs started with TRAY_ICONS */
-    awl_tray_app_set_theme(cfg->tray->icon_theme);
+    awl_tray_app_set_theme(cfg->tray.icon_theme);
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM
      * master, etc */
@@ -274,7 +273,7 @@ run(char *startup_cmd)
         die("startup: backend_start");
 
     /* Now that the socket exists and the backend is started, run the
-     * startup command and config_awl.h's Autostarts */
+     * startup command and cfg->autostart */
     spawnstartup(startup_cmd);
     autostartall();
 
@@ -298,7 +297,7 @@ run(char *startup_cmd)
     wlr_cursor_warp_closest(cursor, NULL, cursor->x, cursor->y);
     wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
 
-    if (lock_at_start)
+    if (cfg->lock.at_start)
         lockscreen(NULL);
 
     /* Run the Wayland event loop. This does not return until you exit the
@@ -333,7 +332,7 @@ setup(void)
     /* until the library is loaded */
     cfg = builtinconfig();
 
-    wlr_log_init(log_level, wlrlog);
+    wlrloginit();
 
     /* The Wayland display is managed by libwayland. It handles accepting
      * clients from the Unix socket, manging Wayland globals, and so on. */
@@ -356,7 +355,7 @@ setup(void)
 
     /* Initialize the scene graph used to lay out windows */
     scene = wlr_scene_create();
-    root_bg = wlr_scene_rect_create(&scene->tree, 0, 0, cfg->rootcolor);
+    root_bg = wlr_scene_rect_create(&scene->tree, 0, 0, (float[4])RGBA(cfg->rootcolor));
     for (i = 0; i < NUM_LAYERS; i++) {
         layers[i] = wlr_scene_tree_create(&scene->tree);
     }
@@ -369,9 +368,9 @@ setup(void)
     /* the desktop_dir panels, over the wallpaper (see awl_desktop.h) */
     desktop_tree = wlr_scene_tree_create(&scene->tree);
     wlr_scene_node_place_above(&desktop_tree->node, &layers[LyrBg]->node);
-    desktop_init(desktop_tree, &(desktop_config_t){
-            .blur = cfg->blur_launcher, .radius = cfg->blur_launcher_radius,
-            .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] });
+    desktop_init(desktop_tree, &(desktop_style_t){
+            .blur = cfg->blur.launcher, .radius = cfg->blur.launcher_radius,
+            .blur_strength = cfg->blur.strength, .blur_alpha = cfg->blur.alpha });
     /* the alerts, over everything (awl_alert_draw() keeps it on top) */
     awl_alert_init();
 
@@ -576,16 +575,6 @@ setup(void)
 #endif
 }
 
-/* wlroots' (and scenefx') messages; wlroots drops those above log_level */
-static void
-wlrlog(enum wlr_log_importance importance, const char *fmt, va_list ap)
-{
-    char msg[1024];
-    vsnprintf(msg, sizeof(msg), fmt, ap);
-    awl_dbg_printf(importance == WLR_ERROR ? awl_loglevel_err
-            : importance == WLR_INFO ? awl_loglevel_log : awl_loglevel_vrb, "wlr: %s\n", msg);
-}
-
 int
 main(int argc, char *argv[])
 {
@@ -598,10 +587,8 @@ main(int argc, char *argv[])
             startup_cmd = optarg;
         else if (c == 'l')
             logfile = optarg;
-        else if (c == 'd') {
-            log_level = WLR_DEBUG;
-            awl_log_set_level(awl_loglevel_vrb);
-        }
+        else if (c == 'd')
+            awl_log_set_level(awl_loglevel_vrb); /* wlroots' too, see wlrloginit() */
         else if (c == 'v') {
             puts("awl " VERSION);
             return EXIT_SUCCESS;

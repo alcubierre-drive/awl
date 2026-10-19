@@ -386,7 +386,7 @@ awl_icons_t* sni_themes( void ) {
     awl_sni_t* s = the;
     if (!s) return NULL;
     if (!s->themes) {
-        s->themes = awl_icons_new_desktop( awl_config()->tray->icon_theme );
+        s->themes = awl_icons_new_desktop( awl_config()->tray.icon_theme );
     }
     return s->themes;
 }

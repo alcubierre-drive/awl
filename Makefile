@@ -19,14 +19,14 @@ LDLIBS    = `$(PKG_CONFIG) --libs $(PKGS)` -lm $(LIBS)
 # libawlplugins.so: the plugin threads and the bar widgets, dlopen()ed by
 # awl_plugin_host.c and reloaded with plugin_restart (see awl_plugin_abi.h).
 PLUGINS_SRC := $(wildcard plugins/*.c)
-PLUGINS_OBJ := $(patsubst %.c,%.o,$(PLUGINS_SRC)) plugins.o plugins_widgets.o plugins_desktop_panel.o plugins_config.o \
+PLUGINS_OBJ := $(patsubst %.c,%.o,$(PLUGINS_SRC)) plugins.o plugins_widgets.o plugins_desktop_panel.o plugins_config.o plugins_defaults.o \
 	wuffs/wuffs.o plutosvg/svg.o icons/icon.o
 PLUGINS_PKGS = libpulse libsystemd pixman-1 fcft
 # --as-needed drops config.mk's -lscenefx, which only awl uses
 PLUGINS_LIBS = -Wl,--as-needed `$(PKG_CONFIG) --libs $(PLUGINS_PKGS)` -lm -pthread
 
 # awl.c starts and ends awl; each awl_*.c is a part of it, see its header
-AWL_OBJ := awl.o awl_config.o awl_output.o awl_bar.o awl_popup.o awl_client.o awl_xwayland.o \
+AWL_OBJ := awl.o awl_config.o awl_defaults.o awl_output.o awl_bar.o awl_popup.o awl_client.o awl_xwayland.o \
 	awl_layout.o awl_layer.o awl_input.o awl_cursor.o awl_lockscreen.o awl_spawn.o awl_wallpaper.o \
 	awl_test.o awl_log.o awl_dict.o awl_util.o awl_draw.o awl_plugin_host.o awl_desktop.o \
 	awl_background.o awl_redraw.o awl_sni.o awl_alert.o awl_window.o awl_window_draw.o \
@@ -64,12 +64,12 @@ endif
 libawlplugins.so: $(PLUGINS_OBJ)
 	$(CC) -shared $(PLUGINS_OBJ) $(AWLCFLAGS) $(PLUGINS_LIBS) $(LDFLAGS) -o $@.tmp
 	mv -f $@.tmp $@
-# the generated headers awl.h includes, and the config headers, before
-# anything that includes them compiles (the .d files know them only after)
+# the generated headers awl.h includes, before anything that includes them
+# compiles (the .d files know them only after)
 PROTOCOL_H = cursor-shape-v1-protocol.h pointer-constraints-unstable-v1-protocol.h \
 	wlr-layer-shell-unstable-v1-protocol.h wlr-output-power-management-unstable-v1-protocol.h \
 	xdg-shell-protocol.h
-$(AWL_OBJ) $(PLUGINS_OBJ): | $(PROTOCOL_H) config_awl.h config_plugins.h
+$(AWL_OBJ) $(PLUGINS_OBJ): | $(PROTOCOL_H)
 $(AWL_OBJ): config.mk
 
 # make dev: dev/awl and dev/libawlplugins.so, unoptimized with full debug
@@ -86,7 +86,7 @@ DEV_PLUGINS_OBJ := $(addprefix dev/,$(PLUGINS_OBJ))
 DEPS += $(patsubst %.o,%.d,$(DEV_AWL_OBJ) $(DEV_PLUGINS_OBJ)) env_shim.d dev/env_shim.d
 $(DEV_PLUGINS_OBJ): AWLCFLAGS += -fPIC -fvisibility=hidden -DAWL_HOSTED \
 	`$(PKG_CONFIG) --cflags $(PLUGINS_PKGS)`
-$(DEV_AWL_OBJ) $(DEV_PLUGINS_OBJ): | $(PROTOCOL_H) config_awl.h config_plugins.h
+$(DEV_AWL_OBJ) $(DEV_PLUGINS_OBJ): | $(PROTOCOL_H)
 $(DEV_AWL_OBJ): config.mk
 
 dev: dev/awl dev/libawlplugins.so
@@ -133,10 +133,6 @@ xdg-shell-protocol.h:
 	$(WAYLAND_SCANNER) server-header \
 		$(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $@
 
-# on the first build, copied from their .def.h
-config_awl.h config_plugins.h:
-	cp $(@:.h=.def.h) $@
-plugins_config.o dev/plugins_config.o: config_plugins.h
 # icons/*.png embedded as static C arrays by xxd -i
 icons/eyes_closed.h: icons/eyes_closed.png
 	xxd -i -n icons_eyes_closed_png icons/eyes_closed.png | sed 's/^unsigned/static const unsigned/' > $@
@@ -162,7 +158,6 @@ clean:
 dist: clean
 	mkdir -p awl-$(VERSION)/plugins awl-$(VERSION)/tray awl-$(VERSION)/wuffs awl-$(VERSION)/icons
 	cp -R LICENSE Makefile README.md config.mk protocols \
-		config_awl.def.h config_plugins.def.h \
 		awl.c awl.h awl_*.c awl_*.h \
 		plugins.c plugins.h plugins_*.c \
 		awl-$(VERSION)

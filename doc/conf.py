@@ -29,6 +29,7 @@ hawkmoth_clang = [
     '-std=c11',
     '-I' + hawkmoth_root,
     '-DWLR_USE_UNSTABLE', '-D_POSIX_C_SOURCE=200809L', '-DXWAYLAND',
+    # CUSTOM: where this machine's scenefx is installed (config.mk's AWL_LIBS)
     '-I' + os.path.expanduser('~/Desktop/awl-libs/include/scenefx-0.5'),
     # every header is also parsed on its own
     '-Wno-pragma-once-outside-header',

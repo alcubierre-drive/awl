@@ -18,7 +18,7 @@ typedef struct {
     struct wl_listener destroy;
 } KeyboardGroup;
 
-/** the keyboards and pointers, to apply a reloaded config_plugins.h to */
+/** the keyboards and pointers, to apply a reloaded plugins_config.c to */
 typedef struct {
     struct wlr_input_device *device;
     struct wl_listener destroy;
@@ -91,7 +91,7 @@ compilekeymap(void)
 {
     struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     struct xkb_keymap *keymap = context ? xkb_keymap_new_from_names(context,
-            cfg->xkb_rules, XKB_KEYMAP_COMPILE_NO_FLAGS) : NULL;
+            &cfg->keyboard.xkb, XKB_KEYMAP_COMPILE_NO_FLAGS) : NULL;
     xkb_context_unref(context);
     return keymap;
 }
@@ -106,7 +106,7 @@ createkeyboardgroup(void)
     group->wlr_group->data = group;
 
     /* Prepare an XKB keymap and assign it to the keyboard group: the one in
-     * effect, which is config_plugins.h's unless a reload brought a broken one */
+     * effect, which is the config's unless a reload brought a broken one */
     if (kb_group)
         keymap = xkb_keymap_ref(kb_group->wlr_group->keyboard.keymap);
     else if (!(keymap = compilekeymap()))
@@ -116,8 +116,8 @@ createkeyboardgroup(void)
     xkb_keymap_unref(keymap);
 
     wlr_keyboard_set_repeat_info(&group->wlr_group->keyboard,
-            kb_group ? kb_group->wlr_group->keyboard.repeat_info.rate : cfg->repeat_rate,
-            kb_group ? kb_group->wlr_group->keyboard.repeat_info.delay : cfg->repeat_delay);
+            kb_group ? kb_group->wlr_group->keyboard.repeat_info.rate : cfg->keyboard.repeat_rate,
+            kb_group ? kb_group->wlr_group->keyboard.repeat_info.delay : cfg->keyboard.repeat_delay);
 
     /* Set up listeners for keyboard events */
     LISTEN(&group->wlr_group->keyboard.events.key, &group->key, keypress);
@@ -142,36 +142,36 @@ configurepointer(struct wlr_pointer *pointer)
             && (device = wlr_libinput_get_device_handle(&pointer->base))) {
 
         if (libinput_device_config_tap_get_finger_count(device)) {
-            libinput_device_config_tap_set_enabled(device, cfg->tap_to_click);
-            libinput_device_config_tap_set_drag_enabled(device, cfg->tap_and_drag);
-            libinput_device_config_tap_set_drag_lock_enabled(device, cfg->drag_lock);
-            libinput_device_config_tap_set_button_map(device, cfg->button_map);
+            libinput_device_config_tap_set_enabled(device, cfg->pointer.tap_to_click);
+            libinput_device_config_tap_set_drag_enabled(device, cfg->pointer.tap_and_drag);
+            libinput_device_config_tap_set_drag_lock_enabled(device, cfg->pointer.drag_lock);
+            libinput_device_config_tap_set_button_map(device, cfg->pointer.button_map);
         }
 
         if (libinput_device_config_scroll_has_natural_scroll(device))
-            libinput_device_config_scroll_set_natural_scroll_enabled(device, cfg->natural_scrolling);
+            libinput_device_config_scroll_set_natural_scroll_enabled(device, cfg->pointer.natural_scrolling);
 
         if (libinput_device_config_dwt_is_available(device))
-            libinput_device_config_dwt_set_enabled(device, cfg->disable_while_typing);
+            libinput_device_config_dwt_set_enabled(device, cfg->pointer.disable_while_typing);
 
         if (libinput_device_config_left_handed_is_available(device))
-            libinput_device_config_left_handed_set(device, cfg->left_handed);
+            libinput_device_config_left_handed_set(device, cfg->pointer.left_handed);
 
         if (libinput_device_config_middle_emulation_is_available(device))
-            libinput_device_config_middle_emulation_set_enabled(device, cfg->middle_button_emulation);
+            libinput_device_config_middle_emulation_set_enabled(device, cfg->pointer.middle_button_emulation);
 
         if (libinput_device_config_scroll_get_methods(device) != LIBINPUT_CONFIG_SCROLL_NO_SCROLL)
-            libinput_device_config_scroll_set_method(device, cfg->scroll_method);
+            libinput_device_config_scroll_set_method(device, cfg->pointer.scroll_method);
 
         if (libinput_device_config_click_get_methods(device) != LIBINPUT_CONFIG_CLICK_METHOD_NONE)
-            libinput_device_config_click_set_method(device, cfg->click_method);
+            libinput_device_config_click_set_method(device, cfg->pointer.click_method);
 
         if (libinput_device_config_send_events_get_modes(device))
-            libinput_device_config_send_events_set_mode(device, cfg->send_events_mode);
+            libinput_device_config_send_events_set_mode(device, cfg->pointer.send_events_mode);
 
         if (libinput_device_config_accel_is_available(device)) {
-            libinput_device_config_accel_set_profile(device, cfg->accel_profile);
-            libinput_device_config_accel_set_speed(device, cfg->accel_speed);
+            libinput_device_config_accel_set_profile(device, cfg->pointer.accel_profile);
+            libinput_device_config_accel_set_speed(device, cfg->pointer.accel_speed);
         }
     }
 }
@@ -237,6 +237,12 @@ inputdevice(struct wl_listener *listener, void *data)
     wlr_seat_set_capabilities(seat, caps);
 }
 
+uint32_t
+bindmods(uint32_t mod)
+{
+    return mod & MODKEY ? (mod & ~MODKEY) | cfg->modkey : mod;
+}
+
 int
 keybinding(uint32_t mods, xkb_keysym_t sym)
 {
@@ -246,8 +252,8 @@ keybinding(uint32_t mods, xkb_keysym_t sym)
      * processing.
      */
     const Key *k;
-    for (k = cfg->keys; k < cfg->keys + cfg->n_keys; k++) {
-        if (CLEANMASK(mods) == CLEANMASK(k->mod)
+    for (k = cfg->keys.v; k < cfg->keys.v + cfg->keys.n; k++) {
+        if (CLEANMASK(mods) == CLEANMASK(bindmods(k->mod))
                 && sym == k->keysym && k->func) {
             // awl_vrb_printf( "keybinding: (mod:%u key:%u func:%p arg:%li)\n", k->mod, k->keysym, k->func, k->arg.v );
             k->func(&k->arg);
@@ -421,15 +427,15 @@ inputconfigure(void)
 {
     InputDevice *d;
     struct xkb_keymap *keymap;
-    const char *xkb[5] = { cfg->xkb_rules->rules, cfg->xkb_rules->model,
-        cfg->xkb_rules->layout, cfg->xkb_rules->variant, cfg->xkb_rules->options };
+    const char *xkb[5] = { cfg->keyboard.xkb.rules, cfg->keyboard.xkb.model,
+        cfg->keyboard.xkb.layout, cfg->keyboard.xkb.variant, cfg->keyboard.xkb.options };
     int i, changed;
 
     /* keyboards: the virtual ones keep the keymaps their clients gave them */
     for (i = changed = 0; i < (int)LENGTH(xkb); i++)
         changed |= !streqnull(xkb[i], applied.xkb[i]);
     if (changed && !(keymap = compilekeymap())) {
-        awl_wrn_printf("config_plugins.h: can't compile the keymap, keeping the old one\n");
+        awl_wrn_printf("plugins_config.c: can't compile the keymap, keeping the old one\n");
     } else if (changed) {
         wlr_keyboard_set_keymap(&kb_group->wlr_group->keyboard, keymap);
         wl_list_for_each(d, &inputdevices, link)
@@ -441,11 +447,11 @@ inputconfigure(void)
             applied.xkb[i] = strdupnull(xkb[i]);
         }
     }
-    if (cfg->repeat_rate != applied.repeat_rate || cfg->repeat_delay != applied.repeat_delay) {
+    if (cfg->keyboard.repeat_rate != applied.repeat_rate || cfg->keyboard.repeat_delay != applied.repeat_delay) {
         wlr_keyboard_set_repeat_info(&kb_group->wlr_group->keyboard,
-                cfg->repeat_rate, cfg->repeat_delay);
-        applied.repeat_rate = cfg->repeat_rate;
-        applied.repeat_delay = cfg->repeat_delay;
+                cfg->keyboard.repeat_rate, cfg->keyboard.repeat_delay);
+        applied.repeat_rate = cfg->keyboard.repeat_rate;
+        applied.repeat_delay = cfg->keyboard.repeat_delay;
     }
 
     wl_list_for_each(d, &inputdevices, link)

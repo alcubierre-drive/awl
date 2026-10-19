@@ -27,7 +27,7 @@ void barremovemon(Monitor *m);
 void barwidgetsclear(void);
 /** after it: every bar gets the library's widgets again */
 void barwidgetsattach(void);
-/** after config_plugins.h changed: the bars' fonts (and with them their
+/** after plugins_config.c changed: the bars' fonts (and with them their
  * height), the popups' and the desktop file list's, the window list's blur */
 void barconfigure(void);
 

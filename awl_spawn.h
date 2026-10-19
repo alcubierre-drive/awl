@@ -1,8 +1,7 @@
 #pragma once
 
 /**
- * Child processes, part of awl: the startup command (-s), config_awl.h's
- * Autostarts, what the spawn action and the screen lock start (awl_spawn.c).
+ * Child processes, part of awl: the startup command (-s), cfg->autostart, what the spawn action and the screen lock start (awl_spawn.c).
  * The startup command and the autostarted programs are terminated when awl
  * exits. Main thread only.
  */
@@ -12,7 +11,7 @@
 
 /** starts cmd with /bin/sh, if not NULL */
 void spawnstartup(const char *cmd);
-/** starts config_awl.h's Autostarts */
+/** starts cfg->autostart, once at awl's start */
 void autostartall(void);
 /** starts arg->v, an argv (TRAY_ICONS first: the rest in the tray's icon
  * theme); its pid, -1 if it couldn't */

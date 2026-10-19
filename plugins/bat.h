@@ -13,9 +13,12 @@ typedef struct awl_battery_t {
 
     /** kernel uevents (netlink), -1 if unavailable */
     int uevent_fd;
+    /** the battery's sysfs directory, with a trailing '/' */
+    char dir[256];
 } awl_battery_t;
 
-awl_battery_t* bat_init( void );
+/** reads the battery in dir (`awl_plugin_config_t.battery`) */
+awl_battery_t* bat_init( const char* dir );
 /** Re-reads the battery; returns nonzero if charge or state changed. */
 int bat_update( awl_battery_t* b );
 /** Re-reads whether a dock is attached; returns nonzero if that changed. */

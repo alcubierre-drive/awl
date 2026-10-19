@@ -31,15 +31,20 @@ XLIBS = xcb xcb-icccm
 CC = gcc
 
 CFLAGS = -std=c11 -Wall -Wextra -pedantic -Wno-unused-parameter
+# CUSTOM: awl's compile-time switches, applied by a rebuild and restart of awl
+# the lock screen's shatter effect, if your scenefx has it
+CFLAGS += -DSCENEFX_HAS_SHATTER
 
 # CFLAGS += -fsanitize=address -fsanitize=leak
 # LDFLAGS += -fsanitize=address -fsanitize=leak
 # LDFLAGS += -fsanitize=undefined
 # CFLAGS += -ggdb
 # CFLAGS += -O0
+# CUSTOM: this machine's optimization flags
 CFLAGS += -Ofast -march=native -mtune=native -flto
 LDFLAGS += -Ofast -march=native -mtune=native -flto=12 -Wno-maybe-uninitialized
 
+# CUSTOM: where this machine's scenefx is installed
 AWL_LIBS := $(HOME)/Desktop/awl-libs
 CFLAGS += -I$(AWL_LIBS)/include/scenefx-0.5
 LDFLAGS += -L$(AWL_LIBS)/lib -Wl,-rpath=$(AWL_LIBS)/lib -lscenefx-0.5

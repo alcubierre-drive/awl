@@ -1,11 +1,13 @@
 awl
 ===
 
-The compositor itself. awl.h holds the types the config files and the plugin
-library share with awl, awl_server.h the core objects every part of awl uses
+The compositor itself. awl.h holds every type the plugin library shares with
+awl, the configuration `awl_config_t` among them; awl_core.h the types only
+awl's modules share; awl_server.h the core objects every part of awl uses
 (the display, the backend, the scene, the seat). awl.c starts awl, runs its
 main loop and takes it down again; everything else is a module of its own,
-each with a header: the configuration and its reloads (awl_config.h), the
+each with a header: the configuration, its defaults (awl_defaults.c) and its
+reloads (awl_config.h), the
 outputs (awl_output.h), the clients (awl_client.h, awl_xwayland.h), layouts
 and tags (awl_layout.h), layer surfaces (awl_layer.h), the input devices and
 the pointer (awl_input.h, awl_cursor.h), the screen lock (awl_lockscreen.h,
@@ -17,6 +19,11 @@ awl.h
 -----
 
 .. c:autodoc:: awl.h
+
+awl_core.h
+----------
+
+.. c:autodoc:: awl_core.h
 
 awl_server.h
 ------------
@@ -32,6 +39,11 @@ awl_config.h
 ------------
 
 .. c:autodoc:: awl_config.h
+
+awl_defaults.c
+--------------
+
+.. c:autodoc:: awl_defaults.c
 
 awl_output.h
 ------------
