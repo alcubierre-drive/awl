@@ -1,3 +1,4 @@
 dbus*.c
 dbus*.h
 libawltray.so
+libawltray-env.so

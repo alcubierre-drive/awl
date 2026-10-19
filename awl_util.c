@@ -1,10 +1,12 @@
 /* See LICENSE for copyright and license details. */
+#define _GNU_SOURCE /* execvpe() */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "awl_log.h"
 
@@ -51,4 +53,35 @@ fd_set_nonblock(int fd) {
     }
 
     return 0;
+}
+
+char **
+envwith(const char *const *entries)
+{
+    extern char **environ;
+    size_t n = 0, m = 0, k = 0;
+    char **env;
+    while (environ[n])
+        n++;
+    while (entries[m])
+        m++;
+    if (!(env = calloc(n + m + 1, sizeof(*env))))
+        return NULL;
+    for (size_t i = 0; i < n; i++) {
+        size_t j = 0;
+        for (; j < m; j++)
+            if (!strncmp(environ[i], entries[j], strcspn(entries[j], "=") + 1))
+                break;
+        if (j == m)
+            env[k++] = environ[i];
+    }
+    for (size_t j = 0; j < m; j++)
+        env[k++] = (char *)entries[j];
+    return env;
+}
+
+int
+execvpenv(const char *file, char *const argv[], char *const envp[])
+{
+    return execvpe(file, argv, envp);
 }

@@ -8,7 +8,8 @@
  * - menu.c, on the tray's GTK thread: one `awl_tray_menu_t` per item with a
  *   menu. It talks D-Bus (AboutToShow, GetLayout, Event, LayoutUpdated) and
  *   turns each layout into an `awl_tray_menu_snap_t`, with the icons' files
- *   already read (an icon theme lookup for icon-name, the PNG of icon-data),
+ *   already read (plugins/icon.h's lookup for icon-name, the PNG of
+ *   icon-data),
  *   and hands it over with ``awl_host->post()``.
  * - menu_window.c, on awl's main thread: shows the newest snapshot in an
  *   awl_window, decodes the icons at the monitor's scale (off the tray thread,
@@ -37,6 +38,13 @@ enum {
     AWL_TRAY_MENU_MIXED = 1 << 5,
     /** opens its children instead of being activated */
     AWL_TRAY_MENU_SUBMENU = 1 << 6,
+    /** its icon is a symbolic one: only its shape counts, drawn in the
+     * entry's text color (as GTK does; Papirus-Dark's, for one, are dark
+     * grey as they are) */
+    AWL_TRAY_MENU_SYMBOLIC = 1 << 7,
+    /** its icon is a file's, from icon-name, so it may be an SVG; icon-data
+     * has to be a PNG */
+    AWL_TRAY_MENU_FILE = 1 << 8,
 };
 
 /** One entry; the root (node 0, id 0) is the menu itself. Its children are
@@ -48,7 +56,8 @@ typedef struct awl_tray_menu_node_t {
     /** plain text without mnemonics (never NULL); shortcut e.g. "Ctrl+Q", or
      * NULL */
     char *label, *shortcut;
-    /** the icon file's contents (PNG, SVG, ...), icon_len bytes, or NULL */
+    /** the icon's PNG, or SVG if AWL_TRAY_MENU_FILE, icon_len bytes (at
+     * most AWL_ICON_MAX_BYTES, plugins/icon.h), or NULL */
     uint8_t* icon;
     size_t icon_len;
     int parent, first, n;
@@ -78,6 +87,9 @@ awl_tray_menu_t* awl_tray_menu_new( const char* bus, const char* path, const cha
 /** Closes it if it is open. NULL is fine. */
 void awl_tray_menu_free( awl_tray_menu_t* menu );
 void awl_tray_menu_set_theme_path( awl_tray_menu_t* menu, const char* theme_path );
+/** The tray's icon themes, comma separated, for the menus' icons: the
+ * config's icon_theme, then the desktop's (awl_tray_bridge.cpp). */
+const char* awl_tray_icon_themes( void );
 /** A click on the item: opens the menu on the monitor of the output named
  * monitor, centered on center_x (logical pixels from its left edge), or
  * closes it if it is open there. on_icon: the pointer is on the item's tray
@@ -110,6 +122,20 @@ void awl_tray_menu_window_snap( awl_tray_menu_snap_t* snap );
 void awl_tray_menu_window_gone( uint64_t serial );
 /** whether a menu is open, or being opened */
 int awl_tray_menu_window_is_open( void );
+/** whether serial's menu is open, or being opened */
+int awl_tray_menu_window_shows( uint64_t serial );
+/** closes it and gives back its windows and timers (the plugin library's
+ * copy, before it is unloaded) */
+void awl_tray_menu_window_fini( void );
+
+/** The menus' and tooltips' windows: kept across plugin reloads in the GTK
+ * tray, the plugin library's own in the bar's tray widget (plugins/sni.h),
+ * which builds menu_window.c and tooltip.c with AWL_SNI_WIDGET. */
+#ifdef AWL_SNI_WIDGET
+#define AWL_TRAY_WINDOW_CREATE() awl_host->window_create()
+#else
+#define AWL_TRAY_WINDOW_CREATE() awl_host->window_create_kept()
+#endif
 
 #ifdef __cplusplus
 }

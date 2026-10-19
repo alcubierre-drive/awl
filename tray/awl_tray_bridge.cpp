@@ -19,19 +19,24 @@
 // g_idle_add() (documented thread-safe).
 
 #include "awl_tray.h"
+#include "app_env.h"
+#include "menu.h"
 #include "../awl_log.h"
 #include "tray.hpp"
 
 #include <gtk-layer-shell.h>
 #include <gtkmm.h>
 
+#include <glib/gstdio.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include <cstdio>
 #include <cstring>
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -73,6 +78,108 @@ struct Shared {
 // exists, then only on the GTK thread (awl_tray_reload()), which is the only
 // one that reads it.
 awl_tray_config_t g_config;
+// g_config.icon_theme's string: the config's own may be gone after a reload
+// unloaded the plugin library that held it. g_config.icon_theme stays NULL.
+std::string g_icon_theme;
+
+void set_config(const awl_tray_config_t &config) {
+    g_config = config;
+    g_icon_theme = config.icon_theme ? config.icon_theme : "";
+    g_config.icon_theme = nullptr;
+}
+
+// The tray's icon theme, g_icon_theme, is a generated one, kAwlTheme, that
+// only inherits: g_icon_theme first, then the desktop's. GTK looks an icon
+// up in that order and after them in its own fallbacks (Adwaita, gnome,
+// hicolor, its built-in icons), so an icon g_icon_theme lacks, or all of
+// them when no such theme is installed, come from the desktop's theme.
+// It lives in its own folder under $XDG_RUNTIME_DIR (else the temp dir),
+// which is appended to GTK's icon search path and removed when the tray
+// stops. A value the program sets wins over the desktop's
+// settings; the tray is the only GTK user in awl, so the theme is only the
+// tray's. The icons already shown follow on the next reloadTray().
+const char kAwlTheme[] = "awl-tray";
+std::string g_theme_dir;               // the generated theme's parent folder; empty: none yet
+std::vector<std::string> g_search_path;  // GTK's own icon search path
+// the themes the menus' icons come from (plugins/icon.h, which can't read
+// kAwlTheme's folder): g_icon_theme, then the desktop's, comma separated
+std::string g_menu_themes;
+
+void remove_icon_theme_dir() {
+    if (g_theme_dir.empty()) return;
+    gchar *theme = g_build_filename(g_theme_dir.c_str(), kAwlTheme, nullptr);
+    gchar *index = g_build_filename(theme, "index.theme", nullptr);
+    g_unlink(index);
+    g_rmdir(theme);
+    g_rmdir(g_theme_dir.c_str());
+    g_free(index);
+    g_free(theme);
+}
+
+// Sets the default GtkIconTheme's search path: GTK's own, plus the
+// generated theme's folder if with_ours. Setting it also makes GTK reload
+// the theme, which a rewritten index.theme alone would not.
+void set_search_path(bool with_ours) {
+    std::vector<const gchar *> path;
+    for (const std::string &d : g_search_path) path.push_back(d.c_str());
+    if (with_ours) path.push_back(g_theme_dir.c_str());
+    gtk_icon_theme_set_search_path(gtk_icon_theme_get_default(), path.data(), (gint)path.size());
+}
+
+// Applies g_icon_theme (empty: the desktop's theme as it is). GTK thread
+// only.
+void apply_icon_theme() {
+    GtkSettings *settings = gtk_settings_get_default();
+    GtkIconTheme *icons = gtk_icon_theme_get_default();
+    if (!settings || !icons) return;
+    if (g_theme_dir.empty()) {
+        gchar **path = nullptr;
+        gint n = 0;
+        gtk_icon_theme_get_search_path(icons, &path, &n);
+        for (gint i = 0; i < n; ++i) g_search_path.emplace_back(path[i]);
+        g_strfreev(path);
+        // a tmpfs, not g_get_user_runtime_dir()'s fallback, the cache dir
+        const char *runtime = g_getenv("XDG_RUNTIME_DIR");
+        gchar *dir = g_strdup_printf("%s/awl-tray-icons-%d", runtime && *runtime ? runtime : g_get_tmp_dir(),
+                                     (int)getpid());
+        g_theme_dir = dir;
+        g_free(dir);
+    }
+    // the desktop's theme: what the setting is without ours
+    gtk_settings_reset_property(settings, "gtk-icon-theme-name");
+    gchar *desktop = nullptr;
+    g_object_get(settings, "gtk-icon-theme-name", &desktop, nullptr);
+    std::string inherits = g_icon_theme;
+    if (desktop && *desktop && g_icon_theme != desktop && strcmp(desktop, kAwlTheme))
+        inherits += std::string(inherits.empty() ? "" : ",") + desktop;
+    g_free(desktop);
+    g_menu_themes = inherits;
+    if (g_icon_theme.empty()) {
+        set_search_path(false);
+        remove_icon_theme_dir();
+        return;
+    }
+
+    gchar *theme = g_build_filename(g_theme_dir.c_str(), kAwlTheme, nullptr);
+    gchar *index = g_build_filename(theme, "index.theme", nullptr);
+    // GTK ignores a theme without directories, inherited themes and all
+    std::string content = std::string("[Icon Theme]\nName=") + kAwlTheme +
+                          "\nInherits=" + inherits +
+                          "\nDirectories=none\n\n[none]\nSize=16\n";
+    GError *err = nullptr;
+    bool ok = g_mkdir_with_parents(theme, 0700) == 0 &&
+              g_file_set_contents(index, content.c_str(), -1, &err);
+    if (!ok)
+        awl_err_printf("tray: can't write %s (%s), using the desktop's icon theme\n", index,
+                       err ? err->message : g_strerror(errno));
+    else
+        awl_log_printf("tray: icon theme %s\n", inherits.c_str());
+    if (err) g_error_free(err);
+    g_free(index);
+    g_free(theme);
+    set_search_path(ok);
+    if (ok) g_object_set(settings, "gtk-icon-theme-name", kAwlTheme, nullptr);
+}
 
 // Marshals `fn` onto the tray's GTK/GLib thread. Safe to call from any
 // thread (g_idle_add is documented thread-safe).
@@ -509,6 +616,7 @@ void *thread_main(void *) {
     static char *argv0 = prog_name;
     char **argv = &argv0;
     Gtk::Main kit(argc, argv);
+    apply_icon_theme();
 
     // Bridges are created lazily, per monitor, the first time awl mentions a
     // monitor_id (see shared_for()) -- there's no single "the" tray window
@@ -529,6 +637,7 @@ void *thread_main(void *) {
         bridges.swap(g_bridges);
     }
     bridges.clear();
+    remove_icon_theme_dir();
     g_finished.store(true, std::memory_order_release);
     return nullptr;
 }
@@ -565,15 +674,23 @@ void route_logs() {
 
 extern "C" {
 
+const char *awl_tray_icon_themes(void) { return SNI::g_menu_themes.c_str(); }
+
 // awl_host.h; hidden, like the plugin library's copy
 __attribute__((visibility("hidden"))) const awl_host_t *awl_host = nullptr;
+
+void awl_tray_init_env(const awl_host_t *host, const awl_tray_config_t *config) {
+    if (!awl_host) awl_host = host;
+    awl_tray_app_set_theme(config->icon_theme);
+}
 
 void awl_tray_init(const awl_host_t *host, const awl_tray_config_t *config) {
     if (SNI::g_running.load()) return;
     // first: every log message goes through it
     awl_host = host;
+    awl_tray_app_set_theme(config->icon_theme);
     // the thread doesn't exist yet; pthread_create() publishes this to it
-    SNI::g_config = *config;
+    SNI::set_config(*config);
     SNI::route_logs();
     // g_running before the thread exists: the thread's first calls into
     // awl (shared_for(), via geometry pushes) check it
@@ -589,6 +706,7 @@ void awl_tray_init(const awl_host_t *host, const awl_tray_config_t *config) {
 }
 
 void awl_tray_shutdown(void) {
+    awl_tray_app_cleanup();
     if (!SNI::g_running.load()) return;
     // Deliberately does NOT pthread_join() here: by the time awl's cleanup()
     // calls this, wl_display_terminate() has already made wl_display_run()
@@ -641,9 +759,16 @@ void awl_tray_set_bar_geometry(const char *monitor_id, int32_t x, int32_t y, uin
 }
 
 void awl_tray_reload(const awl_tray_config_t *config) {
+    awl_tray_app_set_theme(config->icon_theme);
     if (!SNI::g_running.load()) return;
-    SNI::run_on_gtk_thread([config = *config] {
-        SNI::g_config = config;
+    // the string is copied now: config's own may not outlive this call
+    std::string theme = config->icon_theme ? config->icon_theme : "";
+    awl_tray_config_t copy = *config;
+    copy.icon_theme = nullptr;
+    SNI::run_on_gtk_thread([copy, theme] {
+        SNI::g_config = copy;
+        SNI::g_icon_theme = theme;
+        SNI::apply_icon_theme();
         // reloadTray() is GTK work; don't hold the lock for it
         std::vector<SNI::Bridge *> bridges;
         {

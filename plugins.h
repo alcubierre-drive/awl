@@ -13,6 +13,7 @@
 #include "plugins/pulsetest.h"
 #include "plugins/poller.h"
 #include "plugins/wallpaper.h"
+#include "plugins/sni.h"
 
 #include "plugins/colors.h"
 
@@ -29,6 +30,8 @@ typedef struct awl_plugin_data_t {
     pulse_test_t* pulse;
     awl_backlight_t* backlight;
     awl_poller_t* poller;
+    /** the tray's host, with config_awl.h's SNI_TRAY ("sni_tray"); else NULL */
+    awl_sni_t* sni;
     int paused;
 
     struct awl_colors awl_colors;

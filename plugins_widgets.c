@@ -8,6 +8,9 @@
 #include "plugins/calpopup.h"
 #include "plugins/colors.h"
 #include "tray/awl_tray.h"
+#include "tray/menu.h"
+#include "tray/tooltip.h"
+#include "plugins/sni.h"
 #include "wuffs/wuffs.h"
 #include "icons/eyes_closed.h"
 
@@ -45,6 +48,12 @@ static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount );
 
 static uint32_t systray_measure( widget_t* w );
 static uint32_t systray_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
+static uint32_t sniwidget_measure( widget_t* w );
+static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
+static void sniwidget_click( widget_t* w, uint32_t x, int button );
+static void sniwidget_scroll( widget_t* w, uint32_t x, int amount );
+static void sniwidget_view( widget_t* w, int32_t x );
+static void sniwidget_free( void* userdata );
 static uint32_t statuswidget_measure( widget_t* w );
 static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t tempwidget_measure( widget_t* w );
@@ -96,11 +105,23 @@ void awl_widgets_create( awl_draw_t* drw ) {
         .leave_delay_ms = 20,
         .free = free,
     };
-    drw->widgets_right[drw->n_widgets_right++] = (widget_t){
-        .bar = drw,
-        .measure = &systray_measure,
-        .draw = &systray_draw,
-    };
+    awl_dict_val_t sni;
+    if (AWL_HOST_CFG_GET( awl_host, "sni_tray", &sni ) == AWL_DICT_OK && sni.kind == AWL_DICT_KIND_NUM && sni.num)
+        drw->widgets_right[drw->n_widgets_right++] = (widget_t){
+            .bar = drw,
+            .measure = &sniwidget_measure,
+            .draw = &sniwidget_draw,
+            .callback_click = &sniwidget_click,
+            .callback_scroll = &sniwidget_scroll,
+            .callback_view = &sniwidget_view,
+            .free = &sniwidget_free,
+        };
+    else
+        drw->widgets_right[drw->n_widgets_right++] = (widget_t){
+            .bar = drw,
+            .measure = &systray_measure,
+            .draw = &systray_draw,
+        };
     drw->widgets_right[drw->n_widgets_right++] = (widget_t){
         .bar = drw,
         .measure = &pulsewidget_measure,
@@ -369,6 +390,199 @@ static uint32_t systray_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &bg, 1, &(pixman_box32_t){
         .x1 = x, .x2 = x + w->width, .y1 = 0, .y2 = w->bar->m->b.height } );
     return w->width;
+}
+
+/* ---- the tray, the bar's own (plugins/sni.h) ---- */
+
+/** logical pixels: the icons, the gap between them and the padding around */
+static const float sni_icon_size = 16.0f;
+static const float sni_icon_gap = 4.0f;
+
+/** an icon decoded at px, for the item of serial in the state of gen */
+typedef struct {
+    uint64_t serial;
+    uint32_t gen;
+    int px;
+    pixman_image_t* img;
+} sni_icon_t;
+
+typedef struct {
+    /** what measure() saw, draw() draws */
+    awl_sni_snap_t* snap;
+    sni_icon_t* icons;
+    int nicons;
+    /** physical pixels; x: where draw() put the widget */
+    int px, gap;
+    uint32_t x;
+    /** the icon under the pointer, -1 none; whether it is on the widget */
+    int hovered, inside;
+    uint32_t tip;
+} sniwidget_t;
+
+static sniwidget_t* sniwidget( widget_t* w ) {
+    if (!w->userdata && (w->userdata = calloc( 1, sizeof(sniwidget_t) ))) ((sniwidget_t*)w->userdata)->hovered = -1;
+    return w->userdata;
+}
+
+/** the item's icon at u->px: the one decoded before, if it's still current */
+static pixman_image_t* sniwidget_icon( sniwidget_t* u, const awl_sni_item_t* it, sni_icon_t* old, int nold ) {
+    for (int i = 0; i < nold; i++)
+        if (old[i].serial == it->serial && old[i].img) {
+            if (old[i].gen == it->icon_gen && old[i].px == u->px) {
+                pixman_image_t* img = old[i].img;
+                old[i].img = NULL;
+                return img;
+            }
+            break;
+        }
+    if (it->file)
+        return awl_icon_decode( it->file->data, it->file->len, !!(it->file_flags & AWL_ICON_SVG), u->px, u->px );
+    if (it->pixmaps)
+        return awl_icon_from_pixmaps( (const awl_icon_pixmap_t*)it->pixmaps->data, it->npixmaps, u->px, u->px );
+    return NULL;
+}
+
+static uint32_t sniwidget_measure( widget_t* w ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    sniwidget_t* u = sniwidget( w );
+    if (!P || !P->sni || !u) return 0;
+    sni_main_poll( P->sni );
+    float scale = w->bar->m->wlr_output->scale;
+    int h = (int)w->bar->m->b.height;
+    u->px = (int)lroundf( sni_icon_size * scale );
+    if (u->px > h - 2) u->px = h - 2;
+    if (u->px < 1) u->px = 1;
+    u->gap = (int)lroundf( sni_icon_gap * scale );
+    /* the lookups go by the largest bar's */
+    static int largest;
+    if (u->px > largest) largest = u->px;
+    sni_set_icon_px( P->sni, largest );
+
+    awl_sni_snap_t* snap = sni_snap_get( P->sni );
+    sni_icon_t* icons = snap->n ? calloc( (size_t)snap->n, sizeof(*icons) ) : NULL;
+    for (int i = 0; icons && i < snap->n; i++) {
+        const awl_sni_item_t* it = &snap->items[i];
+        icons[i] = (sni_icon_t){ it->serial, it->icon_gen, u->px, sniwidget_icon( u, it, u->icons, u->nicons ) };
+    }
+    for (int i = 0; i < u->nicons; i++)
+        if (u->icons[i].img) pixman_image_unref( u->icons[i].img );
+    free( u->icons );
+    u->icons = icons;
+    u->nicons = icons ? snap->n : 0;
+    if (u->snap) sni_snap_unref( u->snap );
+    u->snap = snap;
+    if (u->hovered >= u->nicons) u->hovered = -1;
+    if (!u->nicons) return 0;
+    return (uint32_t)(u->nicons * u->px + (u->nicons + 1) * u->gap);
+}
+
+static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    sniwidget_t* u = w->userdata;
+    if (!P || !u) return 0;
+    u->x = x;
+    int h = (int)w->bar->m->b.height;
+    pixman_color_t bg = color_8bit_to_16bit( awl_config()->tray->bg );
+    pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &bg, 1, &(pixman_box32_t){
+        .x1 = x, .x2 = x + w->width, .y1 = 0, .y2 = h } );
+    for (int i = 0; i < u->nicons; i++) {
+        pixman_image_t* img = u->icons[i].img;
+        if (!img) continue;
+        int iw = pixman_image_get_width( img ), ih = pixman_image_get_height( img );
+        int ix = (int)x + u->gap + i * (u->px + u->gap) + (u->px - iw) / 2;
+        int iy = (h - ih) / 2;
+        if (u->snap->items[i].file && (u->snap->items[i].file_flags & AWL_ICON_SYMBOLIC)) {
+            /* its shape in the text's color */
+            pixman_image_t* solid = pixman_image_create_solid_fill( &P->awl_colors.fg_lay );
+            pixman_image_composite32( PIXMAN_OP_OVER, solid, img, pix, 0, 0, 0, 0, ix, iy, iw, ih );
+            pixman_image_unref( solid );
+        } else {
+            pixman_image_composite32( PIXMAN_OP_OVER, img, NULL, pix, 0, 0, 0, 0, ix, iy, iw, ih );
+        }
+    }
+    return w->width;
+}
+
+/** the icon at x (from the widget's left edge), -1 none */
+static int sniwidget_at( const sniwidget_t* u, int32_t x ) {
+    if (!u || x < u->gap / 2 || u->px + u->gap <= 0) return -1;
+    int i = (x - u->gap / 2) / (u->px + u->gap);
+    return i < u->nicons ? i : -1;
+}
+
+/** icon i's center, logical pixels from the monitor's left edge */
+static int sniwidget_center( widget_t* w, const sniwidget_t* u, int i ) {
+    return (int)lround( (u->x + u->gap + i * (u->px + u->gap) + u->px / 2.0) / w->bar->m->wlr_output->scale );
+}
+
+/** Right: the menu. Left: what the item does when activated, unless it says
+ * it is a menu (ItemIsMenu), then its menu too (plugins/sni.c opens it if
+ * Activate fails). Middle: SecondaryActivate. An item without a menu draws
+ * its own on ContextMenu. With its menu open, any press only closes it. */
+static void sniwidget_click( widget_t* w, uint32_t x, int button ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    sniwidget_t* u = w->userdata;
+    int i = sniwidget_at( u, (int32_t)x );
+    if (!P || !P->sni || i < 0) return;
+    const awl_sni_item_t* it = &u->snap->items[i];
+    awl_tray_tooltip_drop( u->tip );
+    u->tip = 0;
+    Monitor* m = w->bar->m;
+    const char* mon = m->wlr_output->name;
+    int cx = sniwidget_center( w, u, i );
+    if (awl_tray_menu_window_shows( it->menu )) {
+        awl_tray_menu_window_toggle( it->menu, mon, cx, 1 );
+        return;
+    }
+    if ((button == BTN_LEFT && it->item_is_menu) || button == BTN_RIGHT) {
+        if (it->menu) awl_tray_menu_window_toggle( it->menu, mon, cx, 1 );
+        else sni_click( P->sni, it->serial, AWL_SNI_CONTEXT, m->m.x + cx, m->m.y, mon, cx );
+    } else if (button == BTN_LEFT) {
+        sni_click( P->sni, it->serial, AWL_SNI_ACTIVATE, m->m.x + cx, m->m.y, mon, cx );
+    } else if (button == BTN_MIDDLE) {
+        sni_click( P->sni, it->serial, AWL_SNI_SECONDARY, m->m.x + cx, m->m.y, mon, cx );
+    }
+}
+
+static void sniwidget_scroll( widget_t* w, uint32_t x, int amount ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    sniwidget_t* u = w->userdata;
+    int i = sniwidget_at( u, (int32_t)x );
+    if (P && P->sni && i >= 0 && amount) sni_scroll( P->sni, u->snap->items[i].serial, amount, 0 );
+}
+
+/** the tooltip of the icon under the pointer; the menu open stays while
+ * the pointer is anywhere on the tray */
+static void sniwidget_view( widget_t* w, int32_t x ) {
+    static uint32_t next_tip;
+    sniwidget_t* u = w->userdata;
+    if (!u || !u->snap) return;
+    int inside = x >= 0;
+    if (inside != u->inside) {
+        u->inside = inside;
+        for (int k = 0; k < u->snap->n; k++)
+            if (u->snap->items[k].menu) awl_tray_menu_window_pointer( u->snap->items[k].menu, inside );
+    }
+    int i = inside ? sniwidget_at( u, x ) : -1;
+    if (i == u->hovered) return;
+    u->hovered = i;
+    awl_tray_tooltip_drop( u->tip );
+    u->tip = 0;
+    if (i < 0 || !*u->snap->items[i].name) return;
+    if (!++next_tip) next_tip = 1;
+    u->tip = next_tip;
+    awl_tray_tooltip_show( u->tip, w->bar->m->wlr_output->name, sniwidget_center( w, u, i ),
+                           u->snap->items[i].name );
+}
+
+static void sniwidget_free( void* userdata ) {
+    sniwidget_t* u = userdata;
+    if (!u) return;
+    for (int i = 0; i < u->nicons; i++)
+        if (u->icons[i].img) pixman_image_unref( u->icons[i].img );
+    free( u->icons );
+    if (u->snap) sni_snap_unref( u->snap );
+    free( u );
 }
 
 static uint32_t pulsewidget_measure( widget_t* w ) {

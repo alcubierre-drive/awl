@@ -39,6 +39,9 @@ static const uint32_t bordercolors[BorderLast] = {
 /* the tray: colors 0xRRGGBBAA */
 static const awl_tray_config_t tray_config = {
     .bg = 0x859394ff,
+    /* the icon theme of the tray and its menus; what it lacks comes from the
+     * desktop's (NULL: the desktop's) */
+    .icon_theme = "Papirus-Dark",
 };
 /* awl's own popups: the bar widgets' (the clock's calendar, the IP
  * addresses) and awl's; colors 0xRRGGBBAA, sizes logical pixels */

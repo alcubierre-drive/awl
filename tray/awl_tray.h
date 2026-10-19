@@ -26,6 +26,13 @@ typedef struct awl_tray_config_t {
      * slot with it too: the window can only sit on whole logical pixels, so
      * at fractional scales it misses the slot by up to a pixel. */
     uint32_t bg;
+    /** The icon theme of the tray's icons and their menus, e.g.
+     * "Papirus-Dark" (NULL or "": the desktop's). An icon it lacks, or all
+     * of them if it isn't installed, comes from the desktop's theme, then
+     * GTK's fallbacks (Adwaita, hicolor, ...). Other GTK programs keep
+     * their theme. Icons an item sends as images, or looks up in its own
+     * IconThemePath, stay as they are. */
+    const char *icon_theme;
 } awl_tray_config_t;
 
 /** Starts the tray's background thread: a GTK/GLib main loop hosting the
@@ -37,6 +44,12 @@ typedef struct awl_tray_config_t {
  * members (``log``, ``redraw_request``: a redraw whenever a tray's width
  * changes, since the bar reserves that width). */
 void awl_tray_init(const awl_host_t *host, const awl_tray_config_t *config);
+
+/** Only what `awl_tray_app_env()` needs, without the tray: host becomes
+ * the tray's ``awl_host`` (unless it has one), config's icon_theme the
+ * programs'. For when the bar's own tray widget (config_awl.h's SNI_TRAY)
+ * stands in for this one; `awl_tray_reload()` keeps updating it. */
+void awl_tray_init_env(const awl_host_t *host, const awl_tray_config_t *config);
 
 /** Requests the background thread to quit. Does NOT block until it has
  * exited -- see `awl_tray_join()`. (It can't safely block itself: the tray
@@ -72,6 +85,34 @@ int awl_tray_join(void);
  * later.
  * No-op if the tray was never started. */
 void awl_tray_reload(const awl_tray_config_t *config);
+
+/** What a program awl starts that asks for the tray's icon theme
+ * (config_awl.h's TRAY_ICONS) gets: a dconf profile of its own, the one it
+ * would have had, but with org.gnome.desktop.interface's icon-theme set to
+ * the config's icon_theme (and locked, over the user's value), so GTK
+ * programs draw their icons, the ones they send the tray as images too, in
+ * it; the desktop's setting and everything else stay as they are. The
+ * profile and its database are in-memory files, nothing is written to
+ * disk. libawltray-env.so, preloaded, takes all of it back out of the
+ * program's environment, so what it starts gets none of it. */
+typedef struct awl_tray_app_env_t {
+    /** "NAME=value" entries to put in place of the environment's, NULL
+     * terminated: DCONF_PROFILE, LD_PRELOAD (the shim first, then
+     * awl's), AWL_TRAY_ENV_FDS, and AWL_TRAY_DCONF_PROFILE, awl's own
+     * DCONF_PROFILE, if it has one */
+    const char *const *env;
+    /** the in-memory files, close-on-exec in awl: the child, between
+     * vfork() and exec, makes them inheritable */
+    int fds[2];
+} awl_tray_app_env_t;
+
+/** The above for icon_theme, NULL if it is unset or not installed, or it
+ * couldn't be made (the shim missing): start the program as it is. Made on
+ * first use, and anew after a reload changed icon_theme, for the programs
+ * started from then on. Main thread; it lives until the next call or
+ * awl_tray_shutdown(). Works before awl_tray_init() too, just without a
+ * theme. */
+const awl_tray_app_env_t *awl_tray_app_env(void);
 
 /** All of the below identify which monitor's tray overlay window they apply
  * to via ``monitor_id``, a stable per-output identifier -- pass

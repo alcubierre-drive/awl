@@ -14,8 +14,8 @@
 #include "tooltip.h"
 #include "../awl_log.h"
 #include "../awl_window_draw.h"
+#include "../plugins/icon.h"
 
-#include <gdk-pixbuf/gdk-pixbuf.h>
 #include <linux/input-event-codes.h>
 
 #include <math.h>
@@ -164,41 +164,6 @@ static void draw_check( pixman_image_t* pix, uint32_t flags, float x, float y, f
 
 /* ---- icons: decoded here, at the monitor's scale; read by the tray thread ---- */
 
-static void size_prepared( GdkPixbufLoader* loader, int w, int h, gpointer data ) {
-    int s = *(int*)data;
-    if (w <= 0 || h <= 0) return;
-    if (w >= h) gdk_pixbuf_loader_set_size( loader, s, h * s / w > 0 ? h * s / w : 1 );
-    else gdk_pixbuf_loader_set_size( loader, w * s / h > 0 ? w * s / h : 1, s );
-}
-
-/** the icon file's contents as premultiplied ARGB, fit into s x s; NULL if
- * gdk-pixbuf can't read them */
-static pixman_image_t* decode( const uint8_t* bytes, size_t len, int s ) {
-    GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
-    g_signal_connect( loader, "size-prepared", G_CALLBACK( size_prepared ), &s );
-    gboolean ok = gdk_pixbuf_loader_write( loader, bytes, len, NULL );
-    ok = gdk_pixbuf_loader_close( loader, NULL ) && ok;
-    GdkPixbuf* pb = ok ? gdk_pixbuf_loader_get_pixbuf( loader ) : NULL;
-    pixman_image_t* img = NULL;
-    if (pb && gdk_pixbuf_get_bits_per_sample( pb ) == 8 && gdk_pixbuf_get_n_channels( pb ) >= 3) {
-        int w = gdk_pixbuf_get_width( pb ), h = gdk_pixbuf_get_height( pb );
-        int n = gdk_pixbuf_get_n_channels( pb ), rs = gdk_pixbuf_get_rowstride( pb );
-        int alpha = gdk_pixbuf_get_has_alpha( pb );
-        const guint8* src = gdk_pixbuf_read_pixels( pb );
-        img = pixman_image_create_bits( PIXMAN_a8r8g8b8, w, h, NULL, 0 );
-        uint32_t* dst = img ? pixman_image_get_data( img ) : NULL;
-        int ds = img ? pixman_image_get_stride( img ) / 4 : 0;
-        for (int y = 0; dst && y < h; y++)
-            for (int x = 0; x < w; x++) {
-                const guint8* p = src + y * rs + x * n;
-                uint32_t a = alpha ? p[3] : 255;
-                dst[y * ds + x] = a << 24 | (p[0] * a / 255) << 16 | (p[1] * a / 255) << 8 | (p[2] * a / 255);
-            }
-    }
-    g_object_unref( loader );
-    return img;
-}
-
 static void icons_clear( void ) {
     if (M.icons && M.snap)
         for (int i = 0; i < M.snap->nnodes; i++)
@@ -219,7 +184,8 @@ static pixman_image_t* icon( int i ) {
     }
     if (!M.tried[i]) {
         M.tried[i] = 1;
-        M.icons[i] = decode( n->icon, n->icon_len, M.icon_px );
+        /* an SVG only from a file: icon-data is a PNG */
+        M.icons[i] = awl_icon_decode( n->icon, n->icon_len, !!(n->flags & AWL_TRAY_MENU_FILE), M.icon_px, M.icon_px );
         if (!M.icons[i]) awl_vrb_printf( "tray: menu entry '%s': can't decode its icon\n", n->label );
     }
     return M.icons[i];
@@ -333,8 +299,19 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         pixman_image_t* img = L->icon_w ? icon( r->node ) : NULL;
         if (img) {
             int iw = pixman_image_get_width( img ), ih = pixman_image_get_height( img );
-            pixman_image_composite32( PIXMAN_OP_OVER, img, NULL, pix, 0, 0, 0, 0, x + (M.icon_px - iw) / 2,
-                                      y + (r->h - ih) / 2, iw, ih );
+            int ix = x + (M.icon_px - iw) / 2, iy = y + (r->h - ih) / 2;
+            if (flags & AWL_TRAY_MENU_SYMBOLIC) {
+                /* its shape in fg */
+                const uint16_t a = (uint16_t)((fg & 0xff) * 0x101);
+                const pixman_color_t col = { (uint16_t)((fg >> 24) * 0x101 * a / 0xffff),
+                                             (uint16_t)(((fg >> 16) & 0xff) * 0x101 * a / 0xffff),
+                                             (uint16_t)(((fg >> 8) & 0xff) * 0x101 * a / 0xffff), a };
+                pixman_image_t* solid = pixman_image_create_solid_fill( &col );
+                pixman_image_composite32( PIXMAN_OP_OVER, solid, img, pix, 0, 0, 0, 0, ix, iy, iw, ih );
+                pixman_image_unref( solid );
+            } else {
+                pixman_image_composite32( PIXMAN_OP_OVER, img, NULL, pix, 0, 0, 0, 0, ix, iy, iw, ih );
+            }
         }
         x += L->icon_w;
         int right = x0 + L->w - L->pad - L->arrow_w;
@@ -464,7 +441,7 @@ static void hidden( awl_window_t* win, void* data );
 static awl_window_t* window( int k ) {
     level_t* L = &M.lv[k];
     if (L->win) return L->win;
-    if (!(L->win = awl_host->window_create_kept())) return NULL;
+    if (!(L->win = AWL_TRAY_WINDOW_CREATE())) return NULL;
     void* data = (void*)(intptr_t)k;
     awl_host->window_set_painter( L->win, &painter, L );
     awl_host->window_set_click( L->win, click, data );
@@ -783,4 +760,20 @@ void awl_tray_menu_window_gone( uint64_t serial ) {
 
 int awl_tray_menu_window_is_open( void ) {
     return M.serial != 0;
+}
+
+int awl_tray_menu_window_shows( uint64_t serial ) {
+    return serial && M.serial == serial;
+}
+
+void awl_tray_menu_window_fini( void ) {
+    close_menu( 1 );
+    awl_host->timer_remove( M.timer );
+    awl_host->timer_remove( M.held_timer );
+    awl_host->timer_remove( M.leave_timer );
+    M.timer = M.held_timer = M.leave_timer = NULL;
+    for (int k = 0; k < MAX_LEVELS; k++) {
+        if (M.lv[k].win) awl_host->window_destroy( M.lv[k].win );
+        M.lv[k].win = NULL;
+    }
 }

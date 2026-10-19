@@ -5,8 +5,9 @@
 #include "menu.h"
 #include "dbus-menu.h"
 #include "../awl_log.h"
+#include "../plugins/icon.h"
 
-#include <gtk/gtk.h>
+#include <gio/gio.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -142,68 +143,87 @@ static char* shortcut_text( GVariant* v ) {
     return out;
 }
 
-/** the icon themes one layout's icons are looked up in, and what they found */
+/** the size icons are looked up at: any will do (the main thread fits them
+ * to the menu's font), it only picks among a theme's fixed sizes */
+#define LOOKUP_PX 32
+
+/** the tray's icon themes (awl_tray_icon_themes()), as GTK has them: then
+ * Adwaita, then hicolor; made anew when they change */
+static awl_icons_t* themes;
+static char* themes_for;
+
+static awl_icons_t* current_themes( void ) {
+    const char* want = awl_tray_icon_themes();
+    if (themes && themes_for && !strcmp( themes_for, want )) return themes;
+    awl_icons_free( themes );
+    free( themes_for );
+    themes_for = strdup( want );
+    gchar** names = g_strsplit( want, ",", -1 );
+    GPtrArray* list = g_ptr_array_new();
+    for (gchar** n = names; *n; n++)
+        if (**n) g_ptr_array_add( list, *n );
+    g_ptr_array_add( list, (gpointer) "Adwaita" );
+    g_ptr_array_add( list, NULL );
+    themes = awl_icons_new( (const char* const*)list->pdata );
+    g_ptr_array_free( list, TRUE );
+    g_strfreev( names );
+    return themes;
+}
+
+/** where one layout's icons are looked up, and what they found */
 typedef struct {
-    GtkIconTheme* own; /* the item's and the menu's IconThemePath, or NULL */
+    awl_icons_t* themes;
+    /** the item's and the menu's IconThemePath, NULL terminated */
+    GPtrArray* extra;
     GHashTable* files; /* name -> GBytes, NULL if not found */
+    GHashTable* flags; /* name -> AWL_TRAY_MENU_* of its file */
 } icons_t;
 
 static void icons_init( icons_t* ic, awl_tray_menu_t* menu ) {
-    GPtrArray* paths = g_ptr_array_new();
-    if (menu->theme_path && *menu->theme_path) g_ptr_array_add( paths, menu->theme_path );
+    ic->themes = current_themes();
+    ic->extra = g_ptr_array_new();
+    if (menu->theme_path && *menu->theme_path) g_ptr_array_add( ic->extra, menu->theme_path );
     const gchar* const* more = menu->proxy ? sn_com_canonical_dbusmenu_get_icon_theme_path( menu->proxy ) : NULL;
     for (; more && *more; more++)
-        if (**more) g_ptr_array_add( paths, (gpointer)*more );
-    ic->own = NULL;
-    if (paths->len) {
-        ic->own = gtk_icon_theme_new();
-        gtk_icon_theme_set_search_path( ic->own, (const gchar**)paths->pdata, (gint)paths->len );
-    }
-    g_ptr_array_free( paths, TRUE );
+        if (**more) g_ptr_array_add( ic->extra, (gpointer)*more );
+    g_ptr_array_add( ic->extra, NULL );
     ic->files = g_hash_table_new_full( g_str_hash, g_str_equal, g_free, (GDestroyNotify)g_bytes_unref );
+    ic->flags = g_hash_table_new_full( g_str_hash, g_str_equal, g_free, NULL );
 }
 
 static void icons_fini( icons_t* ic ) {
-    if (ic->own) g_object_unref( ic->own );
+    g_ptr_array_free( ic->extra, TRUE );
     g_hash_table_unref( ic->files );
+    g_hash_table_unref( ic->flags );
 }
 
-static GBytes* read_file( const char* path ) {
-    gchar* data;
-    gsize len;
-    if (!g_file_get_contents( path, &data, &len, NULL )) return NULL;
-    return g_bytes_new_take( data, len );
-}
-
-/** the file of icon name: a path as it is, else from the item's themes, then
- * the default one. Any size will do (the main thread scales it): the
- * lookup's size only picks among a theme's sizes, preferring what scales. */
-static GBytes* icon_file( icons_t* ic, const char* name ) {
+/** the file of icon name, read (not larger than AWL_ICON_MAX_BYTES): a path
+ * as it is, else from the item's folders, then the tray's themes. *flags:
+ * AWL_TRAY_MENU_SYMBOLIC and AWL_TRAY_MENU_FILE as they apply. */
+static GBytes* icon_file( icons_t* ic, const char* name, uint32_t* flags ) {
     gpointer found;
-    if (g_hash_table_lookup_extended( ic->files, name, NULL, &found )) return found;
-    GBytes* bytes = NULL;
-    if (name[0] == '/') {
-        bytes = read_file( name );
-    } else {
-        GtkIconTheme* themes[2] = { ic->own, gtk_icon_theme_get_default() };
-        for (int i = 0; i < 2 && !bytes; i++) {
-            if (!themes[i]) continue;
-            GtkIconInfo* info = gtk_icon_theme_lookup_icon( themes[i], name, 32, 0 );
-            if (!info) continue;
-            const gchar* file = gtk_icon_info_get_filename( info );
-            if (file) bytes = read_file( file );
-            g_object_unref( info );
-        }
+    if (g_hash_table_lookup_extended( ic->files, name, NULL, &found )) {
+        *flags = (uint32_t)GPOINTER_TO_UINT( g_hash_table_lookup( ic->flags, name ) );
+        return found;
     }
+    unsigned f = 0;
+    char* path = awl_icons_lookup( ic->themes, name, LOOKUP_PX, (const char* const*)ic->extra->pdata, &f );
+    GBytes* bytes = NULL;
+    size_t len;
+    void* data = path ? awl_icon_read( path, &len ) : NULL;
+    if (data) bytes = g_bytes_new_with_free_func( data, len, free, data );
+    free( path );
+    *flags = bytes ? AWL_TRAY_MENU_FILE | (f & AWL_ICON_SYMBOLIC ? AWL_TRAY_MENU_SYMBOLIC : 0) : 0;
     if (!bytes) awl_vrb_printf( "tray: menu icon '%s' not found\n", name );
     g_hash_table_insert( ic->files, g_strdup( name ), bytes );
+    g_hash_table_insert( ic->flags, g_strdup( name ), GUINT_TO_POINTER( *flags ) );
     return bytes;
 }
 
 static void take_bytes( awl_tray_menu_node_t* n, GBytes* b ) {
     gsize len;
     const void* data = b ? g_bytes_get_data( b, &len ) : NULL;
-    if (!data || !len) return;
+    if (!data || !len || len > AWL_ICON_MAX_BYTES) return;
     n->icon = malloc( len );
     memcpy( n->icon, data, len );
     n->icon_len = len;
@@ -255,7 +275,11 @@ static tnode* parse( GVariant* v, icons_t* ic ) {
         g_bytes_unref( b );
         g_variant_unref( data );
     }
-    if (!t->n.icon && icon_name && *icon_name) take_bytes( &t->n, icon_file( ic, icon_name ) );
+    if (!t->n.icon && icon_name && *icon_name) {
+        uint32_t flags;
+        take_bytes( &t->n, icon_file( ic, icon_name, &flags ) );
+        if (t->n.icon) t->n.flags |= flags;
+    }
 
     /* the children, separators collapsed */
     t->kids = g_ptr_array_new_with_free_func( tnode_free );

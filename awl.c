@@ -11,6 +11,7 @@
 #include "awl_redraw.h"
 #include "awl_post.h"
 #include "awl_lock.h"
+#include "awl_sni.h"
 #include "awl_alert.h"
 #include "awl_window.h"
 #include "tray/awl_tray.h"
@@ -398,8 +399,18 @@ static struct wl_listener xwayland_ready = {.notify = xwaylandready};
 static struct wlr_xwayland *xwayland;
 #endif
 
+/* an argv's first word (an Autostarts entry's, a spawn binding's) that
+ * starts the rest in the tray's icon theme instead of the desktop's, see
+ * spawn_pid() */
+#define TRAY_ICONS "awl:tray-icons"
+
 /* configuration, allows nested code to access above variables */
 #include "config_awl.h"
+/* config_awl.h's, if it has it: 1 puts the bar's own tray widget (and awl's
+ * StatusNotifierWatcher, awl_sni.h) in place of the GTK tray */
+#ifndef SNI_TRAY
+#define SNI_TRAY 0
+#endif
 /* the defaults, for while no library (and so no config_plugins.h) is loaded */
 #include "config_plugins.def.h"
 
@@ -510,6 +521,9 @@ static void cfgdict_defaults(awl_dict_t* cfgdict)
 
     /* "lock_on_suspend": config_awl.h's, for plugins/logind.c */
     awl_dict_set(cfgdict, "lock_on_suspend", &AWL_DICT_NUM(lock_on_suspend));
+
+    /* "sni_tray": config_awl.h's SNI_TRAY, for plugins_widgets.c */
+    awl_dict_set(cfgdict, "sni_tray", &AWL_DICT_NUM(SNI_TRAY));
 }
 
 static const awl_config_t *
@@ -769,9 +783,13 @@ static struct wl_event_source *wallpaper_timer;
 static WallpaperMode wallpaper_mode;
 static widget_t *hover_widget, *hover_active;
 static int leave_pending;
+/** the widget with a callback_view the pointer is on (widget_t.callback_view) */
+static widget_t *view_widget;
 
+/** the bar widget at cx, cy; *xrel (may be NULL) its x there, from the
+ * widget's left edge in buffer pixels */
 static widget_t *
-barwidgetat(Monitor *m, double cx, double cy)
+barwidgetatx(Monitor *m, double cx, double cy, unsigned int *xrel)
 {
     struct wlr_scene_node *node;
     struct wlr_scene_buffer *buffer;
@@ -783,21 +801,43 @@ barwidgetat(Monitor *m, double cx, double cy)
             || !(buffer = wlr_scene_buffer_from_node(node)) || buffer != m->scene_buffer)
         return NULL;
     cursor_x = (unsigned int)((cx - m->m.x) * m->wlr_output->scale);
+#define AT(w) do { if (xrel) *xrel = cursor_x - xpos; return (w); } while (0)
     for (i = 0; i < d->n_widgets_left; ++i) {
         if (cursor_x >= xpos && cursor_x < xpos + d->widgets_left[i].width)
-            return &d->widgets_left[i];
+            AT(&d->widgets_left[i]);
         xpos += d->widgets_left[i].width;
     }
     xpos = d->center_widget_start;
     if (cursor_x >= xpos && cursor_x < xpos + d->center_widget_space)
-        return d->has_center_widget ? &d->center_widget : NULL;
+        AT(d->has_center_widget ? &d->center_widget : NULL);
     xpos += d->center_widget_space;
     for (i = d->n_widgets_right - 1; i >= 0; --i) {
         if (cursor_x >= xpos && cursor_x < xpos + d->widgets_right[i].width)
-            return &d->widgets_right[i];
+            AT(&d->widgets_right[i]);
         xpos += d->widgets_right[i].width;
     }
+#undef AT
     return NULL;
+}
+
+static widget_t *
+barwidgetat(Monitor *m, double cx, double cy)
+{
+    return barwidgetatx(m, cx, cy, NULL);
+}
+
+/** the pointer is on w at xrel (NULL: on no widget): callback_view tells
+ * the widget it left -1 first */
+static void
+updateview(widget_t *w, unsigned int xrel)
+{
+    widget_t *left = view_widget;
+
+    view_widget = w && w->callback_view ? w : NULL;
+    if (left && left != view_widget)
+        left->callback_view(left, -1);
+    if (view_widget)
+        view_widget->callback_view(view_widget, (int32_t)xrel);
 }
 
 static int leavetimeout(void *data);
@@ -891,12 +931,14 @@ updatehover(Client *c)
 {
     widget_t *w = NULL;
     Monitor *m;
+    unsigned int xrel = 0;
 
     if (!hover_timer)
         return;
     if (!c && !locked && cursor_mode == CurNormal
             && (m = xytomon(cursor->x, cursor->y)))
-        w = barwidgetat(m, cursor->x, cursor->y);
+        w = barwidgetatx(m, cursor->x, cursor->y, &xrel);
+    updateview(w, xrel);
     if (w && !w->callback_hover)
         w = NULL;
     if (hover_active)
@@ -1362,6 +1404,7 @@ cleanup(void)
         wl_event_source_remove(hover_timer);
         hover_timer = NULL;
         hover_widget = NULL;
+        view_widget = NULL;
     }
     if (leave_timer) {
         wl_event_source_remove(leave_timer);
@@ -1378,6 +1421,7 @@ cleanup(void)
     /* Tear down the tray's own client connection to us before we start
      * force-destroying clients below, so its GTK/GDK thread shuts down
      * cleanly instead of racing wl_display_destroy_clients(). */
+    awl_sni_watcher_stop();
     awl_tray_shutdown();
     /* awl_tray_shutdown() only requests the tray thread to quit; it can't
      * safely block here itself. wl_display_run() (above, in run()) already
@@ -1471,7 +1515,10 @@ cleanupmon(struct wl_listener *listener, void *data)
         wl_list_for_each_safe(l, tmp, &m->layers[i], link)
             wlr_layer_surface_v1_destroy(l->layer_surface);
     }
-    /* hover_widget points into m->drw */
+    /* hover_widget points into m->drw, as may view_widget */
+    if (view_widget && (char *)view_widget >= (char *)&m->drw
+            && (char *)view_widget < (char *)(&m->drw + 1))
+        view_widget = NULL;
     if (hover_widget && (char *)hover_widget >= (char *)&m->drw
             && (char *)hover_widget < (char *)(&m->drw + 1)) {
         hover_widget = NULL;
@@ -2313,6 +2360,38 @@ destroykeyboardgroup(struct wl_listener *listener, void *data)
     free(group);
 }
 
+/** Logs it when m's right-hand widgets don't fit beside its left-hand ones
+ * (they're then drawn over them, and clicks land up to over pixels right of
+ * what's shown), or no longer do so, once per change. */
+static void
+baroverflow(Monitor *m, uint32_t over)
+{
+    /* by monitor: a Monitor field would change the plugin ABI */
+    static struct { Monitor *m; uint32_t over; } seen[16];
+    size_t i, free_slot = LENGTH(seen);
+
+    for (i = 0; i < LENGTH(seen) && seen[i].m != m; i++)
+        if (!seen[i].m && free_slot == LENGTH(seen))
+            free_slot = i;
+    if (i == LENGTH(seen)) {
+        if (!over || free_slot == LENGTH(seen))
+            return;
+        i = free_slot;
+        seen[i].m = m;
+        seen[i].over = 0;
+    }
+    if (seen[i].over == over)
+        return;
+    if (over)
+        awl_err_printf("bar on %s: the widgets don't fit, %u pixels too wide\n",
+                m->wlr_output->name, over);
+    else
+        awl_log_printf("bar on %s: the widgets fit again\n", m->wlr_output->name);
+    seen[i].over = over;
+    if (!over)
+        seen[i].m = NULL;
+}
+
 void
 drawbar(Monitor *m)
 {
@@ -2393,6 +2472,7 @@ drawbar(Monitor *m)
     }
 
     m->drw.center_widget_space = x_end > m->drw.center_widget_start ? x_end - m->drw.center_widget_start : 0;
+    baroverflow(m, x_end < m->drw.center_widget_start ? m->drw.center_widget_start - x_end : 0);
     if (m->drw.has_center_widget) {
         if (m->drw.center_widget.draw)
             m->drw.center_widget.width = m->drw.center_widget.draw( &m->drw.center_widget, x, m->drw.pix );
@@ -2520,12 +2600,20 @@ textwindestroy(awl_window_t *win)
 void
 textwinshow(awl_window_t *win, Monitor *m, int center_x, const char *text, int toggle)
 {
-    if (!m || !textwinfind(win))
+    TextWin *tw = textwinfind(win), *o;
+    if (!m || !tw)
         return;
     if (toggle && awl_window_monitor(win) == m) {
         awl_window_hide(win);
         return;
     }
+    /* another popup (the calendar the clock's hover opens) closes the menu
+     * open at once, instead of covering it until it notices the pointer
+     * left (its hidden callback closes its submenus too) */
+    if (!tw->menu)
+        wl_list_for_each(o, &textwins, link)
+            if (o->menu && awl_window_monitor(o->win))
+                awl_window_hide(o->win);
     awl_window_set_text(win, text);
     awl_window_show(win, m, center_x, topbar);
 }
@@ -4128,7 +4216,10 @@ run(char *startup_cmd)
      * client. Its startup runs in the background (it can't complete the
      * connection handshake until wl_display_run() below starts servicing
      * clients) -- awl_tray_init() must not block waiting for that. */
-    awl_tray_init(awl_host_table(), cfg->tray);
+    if (SNI_TRAY)
+        awl_tray_init_env(awl_host_table(), cfg->tray);
+    else
+        awl_tray_init(awl_host_table(), cfg->tray);
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM
      * master, etc */
@@ -4735,6 +4826,9 @@ setup(void)
     /* the logind thread has until then to start listening (logind_missing) */
     logind_timer = wl_event_loop_add_timer(event_loop, logindtimeout, NULL);
     wl_event_source_timer_update(logind_timer, LOGIND_GRACE_MS);
+    /* before the plugins: their tray widget asks it for the items */
+    if (SNI_TRAY)
+        awl_sni_watcher_start(event_loop);
     awl_plugins_load(0, cfgdict);
     configuse();
     awl_draw_init();
@@ -4762,23 +4856,42 @@ setup(void)
 static pid_t
 spawn_pid(const Arg *arg)
 {
+    char **argv = (char **)arg->v, **envp = NULL;
+    const awl_tray_app_env_t *tray = NULL;
+    pid_t pid;
+    /* TRAY_ICONS first: the rest, with awl_tray_app_env()'s variables (the
+     * child can't set them itself, it shares our memory until it execs) */
+    if (argv[0] && !strcmp(argv[0], TRAY_ICONS)) {
+        if (!*++argv)
+            return -1;
+        if ((tray = awl_tray_app_env()) && !(envp = envwith(tray->env))) {
+            awl_err_printf("%s: out of memory, starting it in the desktop's icon theme\n", argv[0]);
+            tray = NULL;
+        }
+    }
     /* on execvp failure, must call _exit() not exit()/die(): vfork()'s child
      * shares stdio buffers with the parent until it exits or execs. */
-    pid_t pid = vfork();
+    pid = vfork();
     if (pid < 0) {
         awl_err_printf("vfork failed: %s\n", strerror(errno));
-        return -1;
     } else if (pid == 0) {
         unblocksignals();
         close(STDIN_FILENO);
         dup2(STDERR_FILENO, STDOUT_FILENO);
         setsid();
-        execvp(((char **)arg->v)[0], (char **)arg->v);
-        awl_err_printf("execvp %s failed: %s\n", ((char **)arg->v)[0], strerror(errno));
+        /* its own fd table: this doesn't touch ours */
+        for (int i = 0; tray && i < (int)LENGTH(tray->fds); i++)
+            if (tray->fds[i] >= 0)
+                fcntl(tray->fds[i], F_SETFD, 0);
+        if (envp)
+            execvpenv(argv[0], argv, envp);
+        else
+            execvp(argv[0], argv);
+        awl_err_printf("execvp %s failed: %s\n", argv[0], strerror(errno));
         _exit(1);
-    } else {
-        return pid;
     }
+    free(envp);
+    return pid < 0 ? -1 : pid;
 }
 
 void spawn(const Arg *arg) { spawn_pid(arg); }
@@ -4791,7 +4904,8 @@ autostart(const char **argv)
     pid_t pid;
     if (Autostarted_pids_sz >= (int)LENGTH(Autostarted_pids)) {
         awl_wrn_printf("autostart: more than %d programs, not starting %s\n",
-                (int)LENGTH(Autostarted_pids), argv[0]);
+                (int)LENGTH(Autostarted_pids),
+                argv[0] && !strcmp(argv[0], TRAY_ICONS) && argv[1] ? argv[1] : argv[0]);
         return;
     }
     /* a failed spawn returns -1; never let that reach kill()/waitpid() */
@@ -5835,6 +5949,8 @@ pluginsdetach(void)
     hover_widget = NULL;
     if (hover_timer)
         wl_event_source_timer_update(hover_timer, 0);
+    /* it hears that the pointer left, while it still can */
+    updateview(NULL, 0);
     wl_list_for_each(m, &mons, link)
         if (m->drw.m)
             awl_draw_widgets_clear(&m->drw);

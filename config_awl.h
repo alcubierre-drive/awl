@@ -14,9 +14,12 @@ static char *tags[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9" };
 /* logging */
 static int log_level = WLR_ERROR;
 
+/* the tray: the bar's own widget, with awl as the StatusNotifierWatcher */
+#define SNI_TRAY 1
+
 static const char* Autostarts[][8] = {
     { "fnott", NULL },
-    { "nm-applet", NULL },
+    { TRAY_ICONS, "nm-applet", NULL },
     { "blueman-applet", NULL },
     { "system-config-printer-applet", NULL },
     { "Telegram", NULL },

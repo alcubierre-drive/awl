@@ -45,7 +45,9 @@ struct widget_t {
     uint32_t (*measure)(widget_t* this);
     /** see `measure` */
     uint32_t (*draw)(widget_t* this, uint32_t x, pixman_image_t* pix);
-    /** pointer motion over the widget, x_rel from its left edge */
+    /** pointer motion over the widget, x_rel from its left edge (buffer
+     * pixels); -1 once it left the widget (for one that isn't, or awl's
+     * popups, a client over the bar), and before the plugins detach */
     void (*callback_view)(widget_t* this, int32_t x_rel);
     /** a click, button as ``BTN_*`` */
     void (*callback_click)(widget_t* this, uint32_t x_rel, int button);

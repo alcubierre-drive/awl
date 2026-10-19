@@ -1,0 +1,96 @@
+--- a/plutovg-1.3.3/source/plutovg-rasterize.c
++++ b/plutovg-1.3.3/source/plutovg-rasterize.c
+@@ -189,7 +189,14 @@
+     free(outline);
+ }
+ 
+-#define FT_COORD(x) (PVG_FT_Pos)(roundf(x * 64))
++/* awl: v finite and within +-limit, for FreeType's fixed point (26.6 for
++ * coordinates, of 32 bits in its math): an SVG's numbers can be anything */
++static double ft_clamp(double v, double limit)
++{
++    return v > limit ? limit : v < -limit ? -limit : v == v ? v : 0;
++}
++
++#define FT_COORD(x) (PVG_FT_Pos)(roundf(ft_clamp(x * 64, 1 << 26)))
+ static void ft_outline_move_to(PVG_FT_Outline* ft, float x, float y)
+ {
+     ft->points[ft->n_points].x = FT_COORD(x);
+@@ -305,8 +312,8 @@
+     double scale = hypot(scale_x, scale_y) / PLUTOVG_SQRT2;
+     double width = stroke_data->style.width * scale;
+ 
+-    PVG_FT_Fixed ftWidth = (PVG_FT_Fixed)(width * 0.5 * (1 << 6));
+-    PVG_FT_Fixed ftMiterLimit = (PVG_FT_Fixed)(stroke_data->style.miter_limit * (1 << 16));
++    PVG_FT_Fixed ftWidth = (PVG_FT_Fixed)ft_clamp(width * 0.5 * (1 << 6), 1 << 26); /* awl: clamped */
++    PVG_FT_Fixed ftMiterLimit = (PVG_FT_Fixed)ft_clamp(stroke_data->style.miter_limit * (1 << 16), 1 << 30); /* awl: clamped */
+ 
+     PVG_FT_Stroker_LineCap ftCap;
+     switch(stroke_data->style.cap) {
+--- a/plutovg-1.3.3/source/plutovg-path.c
++++ b/plutovg-1.3.3/source/plutovg-path.c
+@@ -583,7 +583,11 @@
+         dash_sum += dashes[i];
+     if(ndashes % 2 == 1)
+         dash_sum *= 2.f;
+-    if(dash_sum <= 0.f) {
++    /* awl: solid, too, a pattern that isn't finite, or that would cut the
++     * path into more than 65536 dashes (an SVG of 150 bytes can ask for
++     * billions, which no memory holds) */
++    float ndashed = plutovg_path_length(path) / dash_sum * (ndashes % 2 == 1 ? 2 * ndashes : ndashes);
++    if(dash_sum <= 0.f || !isfinite(dash_sum) || !(ndashed <= 65536.f)) {
+         plutovg_path_traverse(path, traverse_func, closure);
+         return;
+     }
+--- a/plutosvg-0.0.8/source/plutosvg.c
++++ b/plutosvg-0.0.8/source/plutosvg.c
+@@ -1618,6 +1618,7 @@
+     plutosvg_palette_func_t palette_func;
+     void* closure;
+     int depth;
++    long budget; /* awl: what render_element() may still do */
+ } render_context_t;
+ 
+ static float resolve_length(const render_state_t* state, const length_t* length, char mode)
+@@ -2531,8 +2532,23 @@
+     render_state_end(&new_state);
+ }
+ 
++/* awl: the work one render may do, in RENDER_COST per element plus a byte
++ * per byte of its path data: <use>s of <use>s multiply what a small SVG
++ * draws (ten levels of ten each are a billion paths) */
++#define RENDER_BUDGET (1L << 24)
++#define RENDER_COST 64
++
+ static void render_element(const element_t* element, render_context_t* context, render_state_t* state)
+ {
++    long cost = RENDER_COST;
++    if(element->id == TAG_PATH) {
++        const string_t* d = find_attribute(element, ATTR_D, false);
++        if(d)
++            cost += (long)d->length;
++    }
++
++    if((context->budget -= cost) < 0)
++        return;
+     switch(element->id) {
+     case TAG_SVG:
+         render_svg(element, context, state);
+@@ -2603,7 +2619,7 @@
+         state.element = element;
+     }
+ 
+-    render_context_t context = {document, canvas, current_color, palette_func, closure, 0};
++    render_context_t context = {document, canvas, current_color, palette_func, closure, 0, RENDER_BUDGET};
+     render_element(state.element, &context, &state);
+     return true;
+ }
+@@ -2673,7 +2689,7 @@
+         state.element = element;
+     }
+ 
+-    render_context_t context = {document, NULL, NULL, NULL, NULL, 0};
++    render_context_t context = {document, NULL, NULL, NULL, NULL, 0, RENDER_BUDGET};
+     render_element(state.element, &context, &state);
+     if(IS_INVALID_RECT(state.extents)) {
+         *extents = EMPTY_RECT;

@@ -43,23 +43,40 @@ void awl_tray_tooltip_hide( void ) {
     if (T.win) awl_host->window_hide( T.win );
 }
 
+void awl_tray_tooltip_show( uint32_t token, const char* monitor, int center_x, const char* text ) {
+    char* t = strdup( text );
+    if (!t || !(T.win || (T.win = AWL_TRAY_WINDOW_CREATE())) ||
+        !(T.timer || (T.timer = awl_host->timer_add( show, NULL )))) {
+        free( t );
+        return;
+    }
+    /* from one icon to the next: at once */
+    const int shown = awl_host->window_monitor( T.win ) != NULL;
+    T.token = token;
+    snprintf( T.monitor, sizeof T.monitor, "%s", monitor );
+    T.center_x = center_x;
+    free( T.text );
+    T.text = t;
+    if (shown) show( NULL );
+    else awl_host->timer_set( T.timer, TOOLTIP_DELAY );
+}
+
+void awl_tray_tooltip_drop( uint32_t token ) {
+    if (token == T.token) awl_tray_tooltip_hide();
+}
+
+void awl_tray_tooltip_fini( void ) {
+    awl_tray_tooltip_hide();
+    awl_host->timer_remove( T.timer );
+    if (T.win) awl_host->window_destroy( T.win );
+    free( T.text );
+    memset( &T, 0, sizeof T );
+}
+
 static void main_hover( void* data ) {
     hover_t* h = data;
-    if (!h->text) {
-        if (h->token == T.token) awl_tray_tooltip_hide();
-    } else if ((T.win || (T.win = awl_host->window_create_kept())) &&
-               (T.timer || (T.timer = awl_host->timer_add( show, NULL )))) {
-        /* from one icon to the next: at once */
-        const int shown = awl_host->window_monitor( T.win ) != NULL;
-        T.token = h->token;
-        snprintf( T.monitor, sizeof T.monitor, "%s", h->monitor );
-        T.center_x = h->center_x;
-        free( T.text );
-        T.text = h->text;
-        h->text = NULL;
-        if (shown) show( NULL );
-        else awl_host->timer_set( T.timer, TOOLTIP_DELAY );
-    }
+    if (!h->text) awl_tray_tooltip_drop( h->token );
+    else awl_tray_tooltip_show( h->token, h->monitor, h->center_x, h->text );
     free( h->monitor );
     free( h->text );
     free( h );

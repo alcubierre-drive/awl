@@ -24,16 +24,28 @@ FLAGS += -DAWL_HOSTED
 LDFLAGS += -shared -Wl,--as-needed $(shell pkg-config --libs $(PKGLIST))
 
 SRC := $(wildcard *.cpp)
-CSRC := menu.c menu_window.c tooltip.c
-OBJ := $(patsubst %.cpp,%.cpp.o,$(SRC)) $(patsubst %.c,%.c.o,$(CSRC))
+CSRC := menu.c menu_window.c tooltip.c app_env.c
+# the plugin library's icons (../plugins/icon.h) and the PNG and SVG
+# decoders they use, built here too: the menus are the tray's until the
+# tray is a bar widget. Hidden, so that they don't clash with anyone's.
+SHARED_OBJ := icon.c.o wuffs.c.o svg.c.o
+SVG_INC := -I../plutosvg/plutovg-1.3.3/include
+OBJ := $(patsubst %.cpp,%.cpp.o,$(SRC)) $(patsubst %.c,%.c.o,$(CSRC)) $(SHARED_OBJ)
 
 DBUS_SRC := dbus-menu.c dbus-status-notifier-item.c dbus-status-notifier-watcher.c
 DBUS_OBJ := $(patsubst %.c,%.c.o,$(DBUS_SRC))
 DEPS := $(patsubst %.o,%.d,$(OBJ) $(DBUS_OBJ))
 
+# preloaded into the programs awl starts with TRAY_ICONS (app_env.c,
+# env_shim.c); libc only
+SHIM := libawltray-env.so
+
 .PHONY: all clean
 
-all: $(NAME)
+all: $(NAME) $(SHIM)
+
+$(SHIM): env_shim.c
+	$(CC) $< -o $@ $(CFLAGS) -shared -MMD -MP -MF env_shim.d
 
 $(NAME): $(OBJ) $(DBUS_OBJ)
 	$(LD) $^ -o $@ $(LDFLAGS)
@@ -48,13 +60,21 @@ dbus-status-notifier-watcher.c: protocol/dbus-status-notifier-watcher.xml
 dbus-%.c.o: dbus-%.c
 	$(CC) -c $< -o $@ $(filter-out -pedantic,$(CFLAGS)) $(FLAGS)
 
+icon.c.o: ../plugins/icon.c
+	$(CC) -c $< -o $@ $(CFLAGS) $(FLAGS) $(SVG_INC) -fvisibility=hidden
+# IEEE floats for untrusted numbers (see ../plutosvg/svg.c)
+svg.c.o: ../plutosvg/svg.c
+	$(CC) -c $< -o $@ $(CFLAGS) $(FLAGS) $(SVG_INC) -fvisibility=hidden -fno-fast-math
+wuffs.c.o: ../wuffs/wuffs.c
+	$(CC) -c $< -o $@ $(CFLAGS) $(FLAGS) -fvisibility=hidden
+
 %.c.o: %.c $(DBUS_SRC)
 	$(CC) -c $< -o $@ $(CFLAGS) $(FLAGS)
 %.cpp.o: %.cpp $(DBUS_SRC)
 	$(CXX) -c $< -o $@ $(CXXFLAGS) $(FLAGS)
 
 clean:
-	rm -f $(NAME) $(OBJ) $(DBUS_OBJ) $(DEPS)
+	rm -f $(NAME) $(SHIM) env_shim.d $(OBJ) $(DBUS_OBJ) $(DEPS)
 
 # after all rules, so a .d file's target can't become the default goal
--include $(DEPS)
+-include $(DEPS) env_shim.d
