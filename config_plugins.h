@@ -114,6 +114,7 @@ static const Rule rules[] = {
 
     { "org.gnome.Evolution",NULL,     1<<8,         0,           -1,   0,   0, 0, 0 },
     { "evolution-alarm-notify", NULL, 1<<8,         1,           -1,   0,   0, 0, 0 },
+    { "org.pulseaudio.pavucontrol","Volume Control",0,1,         -1,   0,   0, 0, 0 },
     // { "kitty",            NULL,       0,            0,           -1,   0,   0, 0, 0 },
 };
 

@@ -1,8 +1,8 @@
-/* The items' tooltips, see tooltip.h. */
+/* The items' tooltips, see tray_tooltip.h. Main thread only. */
 
-#include "tooltip.h"
+#include "tray_tooltip.h"
 #include "../awl_host.h"
-#include "menu.h"
+#include "tray_menu.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,16 +10,6 @@
 
 /** ms the pointer rests on an icon before its tooltip shows */
 enum { TOOLTIP_DELAY = 500 };
-
-typedef struct {
-    uint32_t token;
-    char* monitor;
-    int center_x;
-    /** NULL: leave */
-    char* text;
-} hover_t;
-
-/* ---- awl's main thread ---- */
 
 static struct {
     awl_window_t* win;
@@ -45,7 +35,7 @@ void awl_tray_tooltip_hide( void ) {
 
 void awl_tray_tooltip_show( uint32_t token, const char* monitor, int center_x, const char* text ) {
     char* t = strdup( text );
-    if (!t || !(T.win || (T.win = AWL_TRAY_WINDOW_CREATE())) ||
+    if (!t || !(T.win || (T.win = awl_host->window_create())) ||
         !(T.timer || (T.timer = awl_host->timer_add( show, NULL )))) {
         free( t );
         return;
@@ -71,33 +61,4 @@ void awl_tray_tooltip_fini( void ) {
     if (T.win) awl_host->window_destroy( T.win );
     free( T.text );
     memset( &T, 0, sizeof T );
-}
-
-static void main_hover( void* data ) {
-    hover_t* h = data;
-    if (!h->text) awl_tray_tooltip_drop( h->token );
-    else awl_tray_tooltip_show( h->token, h->monitor, h->center_x, h->text );
-    free( h->monitor );
-    free( h->text );
-    free( h );
-}
-
-/* ---- the tray's GTK thread ---- */
-
-static void post( uint32_t token, const char* monitor, int center_x, const char* text ) {
-    hover_t* h = calloc( 1, sizeof(*h) );
-    *h = (hover_t){ token, strdup( monitor ? monitor : "" ), center_x, text ? strdup( text ) : NULL };
-    awl_host->post( main_hover, h );
-}
-
-uint32_t awl_tray_tooltip_enter( const char* monitor, int center_x, const char* text ) {
-    static uint32_t next;
-    if (!text || !*text) return 0;
-    if (!++next) next = 1;
-    post( next, monitor, center_x, text );
-    return next;
-}
-
-void awl_tray_tooltip_leave( uint32_t token ) {
-    if (token) post( token, NULL, 0, NULL );
 }

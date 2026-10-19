@@ -3,13 +3,11 @@
 /**
  * awl's host table, `awl_host_t`: everything the code outside the awl binary
  * reaches awl through. libawlplugins.so gets it from `awl_plugin_entry()`
- * (awl_plugin_abi.h), libawltray.so from `awl_tray_init()`; both keep it as
- * `awl_host` and have no other references into awl. Code built with
- * ``AWL_HOSTED`` (either library) is on that side: there awl_log.h's macros
- * go through ``awl_host->log``.
+ * (awl_plugin_abi.h) and keeps it as `awl_host`; it has no other references
+ * into awl. Code built with ``AWL_HOSTED`` is on that side: there
+ * awl_log.h's macros go through ``awl_host->log``.
  *
- * Plain C types only (awl's own structs are opaque here), so the C++ tray
- * includes it too. awl fills the table in awl_plugin_host.c; changing it is an
+ * Plain C types only (awl's own structs are opaque here). awl fills the table in awl_plugin_host.c; changing it is an
  * ABI change of the plugin library (`AWL_PLUGIN_ABI`).
  */
 
@@ -44,11 +42,9 @@ typedef enum awl_logind_flags {
 } awl_logind_flags_t;
 
 /**
- * What awl provides to libawlplugins.so and libawltray.so. All functions are
- * main-thread only, except `redraw_request`, `log`, `lock_request`,
- * `logind_state`, `post` and `cfg`'s, which any thread may call. The tray, on
- * its GTK thread, uses only those; what it does on the main thread (its
- * menus, tray/menu_window.c) it gets there through `post`.
+ * What awl provides to libawlplugins.so. All functions are main-thread only,
+ * except `redraw_request`, `log`, `lock_request`, `logind_state` and `cfg`'s,
+ * which any thread may call.
  */
 typedef struct awl_host_t {
     /** `AWL_PLUGIN_ABI` as awl was built */
@@ -92,10 +88,6 @@ typedef struct awl_host_t {
     /** `arrange()` */
     void (*arrange)( Monitor* m );
 
-    /** tray: `awl_tray_width()` */
-    uint32_t (*tray_width)( const char* monitor_id );
-    /** tray: `awl_tray_set_widget_x()` */
-    void (*tray_set_widget_x)( const char* monitor_id, uint32_t x );
     /** awl's own text popups (awl_window.h): `textwincreate()`; a window
      * lives until window_destroy() or until the plugins detach */
     awl_window_t* (*window_create)( void );
@@ -155,13 +147,6 @@ typedef struct awl_host_t {
      * (awl also hides it, on a press elsewhere or with its monitor) */
     Monitor* (*window_monitor)( awl_window_t* win );
 
-    /** `awl_post()`: runs fn( data ) on the main thread, soon; any thread.
-     * fn never runs if awl quits first. */
-    void (*post)( void (*fn)( void* data ), void* data );
-    /** `textwincreatekept()`: like window_create, for the tray's menus: the
-     * plugins detaching leave it, a press on the tray's windows doesn't hide
-     * it */
-    awl_window_t* (*window_create_kept)( void );
     /** `monitornamed()`: the monitor of the output named name, NULL if none */
     Monitor* (*monitor_named)( const char* name );
     /** `popupconfig()`: config_plugins.h's popup_config (awl_window_draw.h)
@@ -223,8 +208,8 @@ typedef struct awl_host_t {
     (host)->cfg.s_unlock( (host)->cfg.s )
 
 #ifdef AWL_HOSTED
-/** awl, as this library sees it: set by `awl_plugin_entry()` (plugins.c) or
- * `awl_tray_init()` (tray/awl_tray_bridge.cpp) before anything else runs */
+/** awl, as this library sees it: set by `awl_plugin_entry()` (plugins.c)
+ * before anything else runs */
 extern const awl_host_t* awl_host;
 #endif
 

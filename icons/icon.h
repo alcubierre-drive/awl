@@ -51,6 +51,10 @@ typedef struct awl_icons awl_icons_t;
  * themes' index.theme files, so they are best made once and kept; a theme
  * changed on disk takes a new one. */
 awl_icons_t* awl_icons_new( const char* const* themes );
+/** The themes as GTK has them: theme (NULL or "": none, e.g.
+ * tray_config.icon_theme), the desktop's (gtk-3.0/settings.ini's
+ * gtk-icon-theme-name; GNOME's dconf setting isn't read), then Adwaita. */
+awl_icons_t* awl_icons_new_desktop( const char* theme );
 /** NULL is fine */
 void awl_icons_free( awl_icons_t* icons );
 

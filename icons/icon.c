@@ -256,6 +256,46 @@ awl_icons_t* awl_icons_new( const char* const* themes ) {
     return ic;
 }
 
+/** the desktop's icon theme as GTK's settings.ini has it, "" if it doesn't
+ * (GNOME's dconf setting isn't read) */
+static void desktop_theme( char* out, size_t size ) {
+    char path[4096];
+    const char* config = getenv( "XDG_CONFIG_HOME" );
+    const char* home = getenv( "HOME" );
+    *out = 0;
+    if (config && *config) snprintf( path, sizeof path, "%s/gtk-3.0/settings.ini", config );
+    else if (home) snprintf( path, sizeof path, "%s/.config/gtk-3.0/settings.ini", home );
+    else return;
+    FILE* f = fopen( path, "re" );
+    if (!f) return;
+    char line[512];
+    while (fgets( line, sizeof line, f )) {
+        char* p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp( p, "gtk-icon-theme-name", 19 )) continue;
+        p += 19;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p++ != '=') continue;
+        while (*p == ' ' || *p == '\t' || *p == '"') p++;
+        size_t n = strcspn( p, "\"\r\n" );
+        while (n && (p[n - 1] == ' ' || p[n - 1] == '\t')) n--;
+        snprintf( out, size, "%.*s", (int)n, p );
+    }
+    fclose( f );
+}
+
+awl_icons_t* awl_icons_new_desktop( const char* theme ) {
+    char desktop[256];
+    desktop_theme( desktop, sizeof desktop );
+    const char* names[4];
+    int n = 0;
+    if (theme && *theme) names[n++] = theme;
+    if (*desktop) names[n++] = desktop;
+    names[n++] = "Adwaita";
+    names[n] = NULL;
+    return awl_icons_new( names );
+}
+
 void awl_icons_free( awl_icons_t* ic ) {
     if (!ic) return;
     for (int i = 0; i < ic->nthemes; i++) {

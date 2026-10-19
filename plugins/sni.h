@@ -8,15 +8,14 @@
  * signals), picks the icon to show (the attention one while the item needs
  * attention, if it has one) and reads its file, looked up in the item's
  * IconThemePath and the tray's themes (tray_config.icon_theme, the
- * desktop's, Adwaita, hicolor; plugins/icon.h), or takes its pixmaps. What
+ * desktop's, Adwaita, hicolor; icons/icon.h), or takes its pixmaps. What
  * the bar shows of it all is an `awl_sni_snap_t`, immutable once made: the
  * bar widget (plugins_widgets.c) takes the newest one on the main thread
  * and decodes the icons there at its size, so the loop never decodes and
  * the main thread never touches a file.
  *
  * The items' menus (com.canonical.dbusmenu) are plugins/sni_menu.c's, on
- * the same loop and connection, shown by tray/menu_window.c (menu.h), built
- * into this library as well. The main thread's requests (clicks, scrolls,
+ * the same loop and connection, shown by tray_menu_window.c (tray_menu.h). The main thread's requests (clicks, scrolls,
  * the menus' requests and events) are queued for the loop; what goes back
  * (the menus' layouts) waits for the main thread's next `sni_main_poll()`,
  * never on a pointer into the library that could outlive it.
@@ -26,7 +25,7 @@
 #include <stdint.h>
 #include <stdatomic.h>
 #include <pulse/mainloop-api.h>
-#include "icon.h"
+#include "../icons/icon.h"
 
 /** an item's Status */
 enum { AWL_SNI_PASSIVE, AWL_SNI_ACTIVE, AWL_SNI_ATTENTION };
@@ -42,7 +41,7 @@ typedef struct awl_sni_blob_t {
 typedef struct awl_sni_item_t {
     /** the item's while it is registered, never reused */
     uint64_t serial;
-    /** its menu's serial for menu_window.c (menu.h), 0 if it has none */
+    /** its menu's serial for tray_menu_window.c (tray_menu.h), 0 if it has none */
     uint64_t menu;
     /** ItemIsMenu: a left click opens the menu instead of Activate */
     int item_is_menu;
@@ -75,7 +74,7 @@ typedef struct awl_sni_t awl_sni_t;
  * on failure. One at a time. */
 awl_sni_t* sni_new( pa_mainloop_api* api );
 /** After the loop has stopped; main thread (it gives back what the main
- * thread holds, menu_window.c's and tooltip.c's windows and timers too). */
+ * thread holds, tray_menu_window.c's and tray_tooltip.c's windows and timers too). */
 void sni_free( awl_sni_t* s );
 
 /* ---- the main thread ---- */
@@ -97,6 +96,6 @@ void sni_click( awl_sni_t* s, uint64_t serial, int what, int x, int y, const cha
 /** item serial's Scroll( delta, "vertical" or "horizontal" ) */
 void sni_scroll( awl_sni_t* s, uint64_t serial, int delta, int horizontal );
 /** Hands what the loop has for the main thread (the menus' layouts) to
- * menu_window.c, soon, from a timer of its own; the bar widget calls it
+ * tray_menu_window.c, soon, from a timer of its own; the bar widget calls it
  * on every measure (the loop requests a redraw whenever it has some). */
 void sni_main_poll( awl_sni_t* s );

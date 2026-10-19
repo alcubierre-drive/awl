@@ -1,20 +1,19 @@
-/* The main thread's half of the items' menus (see menu.h): the menu open, in
- * awl's popups, kept across plugin reloads (window_create_kept), one per
- * level: the menu, and each submenu open beside the row it belongs to. One
+/* The main thread's half of the items' menus (see tray_menu.h): the menu
+ * open, in awl's popups, one per level: the menu, and each submenu open beside the row it belongs to. One
  * menu at a time. Hovering a submenu's row opens it after OPEN_DELAY;
  * hovering another row closes it after CLOSE_DELAY, unless the pointer gets
  * back into it first (on the way there, across the rows between). A new
  * layout that no longer has a submenu open waits LAYOUT_GRACE for one that
  * does (apps that rebuild their menus, network-manager-applet's rescans).
- * Off the menu, its submenus and its item's tray for LEAVE_DELAY, it closes.
- * Everything here runs on awl's main thread: what the tray thread sends
- * comes through awl_host->post(), awl_window's callbacks are awl's. */
+ * Off the menu, its submenus and its item for LEAVE_DELAY, it closes.
+ * Everything here runs on awl's main thread: what the tray's loop sends
+ * comes through sni.c's mailbox, awl_window's callbacks are awl's. */
 
-#include "menu.h"
-#include "tooltip.h"
+#include "tray_menu.h"
+#include "tray_tooltip.h"
 #include "../awl_log.h"
 #include "../awl_window_draw.h"
-#include "../plugins/icon.h"
+#include "../icons/icon.h"
 
 #include <linux/input-event-codes.h>
 
@@ -162,7 +161,7 @@ static void draw_check( pixman_image_t* pix, uint32_t flags, float x, float y, f
         fill_shape( pix, x + in, y + s / 2 - t, s - 2 * in, 2 * t, 0, 0, fg );
 }
 
-/* ---- icons: decoded here, at the monitor's scale; read by the tray thread ---- */
+/* ---- icons: decoded here, at the monitor's scale; read on the tray's loop ---- */
 
 static void icons_clear( void ) {
     if (M.icons && M.snap)
@@ -441,7 +440,7 @@ static void hidden( awl_window_t* win, void* data );
 static awl_window_t* window( int k ) {
     level_t* L = &M.lv[k];
     if (L->win) return L->win;
-    if (!(L->win = AWL_TRAY_WINDOW_CREATE())) return NULL;
+    if (!(L->win = awl_host->window_create())) return NULL;
     void* data = (void*)(intptr_t)k;
     awl_host->window_set_painter( L->win, &painter, L );
     awl_host->window_set_click( L->win, click, data );

@@ -1,5 +1,4 @@
-/* The items' menus over sd-bus, see sni_menu.h; tray/menu.c is the GTK
- * tray's, with GIO, and this follows it. */
+/* The items' menus over sd-bus, see sni_menu.h. */
 
 #include "sni_menu.h"
 #include "../awl_host.h"
@@ -13,7 +12,7 @@
 /** the size icons are looked up at: any will do (the main thread fits them
  * to the menu's font), it only picks among a theme's fixed sizes */
 #define LOOKUP_PX 32
-/** a layout deeper or larger than this is cut there: menu_window.c shows 8
+/** a layout deeper or larger than this is cut there: tray_menu_window.c shows 8
  * levels, and no app has thousands of entries */
 #define MAX_DEPTH 8
 #define MAX_NODES 4096

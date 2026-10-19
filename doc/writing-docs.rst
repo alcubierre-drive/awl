@@ -31,7 +31,7 @@ can stay plain.
   file's overview.
 * Struct members need their comment on the line(s) before them; a comment
   after a member on the same line isn't picked up.
-* The text is reStructuredText. Backquotes, as in `` `awl_tray_join()` `` or
+* The text is reStructuredText. Backquotes, as in `` `awl_redraw_request()` `` or
   `` `awl_host_t.actions` ``, make a C expression whose names link to their
   documentation. Use double backquotes for code that isn't C or isn't
   documented here (````$HOME````, ````notify-send````), and for anything with

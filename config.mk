@@ -38,7 +38,7 @@ CFLAGS = -std=c11 -Wall -Wextra -pedantic -Wno-unused-parameter
 # CFLAGS += -ggdb
 # CFLAGS += -O0
 CFLAGS += -Ofast -march=native -mtune=native -flto
-LDFLAGS += -Ofast -march=native -mtune=native -flto=12
+LDFLAGS += -Ofast -march=native -mtune=native -flto=12 -Wno-maybe-uninitialized
 
 AWL_LIBS := $(HOME)/Desktop/awl-libs
 CFLAGS += -I$(AWL_LIBS)/include/scenefx-0.5

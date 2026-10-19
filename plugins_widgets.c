@@ -7,9 +7,8 @@
 #include "plugins/date.h"
 #include "plugins/calpopup.h"
 #include "plugins/colors.h"
-#include "tray/awl_tray.h"
-#include "tray/menu.h"
-#include "tray/tooltip.h"
+#include "plugins/tray_menu.h"
+#include "plugins/tray_tooltip.h"
 #include "plugins/sni.h"
 #include "wuffs/wuffs.h"
 #include "icons/eyes_closed.h"
@@ -46,8 +45,6 @@ static uint32_t pulsewidget_measure( widget_t* w );
 static void pulsewidget_click( widget_t* w, uint32_t x, int button );
 static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount );
 
-static uint32_t systray_measure( widget_t* w );
-static uint32_t systray_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t sniwidget_measure( widget_t* w );
 static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void sniwidget_click( widget_t* w, uint32_t x, int button );
@@ -105,23 +102,15 @@ void awl_widgets_create( awl_draw_t* drw ) {
         .leave_delay_ms = 20,
         .free = free,
     };
-    awl_dict_val_t sni;
-    if (AWL_HOST_CFG_GET( awl_host, "sni_tray", &sni ) == AWL_DICT_OK && sni.kind == AWL_DICT_KIND_NUM && sni.num)
-        drw->widgets_right[drw->n_widgets_right++] = (widget_t){
-            .bar = drw,
-            .measure = &sniwidget_measure,
-            .draw = &sniwidget_draw,
-            .callback_click = &sniwidget_click,
-            .callback_scroll = &sniwidget_scroll,
-            .callback_view = &sniwidget_view,
-            .free = &sniwidget_free,
-        };
-    else
-        drw->widgets_right[drw->n_widgets_right++] = (widget_t){
-            .bar = drw,
-            .measure = &systray_measure,
-            .draw = &systray_draw,
-        };
+    drw->widgets_right[drw->n_widgets_right++] = (widget_t){
+        .bar = drw,
+        .measure = &sniwidget_measure,
+        .draw = &sniwidget_draw,
+        .callback_click = &sniwidget_click,
+        .callback_scroll = &sniwidget_scroll,
+        .callback_view = &sniwidget_view,
+        .free = &sniwidget_free,
+    };
     drw->widgets_right[drw->n_widgets_right++] = (widget_t){
         .bar = drw,
         .measure = &pulsewidget_measure,
@@ -378,21 +367,7 @@ static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
     return w->width;
 }
 
-static uint32_t systray_measure( widget_t* w ) {
-    return awl_host->tray_width( w->bar->m->wlr_output->name );
-}
-
-static uint32_t systray_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
-    // the tray is a separate window; put it where the bar left room, and
-    // paint the slot in its color for the sub-pixel it doesn't cover
-    awl_host->tray_set_widget_x( w->bar->m->wlr_output->name, x );
-    pixman_color_t bg = color_8bit_to_16bit( awl_config()->tray->bg );
-    pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &bg, 1, &(pixman_box32_t){
-        .x1 = x, .x2 = x + w->width, .y1 = 0, .y2 = w->bar->m->b.height } );
-    return w->width;
-}
-
-/* ---- the tray, the bar's own (plugins/sni.h) ---- */
+/* ---- the tray (plugins/sni.h) ---- */
 
 /** logical pixels: the icons, the gap between them and the padding around */
 static const float sni_icon_size = 16.0f;

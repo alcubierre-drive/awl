@@ -16,7 +16,7 @@ What a reload picks up
    * - Reloads with the library
      - Needs a restart of awl
    * - plugins_widgets.c, plugins_desktop_panel.c, plugins.c, plugins/
-     - awl.c, awl_draw.c, awl_redraw.c, awl_lock.c, awl_alert.c, awl_window.c, awl_desktop.c, awl_background.c, awl_plugin_host.c, the tray
+     - awl.c, awl_draw.c, awl_redraw.c, awl_lock.c, awl_alert.c, awl_window.c, awl_desktop.c, awl_background.c, awl_plugin_host.c, awl_sni.c (the tray's watcher), tray/
    * - config_plugins.h: keys, buttons, rules, layouts,
        colors, font, borders, blur, input devices, keymap, tray and
        wallpaper settings
@@ -58,8 +58,10 @@ event loop's next idle round. Then `awl_plugins_reload()`:
    applies what changed (``configapply()``), gives every bar its widgets
    again and redraws.
 
-Afterwards awl also rebuilds the tray's D-Bus state, which can go stale after
-suspend, and hands it the new tray settings (`awl_tray_reload()`).
+The tray widget's host is one of the library's, so it starts afresh with the
+new library and asks awl's watcher, which keeps running, for the items
+again. Afterwards awl hands the new tray settings' icon theme to the
+programs it starts with ``TRAY_ICONS`` (`awl_tray_app_set_theme()`).
 
 As a sequence, with the library's threads in it:
 
@@ -97,7 +99,7 @@ As a sequence, with the library's threads in it:
      D->>N: configuse(): api->config(), configapply()
      D->>N: bar_widgets() for every bar
      D->>D: drawbars(), desktop_reloaded()
-     D->>D: awl_tray_reload(cfg->tray)
+     D->>D: awl_tray_app_set_theme(cfg->tray->icon_theme)
 
 The library's lifetime
 ----------------------

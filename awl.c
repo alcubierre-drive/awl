@@ -9,7 +9,6 @@
 #include "awl_desktop.h"
 #include "plugins/colors.h" /* config_plugins.h */
 #include "awl_redraw.h"
-#include "awl_post.h"
 #include "awl_lock.h"
 #include "awl_sni.h"
 #include "awl_alert.h"
@@ -92,11 +91,11 @@ static void drawbars(void);
 static void drawalert(Monitor *m);
 static void drawalerts(void);
 static void textwinsupdate(Monitor *m);
-static void textwinshideall(int kept);
+static void textwinshideall(void);
 static awl_window_t *textwinat(double x, double y);
 static awl_window_t *textwinpointer(void);
 static int textwinmotion(void);
-static void textwinsdestroy(int kept);
+static void textwinsdestroy(void);
 static bool alert_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy);
 static Buffer *barbuffer(Monitor *m);
 static Buffer *newbarbuffer(Monitor *m);
@@ -137,14 +136,6 @@ static int redraw_fire( int fd, uint32_t mask, void* data ) {
     desktop_update_all();
     wallpapertake();
     drawalerts();
-    return 0;
-}
-
-/** what other threads post for the main thread: see awl_post.h */
-static struct wl_event_source* post_source = NULL;
-static int post_fire( int fd, uint32_t mask, void* data ) {
-    (void)fd; (void)mask; (void)data;
-    awl_post_run();
     return 0;
 }
 
@@ -252,8 +243,7 @@ static void toggleview(const Arg *arg);
 static void transluce(const Arg *arg);
 static void view(const Arg *arg);
 
-/** how long awl waits on exit for the tray thread and for its children */
-#define TRAY_STOP_MS 5000
+/** how long awl waits on exit for its children */
 #define CHILD_STOP_MS 3000
 /** how long the logind thread may not listen before the alert goes up
  * (logindupdate()), and the most a lock waits to cover every output
@@ -323,8 +313,6 @@ static struct wlr_scene_tree *alert_tree;
 typedef struct {
     awl_window_t *win;
     struct wl_list link;
-    /** the tray's (textwincreatekept()): outlives the plugins */
-    int kept;
     /** looks like a menu (textwinsetmenustyle()) */
     int menu;
 } TextWin;
@@ -406,11 +394,6 @@ static struct wlr_xwayland *xwayland;
 
 /* configuration, allows nested code to access above variables */
 #include "config_awl.h"
-/* config_awl.h's, if it has it: 1 puts the bar's own tray widget (and awl's
- * StatusNotifierWatcher, awl_sni.h) in place of the GTK tray */
-#ifndef SNI_TRAY
-#define SNI_TRAY 0
-#endif
 /* the defaults, for while no library (and so no config_plugins.h) is loaded */
 #include "config_plugins.def.h"
 
@@ -521,9 +504,6 @@ static void cfgdict_defaults(awl_dict_t* cfgdict)
 
     /* "lock_on_suspend": config_awl.h's, for plugins/logind.c */
     awl_dict_set(cfgdict, "lock_on_suspend", &AWL_DICT_NUM(lock_on_suspend));
-
-    /* "sni_tray": config_awl.h's SNI_TRAY, for plugins_widgets.c */
-    awl_dict_set(cfgdict, "sni_tray", &AWL_DICT_NUM(SNI_TRAY));
 }
 
 static const awl_config_t *
@@ -1239,17 +1219,11 @@ buttonpress(struct wl_listener *listener, void *data)
     }
     /* the other popups take no input; a press anywhere but on the bar (whose
      * widgets close their own on a press, see below) closes them, and goes on
-     * to what is below. The tray's icons close their menus (the kept popups)
-     * the same way, but they are its own layer surfaces: a press there closes
-     * only the others. */
+     * to what is below */
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&textwins)
             && !((node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL))
-                && (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer)) {
-        LayerSurface *l = NULL;
-        xytonode(cursor->x, cursor->y, NULL, NULL, &l, NULL, NULL);
-        textwinshideall(!(l && l->layer_surface->namespace
-                && !strncmp(l->layer_surface->namespace, "awl-tray:", 9)));
-    }
+                && (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer))
+        textwinshideall();
 
     click = ClkRoot; // TODO we don't treat these cases
     xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
@@ -1389,13 +1363,9 @@ checkidleinhibitor(struct wlr_surface *exclude)
 void
 cleanup(void)
 {
-    struct timespec start, now;
     sigset_t quitsigs;
 
     if (redraw_source) wl_event_source_remove(redraw_source);
-    /* what the tray posts from now on waits, and is dropped below */
-    if (post_source) wl_event_source_remove(post_source);
-    post_source = NULL;
     if (lock_source) wl_event_source_remove(lock_source);
     if (logind_timer) wl_event_source_remove(logind_timer);
     if (covered_timer) wl_event_source_remove(covered_timer);
@@ -1418,46 +1388,11 @@ cleanup(void)
     background_fini();
     redraw_source = NULL;
 
-    /* Tear down the tray's own client connection to us before we start
-     * force-destroying clients below, so its GTK/GDK thread shuts down
-     * cleanly instead of racing wl_display_destroy_clients(). */
     awl_sni_watcher_stop();
-    awl_tray_shutdown();
-    /* awl_tray_shutdown() only requests the tray thread to quit; it can't
-     * safely block here itself. wl_display_run() (above, in run()) already
-     * returned once quit() called wl_display_terminate(), so nothing is
-     * dispatching our Wayland event loop any more -- if the tray thread
-     * needs a response from us to finish tearing down its own Wayland
-     * client connection cleanly (a frame callback, a configure ack, a
-     * buffer release), a plain pthread_join() would deadlock forever
-     * waiting for an answer nobody is left to send. Keep servicing the
-     * event loop ourselves until the tray thread actually confirms it's
-     * done -- wl_display_flush_clients() is required here too, not just
-     * dispatch: replies generated while handling a client's request are
-     * only queued into that client's write buffer, and are normally
-     * flushed out by wl_display_run()'s own loop, which stopped running.
-     * Without an explicit flush here, a client blocked in a synchronous
-     * roundtrip (e.g. GTK's gtk_main()-exit gdk_flush()) waits forever on
-     * a reply that was generated but never actually written to its
-     * socket. */
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    while (!awl_tray_join()) {
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        if ((now.tv_sec - start.tv_sec) * 1000 + (now.tv_nsec - start.tv_nsec) / 1000000
-                >= TRAY_STOP_MS) {
-            /* Tearing the display down under a GTK thread that still uses
-             * it could crash anywhere; the kernel cleans up just as well. */
-            awl_wrn_printf("tray thread did not stop within %d ms, exiting without cleanup\n",
-                    TRAY_STOP_MS);
-            stopchildren();
-            _exit(EXIT_FAILURE);
-        }
-        wl_display_flush_clients(dpy);
-        wl_event_loop_dispatch(event_loop, 10);
-    }
+    awl_tray_app_cleanup();
 
-    /* That was the last time the event loop ran, so nothing reads the
-     * signalfd any more: let SIGINT and SIGTERM end awl the usual way again
+    /* The event loop doesn't run any more, so nothing reads the signalfd:
+     * let SIGINT and SIGTERM end awl the usual way again
      * instead of leaving it to SIGKILL should anything below hang. */
     sigemptyset(&quitsigs);
     sigaddset(&quitsigs, SIGINT);
@@ -1482,7 +1417,7 @@ cleanup(void)
     wl_display_destroy(dpy);
     /* Destroy after the wayland display (when the monitors are already destroyed)
        to avoid destroying them with an invalid scene output. */
-    textwinsdestroy(1);
+    textwinsdestroy();
     textwin_tree = NULL;
     wlr_scene_node_destroy(&scene->tree.node);
     awl_draw_fini();
@@ -1492,7 +1427,6 @@ cleanup(void)
     cfgdict = NULL;
     /* only now nothing can request a redraw or a lock anymore */
     awl_redraw_fini();
-    awl_post_fini();
     awl_lock_fini();
 }
 
@@ -1504,11 +1438,6 @@ cleanupmon(struct wl_listener *listener, void *data)
     LayerSurface *l, *tmp;
     TextWin *tw;
     size_t i;
-
-    /* Tear down this monitor's own tray overlay window (if it ever got
-     * one -- see tray/awl_tray_bridge.cpp), before m->wlr_output's name
-     * becomes unavailable below. */
-    awl_tray_remove_monitor(m->wlr_output->name);
 
     /* m->layers[i] are intentionally not unlinked */
     for (i = 0; i < LENGTH(m->layers); i++) {
@@ -1856,25 +1785,6 @@ createlayersurface(struct wl_listener *listener, void *data)
     struct wlr_surface *surface = layer_surface->surface;
     struct wlr_scene_tree *scene_layer = layers[layermap[layer_surface->pending.layer]];
 
-    /* The tray (tray/awl_tray_bridge.cpp) opens one layer-shell window per
-     * monitor and requests no output of its own -- instead it encodes which
-     * monitor it belongs to in its namespace as "awl-tray:<monitor_id>"
-     * (monitor_id being m->wlr_output->name) so we can bind it to exactly
-     * that output here, before the generic "no output requested -> selmon"
-     * fallback below would otherwise land every monitor's tray window on
-     * whichever one happens to be selmon. */
-    if (!layer_surface->output && layer_surface->namespace &&
-            !strncmp(layer_surface->namespace, "awl-tray:", 9)) {
-        const char *want = strchr(layer_surface->namespace, ':') + 1;
-        Monitor *tm;
-        wl_list_for_each(tm, &mons, link) {
-            if (!strcmp(tm->wlr_output->name, want)) {
-                layer_surface->output = tm->wlr_output;
-                break;
-            }
-        }
-    }
-
     if (!layer_surface->output
             && !(layer_surface->output = selmon ? selmon->wlr_output : NULL)) {
         wlr_layer_surface_v1_destroy(layer_surface);
@@ -1998,11 +1908,7 @@ createmon(struct wl_listener *listener, void *data)
     awl_plugins_bar_widgets(&m->drw);
 
     /* LyrBottom sits below LyrTile/LyrFloat, so floating windows dragged
-     * over the bar's area render on top of it -- intentional: the tray
-     * overlay window (a real layer-shell client requesting the "bottom"
-     * protocol layer -- see gtk_layer_set_layer() in
-     * tray/awl_tray_bridge.cpp) also lands in LyrBottom via layermap[],
-     * so floating windows render above both. */
+     * over the bar's area render on top of it -- intentional */
     m->scene_buffer = wlr_scene_buffer_create(layers[LyrBottom], NULL);
     m->scene_buffer->point_accepts_input = bar_accepts_input;
     /* frosts the window list's translucent entries; drawbar() fits it and
@@ -2265,8 +2171,7 @@ destroylock(SessionLock *lock, int unlock)
     focusclient(focustop(selmon), 0);
     motionnotify(0, NULL, 0, 0, 0, 0);
 
-    /* catch up on everything skipped while locked (also re-places the tray
-     * via systray_draw()) */
+    /* catch up on everything skipped while locked */
     drawbars();
 
 destroy:
@@ -2548,9 +2453,8 @@ textwinfind(awl_window_t *win)
     return NULL;
 }
 
-/** a new popup in textwins, see textwincreate() */
-static awl_window_t *
-textwinnew(int kept)
+awl_window_t *
+textwincreate(void)
 {
     TextWin *tw;
     awl_window_style_t style;
@@ -2564,21 +2468,8 @@ textwinnew(int kept)
     style = textwinstyle(0);
     tw = ecalloc(1, sizeof(*tw));
     tw->win = awl_window_create(textwin_tree, &style);
-    tw->kept = kept;
     wl_list_insert(textwins.prev, &tw->link);
     return tw->win;
-}
-
-awl_window_t *
-textwincreate(void)
-{
-    return textwinnew(0);
-}
-
-awl_window_t *
-textwincreatekept(void)
-{
-    return textwinnew(1);
 }
 
 void
@@ -2738,25 +2629,22 @@ textwinsupdate(Monitor *m)
         awl_window_update(tw->win, m);
 }
 
-/** the plugins' popups, and with kept the tray's too */
+/** the plugins' popups */
 static void
-textwinshideall(int kept)
+textwinshideall(void)
 {
     TextWin *tw;
     wl_list_for_each(tw, &textwins, link)
-        if (kept || !tw->kept)
-            awl_window_hide(tw->win);
+        awl_window_hide(tw->win);
 }
 
-/** the ones the plugins did not destroy themselves, and with kept the
- * tray's too */
+/** the ones the plugins did not destroy themselves */
 static void
-textwinsdestroy(int kept)
+textwinsdestroy(void)
 {
     TextWin *tw, *tmp;
     wl_list_for_each_safe(tw, tmp, &textwins, link)
-        if (kept || !tw->kept)
-            textwindestroy(tw->win);
+        textwindestroy(tw->win);
 }
 
 Monitor *
@@ -4211,15 +4099,8 @@ run(char *startup_cmd)
         setenv("GRIM_DEFAULT_DIR", dir.str, 1);
     awl_dict_unlock(cfgdict);
 
-    /* Only now does our own Wayland socket exist and WAYLAND_DISPLAY point
-     * at it, which the tray's GTK/GDK thread needs to connect to us as a
-     * client. Its startup runs in the background (it can't complete the
-     * connection handshake until wl_display_run() below starts servicing
-     * clients) -- awl_tray_init() must not block waiting for that. */
-    if (SNI_TRAY)
-        awl_tray_init_env(awl_host_table(), cfg->tray);
-    else
-        awl_tray_init(awl_host_table(), cfg->tray);
+    /* the icon theme of the programs started with TRAY_ICONS */
+    awl_tray_app_set_theme(cfg->tray->icon_theme);
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM
      * master, etc */
@@ -4816,9 +4697,6 @@ setup(void)
     if (awl_redraw_init() >= 0)
         redraw_source = wl_event_loop_add_fd(event_loop, awl_redraw_fd(),
                 WL_EVENT_READABLE, redraw_fire, NULL);
-    if (awl_post_init() >= 0)
-        post_source = wl_event_loop_add_fd(event_loop, awl_post_fd(),
-                WL_EVENT_READABLE, post_fire, NULL);
     if (awl_lock_init() >= 0)
         lock_source = wl_event_loop_add_fd(event_loop, awl_lock_fd(),
                 WL_EVENT_READABLE, lockfire, NULL);
@@ -4827,8 +4705,7 @@ setup(void)
     logind_timer = wl_event_loop_add_timer(event_loop, logindtimeout, NULL);
     wl_event_source_timer_update(logind_timer, LOGIND_GRACE_MS);
     /* before the plugins: their tray widget asks it for the items */
-    if (SNI_TRAY)
-        awl_sni_watcher_start(event_loop);
+    awl_sni_watcher_start(event_loop);
     awl_plugins_load(0, cfgdict);
     configuse();
     awl_draw_init();
@@ -5147,7 +5024,7 @@ testwincmd(char *line)
             goto bad;
         textwinsetscroll(testwins[n], strcmp(onoff, "on") ? NULL : testwinscroll, (void *)(intptr_t)n);
     } else if (!strcmp(cmd, "hideall")) {
-        textwinshideall(1);
+        textwinshideall();
     } else if (!strcmp(cmd, "restart")) {
         plugin_restart(NULL);
     } else if (!strcmp(cmd, "dump") && *line) {
@@ -5278,12 +5155,6 @@ void togglebar_mon(Monitor* m) {
     /* drawbar() enables it again, if the window list has a width */
     if (!m->showbar)
         wlr_scene_node_set_enabled(&m->bar_blur->node, 0);
-    /* The tray is a separate, real layer-shell overlay window per monitor
-     * (see tray/awl_tray_bridge.cpp), not something drawn into m's own bar
-     * buffer, so hiding/showing that buffer's scene node above doesn't
-     * affect it -- it has to be told explicitly, for this monitor's own
-     * tray window specifically. */
-    awl_tray_set_visible(m->wlr_output->name, m->showbar);
     arrangelayers(m);
 }
 
@@ -5580,12 +5451,8 @@ updatebar(Monitor *m)
     m->b.width = rw;
     m->b.real_width = (int)((float)m->b.width / m->wlr_output->scale);
 
-    if (m->b.scale == m->wlr_output->scale && m->drw.m) {
-        /* x/y are monitor-local -- see the comment on the other call below. */
-        awl_tray_set_bar_geometry(m->wlr_output->name, 0, (topbar ? 0 : m->m.height - m->b.real_height),
-                m->b.real_width, m->b.real_height, m->b.scale);
+    if (m->b.scale == m->wlr_output->scale && m->drw.m)
         return;
-    }
 
     /* falls back to monospace; keeps the old font if even that fails */
     awl_draw_set_font(&m->drw, cfg->font, (float)cfg->fontsize, m->wlr_output->scale, 1);
@@ -5599,18 +5466,6 @@ updatebar(Monitor *m)
     updatefonts(m);
     desktop_fontchanged(m);
     textwinsupdate(m);
-
-    /* x/y are monitor-LOCAL (0, and the bar's own vertical offset within
-     * this monitor), not m->m.x/m->m.y's global output-layout position:
-     * the tray's layer-shell surface is explicitly bound to this exact
-     * output (see createlayersurface()'s "awl-tray:" namespace handling),
-     * so wlr_scene_layer_surface_v1_configure() already adds this
-     * monitor's own global origin on top of whatever margin we request --
-     * adding it again here double-counts it, pushing every monitor except
-     * the one at (0,0) off screen (confirmed: this is exactly what made a
-     * second monitor's tray invisible before this fix). */
-    awl_tray_set_bar_geometry(m->wlr_output->name, 0, (topbar ? 0 : m->m.height - m->b.real_height),
-            m->b.real_width, m->b.real_height, m->b.scale);
 }
 
 void
@@ -5955,7 +5810,7 @@ pluginsdetach(void)
         if (m->drw.m)
             awl_draw_widgets_clear(&m->drw);
     /* the popups the plugins left: nothing would update them any more */
-    textwinsdestroy(0);
+    textwinsdestroy();
     /* cfg points into the library */
     const Layout *old = cfg->layouts;
     size_t n_old = cfg->n_layouts;
@@ -5984,19 +5839,12 @@ pluginrestart(void *data)
      * one this is a plain restart of the plugin threads */
     awl_plugins_reload(pluginsdetach, pluginsattach);
 
-    /* The tray's D-Bus registration (and with it every item's icons) can be
-     * lost across suspend+wake, same class of problem the other plugin
-     * threads already get restarted for above -- so reload it the same way.
-     * Unlike those, this does NOT tear down and restart the tray's GTK
-     * thread itself (see awl_tray_reload()'s own comment for why: gtkmm's
-     * Gtk::Main cannot safely be constructed a second time in one process),
-     * so it's fire-and-forget, not a blocking shutdown/join/init cycle.
-     * It also applies the reloaded config_plugins.h's tray_config. */
-    awl_tray_reload(cfg->tray);
+    /* the reloaded config_plugins.h's tray_config */
+    awl_tray_app_set_theme(cfg->tray->icon_theme);
 }
 
-/** The plugin_restart action: reloads ``libawlplugins.so`` and the tray's
- * D-Bus state, see `awl_plugins_reload()` and `awl_tray_reload()`. Deferred
+/** The plugin_restart action: reloads ``libawlplugins.so`` (its tray widget
+ * too), see `awl_plugins_reload()`. Deferred
  * to the event loop's next idle round, since the binding calling it is in the
  * library the reload unloads. */
 void

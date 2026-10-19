@@ -160,9 +160,8 @@ struct cal_backend {
     GCancellable *cancel;
     /* the querying thread's. ctx is the thread-default main context while
      * it queries, so the registry's and the clients' signals and idles go
-     * there, not to the global default one, whose owner (the tray's GTK
-     * thread, which also has its Wayland connection there) must never see
-     * them. */
+     * there, not to the global default one, which no thread of awl's
+     * runs. */
     GMainContext *ctx;
     ESourceRegistry *registry;
     time_t registry_tried;

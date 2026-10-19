@@ -20,12 +20,12 @@
  * plutovg's plutovg-ft-*.[ch] are FreeType's rasterizer
  * and stroker: portions of this software are copyright (c) The FreeType
  * Project (www.freetype.org), all rights reserved; FTL.TXT is its license.
- * svg.c compiles them into libawlplugins.so and libawltray.so; both need
+ * svg.c compiles them into libawlplugins.so, which needs
  * plutovg-1.3.3/include on the include path.
  *
  * What it draws is SVG Tiny's static subset: shapes and paths, solid colors
  * and gradients, clip paths, <use>, and styles as attributes or style="".
- * It has no <style> elements and classes (plugins/icon.c applies the icon
+ * It has no <style> elements and classes (icons/icon.c applies the icon
  * themes' one stylesheet itself), masks, patterns, filters or text. */
 
 #define PLUTOSVG_BUILD_STATIC

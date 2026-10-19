@@ -7,12 +7,11 @@
  * raises it to verbose) are dropped. Any thread may log; each message is one
  * ``write()`` per output.
  *
- * The implementation (awl_log.c) lives in awl. libawlplugins.so and
- * libawltray.so (built with ``AWL_HOSTED``) reach awl only through its host
- * table, so there `awl_dbg_printf()` is a macro for `awl_host_t.log`
- * (awl_host.h), which is awl's `awl_dbg_printf()`. Foreign messages
- * come here too: wlroots' (awl.c's wlrlog(), as "wlr: ") and GLib's in the
- * tray (awl_tray_bridge.cpp's route_logs()).
+ * The implementation (awl_log.c) lives in awl. libawlplugins.so (built with
+ * ``AWL_HOSTED``) reaches awl only through its host table, so there
+ * `awl_dbg_printf()` is a macro for `awl_host_t.log` (awl_host.h), which is
+ * awl's `awl_dbg_printf()`. wlroots' messages come here too (awl.c's
+ * wlrlog(), as "wlr: ").
  */
 
 #ifdef __cplusplus

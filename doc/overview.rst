@@ -1,7 +1,7 @@
 Architecture
 ============
 
-awl is three binaries:
+awl is two binaries:
 
 ``awl``
    The compositor: wlroots (with scenefx for blur and rounded corners), the
@@ -9,16 +9,10 @@ awl is three binaries:
    wallpaper's and the desktop panel's scene nodes. Its main thread runs the
    Wayland event loop and is the only one that touches wlroots.
 
-``tray/libawltray.so``
-   The system tray and its menus (C++, gtkmm). Linked into awl and
-   running on its own GTK thread; it draws into real layer-shell windows of
-   its own, placed over the bar's systray slot. Like the plugin library, it
-   reaches awl only through `awl_host_t` (handed over by `awl_tray_init()`).
-   See :doc:`api/tray`.
-
 ``libawlplugins.so``
    Everything that is meant to change often: the plugin threads that collect
-   what the bar shows, the bar widgets, the desktop panel's contents, picking
+   what the bar shows, the bar widgets (the tray among them, see
+   :doc:`api/tray`), the desktop panel's contents, picking
    and decoding the wallpaper, and config_plugins.h. awl loads
    it at startup and swaps in a rebuilt one on ``plugin_restart``. See
    :doc:`reload` and :doc:`api/plugin-abi`.
@@ -28,7 +22,8 @@ What lives where
 
 The file names say which binary a file belongs to: ``awl_*`` (and awl.c,
 awl.h) to ``awl``, ``plugins_*`` and plugins/ (and plugins.c, plugins.h) to
-``libawlplugins.so``, tray/ to ``libawltray.so``. The headers that make up
+``libawlplugins.so``; tray/ is awl's, the tray's settings and the icon theme
+of the programs it starts with ``TRAY_ICONS``. The headers that make up
 awl's side of the interface (awl_host.h, awl_plugin_abi.h, awl_draw.h,
 awl_log.h, awl_dict_type.h) are included by the libraries too. config_awl.h
 belongs to ``awl``, config_plugins.h to the library (awl builds in
@@ -74,15 +69,14 @@ The library never calls into awl directly: awl hands it a table of
 functions, `awl_host_t` (awl_host.h), and gets one back, `awl_plugin_api_t`.
 It does read awl's structs (`Monitor`, `Client`, `awl_draw_t`, ...), so both
 have to be built from the same headers; the library checks that when it is
-loaded. The tray gets the same `awl_host_t` from `awl_tray_init()` and uses
-only its thread-safe part: logging and redraw requests. Neither library has
-a symbol reference into awl; awl exports nothing.
+loaded. The library has no symbol reference into awl; awl exports
+nothing.
 
 Logging works the same way. awl_log.c, in awl, writes every message to
 stderr and the log file (see `awl_log.h`); in code built with
-``AWL_HOSTED`` (both libraries) `awl_err_printf()` and the other level
+``AWL_HOSTED`` (the library) `awl_err_printf()` and the other level
 macros expand to ``awl_host->log(...)``, which is awl's `awl_dbg_printf()`.
-wlroots' and GLib's messages are routed there too.
+wlroots' messages are routed there too.
 
 A redraw, end to end
 --------------------
@@ -117,8 +111,7 @@ Where to start reading
 ----------------------
 
 * awl_plugin_abi.h: the contract between awl and the library, and the list
-  of what the library does; awl_host.h: awl's side of it, `awl_host_t`,
-  which the tray gets too.
+  of what the library does; awl_host.h: awl's side of it, `awl_host_t`.
 * plugins/thread.h and awl_redraw.h: how every background thread starts,
   stops and reports.
 * awl_draw.h: `widget_t`, the unit the bar is made of.

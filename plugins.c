@@ -50,9 +50,7 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     if (!p->poller) return;
     p->pulse = pulse_init( poller_api( p->poller ) );
     p->backlight = backlight_init( poller_api( p->poller ) );
-    awl_dict_val_t v;
-    if (AWL_HOST_CFG_GET( awl_host, "sni_tray", &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_NUM && v.num)
-        p->sni = sni_new( poller_api( p->poller ) );
+    p->sni = sni_new( poller_api( p->poller ) );
     poller_set_paused( p->poller, p->paused );
     if (poller_start( p->poller )) {
         pulse_free( p->pulse );

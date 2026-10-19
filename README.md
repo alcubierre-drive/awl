@@ -25,7 +25,6 @@ Dependencies:
 
 - awl: wlroots 0.20, scenefx 0.5, wayland, xkbcommon, libinput, pixman,
   fcft, libpulse, libsystemd, and xcb and xcb-icccm for XWayland
-- the tray (`tray/`): gtkmm 3, gtk-layer-shell (gdk-pixbuf, for the menus' icons, comes with them)
 - calendar events: evolution-data-server (libecal), at run time only: the
   plugins load it if it is there, without it the calendar has no events
   (`make ECAL_CHECK=1` checks plugins/cal_eds.c against its headers)
@@ -35,7 +34,8 @@ Then:
 
     make
 
-This builds `awl`, `tray/libawltray.so` and `libawlplugins.so`. On the first
+This builds `awl`, `libawltray-env.so` (see `TRAY_ICONS` in config_awl.def.h)
+and `libawlplugins.so`. On the first
 build, config_awl.h and config_plugins.h are copied from their .def.h.
 
 ## Configuration

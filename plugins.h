@@ -30,7 +30,7 @@ typedef struct awl_plugin_data_t {
     pulse_test_t* pulse;
     awl_backlight_t* backlight;
     awl_poller_t* poller;
-    /** the tray's host, with config_awl.h's SNI_TRAY ("sni_tray"); else NULL */
+    /** the tray's host */
     awl_sni_t* sni;
     int paused;
 

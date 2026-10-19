@@ -10,3 +10,4 @@ test/vptr
 doc/_build
 plugins_git.h
 dev/
+libawltray-env.so

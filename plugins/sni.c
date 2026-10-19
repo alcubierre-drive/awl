@@ -3,8 +3,8 @@
 #include "../awl_host.h"
 #include "../awl_plugin_abi.h"
 #include "../plugins.h"
-#include "../tray/menu.h"
-#include "../tray/tooltip.h"
+#include "tray_menu.h"
+#include "tray_tooltip.h"
 #include <errno.h>
 #include <poll.h>
 #include <pthread.h>
@@ -111,7 +111,7 @@ struct awl_sni_t {
     awl_timer_t* mail_timer;
 };
 
-/** the one there is, for menu_window.c's requests and sni_menu.c */
+/** the one there is, for tray_menu_window.c's requests and sni_menu.c */
 static awl_sni_t* the;
 
 static void bus_update( awl_sni_t* s );
@@ -334,7 +334,7 @@ void sni_set_icon_px( awl_sni_t* s, int px ) {
     if (r) request( s, r );
 }
 
-/* menu_window.c's, on the main thread (menu.h) */
+/* tray_menu_window.c's, on the main thread (tray_menu.h) */
 void awl_tray_menu_request( uint64_t serial, uint32_t gen ) {
     req_t* r = the ? req_new( REQ_MENU_REQUEST, serial ) : NULL;
     if (!r) return;
@@ -352,49 +352,11 @@ void awl_tray_menu_event( uint64_t serial, int32_t id, const char* event ) {
 
 /* ---- the icons ---- */
 
-/** the desktop's icon theme as GTK's settings.ini has it, "" if it doesn't
- * (GNOME's dconf setting isn't read) */
-static void desktop_theme( char* out, size_t size ) {
-    char path[4096];
-    const char* config = getenv( "XDG_CONFIG_HOME" );
-    const char* home = getenv( "HOME" );
-    *out = 0;
-    if (config && *config) snprintf( path, sizeof path, "%s/gtk-3.0/settings.ini", config );
-    else if (home) snprintf( path, sizeof path, "%s/.config/gtk-3.0/settings.ini", home );
-    else return;
-    FILE* f = fopen( path, "re" );
-    if (!f) return;
-    char line[512];
-    while (fgets( line, sizeof line, f )) {
-        char* p = line;
-        while (*p == ' ' || *p == '\t') p++;
-        if (strncmp( p, "gtk-icon-theme-name", 19 )) continue;
-        p += 19;
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p++ != '=') continue;
-        while (*p == ' ' || *p == '\t' || *p == '"') p++;
-        size_t n = strcspn( p, "\"\r\n" );
-        while (n && (p[n - 1] == ' ' || p[n - 1] == '\t')) n--;
-        snprintf( out, size, "%.*s", (int)n, p );
-    }
-    fclose( f );
-}
-
 awl_icons_t* sni_themes( void ) {
     awl_sni_t* s = the;
     if (!s) return NULL;
     if (!s->themes) {
-        /* tray_config.icon_theme, the desktop's, then Adwaita, as GTK has them */
-        const awl_tray_config_t* tc = awl_config()->tray;
-        char desktop[256];
-        desktop_theme( desktop, sizeof desktop );
-        const char* names[4];
-        int n = 0;
-        if (tc->icon_theme && *tc->icon_theme) names[n++] = tc->icon_theme;
-        if (*desktop) names[n++] = desktop;
-        names[n++] = "Adwaita";
-        names[n] = NULL;
-        s->themes = awl_icons_new( names );
+        s->themes = awl_icons_new_desktop( awl_config()->tray->icon_theme );
     }
     return s->themes;
 }
@@ -813,7 +775,7 @@ static int on_owner( sd_bus_message* m, void* userdata, sd_bus_error* ret_error 
     if (!e) watcher_there( s );
     else if (sd_bus_error_has_name( e, SD_BUS_ERROR_NAME_HAS_NO_OWNER ))
         /* awl's own may just not have its name yet */
-        awl_vrb_printf( "sni: no watcher (config_awl.h's SNI_TRAY makes awl one), waiting for one\n" );
+        awl_vrb_printf( "sni: no watcher yet (awl's, awl_sni.h), waiting for one\n" );
     else
         s->failed = 1;
     return 0;
@@ -1053,10 +1015,15 @@ fail:
 void sni_free( awl_sni_t* s ) {
     if (!s) return;
     /* what the main thread holds goes before the library does; a menu open
-     * queues its "closed", which is dropped below */
+     * queues its "closed" */
     awl_tray_menu_window_fini();
     awl_tray_tooltip_fini();
     awl_host->timer_remove( s->mail_timer );
+    /* the loop has stopped (poller_stop()), so its "closed" goes out from
+     * here, still on the bus: the item would think it open otherwise. Only
+     * written out, if the socket takes it at once; the rest is dropped */
+    for (req_t* r = s->reqs; r; r = r->next)
+        if (r->kind == REQ_MENU_EVENT && !strcmp( r->event, "closed" )) run( s, r );
     drop_bus( s );
     if (s->retry) s->api->time_free( s->retry );
     s->api->io_free( s->wake );

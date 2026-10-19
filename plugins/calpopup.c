@@ -1,4 +1,4 @@
-/* nl_langinfo()'s _NL_TIME_FIRST_WEEKDAY */
+/* nl_langinfo_l()'s _NL_TIME_FIRST_WEEKDAY, strftime_l() */
 #define _GNU_SOURCE
 
 #include "calpopup.h"
@@ -7,6 +7,7 @@
 #include "awl_window_draw.h"
 
 #include <langinfo.h>
+#include <locale.h>
 #include <linux/input-event-codes.h>
 #include <math.h>
 #include <stdint.h>
@@ -26,6 +27,9 @@ typedef struct { int x, y, w, h; } box_t;
 /** the popup; everything in physical pixels, from the content's top left */
 static struct {
     awl_window_t* win;
+    /** the environment's LC_TIME (LC_ALL, LC_TIME, LANG), the popup's own:
+     * awl's process stays in the C locale; 0: none, so the C locale's */
+    locale_t loc;
     /** the selected day; month 0-based */
     int year, month, day;
     /** no events to show (the last query failed): no list, no evolution */
@@ -71,8 +75,9 @@ static int today_ymd( void ) {
 
 /** the locale's first day of the week, 0 Sunday, as GTK's calendar has it */
 static int week_start( void ) {
-    int first = nl_langinfo( _NL_TIME_FIRST_WEEKDAY )[0];
-    unsigned origin = (unsigned)(uintptr_t)nl_langinfo( _NL_TIME_WEEK_1STDAY );
+    int first = C.loc ? nl_langinfo_l( _NL_TIME_FIRST_WEEKDAY, C.loc )[0] : nl_langinfo( _NL_TIME_FIRST_WEEKDAY )[0];
+    unsigned origin = (unsigned)(uintptr_t)(C.loc ? nl_langinfo_l( _NL_TIME_WEEK_1STDAY, C.loc )
+                                                  : nl_langinfo( _NL_TIME_WEEK_1STDAY ));
     int day1 = origin == 19971201 ? 1 : 0; /* else 19971130, a Sunday */
     int s = (day1 + first - 1) % 7;
     return s < 0 ? 0 : s;
@@ -149,7 +154,8 @@ static void text_center( pixman_image_t* pix, struct fcft_font* font, int x0, in
 static void strtime( char* buf, size_t n, const char* fmt, time_t t ) {
     struct tm tm;
     localtime_r( &t, &tm );
-    if (!strftime( buf, n, fmt, &tm )) *buf = 0;
+    size_t len = C.loc ? strftime_l( buf, n, fmt, &tm, C.loc ) : strftime( buf, n, fmt, &tm );
+    if (!len) *buf = 0;
 }
 
 /** the widths that only depend on the font: the widest day heading, month
@@ -505,6 +511,10 @@ static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, 
 
 int awl_calpopup_start( void ) {
     memset( &C, 0, sizeof C );
+    /* the day and month names and the first day of the week, as the user's
+     * other programs have them */
+    if (!(C.loc = newlocale( LC_TIME_MASK, "", (locale_t)0 )))
+        awl_wrn_printf( "calendar: the environment's LC_TIME isn't installed, weeks start on Sunday\n" );
     C.today = today_ymd();
     go_today(); /* warms up: connects to EDS and fetches this month */
     awl_calendar_start();
@@ -519,6 +529,7 @@ int awl_calpopup_stop( void ) {
         awl_calendar_month_free( m );
         m = next;
     }
+    if (C.loc) freelocale( C.loc );
     memset( &C, 0, sizeof C );
     return stuck;
 }

@@ -23,7 +23,10 @@ The threads
      - plugins/poller.c
      - one PulseAudio main loop for all status plugins: CPU, memory,
        temperature and clock once per second; battery and IP address on
-       kernel events; volume and the backlight-tooler daemon on their own events
+       kernel events; volume and the backlight-tooler daemon on their own events;
+       the tray's StatusNotifier host and the items' menus (plugins/sni.c,
+       sd-bus). The StatusNotifierWatcher is awl's, on the main thread
+       (awl_sni.c)
    * - ``desktop``
      - plugins_desktop_panel.c
      - watches ``desktop_dir`` with inotify and lists it
@@ -39,9 +42,6 @@ The threads
      - listens to systemd-logind on the system bus: asks awl to lock on
        ``Lock`` and before suspend, holds the delay inhibitor that makes
        suspend wait for it
-   * - tray
-     - tray/
-     - the GTK main loop: StatusNotifier host and watcher, the tray windows
 
 The rules
 ---------
@@ -93,7 +93,7 @@ Who talks to whom
 -----------------
 
 Solid arrows are data handed over, dashed ones wakeups. The main thread
-wakes the library's threads through their eventfds; they and the tray wake it
+wakes the library's threads through their eventfds; they wake it
 through the redraw eventfd, with ``awl_host->redraw_request()``, and it then
 picks up whatever they published.
 
@@ -106,7 +106,6 @@ picks up whatever they published.
        scanner["desktop thread<br/>desktop_dir"] -- "changed list" --> pending[("pending<br/>DesktopFiles*")]
        changer["wallpaper thread<br/>pick, decode"] -- "decoded image" --> image[("pending<br/>awl_image_t*")]
      end
-     tray["tray thread<br/>GTK, libawltray.so"]
      logind["logind thread<br/>plugins/logind.c"]
      redraw(["redraw eventfd<br/>awl_redraw.c"])
      lockfd(["lock eventfd<br/>awl_lock.c"])
@@ -122,7 +121,6 @@ picks up whatever they published.
      end
 
      lib -. "awl_host->redraw_request()" .-> redraw
-     tray -. "awl_host->redraw_request():<br/>a tray's width changed" .-> redraw
      redraw -. "readable" .-> loop
      logind -. "awl_host->lock_request(),<br/>awl_host->logind_state()" .-> lockfd
      lockfd -. "readable" .-> loop

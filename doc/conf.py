@@ -41,7 +41,7 @@ hawkmoth_clang = [
 hawkmoth_compiler = 'gcc'
 
 # Doc comments are reStructuredText. `name` in a comment is a C expression
-# whose names link to their documentation, e.g. `awl_tray_join()` or
+# whose names link to their documentation, e.g. `awl_redraw_request()` or
 # `awl_host_t.actions`.
 primary_domain = 'c'
 default_role = 'c:expr'

@@ -14,16 +14,12 @@ static char *tags[] = { "1", "2", "3", "4", "5", "6", "7", "8", "9" };
 /* logging */
 static int log_level = WLR_ERROR;
 
-/* the tray: 0 the GTK one (tray/), 1 the bar's own widget, with awl as the
- * StatusNotifierWatcher (in trial) */
-#define SNI_TRAY 0
-
 /* started with awl, and terminated when it exits. TRAY_ICONS first starts
  * the rest in tray_config's icon_theme (config_plugins.h) instead of the
  * desktop's, for GTK programs whose tray menus draw their own icons, like
  * nm-applet: { TRAY_ICONS, "nm-applet", NULL }. Only that program gets it,
  * through a dconf profile of its own in memory, not what it starts in turn
- * (tray/libawltray-env.so, preloaded into it, sees to that); it works in a
+ * (libawltray-env.so next to awl, preloaded into it, sees to that); it works in a
  * spawn binding's command too. */
 static const char* Autostarts[][8] = {
     { NULL }, /* e.g. { "nm-applet", NULL }, */

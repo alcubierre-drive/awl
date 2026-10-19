@@ -2,7 +2,7 @@
  * isn't ours: neither are warnings in it. It parses untrusted SVGs, so it is
  * compiled without -ffast-math (whose assumption that no number is NaN or
  * infinite such input breaks). Embedded images are only PNGs and JPEGs
- * (which is all PlutoSVG takes), as large as plugins/icon.h allows; text
+ * (which is all PlutoSVG takes), as large as icons/icon.h allows; text
  * isn't drawn, so the font code never looks for fonts. */
 
 #define STBI_ONLY_PNG

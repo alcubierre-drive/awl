@@ -6,8 +6,6 @@
 #include "awl_dict.h"
 #include "awl_lock.h"
 #include "awl_redraw.h"
-#include "awl_post.h"
-#include "tray/awl_tray.h"
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -41,8 +39,6 @@ static awl_host_t host = {
     .focusclient = focusclient,
     .arrange = arrange,
 
-    .tray_width = awl_tray_width,
-    .tray_set_widget_x = awl_tray_set_widget_x,
     .window_create = textwincreate,
     .window_destroy = textwindestroy,
     .window_show = textwinshow,
@@ -68,8 +64,6 @@ static awl_host_t host = {
     .window_redraw = textwinredraw,
     .window_monitor = textwinmonitor,
 
-    .post = awl_post,
-    .window_create_kept = textwincreatekept,
     .monitor_named = monitornamed,
     .popup_config = popupconfig,
     .window_set_hidden = textwinsethidden,
@@ -233,10 +227,6 @@ void awl_plugins_set_covered( int c ) {
 
 void awl_plugins_bar_widgets( awl_draw_t* bar ) {
     if (api) api->bar_widgets( bar );
-}
-
-const awl_host_t* awl_host_table( void ) {
-    return &host;
 }
 
 const awl_plugin_api_t* awl_plugins_api( void ) {

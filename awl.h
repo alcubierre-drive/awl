@@ -208,8 +208,7 @@ typedef struct {
     struct wl_listener destroy;
 } KeyboardGroup;
 
-/** A layer-shell surface: panels, notifications, the launcher and the tray's
- * windows. */
+/** A layer-shell surface: panels, notifications, the launcher. */
 typedef struct {
     /* Must keep these three elements in this order */
     unsigned int type; /* LayerShell */
@@ -360,10 +359,6 @@ typedef struct awl_window awl_window_t;
  * tray's; NULL before setup(). The plugins' detaching destroys the ones they
  * left. Several can be shown at once. */
 awl_window_t *textwincreate(void);
-/** like textwincreate(), for the tray's menus (tray/menu_window.c): the
- * plugins' detaching leaves it, and a press on the tray's own windows
- * doesn't hide it (the tray toggles it itself) */
-awl_window_t *textwincreatekept(void);
 /** nothing if win is NULL or already destroyed */
 void textwindestroy(awl_window_t *win);
 /** shows win for a bar widget on m, centered on center_x (logical pixels
