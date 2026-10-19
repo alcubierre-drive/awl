@@ -452,7 +452,7 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
     redraw();
 }
 
-/** a wheel notch is a step, a touchpad's 10 units as on the bar (awl.c's
+/** a wheel notch is a step, a touchpad's 10 units as on the bar (awl_bar.c's
  * SCROLL_LIMIT); over a list longer than shown, rows, else months */
 static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta,
                     int32_t value120, void* data ) {

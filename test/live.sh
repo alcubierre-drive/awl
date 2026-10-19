@@ -19,7 +19,7 @@
 #                           notches down, negative up), hwheel:N (right),
 #                           finger:D (a touchpad's D down), see vptr.c
 #   live.sh win [CMD]       a command for awl's text popups (AWL_TEST_WINDOWS,
-#                           see testwincmd() in awl_test.h), e.g. win show 0
+#                           see testwincmd() in awl_test.c), e.g. win show 0
 #                           HEADLESS-1 640 'a\tb\nc'; then prints their state
 #   live.sh run CMD...      any client, with WAYLAND_DISPLAY etc. set
 #   live.sh log             the log so far

@@ -9,7 +9,7 @@
  * monitor's sides. Not a client: no Wayland
  * surface, no keyboard focus. Without a click or scroll callback it takes no
  * input, clicks, scrolling and the pointer go through to what is below; with
- * either, awl.c routes all of the pointer to it (awl_window_takes_pointer()):
+ * either, awl_cursor.c routes all of the pointer to it (awl_window_takes_pointer()):
  * it gets the presses and the scrolling, a callback missing for one of them
  * just drops those, and with a click callback it highlights the row under
  * the pointer. Main thread only.

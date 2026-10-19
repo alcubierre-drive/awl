@@ -1,0 +1,241 @@
+#include "awl_layer.h"
+#include "awl_alert.h"
+#include "awl_background.h"
+#include "awl_client.h"
+#include "awl_config.h"
+#include "awl_cursor.h"
+#include "awl_desktop.h"
+#include "awl_layout.h"
+#include "awl_lockscreen.h"
+#include "awl_output.h"
+#include "awl_popup.h"
+
+static void arrangelayer(Monitor *m, struct wl_list *list, struct wlr_box *usable_area, int exclusive);
+static void commitlayersurfacenotify(struct wl_listener *listener, void *data);
+static void destroylayersurfacenotify(struct wl_listener *listener, void *data);
+static void unmaplayersurfacenotify(struct wl_listener *listener, void *data);
+
+/** Map from ZWLR_LAYER_SHELL_* constants to Lyr* enum */
+static const int layermap[] = { LyrBg, LyrBottom, LyrTop, LyrOverlay };
+
+void
+arrangelayer(Monitor *m, struct wl_list *list, struct wlr_box *usable_area, int exclusive)
+{
+    LayerSurface *l;
+    struct wlr_box full_area = m->m;
+
+    wl_list_for_each(l, list, link) {
+        struct wlr_layer_surface_v1 *layer_surface = l->layer_surface;
+
+        if (!layer_surface->initialized)
+            continue;
+
+        if (exclusive != (layer_surface->current.exclusive_zone > 0))
+            continue;
+
+        wlr_scene_layer_surface_v1_configure(l->scene_layer, &full_area, usable_area);
+        wlr_scene_node_set_position(&l->popups->node, l->scene->node.x, l->scene->node.y);
+    }
+}
+
+void
+arrangelayers(Monitor *m)
+{
+    int i;
+    struct wlr_box usable_area = m->m;
+    LayerSurface *l;
+    uint32_t layers_above_shell[] = {
+        ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
+        ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+    };
+    if (!m->wlr_output->enabled)
+        return;
+
+    if (m->showbar) {
+        usable_area.height -= m->b.real_height;
+        usable_area.y += topbar ? m->b.real_height : 0;
+    }
+
+    /* Arrange exclusive surfaces from top->bottom */
+    for (i = 3; i >= 0; i--)
+        arrangelayer(m, &m->layers[i], &usable_area, 1);
+
+    if (!wlr_box_equal(&usable_area, &m->w)) {
+        m->w = usable_area;
+        arrange(m);
+    }
+
+    /* Arrange non-exlusive surfaces from top->bottom */
+    for (i = 3; i >= 0; i--)
+        arrangelayer(m, &m->layers[i], &usable_area, 0);
+
+    desktop_update(m);
+    background_update(m);
+    awl_alert_draw(m);
+    popupsupdate(m);
+
+    /* a loop of its own: the focus search below stops at the first
+     * keyboard-interactive surface (e.g. a launcher), which would leave
+     * the blur of anything after it (a new notification) unsized */
+    for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
+        wl_list_for_each(l, &m->layers[layers_above_shell[i]], link) {
+            if ((l->is_notification || l->is_launcher) && l->blur && l->layer_surface) {
+                /* arrangelayers() runs on every layer-surface commit (e.g.
+                 * every redrawn frame of a notification/launcher), not just
+                 * on actual resizes; only touch the blur node's size when it
+                 * actually changed, otherwise scenefx redoes its blur-region
+                 * bookkeeping every frame, which shows up as flicker. */
+                uint32_t desired_width = l->layer_surface->current.desired_width;
+                uint32_t desired_height = l->layer_surface->current.desired_height;
+                if ((uint32_t)l->geom.width != desired_width || (uint32_t)l->geom.height != desired_height) {
+                    wlr_scene_blur_set_size(l->blur, desired_width, desired_height);
+                    l->geom.width = desired_width;
+                    l->geom.height = desired_height;
+                }
+            }
+        }
+    }
+
+    /* Find topmost keyboard interactive layer, if such a layer exists */
+    for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
+        wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
+            if (locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
+                continue;
+            focusclient(NULL, 0);
+            exclusive_focus = l;
+            client_notify_enter(l->layer_surface->surface, wlr_seat_get_keyboard(seat));
+            return;
+        }
+    }
+}
+
+void
+commitlayersurfacenotify(struct wl_listener *listener, void *data)
+{
+    LayerSurface *l = wl_container_of(listener, l, surface_commit);
+    struct wlr_layer_surface_v1 *layer_surface = l->layer_surface;
+    struct wlr_scene_tree *scene_layer = layers[layermap[layer_surface->current.layer]];
+    struct wlr_layer_surface_v1_state old_state;
+
+    if (l->layer_surface->initial_commit) {
+        client_set_scale(layer_surface->surface, l->mon->wlr_output->scale);
+
+        /* Temporarily set the layer's current state to pending
+         * so that we can easily arrange it */
+        old_state = l->layer_surface->current;
+        l->layer_surface->current = l->layer_surface->pending;
+        arrangelayers(l->mon);
+        l->layer_surface->current = old_state;
+        return;
+    }
+
+    if (layer_surface->current.committed == 0 && l->mapped == layer_surface->surface->mapped)
+        return;
+    l->mapped = layer_surface->surface->mapped;
+
+    if (scene_layer != l->scene->node.parent) {
+        wlr_scene_node_reparent(&l->scene->node, scene_layer);
+        wl_list_remove(&l->link);
+        wl_list_insert(&l->mon->layers[layer_surface->current.layer], &l->link);
+        wlr_scene_node_reparent(&l->popups->node, (layer_surface->current.layer
+                < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? layers[LyrTop] : scene_layer));
+    }
+
+    arrangelayers(l->mon);
+}
+
+void
+createlayersurface(struct wl_listener *listener, void *data)
+{
+    struct wlr_layer_surface_v1 *layer_surface = data;
+    LayerSurface *l;
+    struct wlr_surface *surface = layer_surface->surface;
+    struct wlr_scene_tree *scene_layer = layers[layermap[layer_surface->pending.layer]];
+
+    if (!layer_surface->output
+            && !(layer_surface->output = selmon ? selmon->wlr_output : NULL)) {
+        wlr_layer_surface_v1_destroy(layer_surface);
+        return;
+    }
+    l = layer_surface->data = ecalloc(1, sizeof(*l));
+    l->is_notification = cfg->blur_notifications && !strcmp(layer_surface->namespace, "notifications");
+    l->is_launcher = cfg->blur_launcher && !strcmp(layer_surface->namespace, "launcher");
+    l->type = LayerShell;
+    LISTEN(&surface->events.commit, &l->surface_commit, commitlayersurfacenotify);
+    LISTEN(&surface->events.unmap, &l->unmap, unmaplayersurfacenotify);
+    LISTEN(&layer_surface->events.destroy, &l->destroy, destroylayersurfacenotify);
+
+    l->layer_surface = layer_surface;
+    l->mon = layer_surface->output->data;
+    l->scene_layer = wlr_scene_layer_surface_v1_create(scene_layer, layer_surface);
+    l->scene = l->scene_layer->tree;
+    if (l->is_notification || l->is_launcher) {
+        l->blur = wlr_scene_blur_create(l->scene, l->scene->node.x, l->scene->node.y);
+        if (l->is_launcher) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_launcher_radius);
+        if (l->is_notification) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur_notifications_radius);
+        wlr_scene_blur_set_size(l->blur, l->layer_surface->current.desired_width, l->layer_surface->current.desired_height);
+        wlr_scene_blur_set_strength(l->blur, cfg->blur[0]);
+        wlr_scene_blur_set_alpha(l->blur, cfg->blur[1]);
+        wlr_scene_blur_set_should_only_blur_bottom_layer(l->blur, 0);
+        wlr_scene_node_set_enabled(&l->blur->node, 1);
+        wlr_scene_node_lower_to_bottom(&l->blur->node);
+    }
+
+    l->popups = surface->data = wlr_scene_tree_create(layer_surface->current.layer
+            < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? layers[LyrTop] : scene_layer);
+    l->scene->node.data = l->popups->node.data = l;
+
+    wl_list_insert(&l->mon->layers[layer_surface->pending.layer],&l->link);
+    wlr_surface_send_enter(surface, layer_surface->output);
+}
+
+void
+destroylayersurfacenotify(struct wl_listener *listener, void *data)
+{
+    LayerSurface *l = wl_container_of(listener, l, destroy);
+
+    wl_list_remove(&l->link);
+    wl_list_remove(&l->destroy.link);
+    wl_list_remove(&l->unmap.link);
+    wl_list_remove(&l->surface_commit.link);
+    wlr_scene_node_destroy(&l->scene->node);
+    wlr_scene_node_destroy(&l->popups->node);
+    free(l);
+}
+
+void
+unmaplayersurfacenotify(struct wl_listener *listener, void *data)
+{
+    LayerSurface *l = wl_container_of(listener, l, unmap);
+
+    l->mapped = 0;
+    wlr_scene_node_set_enabled(&l->scene->node, 0);
+    if (l == exclusive_focus)
+        exclusive_focus = NULL;
+    if (l->layer_surface->output && (l->mon = l->layer_surface->output->data))
+        arrangelayers(l->mon);
+    if (l->layer_surface->surface == seat->keyboard_state.focused_surface)
+        focusclient(focustop(selmon), 1);
+    motionnotify(0, NULL, 0, 0, 0, 0);
+}
+
+void
+layersconfigure(void)
+{
+    Monitor *m;
+    LayerSurface *l;
+    int i;
+
+    wl_list_for_each(m, &mons, link) {
+        for (i = 0; i < (int)LENGTH(m->layers); i++) {
+            wl_list_for_each(l, &m->layers[i], link) {
+                if (!l->blur)
+                    continue;
+                wlr_scene_blur_set_strength(l->blur, cfg->blur[0]);
+                wlr_scene_blur_set_alpha(l->blur, cfg->blur[1]);
+                wlr_scene_blur_set_corner_radius(l->blur, l->is_notification
+                        ? cfg->blur_notifications_radius : cfg->blur_launcher_radius);
+            }
+        }
+    }
+}

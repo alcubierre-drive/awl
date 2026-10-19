@@ -1,8 +1,68 @@
+#pragma once
+
+/**
+ * The clients, part of awl: xdg-shell toplevels and XWayland windows
+ * (awl_xwayland.h), from their creation to their destruction, the rules,
+ * their geometry, borders and states (floating, fullscreen, maximized,
+ * minimized, on top), the focus, and the xdg popups of clients and layer
+ * surfaces (awl_client.c). Main thread only.
+ */
+
+#include "awl_server.h"
+
+/** whether client C is on monitor M and one of its shown tags */
+#define VISIBLEON(C, M)         ((M) && (C)->mon == (M) && ((C)->tags & (M)->tagset[(M)->seltags]))
+#define VISIBLEON_ACTIVE(C, M)  (VISIBLEON(C, M) && (C)->isvisible)
+/** a 0xRRGGBBAA color as wlroots' 4 floats, like config_plugins.h's COLOR() */
+#define RGBA(hex)               { ((hex >> 24) & 0xFF) / 255.0f, \
+                                  ((hex >> 16) & 0xFF) / 255.0f, \
+                                  ((hex >> 8) & 0xFF) / 255.0f, \
+                                  (hex & 0xFF) / 255.0f }
+
+/** the managed clients, Client.link: tiling order */
+extern struct wl_list clients;
+/** the same, Client.flink: focus order, the focused first */
+extern struct wl_list fstack;
+/** the layer surface or unmanaged client that holds the keyboard, or NULL */
+extern void *exclusive_focus;
+/** cfg->bordercolors, copied: the clients' borders outlive a reload */
+extern uint32_t borders[BorderLast];
+
+/* xdg-shell's new toplevels, popups and decorations, xdg-activation's
+ * requests */
+void createnotify(struct wl_listener *listener, void *data);
+void createpopup(struct wl_listener *listener, void *data);
+void createdecoration(struct wl_listener *listener, void *data);
+void urgent(struct wl_listener *listener, void *data);
+/* a client's events, XWayland's too */
+void mapnotify(struct wl_listener *listener, void *data);
+void unmapnotify(struct wl_listener *listener, void *data);
+void destroynotify(struct wl_listener *listener, void *data);
+void fullscreennotify(struct wl_listener *listener, void *data);
+void updatetitle(struct wl_listener *listener, void *data);
+
+/** focuses c (NULL: none) and, if lift, raises it */
+void focusclient(Client *c, int lift);
+/** the topmost visible client of m in focus order, NULL if none */
+Client *focustop(Monitor *m);
+/** c to geo (layout coordinates, with its border), within the layout's box
+ * if interact (the user moves it), else within its monitor's window area */
+void resize(Client *c, struct wlr_box geo, int interact);
+void setfloating(Client *c, int floating);
+void setfullscreen(Client *c, int fullscreen);
+/** c to m (NULL: none), on newtags (0: m's shown ones) */
+void setmon(Client *c, Monitor *m, uint32_t newtags);
+/** wlr_scene_node_for_each_buffer()'s: data's (a Client's) translucency */
+void scenebuffersetopacity(struct wlr_scene_buffer *buffer, int sx, int sy, void *data);
+/** after config_plugins.h changed: border widths and colors, the blur */
+void clientsconfigure(void);
+
 /*
- * Attempt to consolidate unavoidable suck into one file, away from awl.c.  This
- * file is not meant to be pretty.  We use a .h file with static inline
- * functions instead of a separate .c module, or function pointers like sway, so
- * that they will simply compile out if the chosen #defines leave them unused.
+ * Below, the helpers that tell xdg-shell and XWayland clients apart:
+ * unavoidable suck, consolidated in one place and not meant to be pretty.
+ * They are static inline functions instead of a separate .c module, or
+ * function pointers like sway, so that they will simply compile out if the
+ * chosen #defines leave them unused.
  */
 
 /* Leave these functions first; they're used in the others */

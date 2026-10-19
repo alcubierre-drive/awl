@@ -38,7 +38,7 @@ int awl_persistent_set_num( const char* key, int64_t v );
 /** like `awl_persistent_set_num()`, for a string without newlines */
 int awl_persistent_set_str( const char* key, const char* v );
 
-/** For a string key awl gives a default (``awl.c``'s ``cfgdict_defaults``):
+/** For a string key awl gives a default (awl_config.c's ``cfgdictdefaults()``):
  * once per awl run, at the first call for key, replaces the dictionary's
  * value with the file's, so a saved one wins over the default. Later calls,
  * e.g. after a reload, leave the dictionary alone, its value is newer.

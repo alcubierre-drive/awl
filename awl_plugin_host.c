@@ -3,8 +3,12 @@
 
 #include "awl_plugin_host.h"
 #include "awl_plugin_abi.h"
+#include "awl_client.h"
 #include "awl_dict.h"
-#include "awl_lock.h"
+#include "awl_layout.h"
+#include "awl_lockscreen.h"
+#include "awl_output.h"
+#include "awl_popup.h"
 #include "awl_redraw.h"
 #include "awl_window.h"
 
@@ -17,6 +21,60 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+/** `awl_host_t.timer_add()`'s timers, ``link`` in timers: the plugins',
+ * reaped after they stop (pluginsreap()) */
+struct awl_timer {
+    struct wl_event_source* source;
+    void (*fn)( void* data );
+    void* data;
+    struct wl_list link;
+};
+static struct wl_list timers = { &timers, &timers };
+
+static int timer_fire( void* data ) {
+    awl_timer_t* t = data;
+    t->fn( t->data );
+    return 0;
+}
+
+/** a timer on the main loop that calls fn( data ), unarmed */
+static awl_timer_t* timer_add( void (*fn)( void* data ), void* data ) {
+    awl_timer_t* t;
+    if (!event_loop || !fn) return NULL;
+    t = ecalloc( 1, sizeof(*t) );
+    t->fn = fn;
+    t->data = data;
+    t->source = wl_event_loop_add_timer( event_loop, timer_fire, t );
+    wl_list_insert( &timers, &t->link );
+    return t;
+}
+
+/** fn in ms milliseconds, instead of when it was due; 0 disarms it */
+static void timer_set( awl_timer_t* t, int ms ) {
+    if (t) wl_event_source_timer_update( t->source, ms > 0 ? ms : 0 );
+}
+
+/** NULL is fine */
+static void timer_remove( awl_timer_t* t ) {
+    if (!t) return;
+    wl_list_remove( &t->link );
+    wl_event_source_remove( t->source );
+    free( t );
+}
+
+/** after the library's fini, before it is unloaded: destroys the popups and
+ * timers it left (warning about them), whose callbacks point into it */
+static void pluginsreap( void ) {
+    awl_timer_t *t, *tmp;
+    int np = popupsreap(), nt = 0;
+    wl_list_for_each_safe( t, tmp, &timers, link ) {
+        nt++;
+        timer_remove( t );
+    }
+    if (np || nt)
+        awl_wrn_printf( "plugins: the library left %d popup(s) and %d timer(s), removed\n", np, nt );
+}
 
 static awl_host_t host = {
     .abi = AWL_PLUGIN_ABI,
@@ -70,9 +128,9 @@ static awl_host_t host = {
     .window_set_hover = awl_window_set_hover,
     .window_set_hidden = awl_window_set_hidden,
 
-    .timer_add = timeradd,
-    .timer_set = timerset,
-    .timer_remove = timerremove,
+    .timer_add = timer_add,
+    .timer_set = timer_set,
+    .timer_remove = timer_remove,
 };
 
 static void* handle = NULL;

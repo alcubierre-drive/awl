@@ -70,7 +70,7 @@ typedef struct awl_host_t {
     void (*logind_state)( unsigned flags );
     /**
      * config values that can change while awl runs, by name. awl owns the
-     * dictionary (``cfg.s``, awl.c's ``cfgdict``): it lives as long as awl
+     * dictionary (``cfg.s``, awl_config.h's ``cfgdict``): it lives as long as awl
      * and keeps its entries across reloads.
      *
      * Any thread may use it, plugin threads included (awl_dict.h has the
@@ -183,14 +183,14 @@ typedef struct awl_host_t {
 
     /* ---- timers on awl's main loop ---- */
 
-    /** `timeradd()`: a timer calling fn( data ), unarmed; NULL before
+    /** a timer calling fn( data ), unarmed; NULL before
      * setup(). Like the popups, the library removes its timers before it is
      * unloaded; awl removes what it left then, with a warning */
     awl_timer_t* (*timer_add)( void (*fn)( void* data ), void* data );
-    /** `timerset()`: fn in ms milliseconds, instead of when it was due; 0
+    /** fn in ms milliseconds, instead of when it was due; 0
      * disarms it */
     void (*timer_set)( awl_timer_t* t, int ms );
-    /** `timerremove()`: NULL is fine */
+    /** NULL is fine */
     void (*timer_remove)( awl_timer_t* t );
 } awl_host_t;
 

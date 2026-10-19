@@ -16,7 +16,7 @@ What a reload picks up
    * - Reloads with the library
      - Needs a restart of awl
    * - plugins_widgets.c, plugins_desktop_panel.c, plugins.c, plugins/
-     - awl.c, awl_draw.c, awl_redraw.c, awl_lock.c, awl_alert.c, awl_window.c, awl_desktop.c, awl_background.c, awl_plugin_host.c, awl_sni.c (the tray's watcher), tray/
+     - awl.c and its parts, awl_*.c (awl_sni.c is the tray's watcher), tray/
    * - config_plugins.h: keys, buttons, rules, layouts,
        colors, font, borders, blur, input devices, keymap, tray and
        wallpaper settings
@@ -145,9 +145,9 @@ the poller is joined without a limit.
 The config split
 ----------------
 
-awl.c includes config_awl.h, and config_plugins.def.h as the fallback for
-while no library is loaded. plugins_config.c includes config_plugins.h and turns
-it into an `awl_config_t` with `AWL_CONFIG_TABLE`; awl.c does the same with
+awl's modules include config_awl.h (through awl_config.h); awl_config.c
+includes config_plugins.def.h as the fallback for while no library is loaded. plugins_config.c includes config_plugins.h and turns
+it into an `awl_config_t` with `AWL_CONFIG_TABLE`; awl_config.c does the same with
 config_plugins.def.h. Only the library ever sees config_plugins.h.
 
 The functions config_plugins.h binds keys to are awl's; in the library, they
@@ -168,6 +168,6 @@ struct both sides read:
 
 #. Change the table in awl_host.h or awl_plugin_abi.h and bump
    `AWL_PLUGIN_ABI`.
-#. Fill in the new entry: in awl_plugin_host.c for the host table (awl.c for
-   `AWL_ACTIONS`), in plugins.c for the library's.
+#. Fill in the new entry: in awl_plugin_host.c for the host table (the module the
+   action belongs to for `AWL_ACTIONS`, awl_config.h declares them), in plugins.c for the library's.
 #. Rebuild and restart awl: the running one would refuse the new library.

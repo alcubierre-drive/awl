@@ -14,6 +14,11 @@ font from the font registry (`awl_font_get()`). A widget draws with its
 (`Monitor.popupfont`, else the bar's), the desktop file list with its own
 (`Monitor.desktopfont`, else the bar's).
 
+awl_bar.h
+---------
+
+.. c:autodoc:: awl_bar.h
+
 awl_draw.h
 ----------
 

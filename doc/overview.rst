@@ -21,7 +21,8 @@ What lives where
 ----------------
 
 The file names say which binary a file belongs to: ``awl_*`` (and awl.c,
-awl.h) to ``awl``, ``plugins_*`` and plugins/ (and plugins.c, plugins.h) to
+awl.h) to ``awl``, where awl.c starts and ends it and each awl_*.c is one of
+its parts (see :doc:`api/awl`), ``plugins_*`` and plugins/ (and plugins.c, plugins.h) to
 ``libawlplugins.so``; tray/ is awl's, the tray's settings and the icon theme
 of the programs it starts with ``TRAY_ICONS``. The headers that make up
 awl's side of the interface (awl_host.h, awl_plugin_abi.h, awl_draw.h,
@@ -37,17 +38,17 @@ config_plugins.def.h only as a fallback).
      - awl (main thread)
      - libawlplugins.so
    * - Bar
-     - buffers, layout, pointer events, hover timers (awl.c, awl_draw.c)
+     - buffers, layout, pointer events, hover timers (awl_bar.c, awl_draw.c)
      - the widgets: what they show and what clicks do (plugins_widgets.c)
    * - Status data
      - polls the redraw eventfd (awl_redraw.c)
      - the plugins, on the poller thread (plugins/)
    * - Wallpaper
      - shows it, scaled to cover, and fades (awl_background.c); the timer and
-       the ``wallpaper``/``wallpapermode`` actions (awl.c)
+       the ``wallpaper``/``wallpapermode`` actions (awl_wallpaper.c)
      - lists the directory, picks and decodes (plugins/wallpaper.c, Wuffs)
    * - Popups
-     - awl's own popups (text, or a plugin's painter), any number at once: draws and places them (awl_window.c, awl.c)
+     - awl's own popups (text, or a plugin's painter), any number at once: draws and places them (awl_window.c, awl_popup.c)
      - what it says and when it opens (plugins_widgets.c; for now only the
        temperature widget, as a test)
    * - Desktop panel
@@ -62,7 +63,7 @@ config_plugins.def.h only as a fallback).
      - spawns ``notify-send`` (plugins.c)
    * - Screen lock
      - starts the locker, tells when it covers the screen, raises the
-       alert when logind isn't listened to (awl.c, awl_lock.c)
+       alert when logind isn't listened to (awl_lockscreen.c)
      - listens to logind, holds the inhibitor (plugins/logind.c)
 
 The library never calls into awl directly: awl hands it a table of
@@ -105,7 +106,7 @@ desktop. See :doc:`threads` for the sequence.
 
 If that thread doesn't listen, awl raises an alert (awl_alert.h): white on
 red in the bottom left corner of every output, above everything, the lock
-screen included (`drawalert()`), and a critical notification. awl raises it, not the library, so it comes up even without one.
+screen included (`awl_alert_draw()`), and a critical notification. awl raises it, not the library, so it comes up even without one.
 
 Where to start reading
 ----------------------

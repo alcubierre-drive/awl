@@ -2,6 +2,14 @@
 /*
  * See LICENSE file for copyright and license details.
  */
+
+/**
+ * The types awl shares with its config files and the plugin library
+ * (``Monitor``, ``Client``, the bindings, the rules), and the headers they
+ * need. awl's own state and functions are in its modules' headers, the
+ * core in awl_server.h. The library is built against this, so a change to a
+ * struct here is a change of the plugin ABI (awl_plugin_abi.h).
+ */
 #include <errno.h>
 #include <getopt.h>
 #include <libinput.h>
@@ -94,16 +102,8 @@
 #ifndef MIN
 #define MIN(A, B)               ((A) < (B) ? (A) : (B))
 #endif
-/** the modifier mask without Caps Lock, as keys and buttons are matched */
-#define CLEANMASK(mask)         (mask & ~WLR_MODIFIER_CAPS)
-/** whether client C is on monitor M and one of its shown tags */
-#define VISIBLEON(C, M)         ((M) && (C)->mon == (M) && ((C)->tags & (M)->tagset[(M)->seltags]))
-#define VISIBLEON_ACTIVE(C, M)  (VISIBLEON(C, M) && (C)->isvisible)
 /** the number of elements of array X */
 #define LENGTH(X)               (sizeof X / sizeof X[0])
-#define TAGMASK                 ((1u << LENGTH(tags)) - 1)
-#define LISTEN(E, L, H)         wl_signal_add((E), ((L)->notify = (H), (L)))
-#define LISTEN_STATIC(E, H)     do { struct wl_listener *_l = ecalloc(1, sizeof*_l); _l->notify = (H); wl_signal_add((E), _l); } while (0)
 #define TEXTW(mon, text)        (awl_draw_text_width((mon)->drw.font, text) + (mon)->lrpad)
 
 /* enums */
@@ -194,20 +194,6 @@ typedef struct {
     const Arg arg;
 } Key;
 
-typedef struct {
-    struct wl_list link;
-    struct wlr_keyboard_group *wlr_group;
-
-    int nsyms;
-    const xkb_keysym_t *keysyms; /* invalid if nsyms == 0 */
-    uint32_t mods; /* invalid if nsyms == 0 */
-    struct wl_event_source *key_repeat_source;
-
-    struct wl_listener modifiers;
-    struct wl_listener key;
-    struct wl_listener destroy;
-} KeyboardGroup;
-
 /** A layer-shell surface: panels, notifications, the launcher. */
 typedef struct {
     /* Must keep these three elements in this order */
@@ -252,7 +238,7 @@ struct Monitor {
     struct wlr_session_lock_surface_v1 *lock_surface;
     /** a frame showing the lock went out since it began (lockcovered()) */
     int lock_shown;
-    /** the alert on this output (drawalert()), and what it was drawn for */
+    /** the alert on this output (`awl_alert_draw()`), and what it was drawn for */
     struct wlr_scene_buffer *alert;
     unsigned int alert_version;
     float alert_scale;
@@ -323,11 +309,6 @@ typedef struct {
     int pertag;
 } MonitorRule;
 
-typedef struct {
-    struct wlr_pointer_constraint_v1 *constraint;
-    struct wl_listener destroy;
-} PointerConstraint;
-
 /** A rule in config_plugins.h's ``rules[]``, for new windows whose app id and title
  * match. */
 typedef struct {
@@ -341,57 +322,6 @@ typedef struct {
     float one_minus_alpha;
 } Rule;
 
-typedef struct {
-    struct wlr_scene_tree *scene;
-
-    struct wlr_session_lock_v1 *lock;
-    struct wl_listener new_surface;
-    struct wl_listener unlock;
-    struct wl_listener destroy;
-} SessionLock;
-
-/** lays out m's windows with its layout */
-void arrange(Monitor *m);
-/** focuses c (NULL: none) and, if lift, raises it */
-void focusclient(Client *c, int lift);
-typedef struct awl_window awl_window_t;
-/** a new, hidden popup (awl_window.h) for the plugins, styled by
- * popup_config; NULL before setup(). The library gives back what it made
- * before it is unloaded; pluginsreap() destroys what it left. Several can be
- * shown at once. The host table hands the plugins the rest of
- * awl_window.h as it is. */
-awl_window_t *popupcreate(void);
-/** nothing if win is NULL */
-void popupdestroy(awl_window_t *win);
-/** shows win for a bar widget on m, centered on center_x (logical pixels
- * from m's left edge), on the bar's side; a popup that isn't a menu closes
- * the menus open. A press anywhere but on the bar hides every popup. */
-void popupshow(awl_window_t *win, Monitor *m, int center_x);
-/** shows win on m beside the box x, y, w, h, a row of another popup, on
- * its right unless left (`awl_window_show_beside()`) */
-void popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
-/** makes win look like a menu, popup_config.menu, from now on */
-void popupsetmenustyle(awl_window_t *win);
-/** where part of win's painter is, 0 if it is not shown
- * (`awl_window_part_box()`) */
-int popuppartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h);
-/** the monitor whose output is named name, NULL if none */
-Monitor *monitornamed(const char *name);
-typedef struct awl_popup_config_t awl_popup_config_t;
-/** config_plugins.h's popup_config as it is now; valid until the next
- * config reload (main thread) */
-const awl_popup_config_t *popupconfig(void);
-/** after the plugin library's fini, before it is unloaded: destroys the
- * popups and timers it left (warning about them), whose callbacks point
- * into it */
-void pluginsreap(void);
-typedef struct awl_timer awl_timer_t;
-/** a timer on the main loop that calls fn( data ), unarmed */
-awl_timer_t *timeradd(void (*fn)(void *data), void *data);
-/** fn in ms milliseconds, instead of when it was due; 0 disarms it */
-void timerset(awl_timer_t *t, int ms);
-/** NULL is fine */
-void timerremove(awl_timer_t *t);
 /**
  * which wallpaper the wallpaper action (`Arg.i`) and the timer switch to; the
  * ones after `WallpaperModeCount` are no timer modes: back to the one shown

@@ -5,15 +5,17 @@
  * no longer being locked before suspend. An alert is raised by awl itself,
  * never by the plugin library (which may be the very thing that is missing).
  * While one is up, every output shows it in its bottom left corner,
- * above everything (awl.c's ``drawalert()``, with `awl_alert_text()`), and
+ * above everything (`awl_alert_draw()`, with `awl_alert_text()`), and
  * raising it logs an error and sends a critical desktop notification
  * (``notify-send``). Main thread only.
  */
 
+#include "awl_server.h"
+
 /** the alerts there are; each is up or not */
 typedef enum awl_alert_id {
-    /** the plugins' logind thread doesn't listen to logind (awl.c's
-     * ``logindcheck()``): no lock on ``loginctl lock-session``, or none
+    /** the plugins' logind thread doesn't listen to logind (awl_lockscreen.c's
+     * ``logindupdate()``): no lock on ``loginctl lock-session``, or none
      * before suspend */
     AwlAlertLogind,
     /** the locker lockscreen() started exited before it ever locked: a
@@ -35,3 +37,16 @@ int awl_alert_up( awl_alert_id_t id );
 unsigned int awl_alert_version( void );
 /** The text of the first alert that is up, or NULL if none is. */
 const char* awl_alert_text( void );
+
+/** the alerts' tree, over everything, the lock screen included */
+void awl_alert_init( void );
+/** m's alert, hidden until `awl_alert_draw()` */
+void awl_alert_addmon( Monitor* m );
+/** The alert on m: white on red at ALERT_ALPHA, in the bar's font at
+ * ALERT_FONT_SCALE times its size, in the bottom left corner, ALERT_MARGIN
+ * logical pixels from the edges, above everything, the lock screen
+ * included. Redrawn only when the alert, m's area or its scale changed;
+ * called on every redraw request and whenever m is arranged. */
+void awl_alert_draw( Monitor* m );
+/** `awl_alert_draw()` on every monitor */
+void awl_alert_draw_all( void );

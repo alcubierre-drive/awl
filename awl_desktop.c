@@ -90,7 +90,7 @@ void desktop_removemon( Monitor* m ) {
     free( v );
 }
 
-/** like the bar's buffers in awl.c: read-only for the renderer */
+/** like the bar's buffers (awl_bar.c): read-only for the renderer */
 static void buffer_destroy( struct wlr_buffer* wb ) {
     Buffer* b = wl_container_of( wb, b, base );
     free( b );

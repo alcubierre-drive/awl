@@ -17,7 +17,7 @@ The threads
      - Where
      - What it does
    * - main
-     - awl.c
+     - awl.c, awl_*.c
      - wlroots, input, drawing the bars and panels, taking the wallpaper
    * - ``poller``
      - plugins/poller.c
@@ -64,7 +64,7 @@ Changes are announced with a redraw request.
    it as ``awl_host->redraw_request()``. Logging, too, is safe everywhere. The main loop
    handles all requests since its last wakeup at once. Lock requests and the
    logind thread's state take the same way through their own eventfd
-   (awl_lock.h).
+   (awl_lockscreen.h).
 
 Alerts are awl's.
    What the user must not miss, such as no lock before suspend, is raised
@@ -108,8 +108,8 @@ picks up whatever they published.
      end
      logind["logind thread<br/>plugins/logind.c"]
      redraw(["redraw eventfd<br/>awl_redraw.c"])
-     lockfd(["lock eventfd<br/>awl_lock.c"])
-     subgraph main["main thread (awl.c)"]
+     lockfd(["lock eventfd<br/>awl_lockscreen.c"])
+     subgraph main["main thread (awl.c, awl_*.c)"]
        direction LR
        loop["Wayland event loop"] --> fire["redraw_fire()"]
        fire --> bars["drawbars()"]

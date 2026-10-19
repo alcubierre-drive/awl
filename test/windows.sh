@@ -1,7 +1,7 @@
 #!/bin/bash
-# Scenario test of awl's popups (awl_window.c, popup*() in awl.c): a
+# Scenario test of awl's popups (awl_window.c, awl_popup.c): a
 # live.sh test instance whose popups it drives through AWL_TEST_WINDOWS (see
-# testwincmd() in awl_test.h), checking after every step where they are -- inside
+# testwincmd() in awl_test.c), checking after every step where they are -- inside
 # their monitor and against its window area's edge, hidden once the monitor
 # is gone or off, none after a plugin reload -- that awl is still alive, and
 # at the end that it exits cleanly, popups still open.
@@ -341,7 +341,7 @@ else
 	point 300 300
 	win
 	check "leaving the popup closes it" pnone
-	# hover only (awl.c's buttonpress()): a press on the widget closes its
+	# hover only (awl_bar.c's barbutton()): a press on the widget closes its
 	# popup, and it stays closed until the pointer leaves and comes back
 	point "$hx" "$hy"
 	"$live" click "$hx" "$hy" left >/dev/null
