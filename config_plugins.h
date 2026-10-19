@@ -49,7 +49,8 @@ static const awl_popup_config_t popup_config = {
     .bg           = 0x3c3c3c4d, /* awl blurs what is behind it */
     .fg           = 0xf8f8f2ff,
     // .border       = molokai_blue,
-    .border       = molokai_light_gray,
+    // .border       = molokai_light_gray,
+    .border       = 0x657374ff,
     .dim          = 0xf8f8f259, /* the calendar's neighbouring months' days */
     .hover        = 0xffffff26, /* the buttons' background */
     .pressed      = 0xffffff40,
@@ -69,7 +70,7 @@ static const awl_popup_config_t popup_config = {
         .list_min_height = 120,
         .list_max_height = 200,
     },
-    /* the tray's menus (all left out: the popups' look) */
+    /* the tray's menus */
     .menu = {
         .bg           = 0x3c3c3c4d, /* the popups' (bg, fg, dim, hover) */
         .fg           = 0xf8f8f2ff,

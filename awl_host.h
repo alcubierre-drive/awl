@@ -42,9 +42,9 @@ typedef enum awl_logind_flags {
 } awl_logind_flags_t;
 
 /**
- * What awl provides to libawlplugins.so. All functions are main-thread only,
- * except `redraw_request`, `log`, `lock_request`, `logind_state` and `cfg`'s,
- * which any thread may call.
+ * What awl provides to libawlplugins.so, by topic. All functions are
+ * main-thread only, except the first group's (`redraw_request`, `log`,
+ * `lock_request`, `logind_state` and `cfg`'s), which any thread may call.
  */
 typedef struct awl_host_t {
     /** `AWL_PLUGIN_ABI` as awl was built */
@@ -52,6 +52,8 @@ typedef struct awl_host_t {
     /** sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor and
      * sizeof_client: the layouts the library compiles against */
     size_t sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor, sizeof_client;
+
+    /* ---- any thread ---- */
 
     /** `awl_redraw_request()`, called as ``awl_host->redraw_request()`` */
     void (*redraw_request)( void );
@@ -66,44 +68,6 @@ typedef struct awl_host_t {
      * `awl_logind_flags` or'ed (0 when it stops); awl raises an alert while
      * that's less than it needs */
     void (*logind_state)( unsigned flags );
-
-    /** drawing: `awl_draw_text()`, text in font into pix, e.g. a bar
-     * widget's draw() with its pix and its bar's font */
-    int (*text)( pixman_image_t* pix, struct fcft_font* font, int x, int y, unsigned int w,
-                 unsigned int h, unsigned int lpad, const char* text, pixman_color_t fg,
-                 pixman_color_t bg );
-    /** drawing: `awl_draw_text_over()`, text in fg (0xRRGGBBAA) over what is
-     * in pix, e.g. in a painter's paint(); cut with an ellipsis at w */
-    int (*text_over)( pixman_image_t* pix, struct fcft_font* font, int x, int y, unsigned int w,
-                      unsigned int h, const char* text, uint32_t fg );
-    /** drawing: `awl_draw_text_width()` */
-    unsigned int (*text_width)( struct fcft_font* font, const char* text );
-
-    /** actions: what config_plugins.h binds keys and buttons to */
-    const awl_actions_t* actions;
-    /** actions: what config_plugins.h's layouts arrange with */
-    const awl_arranges_t* arranges;
-    /** `focusclient()` */
-    void (*focusclient)( Client* c, int lift );
-    /** `arrange()` */
-    void (*arrange)( Monitor* m );
-
-    /** awl's own text popups (awl_window.h): `textwincreate()`; a window
-     * lives until window_destroy() or until the plugins detach */
-    awl_window_t* (*window_create)( void );
-    /** `textwindestroy()` */
-    void (*window_destroy)( awl_window_t* win );
-    /** `textwinshow()` */
-    void (*window_show)( awl_window_t* win, Monitor* m, int center_x, const char* text, int toggle );
-    /** `textwinupdate()` */
-    void (*window_update)( awl_window_t* win, const char* text );
-    /** `textwinhide()` */
-    void (*window_hide)( awl_window_t* win );
-    /** `textwinsetclick()`: the window takes the pointer, presses go to
-     * click (row, col: the cell, -1 off the text; button a BTN_*) */
-    void (*window_set_click)( awl_window_t* win,
-            void (*click)( awl_window_t* win, int row, int col, uint32_t button, void* data ), void* data );
-
     /**
      * config values that can change while awl runs, by name. awl owns the
      * dictionary (``cfg.s``, awl.c's ``cfgdict``): it lives as long as awl
@@ -127,8 +91,79 @@ typedef struct awl_host_t {
      */
     awl_dict_c cfg;
 
-    /** `textwinsetscroll()`: the window takes the pointer, scrolling goes
-     * to scroll (row, col as for window_set_click; orientation a
+    /* ---- drawing ---- */
+
+    /** `awl_draw_text()`, text in font into pix, e.g. a bar widget's draw()
+     * with its pix and its bar's font */
+    int (*text)( pixman_image_t* pix, struct fcft_font* font, int x, int y, unsigned int w,
+                 unsigned int h, unsigned int lpad, const char* text, pixman_color_t fg,
+                 pixman_color_t bg );
+    /** `awl_draw_text_over()`, text in fg (0xRRGGBBAA) over what is in pix,
+     * e.g. in a painter's paint(); cut with an ellipsis at w */
+    int (*text_over)( pixman_image_t* pix, struct fcft_font* font, int x, int y, unsigned int w,
+                      unsigned int h, const char* text, uint32_t fg );
+    /** `awl_draw_text_width()` */
+    unsigned int (*text_width)( struct fcft_font* font, const char* text );
+
+    /* ---- awl's state and actions ---- */
+
+    /** what config_plugins.h binds keys and buttons to */
+    const awl_actions_t* actions;
+    /** what config_plugins.h's layouts arrange with */
+    const awl_arranges_t* arranges;
+    /** `focusclient()` */
+    void (*focusclient)( Client* c, int lift );
+    /** `arrange()` */
+    void (*arrange)( Monitor* m );
+    /** `monitornamed()`: the monitor of the output named name, NULL if none */
+    Monitor* (*monitor_named)( const char* name );
+
+    /* ---- popups (awl_window.h), NULL windows are fine everywhere ---- */
+
+    /** `popupconfig()`: config_plugins.h's popup_config (awl_window_draw.h)
+     * as it is now; valid until the next config reload */
+    const awl_popup_config_t* (*popup_config)( void );
+    /** `popupcreate()`: a hidden, empty popup, NULL before awl is set up.
+     * The library destroys what it made before it is unloaded (its fini);
+     * awl removes what it left then, with a warning */
+    awl_window_t* (*window_create)( void );
+    /** `popupdestroy()` */
+    void (*window_destroy)( awl_window_t* win );
+    /** `popupsetmenustyle()`: the window looks like a menu,
+     * popup_config.menu (awl_popup_menu_config()), from now on */
+    void (*window_set_menu_style)( awl_window_t* win );
+    /** `awl_window_set_text()`: rows separated by '\n', columns by '\t';
+     * a shown window follows at once */
+    void (*window_set_text)( awl_window_t* win, const char* text );
+    /** `awl_window_set_painter()`: the window draws itself with painter
+     * (awl_window_draw.h; copied, with data) instead of its text, NULL for
+     * the text again. Its parts stand in for the cells: clicks and scrolls
+     * get the part as row, column 0. */
+    void (*window_set_painter)( awl_window_t* win, const awl_window_painter_t* painter, void* data );
+    /** `awl_window_redraw()`: what the painter draws changed */
+    void (*window_redraw)( awl_window_t* win );
+    /** `popupshow()`: shows the window for a bar widget on m, centered on
+     * center_x (logical pixels from m's left edge), on the bar's side; one
+     * that isn't a menu closes the menus open */
+    void (*window_show)( awl_window_t* win, Monitor* m, int center_x );
+    /** `popupshowbeside()`: shows the window on m beside the box x, y, w, h
+     * (layout coordinates, logical size), a row of another window: a
+     * submenu beside its menu, on the right unless left, else where it fits */
+    void (*window_show_beside)( awl_window_t* win, Monitor* m, int x, int y, int w, int h, int left );
+    /** `awl_window_hide()` */
+    void (*window_hide)( awl_window_t* win );
+    /** `awl_window_monitor()`: where the window is shown, NULL while hidden
+     * (awl also hides it, on a press elsewhere or with its monitor) */
+    Monitor* (*window_monitor)( const awl_window_t* win );
+    /** `popuppartbox()`: where part of the window's painter is, layout
+     * coordinates and logical size; 0 if it is not shown */
+    int (*window_part_box)( awl_window_t* win, int part, int* x, int* y, int* w, int* h );
+    /** `awl_window_set_click()`: the window takes the pointer, presses go to
+     * click (row, col: the cell, -1 off the text; button a BTN_*) */
+    void (*window_set_click)( awl_window_t* win,
+            void (*click)( awl_window_t* win, int row, int col, uint32_t button, void* data ), void* data );
+    /** `awl_window_set_scroll()`: the window takes the pointer, scrolling
+     * goes to scroll (row, col as for window_set_click; orientation a
      * WL_POINTER_AXIS_*, 0 vertical; delta positive down or right;
      * value120 a wheel's in 120ths of a notch, 0 for a touchpad's). Like
      * window_set_click, a window with either callback takes all of the
@@ -136,49 +171,27 @@ typedef struct awl_host_t {
     void (*window_set_scroll)( awl_window_t* win,
             void (*scroll)( awl_window_t* win, int row, int col, uint32_t orientation,
                             double delta, int32_t value120, void* data ), void* data );
-    /** `textwinsetpainter()`: the window draws itself with painter
-     * (awl_window_draw.h; copied, with data) instead of its text, NULL for
-     * the text again. Its parts stand in for the cells: clicks and scrolls
-     * get the part as row, column 0. */
-    void (*window_set_painter)( awl_window_t* win, const awl_window_painter_t* painter, void* data );
-    /** `textwinredraw()`: what the painter draws changed */
-    void (*window_redraw)( awl_window_t* win );
-    /** `textwinmonitor()`: where the window is shown, NULL while hidden
-     * (awl also hides it, on a press elsewhere or with its monitor) */
-    Monitor* (*window_monitor)( awl_window_t* win );
-
-    /** `monitornamed()`: the monitor of the output named name, NULL if none */
-    Monitor* (*monitor_named)( const char* name );
-    /** `popupconfig()`: config_plugins.h's popup_config (awl_window_draw.h)
-     * as it is now; valid until the next config reload */
-    const awl_popup_config_t* (*popup_config)( void );
-    /** `textwinsethidden()`: hidden( win, data ) whenever the window is
-     * hidden, by window_hide or by awl (a press elsewhere, its monitor
-     * going away); NULL: no more */
-    void (*window_set_hidden)( awl_window_t* win, void (*hidden)( awl_window_t* win, void* data ), void* data );
-    /** `textwinshowbeside()`: shows the window on m beside the box x, y, w,
-     * h (layout coordinates, logical size), a row of another window: a
-     * submenu beside its menu, on the right unless left, else where it fits */
-    void (*window_show_beside)( awl_window_t* win, Monitor* m, int x, int y, int w, int h, int left );
-    /** `textwinsethover()`: hover( win, row, inside, data ) whenever the
-     * row under the pointer changes (-1: none) or it comes onto the window
-     * or leaves it (inside); needs window_set_click's callback */
+    /** `awl_window_set_hover()`: hover( win, row, inside, data ) whenever
+     * the row under the pointer changes (-1: none) or it comes onto the
+     * window or leaves it (inside); needs window_set_click's callback */
     void (*window_set_hover)( awl_window_t* win,
             void (*hover)( awl_window_t* win, int row, int inside, void* data ), void* data );
-    /** `textwinpartbox()`: where part of the window's painter is, layout
-     * coordinates and logical size; 0 if it is not shown */
-    int (*window_part_box)( awl_window_t* win, int part, int* x, int* y, int* w, int* h );
-    /** `timeradd()`: a timer on awl's main loop calling fn( data ), unarmed;
-     * NULL before setup() */
+    /** `awl_window_set_hidden()`: hidden( win, data ) whenever the window
+     * is hidden, by window_hide or by awl (a press elsewhere, its monitor
+     * going away); NULL: no more */
+    void (*window_set_hidden)( awl_window_t* win, void (*hidden)( awl_window_t* win, void* data ), void* data );
+
+    /* ---- timers on awl's main loop ---- */
+
+    /** `timeradd()`: a timer calling fn( data ), unarmed; NULL before
+     * setup(). Like the popups, the library removes its timers before it is
+     * unloaded; awl removes what it left then, with a warning */
     awl_timer_t* (*timer_add)( void (*fn)( void* data ), void* data );
     /** `timerset()`: fn in ms milliseconds, instead of when it was due; 0
      * disarms it */
     void (*timer_set)( awl_timer_t* t, int ms );
     /** `timerremove()`: NULL is fine */
     void (*timer_remove)( awl_timer_t* t );
-    /** `textwinsetmenustyle()`: the window looks like a menu,
-     * popup_config.menu (awl_popup_menu_config()), from now on */
-    void (*window_set_menu_style)( awl_window_t* win );
 } awl_host_t;
 
 /** `awl_dict_get()` on `awl_host_t.cfg`; valptr is an ``awl_dict_val_t*`` */

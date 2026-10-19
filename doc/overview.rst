@@ -47,7 +47,7 @@ config_plugins.def.h only as a fallback).
        the ``wallpaper``/``wallpapermode`` actions (awl.c)
      - lists the directory, picks and decodes (plugins/wallpaper.c, Wuffs)
    * - Popups
-     - awl's own text popups, any number at once: draws and places them (awl_window.c, awl.c)
+     - awl's own popups (text, or a plugin's painter), any number at once: draws and places them (awl_window.c, awl.c)
      - what it says and when it opens (plugins_widgets.c; for now only the
        temperature widget, as a test)
    * - Desktop panel

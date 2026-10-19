@@ -12,7 +12,8 @@
  *
  * An item registers by bus name (its path then is /StatusNotifierItem) or
  * by object path (its bus name the caller's); it is listed as bus name
- * and path, ":1.42/StatusNotifierItem", until that name goes away. If
+ * and path, ":1.42/StatusNotifierItem", in the order they registered,
+ * until that name goes away. If
  * another watcher has the name, awl's waits in the queue for it. A lost
  * bus is reconnected to after a few seconds. Main thread only.
  */

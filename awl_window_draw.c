@@ -13,17 +13,6 @@ static void unpack( uint32_t c, float out[4] ) {
     out[3] = a;
 }
 
-/** how much of the pixel centered at x, y the w x h box with corner radius r
- * at the origin covers, antialiased over a pixel */
-static float coverage( float x, float y, float w, float h, float r ) {
-    if (w <= 0 || h <= 0) return 0;
-    r = fminf( r, fminf( w, h ) / 2 );
-    float qx = fabsf( x - w / 2 ) - (w / 2 - r), qy = fabsf( y - h / 2 ) - (h / 2 - r);
-    float ox = fmaxf( qx, 0 ), oy = fmaxf( qy, 0 );
-    float d = sqrtf( ox * ox + oy * oy ) + fminf( fmaxf( qx, qy ), 0 ) - r;
-    return fminf( fmaxf( 0.5f - d, 0 ), 1 );
-}
-
 /** the background: bg inside the border, the border around it */
 static void draw_frame( uint32_t* data, size_t stride, int w, int h, float bw, float r,
                         uint32_t bg, uint32_t border ) {
@@ -35,8 +24,8 @@ static void draw_frame( uint32_t* data, size_t stride, int w, int h, float bw, f
         uint32_t* row = (uint32_t*)((char*)data + (size_t)y * stride);
         for (int x = 0; x < w; x++) {
             float px = (float)x + 0.5f, py = (float)y + 0.5f;
-            float co = coverage( px, py, (float)w, (float)h, r );
-            float ci = bw > 0 ? coverage( px - bw, py - bw, (float)w - 2 * bw, (float)h - 2 * bw, ri ) : co;
+            float co = awl_shape_coverage( px, py, (float)w, (float)h, r );
+            float ci = bw > 0 ? awl_shape_coverage( px - bw, py - bw, (float)w - 2 * bw, (float)h - 2 * bw, ri ) : co;
             float kb = co - ci, out[4];
             for (int k = 0; k < 4; k++)
                 out[k] = fminf( b[k] * kb + g[k] * ci, 1 );

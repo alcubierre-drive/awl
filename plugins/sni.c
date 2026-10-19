@@ -4,7 +4,6 @@
 #include "../awl_plugin_abi.h"
 #include "../plugins.h"
 #include "tray_menu.h"
-#include "tray_tooltip.h"
 #include <errno.h>
 #include <poll.h>
 #include <pthread.h>
@@ -107,8 +106,20 @@ struct awl_sni_t {
     int wake_fd;
     atomic_int want_px;
 
-    /* the main thread's */
-    awl_timer_t* mail_timer;
+    /* the main thread's: poll_timer takes the mail, every POLL_MS while a
+     * menu is open or being opened and until poll_until (an Activate that
+     * may fail and open its menu), so mail never waits for a bar to be
+     * drawn (none is, while hidden or locked) */
+    awl_timer_t* poll_timer;
+    uint64_t poll_until;
+};
+
+enum {
+    /** ms between looks at the mail while some is due */
+    POLL_MS = 50,
+    /** how long an Activate may take to fail: sd-bus's default timeout,
+     * and a bit */
+    ACTIVATE_WAIT_MS = 30000,
 };
 
 /** the one there is, for tray_menu_window.c's requests and sni_menu.c */
@@ -209,13 +220,12 @@ static void publish( awl_sni_t* s ) {
 
 /* ---- to the main thread ---- */
 
+/** the main thread's poll_timer takes it */
 static void mail( awl_sni_t* s, mail_t* m ) {
     pthread_mutex_lock( &s->lock );
     *s->mail_tail = m;
     s->mail_tail = &m->next;
     pthread_mutex_unlock( &s->lock );
-    /* the bar's next measure picks it up (sni_main_poll()) */
-    awl_host->redraw_request();
 }
 
 void sni_to_main_snap( awl_tray_menu_snap_t* snap ) {
@@ -254,6 +264,8 @@ static void to_main_toggle( uint64_t serial, const char* monitor, int center_x )
     mail( the, m );
 }
 
+static void poll_fire( void* data );
+
 static mail_t* take_mail( awl_sni_t* s ) {
     pthread_mutex_lock( &s->lock );
     mail_t* m = s->mail;
@@ -263,27 +275,38 @@ static mail_t* take_mail( awl_sni_t* s ) {
     return m;
 }
 
-static void mail_fire( void* data ) {
+static uint64_t now_ms( void ) {
+    struct timespec ts;
+    clock_gettime( CLOCK_MONOTONIC, &ts );
+    return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+}
+
+/** poll_timer in ms */
+static void poll_arm( awl_sni_t* s, int ms ) {
+    if (!s->poll_timer) s->poll_timer = awl_host->timer_add( poll_fire, s );
+    awl_host->timer_set( s->poll_timer, ms );
+}
+
+static void poll_fire( void* data ) {
     awl_sni_t* s = data;
     for (mail_t* m = take_mail( s ), *next; m; m = next) {
         next = m->next;
         switch (m->kind) {
         case MAIL_SNAP: awl_tray_menu_window_snap( m->snap ); break;
         case MAIL_GONE: awl_tray_menu_window_gone( m->serial ); break;
-        case MAIL_TOGGLE: awl_tray_menu_window_toggle( m->serial, m->monitor, m->center_x, 1 ); break;
+        case MAIL_TOGGLE: awl_tray_menu_window_toggle( m->serial, m->monitor, m->center_x ); break;
         }
         free( m );
     }
+    if (awl_tray_menu_window_is_open() || now_ms() < s->poll_until) poll_arm( s, POLL_MS );
 }
 
 void sni_main_poll( awl_sni_t* s ) {
     pthread_mutex_lock( &s->lock );
     int any = s->mail != NULL;
     pthread_mutex_unlock( &s->lock );
-    if (!any) return;
     /* not from within the bar's drawing: from the loop, right after */
-    if (!s->mail_timer) s->mail_timer = awl_host->timer_add( mail_fire, s );
-    awl_host->timer_set( s->mail_timer, 1 );
+    if (any) poll_arm( s, 1 );
 }
 
 /* ---- the main thread's requests ---- */
@@ -316,6 +339,11 @@ void sni_click( awl_sni_t* s, uint64_t serial, int what, int x, int y, const cha
     snprintf( r->monitor, sizeof r->monitor, "%s", monitor ? monitor : "" );
     r->center_x = center_x;
     request( s, r );
+    /* if it fails, its menu opens */
+    if (what == AWL_SNI_ACTIVATE) {
+        s->poll_until = now_ms() + ACTIVATE_WAIT_MS;
+        poll_arm( s, POLL_MS );
+    }
 }
 
 void sni_scroll( awl_sni_t* s, uint64_t serial, int delta, int horizontal ) {
@@ -340,6 +368,8 @@ void awl_tray_menu_request( uint64_t serial, uint32_t gen ) {
     if (!r) return;
     r->gen = gen;
     request( the, r );
+    /* its layouts come by mail, as long as it is open */
+    poll_arm( the, POLL_MS );
 }
 
 void awl_tray_menu_event( uint64_t serial, int32_t id, const char* event ) {
@@ -1014,13 +1044,10 @@ fail:
 
 void sni_free( awl_sni_t* s ) {
     if (!s) return;
-    /* what the main thread holds goes before the library does; a menu open
-     * queues its "closed" */
-    awl_tray_menu_window_fini();
-    awl_tray_tooltip_fini();
-    awl_host->timer_remove( s->mail_timer );
-    /* the loop has stopped (poller_stop()), so its "closed" goes out from
-     * here, still on the bus: the item would think it open otherwise. Only
+    awl_host->timer_remove( s->poll_timer );
+    /* the loop has stopped (poller_stop()), so the "closed" of a menu that
+     * was open (tray_menu_window.c's fini queued it) goes out from here,
+     * still on the bus: the item would think it open otherwise. Only
      * written out, if the socket takes it at once; the rest is dropped */
     for (req_t* r = s->reqs; r; r = r->next)
         if (r->kind == REQ_MENU_EVENT && !strcmp( r->event, "closed" )) run( s, r );

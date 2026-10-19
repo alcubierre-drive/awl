@@ -10,6 +10,8 @@
 #include "plugins/persistent.h"
 #include "plugins/logind.h"
 #include "plugins/calpopup.h"
+#include "plugins/tray_menu.h"
+#include "plugins/tray_tooltip.h"
 #include "plugins_git.h"
 
 #include <stddef.h>
@@ -55,6 +57,8 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     if (poller_start( p->poller )) {
         pulse_free( p->pulse );
         backlight_free( p->backlight );
+        awl_tray_menu_window_fini();
+        awl_tray_tooltip_fini();
         sni_free( p->sni );
         poller_free( p->poller );
         p->pulse = NULL;
@@ -68,6 +72,10 @@ static void awl_plugin_stop( awl_plugin_data_t* p ) {
     poller_stop(p->poller);
     pulse_free(p->pulse);
     backlight_free(p->backlight);
+    /* the tray's popups and timers, main thread's; a menu open queues its
+     * "closed", which sni_free() still sends */
+    awl_tray_menu_window_fini();
+    awl_tray_tooltip_fini();
     sni_free(p->sni);
     poller_free(p->poller);
     ip_free(p->ip);

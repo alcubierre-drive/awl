@@ -105,44 +105,6 @@ static int tw( struct fcft_font* font, const char* s ) {
     return (int)awl_host->text_width( font, s );
 }
 
-/** how much of the pixel at x, y the w x h box with radius r covers (as
- * awl_window_draw.c's frame) */
-static float coverage( float x, float y, float w, float h, float r ) {
-    r = fminf( r, fminf( w, h ) / 2 );
-    float qx = fabsf( x - w / 2 ) - (w / 2 - r), qy = fabsf( y - h / 2 ) - (h / 2 - r);
-    float ox = fmaxf( qx, 0 ), oy = fmaxf( qy, 0 );
-    float d = sqrtf( ox * ox + oy * oy ) + fminf( fmaxf( qx, qy ), 0 ) - r;
-    return fminf( fmaxf( 0.5f - d, 0 ), 1 );
-}
-
-/** c (0xRRGGBBAA) over the rounded box, antialiased */
-static void fill_round( pixman_image_t* pix, float x, float y, float w, float h, float r, uint32_t c ) {
-    if (!pix || w <= 0 || h <= 0) return;
-    uint32_t* data = pixman_image_get_data( pix );
-    int stride = pixman_image_get_stride( pix ) / 4;
-    int iw = pixman_image_get_width( pix ), ih = pixman_image_get_height( pix );
-    float a = (float)(c & 0xff) / 255.f;
-    float col[3] = { (float)(c >> 24) / 255.f * a, (float)((c >> 16) & 0xff) / 255.f * a,
-                     (float)((c >> 8) & 0xff) / 255.f * a };
-    for (int yy = (int)floorf( y ); yy < (int)ceilf( y + h ); yy++) {
-        if (yy < 0 || yy >= ih) continue;
-        for (int xx = (int)floorf( x ); xx < (int)ceilf( x + w ); xx++) {
-            if (xx < 0 || xx >= iw) continue;
-            float k = coverage( (float)xx + 0.5f - x, (float)yy + 0.5f - y, w, h, r );
-            if (k <= 0) continue;
-            uint32_t d = data[yy * stride + xx];
-            const int shift[4] = { 16, 8, 0, 24 };
-            const float src[4] = { col[0] * k, col[1] * k, col[2] * k, a * k };
-            uint32_t out = 0;
-            for (int i = 0; i < 4; i++) {
-                float v = src[i] * 255 + (float)((d >> shift[i]) & 0xff) * (1 - a * k);
-                out |= (uint32_t)lroundf( fminf( v, 255 ) ) << shift[i];
-            }
-            data[yy * stride + xx] = out;
-        }
-    }
-}
-
 /** text centered in b (offset by x0, y0), cut with an ellipsis if wider */
 static void text_center( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, box_t b,
                          const char* s, uint32_t fg ) {
@@ -309,7 +271,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     const float r = (float)px( 4 );
     if (hover >= 0 && hover != P_LIST && C.has[hover]) {
         box_t b = C.part[hover];
-        fill_round( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, c->hover );
+        awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0, c->hover );
     }
 
     /* the heading */
@@ -348,8 +310,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         }
         const int other = t.tm_mon != C.month, sel = !other && t.tm_mday == C.day;
         if (sel)
-            fill_round( pix, (float)(x0 + b.x + 1), (float)(y0 + b.y), (float)(b.w - 2), (float)b.h, r,
-                        c->calendar.selected );
+            awl_fill_shape( pix, (float)(x0 + b.x + 1), (float)(y0 + b.y), (float)(b.w - 2), (float)b.h, r, 0, c->calendar.selected );
         uint32_t fg = ymd( &t ) == today ? c->calendar.today : other ? c->dim : c->fg;
         snprintf( buf, sizeof buf, "%d", t.tm_mday );
         text_center( pix, font, x0, y0, b, buf, fg );
@@ -359,8 +320,8 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             marked = touches( &events->events[k], d0, d1 );
         if (marked) {
             float d = fmaxf( 2.f, (float)px( 3 ) );
-            fill_round( pix, (float)x0 + (float)b.x + ((float)b.w - d) / 2,
-                        (float)(y0 + b.y + b.h) - d - (float)px( 1 ), d, d, d / 2, fg );
+            awl_fill_shape( pix, (float)x0 + (float)b.x + ((float)b.w - d) / 2,
+                            (float)(y0 + b.y + b.h) - d - (float)px( 1 ), d, d, d / 2, 0, fg );
         }
     }
 
@@ -387,7 +348,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         unsigned rgb;
         uint32_t dot = sscanf( e->color, "#%6x", &rgb ) == 1 ? rgb << 8 | 0xff : 0x888888ff;
         float d = (float)C.dot_w;
-        fill_round( pix, (float)x, (float)y + ((float)C.row_h - d) / 2, d, d, d / 2, dot );
+        awl_fill_shape( pix, (float)x, (float)y + ((float)C.row_h - d) / 2, d, d, d / 2, 0, dot );
         x += C.dot_w + C.gap;
         if (e->all_day) snprintf( buf, sizeof buf, "all day" );
         else {
@@ -530,6 +491,7 @@ int awl_calpopup_stop( void ) {
         m = next;
     }
     if (C.loc) freelocale( C.loc );
+    awl_host->window_destroy( C.win );
     memset( &C, 0, sizeof C );
     return stuck;
 }
@@ -554,17 +516,7 @@ void awl_calpopup_show( widget_t* w, int center_x ) {
     go_today();
     C.acc = 0;
     awl_host->window_redraw( win );
-    awl_host->window_show( win, m, center_x, NULL, 0 );
-}
-
-void awl_calpopup_toggle( widget_t* w, int center_x ) {
-    awl_window_t* win = window();
-    if (win && awl_host->window_monitor( win ) == w->bar->m) {
-        w->popup_window = win;
-        awl_calpopup_hide();
-        return;
-    }
-    awl_calpopup_show( w, center_x );
+    awl_host->window_show( win, m, center_x );
 }
 
 void awl_calpopup_hide( void ) {

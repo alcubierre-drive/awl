@@ -24,7 +24,8 @@ static struct {
 static void show( void* data ) {
     Monitor* m = awl_host->monitor_named( T.monitor );
     if (!T.token || !m || awl_tray_menu_window_is_open()) return;
-    awl_host->window_show( T.win, m, T.center_x, T.text, 0 );
+    awl_host->window_set_text( T.win, T.text );
+    awl_host->window_show( T.win, m, T.center_x );
 }
 
 void awl_tray_tooltip_hide( void ) {

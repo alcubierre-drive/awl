@@ -15,7 +15,9 @@
  * the pointer. Main thread only.
  *
  * A window is a scene tree in the parent awl gives it, shown on one monitor
- * at a time.
+ * at a time. What the plugins reach through awl_host_t (the setters,
+ * awl_window_redraw(), awl_window_hide(), awl_window_monitor()) takes NULL
+ * for win and does nothing.
  */
 
 #include "awl.h"

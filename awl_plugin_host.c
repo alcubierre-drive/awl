@@ -6,6 +6,7 @@
 #include "awl_dict.h"
 #include "awl_lock.h"
 #include "awl_redraw.h"
+#include "awl_window.h"
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -29,23 +30,6 @@ static awl_host_t host = {
     .log = awl_dbg_printf,
     .lock_request = awl_lock_request,
     .logind_state = awl_lock_logind_state,
-
-    .text = awl_draw_text,
-    .text_over = awl_draw_text_over,
-    .text_width = awl_draw_text_width,
-
-    .actions = &awl_actions,
-    .arranges = &awl_arranges,
-    .focusclient = focusclient,
-    .arrange = arrange,
-
-    .window_create = textwincreate,
-    .window_destroy = textwindestroy,
-    .window_show = textwinshow,
-    .window_update = textwinupdate,
-    .window_hide = textwinhide,
-    .window_set_click = textwinsetclick,
-
     .cfg = {
         .s_new = &awl_dict_new,
         .s_destroy = &awl_dict_destroy,
@@ -59,21 +43,36 @@ static awl_host_t host = {
         .s_unlock = &awl_dict_unlock,
     },
 
-    .window_set_scroll = textwinsetscroll,
-    .window_set_painter = textwinsetpainter,
-    .window_redraw = textwinredraw,
-    .window_monitor = textwinmonitor,
+    .text = awl_draw_text,
+    .text_over = awl_draw_text_over,
+    .text_width = awl_draw_text_width,
 
+    .actions = &awl_actions,
+    .arranges = &awl_arranges,
+    .focusclient = focusclient,
+    .arrange = arrange,
     .monitor_named = monitornamed,
+
     .popup_config = popupconfig,
-    .window_set_hidden = textwinsethidden,
-    .window_show_beside = textwinshowbeside,
-    .window_set_hover = textwinsethover,
-    .window_part_box = textwinpartbox,
+    .window_create = popupcreate,
+    .window_destroy = popupdestroy,
+    .window_set_menu_style = popupsetmenustyle,
+    .window_set_text = awl_window_set_text,
+    .window_set_painter = awl_window_set_painter,
+    .window_redraw = awl_window_redraw,
+    .window_show = popupshow,
+    .window_show_beside = popupshowbeside,
+    .window_hide = awl_window_hide,
+    .window_monitor = awl_window_monitor,
+    .window_part_box = popuppartbox,
+    .window_set_click = awl_window_set_click,
+    .window_set_scroll = awl_window_set_scroll,
+    .window_set_hover = awl_window_set_hover,
+    .window_set_hidden = awl_window_set_hidden,
+
     .timer_add = timeradd,
     .timer_set = timerset,
     .timer_remove = timerremove,
-    .window_set_menu_style = textwinsetmenustyle,
 };
 
 static void* handle = NULL;
@@ -173,10 +172,13 @@ int awl_plugins_load( int p, awl_dict_t* cfg ) {
     return 0;
 }
 
-/** stops the plugins; unloads the library unless a thread of it is still
- * running, which would then crash */
+/** stops the plugins and removes what they left (pluginsreap()); unloads
+ * the library unless a thread of it is still running, which would then
+ * crash */
 static void stop( void* h, int fd ) {
-    if (api && api->fini()) {
+    int stuck = api && api->fini();
+    pluginsreap();
+    if (stuck) {
         awl_wrn_printf( "plugins: a plugin thread is stuck, keeping its library loaded\n" );
         return;
     }
@@ -198,6 +200,7 @@ int awl_plugins_reload( void (*detach)( void ), void (*attach)( void ) ) {
         api = next;
     } else if (api) {
         api->fini(); // restart in place; a stuck thread stays stuck either way
+        pluginsreap();
     }
     if (api) {
         api->init( paused );

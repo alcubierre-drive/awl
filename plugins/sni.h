@@ -17,8 +17,9 @@
  * The items' menus (com.canonical.dbusmenu) are plugins/sni_menu.c's, on
  * the same loop and connection, shown by tray_menu_window.c (tray_menu.h). The main thread's requests (clicks, scrolls,
  * the menus' requests and events) are queued for the loop; what goes back
- * (the menus' layouts) waits for the main thread's next `sni_main_poll()`,
- * never on a pointer into the library that could outlive it.
+ * (the menus' layouts) waits for a timer of the main thread
+ * (`sni_main_poll()`), never on a pointer into the library that could
+ * outlive it.
  */
 
 #include <stddef.h>
@@ -73,8 +74,8 @@ typedef struct awl_sni_t awl_sni_t;
 /** On api's loop, which isn't running yet; it connects from the loop. NULL
  * on failure. One at a time. */
 awl_sni_t* sni_new( pa_mainloop_api* api );
-/** After the loop has stopped; main thread (it gives back what the main
- * thread holds, tray_menu_window.c's and tray_tooltip.c's windows and timers too). */
+/** After the loop has stopped, and after awl_tray_menu_window_fini() (whose
+ * "closed" it still sends); main thread. */
 void sni_free( awl_sni_t* s );
 
 /* ---- the main thread ---- */
@@ -96,6 +97,8 @@ void sni_click( awl_sni_t* s, uint64_t serial, int what, int x, int y, const cha
 /** item serial's Scroll( delta, "vertical" or "horizontal" ) */
 void sni_scroll( awl_sni_t* s, uint64_t serial, int delta, int horizontal );
 /** Hands what the loop has for the main thread (the menus' layouts) to
- * tray_menu_window.c, soon, from a timer of its own; the bar widget calls it
- * on every measure (the loop requests a redraw whenever it has some). */
+ * tray_menu_window.c, soon, from a timer of its own. That timer also runs by
+ * itself while a menu is open or being opened, or an Activate may still
+ * open one, so nothing waits for a bar to be drawn; the bar widget calls
+ * this on every measure too. */
 void sni_main_poll( awl_sni_t* s );

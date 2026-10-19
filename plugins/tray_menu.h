@@ -82,8 +82,9 @@ void awl_tray_menu_event( uint64_t serial, int32_t id, const char* event );
 
 /** A click on the item: opens serial's menu on the monitor of the output
  * named monitor, centered on center_x (logical pixels from its left edge),
- * or closes it if it is open there. on_icon: the pointer is on the item. */
-void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x, int on_icon );
+ * or closes it if it is open there. The pointer counts as on the item until
+ * awl_tray_menu_window_pointer() says otherwise. */
+void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x );
 /** The pointer came onto the item (inside) or left it: the menu open
  * closes once the pointer is off both it and the item for a moment. */
 void awl_tray_menu_window_pointer( uint64_t serial, int inside );

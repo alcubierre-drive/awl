@@ -50,9 +50,12 @@ event loop's next idle round. Then `awl_plugins_reload()`:
    every bar's widgets are freed (`awl_draw_widgets_clear()`), and awl falls back
    to its built-in config, since the current one points into the old
    library.
-#. Stops the old library's threads (`awl_plugin_api_t.fini`) and unloads it,
-   unless a thread is stuck in the kernel (see :doc:`threads`): then the old
-   library stays mapped for good.
+#. Stops the old library (`awl_plugin_api_t.fini`): its threads, and it
+   gives back its popups and timers. ``pluginsreap()`` removes what it left
+   of them (with a warning), since their callbacks point into it, and so do
+   the ``AWL_TEST_WINDOWS`` popups go. Then it unloads the library, unless a
+   thread is stuck in the kernel (see :doc:`threads`): then the old library
+   stays mapped for good.
 #. Starts the new library's threads (`awl_plugin_api_t.init`).
 #. Calls awl's ``pluginsattach()``: switches to the new library's config and
    applies what changed (``configapply()``), gives every bar its widgets
@@ -84,7 +87,8 @@ As a sequence, with the library's threads in it:
      D->>O: awl_draw_widgets_clear(): every widget's free()
      D->>D: cfg = builtinconfig(), layouts moved
      alt the new library loaded
-       H->>O: api->fini(): stops its threads
+       H->>O: api->fini(): stops its threads, gives back its popups and timers
+       H->>D: pluginsreap(): what it left of them
        alt every thread stopped
          H->>O: dlclose(), close the memfd
        else a thread is stuck
@@ -93,6 +97,7 @@ As a sequence, with the library's threads in it:
        H->>H: api = the new one
      else it didn't
        H->>O: api->fini(), the same library goes on
+       H->>D: pluginsreap()
      end
      H->>N: api->init(paused): starts its threads
      H->>D: pluginsattach()

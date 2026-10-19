@@ -90,12 +90,11 @@ static void drawbar(Monitor *m);
 static void drawbars(void);
 static void drawalert(Monitor *m);
 static void drawalerts(void);
-static void textwinsupdate(Monitor *m);
-static void textwinshideall(void);
-static awl_window_t *textwinat(double x, double y);
-static awl_window_t *textwinpointer(void);
-static int textwinmotion(void);
-static void textwinsdestroy(void);
+static void popupsupdate(Monitor *m);
+static void popupshideall(void);
+static awl_window_t *popupat(double x, double y);
+static awl_window_t *popuppointer(void);
+static int popupmotion(void);
 static bool alert_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy);
 static Buffer *barbuffer(Monitor *m);
 static Buffer *newbarbuffer(Monitor *m);
@@ -307,22 +306,24 @@ static struct wlr_xcursor_manager *cursor_mgr;
 static struct wlr_scene_rect *root_bg;
 /** the alerts' tree, the topmost one: see drawalert() */
 static struct wlr_scene_tree *alert_tree;
-/** the plugins' text popups (awl_window.h, textwincreate()), TextWin.link;
- * their tree, right above LyrTop, is made with the first one: until a plugin
- * asks for a popup, none of this runs */
+/** awl's popups (awl_window.h, popupcreate()), Popup.link; their tree,
+ * right above LyrTop, is made with the first one: until a plugin asks for a
+ * popup, none of this runs */
 typedef struct {
     awl_window_t *win;
     struct wl_list link;
-    /** looks like a menu (textwinsetmenustyle()) */
+    /** looks like a menu (popupsetmenustyle()) */
     int menu;
-} TextWin;
-static struct wl_list textwins = {&textwins, &textwins};
-static struct wlr_scene_tree *textwin_tree;
-/** AWL_TEST_WINDOWS' popups by number, see testwincmd(); textwindestroy()
+    /** the plugins' (popupcreate()), not AWL_TEST_WINDOWS' */
+    int plugin;
+} Popup;
+static struct wl_list popups = {&popups, &popups};
+static struct wlr_scene_tree *popup_tree;
+/** AWL_TEST_WINDOWS' popups by number, see testwincmd(); popupdestroy()
  * clears a slot, so a plugin reload leaves none dangling */
 static awl_window_t *testwins[8];
 /** the popup the pointer is over, if it takes the pointer */
-static awl_window_t *textwin_hovered;
+static awl_window_t *popup_hovered;
 static struct wlr_session_lock_manager_v1 *session_lock_mgr;
 static struct wlr_scene_blur *locked_bg_blur = NULL;
 static struct wlr_session_lock_v1 *cur_lock;
@@ -712,7 +713,7 @@ arrangelayers(Monitor *m)
     desktop_update(m);
     background_update(m);
     drawalert(m);
-    textwinsupdate(m);
+    popupsupdate(m);
 
     /* a loop of its own: the focus search below stops at the first
      * keyboard-interactive surface (e.g. a launcher), which would leave
@@ -866,41 +867,14 @@ hovertimeout(void *data)
     return 0;
 }
 
-/** whether the pointer is inside a mapped layer surface whose namespace
- * starts with ns */
+static Popup *popupfind(awl_window_t *win);
+
+/** whether the pointer is over win, one of awl's own popups */
 static int
-pointerinpopup(const char *ns)
-{
-    Monitor *m;
-    LayerSurface *l;
-    size_t i;
-    int lx, ly;
-
-    wl_list_for_each(m, &mons, link) {
-        for (i = 0; i < LENGTH(m->layers); i++) {
-            wl_list_for_each(l, &m->layers[i], link) {
-                if (!l->mapped || !l->layer_surface->namespace
-                        || strncmp(l->layer_surface->namespace, ns, strlen(ns)))
-                    continue;
-                wlr_scene_node_coords(&l->scene->node, &lx, &ly);
-                struct wlr_box box = { lx, ly, l->layer_surface->surface->current.width,
-                        l->layer_surface->surface->current.height };
-                if (wlr_box_contains_point(&box, cursor->x, cursor->y))
-                    return 1;
-            }
-        }
-    }
-    return 0;
-}
-
-static TextWin *textwinfind(awl_window_t *win);
-
-/** whether the pointer is over win, one of awl's own popups (textwins) */
-static int
-pointerintextwin(awl_window_t *win)
+pointerinpopup(awl_window_t *win)
 {
     /* the plugin may have destroyed it without clearing popup_window */
-    return textwinfind(win) && awl_window_contains(win, cursor->x, cursor->y);
+    return popupfind(win) && awl_window_contains(win, cursor->x, cursor->y);
 }
 
 /** c is the client under the pointer, which may cover the bar. Exclusive
@@ -922,9 +896,7 @@ updatehover(Client *c)
     if (w && !w->callback_hover)
         w = NULL;
     if (hover_active)
-        setleavepending(w != hover_active && !(hover_active->popup_namespace
-                && pointerinpopup(hover_active->popup_namespace))
-                && !pointerintextwin(hover_active->popup_window));
+        setleavepending(w != hover_active && !pointerinpopup(hover_active->popup_window));
     if (w == hover_widget)
         return;
     hover_widget = w;
@@ -961,13 +933,13 @@ axisnotify(struct wl_listener *listener, void *data)
      * presses; one with only a click callback drops it: its motion took the
      * pointer focus from what is below anyway. An open xdg_popup's grab
      * comes first, as for the buttons. */
-    if (!wlr_seat_pointer_has_grab(seat) && (twin = textwinpointer())) {
-        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: axis %d %g (%d/120) at %.0f,%.0f\n", (void *)twin,
+    if (!wlr_seat_pointer_has_grab(seat) && (twin = popuppointer())) {
+        awl_dbg_printf(awl_loglevel_vrb, "popup %p: axis %d %g (%d/120) at %.0f,%.0f\n", (void *)twin,
                 event->orientation, event->delta, event->delta_discrete, cursor->x, cursor->y);
         /* the callback may destroy it */
         awl_window_pointer_axis(twin, cursor->x, cursor->y, event->orientation, event->delta,
                 event->delta_discrete, &row, &col);
-        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: that is row %d, column %d\n", (void *)twin, row, col);
+        awl_dbg_printf(awl_loglevel_vrb, "popup %p: that is row %d, column %d\n", (void *)twin, row, col);
         return;
     }
     xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
@@ -1193,7 +1165,7 @@ buttonpress(struct wl_listener *listener, void *data)
         swallow_release = 0;
         return;
     }
-    /* An open xdg_popup (a menu, e.g. the tray's) holds a pointer grab and
+    /* An open xdg_popup (a client's menu) holds a pointer grab and
      * closes itself on a press outside its client; that only works if the
      * press reaches the grab, so the bar, the desktop and the bindings don't
      * get to see it first. */
@@ -1207,23 +1179,23 @@ buttonpress(struct wl_listener *listener, void *data)
     }
     /* a popup that takes the pointer gets the press, and its release */
     if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !locked
-            && (twin = textwinat(cursor->x, cursor->y))) {
+            && (twin = popupat(cursor->x, cursor->y))) {
         int row, col;
-        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: button %u at %.0f,%.0f\n", (void *)twin,
+        awl_dbg_printf(awl_loglevel_vrb, "popup %p: button %u at %.0f,%.0f\n", (void *)twin,
                 event->button, cursor->x, cursor->y);
         /* the callback may destroy it */
         awl_window_pointer_button(twin, cursor->x, cursor->y, event->button, &row, &col);
-        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: that is row %d, column %d\n", (void *)twin, row, col);
+        awl_dbg_printf(awl_loglevel_vrb, "popup %p: that is row %d, column %d\n", (void *)twin, row, col);
         swallow_release = 1;
         return;
     }
     /* the other popups take no input; a press anywhere but on the bar (whose
      * widgets close their own on a press, see below) closes them, and goes on
      * to what is below */
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&textwins)
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&popups)
             && !((node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL))
                 && (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer))
-        textwinshideall();
+        popupshideall();
 
     click = ClkRoot; // TODO we don't treat these cases
     xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
@@ -1414,15 +1386,16 @@ cleanup(void)
      * Destroy it until it's fixed on the wlroots side */
     wlr_backend_destroy(backend);
 
-    wl_display_destroy(dpy);
-    /* Destroy after the wayland display (when the monitors are already destroyed)
-       to avoid destroying them with an invalid scene output. */
-    textwinsdestroy();
-    textwin_tree = NULL;
-    wlr_scene_node_destroy(&scene->tree.node);
-    awl_draw_fini();
+    /* The monitors, and with them the bars' widgets, are gone: the plugins
+     * stop while their popups' scene and their timers' loop are still there
+     * to give back. cfg points into the library. */
     cfg = builtinconfig();
     awl_plugins_unload();
+
+    wl_display_destroy(dpy);
+    popup_tree = NULL;
+    wlr_scene_node_destroy(&scene->tree.node);
+    awl_draw_fini();
     awl_dict_destroy(cfgdict);
     cfgdict = NULL;
     /* only now nothing can request a redraw or a lock anymore */
@@ -1436,7 +1409,7 @@ cleanupmon(struct wl_listener *listener, void *data)
     in_cleanupmon = 1;
     Monitor *m = wl_container_of(listener, m, destroy);
     LayerSurface *l, *tmp;
-    TextWin *tw;
+    Popup *p;
     size_t i;
 
     /* m->layers[i] are intentionally not unlinked */
@@ -1481,8 +1454,8 @@ cleanupmon(struct wl_listener *listener, void *data)
     wlr_scene_node_destroy(&m->scene_buffer->node);
     desktop_removemon(m);
     background_removemon(m);
-    wl_list_for_each(tw, &textwins, link)
-        awl_window_removemon(tw->win, m);
+    wl_list_for_each(p, &popups, link)
+        awl_window_removemon(p->win, m);
     wlr_scene_node_destroy(&m->alert->node);
     for (i = 0; i < LENGTH(m->bar_bufs); i++)
         if (m->bar_bufs[i])
@@ -2416,13 +2389,12 @@ drawbar(Monitor *m)
 
 /** the popups' look, from config_plugins.h; a menu's its own (popup_config.menu) */
 static awl_window_style_t
-textwinstyle(int menu)
+popupstyle(int menu)
 {
     awl_window_style_t s = {
             .bg = cfg->popup->bg, .fg = cfg->popup->fg,
             .border = cfg->popup->border,
-            /* fg, faint */
-            .highlight = (cfg->popup->fg & 0xffffff00) | 0x30,
+            .highlight = cfg->popup->hover,
             .border_width = cfg->popup->border_width,
             .radius = cfg->popup->radius, .padding = cfg->popup->padding,
             .margin = cfg->popup->margin,
@@ -2441,210 +2413,145 @@ textwinstyle(int menu)
     return s;
 }
 
-/** win's entry in textwins, NULL if it is not (or no longer) one of them */
-static TextWin *
-textwinfind(awl_window_t *win)
+/** win's entry in popups, NULL if it is not (or no longer) one of them */
+static Popup *
+popupfind(awl_window_t *win)
 {
-    TextWin *tw;
+    Popup *p;
     if (win)
-        wl_list_for_each(tw, &textwins, link)
-            if (tw->win == win)
-                return tw;
+        wl_list_for_each(p, &popups, link)
+            if (p->win == win)
+                return p;
     return NULL;
 }
 
-awl_window_t *
-textwincreate(void)
+/** a popup of the plugins' (plugin) or of AWL_TEST_WINDOWS' */
+static awl_window_t *
+popupnew(int plugin)
 {
-    TextWin *tw;
+    Popup *p;
     awl_window_style_t style;
     if (!scene)
         return NULL;
     /* over the bar and the windows, under fullscreen ones */
-    if (!textwin_tree) {
-        textwin_tree = wlr_scene_tree_create(&scene->tree);
-        wlr_scene_node_place_above(&textwin_tree->node, &layers[LyrTop]->node);
+    if (!popup_tree) {
+        popup_tree = wlr_scene_tree_create(&scene->tree);
+        wlr_scene_node_place_above(&popup_tree->node, &layers[LyrTop]->node);
     }
-    style = textwinstyle(0);
-    tw = ecalloc(1, sizeof(*tw));
-    tw->win = awl_window_create(textwin_tree, &style);
-    wl_list_insert(textwins.prev, &tw->link);
-    return tw->win;
+    style = popupstyle(0);
+    p = ecalloc(1, sizeof(*p));
+    p->win = awl_window_create(popup_tree, &style);
+    p->plugin = plugin;
+    wl_list_insert(popups.prev, &p->link);
+    return p->win;
+}
+
+awl_window_t *
+popupcreate(void)
+{
+    return popupnew(1);
 }
 
 void
-textwindestroy(awl_window_t *win)
+popupdestroy(awl_window_t *win)
 {
-    TextWin *tw = textwinfind(win);
-    if (!tw)
+    Popup *p = popupfind(win);
+    if (!p)
         return;
     for (size_t i = 0; i < LENGTH(testwins); i++)
         if (testwins[i] == win)
             testwins[i] = NULL;
-    if (textwin_hovered == win)
-        textwin_hovered = NULL;
-    wl_list_remove(&tw->link);
-    awl_window_destroy(tw->win);
-    free(tw);
+    if (popup_hovered == win)
+        popup_hovered = NULL;
+    wl_list_remove(&p->link);
+    awl_window_destroy(p->win);
+    free(p);
 }
 
 void
-textwinshow(awl_window_t *win, Monitor *m, int center_x, const char *text, int toggle)
+popupshow(awl_window_t *win, Monitor *m, int center_x)
 {
-    TextWin *tw = textwinfind(win), *o;
-    if (!m || !tw)
+    Popup *p = popupfind(win), *o;
+    if (!m || !p)
         return;
-    if (toggle && awl_window_monitor(win) == m) {
-        awl_window_hide(win);
-        return;
-    }
     /* another popup (the calendar the clock's hover opens) closes the menu
      * open at once, instead of covering it until it notices the pointer
      * left (its hidden callback closes its submenus too) */
-    if (!tw->menu)
-        wl_list_for_each(o, &textwins, link)
+    if (!p->menu)
+        wl_list_for_each(o, &popups, link)
             if (o->menu && awl_window_monitor(o->win))
                 awl_window_hide(o->win);
-    awl_window_set_text(win, text);
     awl_window_show(win, m, center_x, topbar);
-}
-
-void
-textwinupdate(awl_window_t *win, const char *text)
-{
-    if (textwinfind(win) && awl_window_monitor(win))
-        awl_window_set_text(win, text);
-}
-
-void
-textwinhide(awl_window_t *win)
-{
-    if (textwinfind(win))
-        awl_window_hide(win);
-}
-
-void
-textwinsetclick(awl_window_t *win,
-        void (*click)(awl_window_t *win, int row, int col, uint32_t button, void *data), void *data)
-{
-    if (textwinfind(win))
-        awl_window_set_click(win, click, data);
-}
-
-void
-textwinsetscroll(awl_window_t *win,
-        void (*scroll)(awl_window_t *win, int row, int col, uint32_t orientation,
-                double delta, int32_t value120, void *data), void *data)
-{
-    if (textwinfind(win))
-        awl_window_set_scroll(win, scroll, data);
-}
-
-void
-textwinsethidden(awl_window_t *win, void (*hidden)(awl_window_t *win, void *data), void *data)
-{
-    if (textwinfind(win))
-        awl_window_set_hidden(win, hidden, data);
-}
-
-void
-textwinsetpainter(awl_window_t *win, const awl_window_painter_t *painter, void *data)
-{
-    if (textwinfind(win))
-        awl_window_set_painter(win, painter, data);
-}
-
-void
-textwinredraw(awl_window_t *win)
-{
-    if (textwinfind(win))
-        awl_window_redraw(win);
-}
-
-Monitor *
-textwinmonitor(awl_window_t *win)
-{
-    return textwinfind(win) ? awl_window_monitor(win) : NULL;
 }
 
 /** the topmost popup that takes the pointer at x, y, NULL if none */
 static awl_window_t *
-textwinat(double x, double y)
+popupat(double x, double y)
 {
-    TextWin *tw;
+    Popup *p;
     /* the newest is on top */
-    wl_list_for_each_reverse(tw, &textwins, link)
-        if (awl_window_takes_pointer(tw->win, x, y))
-            return tw->win;
+    wl_list_for_each_reverse(p, &popups, link)
+        if (awl_window_takes_pointer(p->win, x, y))
+            return p->win;
     return NULL;
 }
 
-/** the popup that has the pointer: textwinat() the cursor, unless the
+/** the popup that has the pointer: popupat() the cursor, unless the
  * screen is locked or the pointer busy (moving, resizing, pressed on a
  * client, dragging) */
 static awl_window_t *
-textwinpointer(void)
+popuppointer(void)
 {
     if (cursor_mode != CurNormal || seat->drag || locked)
         return NULL;
-    return textwinat(cursor->x, cursor->y);
+    return popupat(cursor->x, cursor->y);
 }
 
 /** The pointer moved: over a popup that takes it, that popup gets it and
  * nothing below does; returns whether it did. Logs (at verbose, -d) where
  * it goes. */
 static int
-textwinmotion(void)
+popupmotion(void)
 {
-    awl_window_t *win = textwinpointer();
+    awl_window_t *win = popuppointer();
     int row;
 
-    if (textwin_hovered && textwin_hovered != win) {
-        awl_window_pointer_leave(textwin_hovered);
-        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: pointer left\n", (void *)textwin_hovered);
+    if (popup_hovered && popup_hovered != win) {
+        awl_window_pointer_leave(popup_hovered);
+        awl_dbg_printf(awl_loglevel_vrb, "popup %p: pointer left\n", (void *)popup_hovered);
     }
     if (!win) {
-        textwin_hovered = NULL;
+        popup_hovered = NULL;
         return 0;
     }
-    if (textwin_hovered != win) {
+    if (popup_hovered != win) {
         wlr_seat_pointer_notify_clear_focus(seat);
         wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
         updatehover(NULL);
-        textwin_hovered = win;
+        popup_hovered = win;
     }
     row = awl_window_hover_row(win);
     if (awl_window_pointer_motion(win, cursor->x, cursor->y) != row)
-        awl_dbg_printf(awl_loglevel_vrb, "textwin %p: pointer on row %d at %.0f,%.0f\n", (void *)win,
+        awl_dbg_printf(awl_loglevel_vrb, "popup %p: pointer on row %d at %.0f,%.0f\n", (void *)win,
                 awl_window_hover_row(win), cursor->x, cursor->y);
     return 1;
 }
 
 /** m was arranged, or its font or scale changed */
 static void
-textwinsupdate(Monitor *m)
+popupsupdate(Monitor *m)
 {
-    TextWin *tw;
-    wl_list_for_each(tw, &textwins, link)
-        awl_window_update(tw->win, m);
+    Popup *p;
+    wl_list_for_each(p, &popups, link)
+        awl_window_update(p->win, m);
 }
 
-/** the plugins' popups */
 static void
-textwinshideall(void)
+popupshideall(void)
 {
-    TextWin *tw;
-    wl_list_for_each(tw, &textwins, link)
-        awl_window_hide(tw->win);
-}
-
-/** the ones the plugins did not destroy themselves */
-static void
-textwinsdestroy(void)
-{
-    TextWin *tw, *tmp;
-    wl_list_for_each_safe(tw, tmp, &textwins, link)
-        textwindestroy(tw->win);
+    Popup *p;
+    wl_list_for_each(p, &popups, link)
+        awl_window_hide(p->win);
 }
 
 Monitor *
@@ -2665,36 +2572,29 @@ popupconfig(void)
 }
 
 void
-textwinshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left)
+popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left)
 {
-    if (m && textwinfind(win))
+    if (m && win)
         awl_window_show_beside(win, m, &(struct wlr_box){x, y, w, h}, left);
 }
 
 void
-textwinsetmenustyle(awl_window_t *win)
+popupsetmenustyle(awl_window_t *win)
 {
-    TextWin *tw = textwinfind(win);
+    Popup *p = popupfind(win);
     awl_window_style_t style;
-    if (!tw)
+    if (!p)
         return;
-    tw->menu = 1;
-    style = textwinstyle(1);
+    p->menu = 1;
+    style = popupstyle(1);
     awl_window_set_style(win, &style);
 }
 
-void
-textwinsethover(awl_window_t *win, void (*hover)(awl_window_t *win, int row, int inside, void *data), void *data)
-{
-    if (textwinfind(win))
-        awl_window_set_hover(win, hover, data);
-}
-
 int
-textwinpartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h)
+popuppartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h)
 {
     struct wlr_box box;
-    if (!textwinfind(win) || !awl_window_part_box(win, part, &box))
+    if (!win || !awl_window_part_box(win, part, &box))
         return 0;
     *x = box.x;
     *y = box.y;
@@ -2703,11 +2603,14 @@ textwinpartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h)
     return 1;
 }
 
+/** timeradd()'s, Timer.link: the plugins', reaped after they stop */
 struct awl_timer {
     struct wl_event_source *source;
     void (*fn)(void *data);
     void *data;
+    struct wl_list link;
 };
+static struct wl_list timers = {&timers, &timers};
 
 static int
 timerfire(void *data)
@@ -2727,6 +2630,7 @@ timeradd(void (*fn)(void *data), void *data)
     t->fn = fn;
     t->data = data;
     t->source = wl_event_loop_add_timer(event_loop, timerfire, t);
+    wl_list_insert(&timers, &t->link);
     return t;
 }
 
@@ -2742,8 +2646,29 @@ timerremove(awl_timer_t *t)
 {
     if (!t)
         return;
+    wl_list_remove(&t->link);
     wl_event_source_remove(t->source);
     free(t);
+}
+
+void
+pluginsreap(void)
+{
+    Popup *p, *ptmp;
+    awl_timer_t *t, *ttmp;
+    int np = 0, nt = 0;
+
+    /* AWL_TEST_WINDOWS' go too: a reload destroys every popup */
+    wl_list_for_each_safe(p, ptmp, &popups, link) {
+        np += p->plugin;
+        popupdestroy(p->win);
+    }
+    wl_list_for_each_safe(t, ttmp, &timers, link) {
+        nt++;
+        timerremove(t);
+    }
+    if (np || nt)
+        awl_wrn_printf("plugins: the library left %d popup(s) and %d timer(s), removed\n", np, nt);
 }
 
 void
@@ -3776,7 +3701,7 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
     }
 
     /* awl's popups that take the pointer keep it from what is below */
-    if (textwinmotion())
+    if (popupmotion())
         return;
 
     /* If there's no client surface under the cursor, set the cursor image to a
@@ -4868,249 +4793,7 @@ tagmon(const Arg *arg)
         setmon(sel, nextmon(arg->i), 0);
 }
 
-static void
-testoutputadd_backend(struct wlr_backend *b, void *data)
-{
-    if (wlr_backend_is_headless(b))
-        wlr_headless_add_output(b, 1280, 720);
-    else if (wlr_backend_is_wl(b))
-        wlr_wl_output_create(b);
-}
-
-/** the AWL_TEST_OUTPUTS hooks, see setup() */
-int
-testoutputadd(int signo, void *data)
-{
-    wlr_multi_for_each_backend(backend, testoutputadd_backend, NULL);
-    return 0;
-}
-
-int
-testoutputremove(int signo, void *data)
-{
-    /* the newest monitor, createmon() inserts at the head; never the last one */
-    Monitor *m;
-    if (wl_list_length(&mons) > 1) {
-        m = wl_container_of(mons.next, m, link);
-        wlr_output_destroy(m->wlr_output);
-    }
-    return 0;
-}
-
-/** what testwincmd()'s dump reports as clicks and scrolls */
-static char testclicks[2048];
-
-/** input N on: N's click callback, data is N */
-static void
-testwinclick(awl_window_t *win, int row, int col, uint32_t button, void *data)
-{
-    size_t len = strlen(testclicks);
-    snprintf(testclicks + len, sizeof(testclicks) - len, "click %d %d %d %u\n",
-            (int)(intptr_t)data, row, col, button);
-}
-
-/** scroll N on: N's scroll callback, data is N */
-static void
-testwinscroll(awl_window_t *win, int row, int col, uint32_t orientation, double delta,
-        int32_t value120, void *data)
-{
-    size_t len = strlen(testclicks);
-    snprintf(testclicks + len, sizeof(testclicks) - len, "scroll %d %d %d %u %d %d\n",
-            (int)(intptr_t)data, row, col, orientation, value120, delta > 0 ? 1 : delta < 0 ? -1 : 0);
-}
-
-/** \n, \t and \\ in s, in place */
-static void
-testunescape(char *s)
-{
-    char *o = s;
-    for (; *s; s++) {
-        if (*s == '\\' && s[1]) {
-            s++;
-            *o++ = *s == 'n' ? '\n' : *s == 't' ? '\t' : *s;
-        } else {
-            *o++ = *s;
-        }
-    }
-    *o = 0;
-}
-
-/** One line of AWL_TEST_WINDOWS' FIFO, driving the text popups the way a
- * plugin does through awl_host. N is a slot of testwins, MON an output's
- * name, X logical pixels from its left edge, TEXT the rest of the line with
- * \n, \t and \\ escapes:
- *
- *   show N MON X TEXT      textwinshow(), creating N first if it is empty
- *   toggle N MON X TEXT    the same with toggle
- *   update N TEXT | hide N | destroy N | hideall
- *   input N on|off         N takes the pointer, its presses are recorded
- *   scroll N on|off        N takes the pointer, its scrolling is recorded
- *   restart                the plugin_restart action (destroys them all)
- *   dump PATH              writes PATH.tmp, then renames it to PATH:
- *                            mon NAME X Y W H WX WY WW WH SCALE ENABLED
- *                            win N MON|- X Y W H VISIBLE HOVERROW
- *                            cell N ROW COL X Y (a cell's center, visible
- *                              windows' first 8 rows)
- *                            click N ROW COL BUTTON (pressed since the last
- *                              dump, if it takes the pointer)
- *                            scroll N ROW COL ORIENTATION VALUE120 SIGN
- *                              (likewise; SIGN the delta's, -1, 0 or 1)
- *                            pwin I MON|- X Y W H VISIBLE (the plugins')
- *                            hover MON NAMESPACE|- X Y (the center of a bar
- *                              widget with callback_hover)
- *                            margin PX (popup_config.margin)
- *                            errors COUNT (lines rejected so far)
- */
-static void
-testwincmd(char *line)
-{
-    static int errors;
-    char cmd[16] = "", mon[64] = "", tmp[PATH_MAX], onoff[4] = "";
-    double cx, cy;
-    int n = -1, x = 0, off = 0, args = 0, toggle;
-    Monitor *m = NULL, *it;
-    struct wlr_box box;
-    TextWin *tw;
-    awl_draw_t *d;
-    unsigned int xpos;
-    int bx, by, i;
-    FILE *f;
-
-    if (sscanf(line, "%15s%n", cmd, &off) != 1)
-        return;
-    line += off;
-    if (*line == ' ')
-        line++;
-    toggle = !strcmp(cmd, "toggle");
-    if (toggle || !strcmp(cmd, "show")) {
-        if (sscanf(line, "%d %63s %d%n", &n, mon, &x, &args) != 3)
-            goto bad;
-    } else if (!strcmp(cmd, "update") || !strcmp(cmd, "hide") || !strcmp(cmd, "destroy")) {
-        if (sscanf(line, "%d%n", &n, &args) != 1)
-            goto bad;
-    } else if (!strcmp(cmd, "input") || !strcmp(cmd, "scroll")) {
-        if (sscanf(line, "%d %3s%n", &n, onoff, &args) != 2
-                || (strcmp(onoff, "on") && strcmp(onoff, "off")))
-            goto bad;
-    }
-    if (n != -1 && (n < 0 || n >= (int)LENGTH(testwins)))
-        goto bad;
-    line += args;
-    if (*line == ' ')
-        line++;
-    testunescape(line);
-
-    if (toggle || !strcmp(cmd, "show")) {
-        wl_list_for_each(it, &mons, link)
-            if (!strcmp(it->wlr_output->name, mon))
-                m = it;
-        if (!m)
-            goto bad;
-        if (!testwins[n])
-            testwins[n] = textwincreate();
-        textwinshow(testwins[n], m, x, line, toggle);
-    } else if (!strcmp(cmd, "update")) {
-        textwinupdate(testwins[n], line);
-    } else if (!strcmp(cmd, "hide")) {
-        textwinhide(testwins[n]);
-    } else if (!strcmp(cmd, "destroy")) {
-        textwindestroy(testwins[n]);
-    } else if (!strcmp(cmd, "input")) {
-        if (!testwins[n])
-            goto bad;
-        textwinsetclick(testwins[n], strcmp(onoff, "on") ? NULL : testwinclick, (void *)(intptr_t)n);
-    } else if (!strcmp(cmd, "scroll")) {
-        if (!testwins[n])
-            goto bad;
-        textwinsetscroll(testwins[n], strcmp(onoff, "on") ? NULL : testwinscroll, (void *)(intptr_t)n);
-    } else if (!strcmp(cmd, "hideall")) {
-        textwinshideall();
-    } else if (!strcmp(cmd, "restart")) {
-        plugin_restart(NULL);
-    } else if (!strcmp(cmd, "dump") && *line) {
-        snprintf(tmp, sizeof(tmp), "%s.tmp", line);
-        if (!(f = fopen(tmp, "w")))
-            goto bad;
-        wl_list_for_each(it, &mons, link)
-            fprintf(f, "mon %s %d %d %d %d %d %d %d %d %g %d\n", it->wlr_output->name,
-                    it->m.x, it->m.y, it->m.width, it->m.height,
-                    it->w.x, it->w.y, it->w.width, it->w.height,
-                    it->wlr_output->scale, it->wlr_output->enabled);
-        for (n = 0; n < (int)LENGTH(testwins); n++) {
-            if (!testwins[n])
-                continue;
-            x = awl_window_box(testwins[n], &box);
-            m = awl_window_monitor(testwins[n]);
-            fprintf(f, "win %d %s %d %d %d %d %d %d\n", n, m ? m->wlr_output->name : "-",
-                    box.x, box.y, box.width, box.height, x, awl_window_hover_row(testwins[n]));
-            for (int r = 0; x && r < 8 && awl_window_cell_center(testwins[n], r, 0, &cx, &cy); r++)
-                for (int c = 0; awl_window_cell_center(testwins[n], r, c, &cx, &cy); c++)
-                    fprintf(f, "cell %d %d %d %.0f %.0f\n", n, r, c, cx, cy);
-        }
-        fputs(testclicks, f);
-        testclicks[0] = 0;
-        n = 0;
-        wl_list_for_each(tw, &textwins, link) {
-            for (i = 0; i < (int)LENGTH(testwins) && testwins[i] != tw->win; i++);
-            if (i < (int)LENGTH(testwins))
-                continue;
-            x = awl_window_box(tw->win, &box);
-            m = awl_window_monitor(tw->win);
-            fprintf(f, "pwin %d %s %d %d %d %d %d\n", n++, m ? m->wlr_output->name : "-",
-                    box.x, box.y, box.width, box.height, x);
-        }
-        /* barwidgetat()'s layout of the right-hand widgets */
-        wl_list_for_each(it, &mons, link) {
-            d = &it->drw;
-            if (!d->m || !it->scene_buffer || !it->wlr_output->enabled)
-                continue;
-            wlr_scene_node_coords(&it->scene_buffer->node, &bx, &by);
-            xpos = d->center_widget_start + d->center_widget_space;
-            for (i = d->n_widgets_right - 1; i >= 0; --i) {
-                if (d->widgets_right[i].callback_hover && d->widgets_right[i].width)
-                    fprintf(f, "hover %s %s %d %d\n", it->wlr_output->name,
-                            d->widgets_right[i].popup_namespace ? d->widgets_right[i].popup_namespace : "-",
-                            it->m.x + (int)((xpos + d->widgets_right[i].width / 2) / it->wlr_output->scale),
-                            by + it->b.real_height / 2);
-                xpos += d->widgets_right[i].width;
-            }
-        }
-        fprintf(f, "margin %d\n", cfg->popup->margin);
-        fprintf(f, "errors %d\n", errors);
-        fclose(f);
-        rename(tmp, line);
-    } else {
-        goto bad;
-    }
-    return;
-bad:
-    errors++;
-    awl_dbg_printf(awl_loglevel_err, "AWL_TEST_WINDOWS: bad command: %s %s\n", cmd, line);
-}
-
-/** AWL_TEST_WINDOWS' FIFO is readable: runs its complete lines */
-int
-testwinctl(int fd, uint32_t mask, void *data)
-{
-    static char buf[4096];
-    static size_t len;
-    char *line, *nl;
-    ssize_t r;
-
-    while ((r = read(fd, buf + len, sizeof(buf) - 1 - len)) > 0) {
-        len += (size_t)r;
-        buf[len] = 0;
-        for (line = buf; (nl = strchr(line, '\n')); line = nl + 1) {
-            *nl = 0;
-            testwincmd(line);
-        }
-        len -= (size_t)(line - buf);
-        memmove(buf, line, len);
-        if (len == sizeof(buf) - 1) /* an overlong line */
-            len = 0;
-    }
-    return 0;
-}
+#include "awl_test.h"
 
 void
 tile(Monitor *m)
@@ -5323,7 +5006,7 @@ updatemons(struct wl_listener *listener, void *data)
         desktop_update(m);
         background_update(m);
         drawalert(m);
-        textwinsupdate(m);
+        popupsupdate(m);
     }
     /* Insert outputs that need to */
     wl_list_for_each(m, &mons, link) {
@@ -5465,7 +5148,7 @@ updatebar(Monitor *m)
     m->b.real_height = (int)((float)m->b.height / m->wlr_output->scale);
     updatefonts(m);
     desktop_fontchanged(m);
-    textwinsupdate(m);
+    popupsupdate(m);
 }
 
 void
@@ -5610,7 +5293,7 @@ configapply(void)
     Client *c, *sel = focustop(selmon);
     LayerSurface *l;
     InputDevice *d;
-    TextWin *tw;
+    Popup *p;
     awl_window_style_t style;
     int mode;
     struct xkb_keymap *keymap;
@@ -5669,7 +5352,7 @@ configapply(void)
             if (!m->drw.m || !m->drw.font)
                 continue;
             updatefont(m, &m->popupfont, cfg->popup->font, cfg->popup->fontsize, "popup");
-            textwinsupdate(m);
+            popupsupdate(m);
         }
     }
     /* the desktop file list's, the same way */
@@ -5752,9 +5435,9 @@ configapply(void)
     desktop_configure(&(desktop_config_t){
             .blur = cfg->blur_launcher, .radius = cfg->blur_launcher_radius,
             .blur_strength = cfg->blur[0], .blur_alpha = cfg->blur[1] });
-    wl_list_for_each(tw, &textwins, link) {
-        style = textwinstyle(tw->menu);
-        awl_window_set_style(tw->win, &style);
+    wl_list_for_each(p, &popups, link) {
+        style = popupstyle(p->menu);
+        awl_window_set_style(p->win, &style);
     }
 
     drawbars();
@@ -5809,9 +5492,9 @@ pluginsdetach(void)
     wl_list_for_each(m, &mons, link)
         if (m->drw.m)
             awl_draw_widgets_clear(&m->drw);
-    /* the popups the plugins left: nothing would update them any more */
-    textwinsdestroy();
-    /* cfg points into the library */
+    /* the popups stay until the library's fini gives them back (or
+     * pluginsreap() destroys them): its painters and callbacks are still
+     * there until then. cfg points into the library */
     const Layout *old = cfg->layouts;
     size_t n_old = cfg->n_layouts;
     cfg = builtinconfig();

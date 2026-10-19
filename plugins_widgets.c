@@ -55,7 +55,6 @@ static uint32_t statuswidget_measure( widget_t* w );
 static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t tempwidget_measure( widget_t* w );
 static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void tempwidget_free( void* userdata );
 static uint32_t batwidget_measure( widget_t* w );
 static uint32_t dockwidget_measure( widget_t* w );
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
@@ -129,7 +128,7 @@ void awl_widgets_create( awl_draw_t* drw ) {
         .bar = drw,
         .measure = &tempwidget_measure,
         .draw = &tempwidget_draw,
-        .free = &tempwidget_free,
+        .free = free,
     };
     drw->widgets_right[drw->n_widgets_right++] = (widget_t){
         .bar = drw,
@@ -381,7 +380,7 @@ typedef struct {
     pixman_image_t* img;
 } sni_icon_t;
 
-typedef struct {
+typedef struct sniwidget_t {
     /** what measure() saw, draw() draws */
     awl_sni_snap_t* snap;
     sni_icon_t* icons;
@@ -392,11 +391,20 @@ typedef struct {
     /** the icon under the pointer, -1 none; whether it is on the widget */
     int hovered, inside;
     uint32_t tip;
+    /** sniwidgets, every bar's */
+    struct sniwidget_t* next;
 } sniwidget_t;
 
+static sniwidget_t* sniwidgets;
+
 static sniwidget_t* sniwidget( widget_t* w ) {
-    if (!w->userdata && (w->userdata = calloc( 1, sizeof(sniwidget_t) ))) ((sniwidget_t*)w->userdata)->hovered = -1;
-    return w->userdata;
+    sniwidget_t* u = w->userdata;
+    if (!u && (u = w->userdata = calloc( 1, sizeof(sniwidget_t) ))) {
+        u->hovered = -1;
+        u->next = sniwidgets;
+        sniwidgets = u;
+    }
+    return u;
 }
 
 /** the item's icon at u->px: the one decoded before, if it's still current */
@@ -428,9 +436,10 @@ static uint32_t sniwidget_measure( widget_t* w ) {
     if (u->px > h - 2) u->px = h - 2;
     if (u->px < 1) u->px = 1;
     u->gap = (int)lroundf( sni_icon_gap * scale );
-    /* the lookups go by the largest bar's */
-    static int largest;
-    if (u->px > largest) largest = u->px;
+    /* the lookups go by the largest bar's of those there are */
+    int largest = 0;
+    for (const sniwidget_t* o = sniwidgets; o; o = o->next)
+        if (o->px > largest) largest = o->px;
     sni_set_icon_px( P->sni, largest );
 
     awl_sni_snap_t* snap = sni_snap_get( P->sni );
@@ -506,11 +515,11 @@ static void sniwidget_click( widget_t* w, uint32_t x, int button ) {
     const char* mon = m->wlr_output->name;
     int cx = sniwidget_center( w, u, i );
     if (awl_tray_menu_window_shows( it->menu )) {
-        awl_tray_menu_window_toggle( it->menu, mon, cx, 1 );
+        awl_tray_menu_window_toggle( it->menu, mon, cx );
         return;
     }
     if ((button == BTN_LEFT && it->item_is_menu) || button == BTN_RIGHT) {
-        if (it->menu) awl_tray_menu_window_toggle( it->menu, mon, cx, 1 );
+        if (it->menu) awl_tray_menu_window_toggle( it->menu, mon, cx );
         else sni_click( P->sni, it->serial, AWL_SNI_CONTEXT, m->m.x + cx, m->m.y, mon, cx );
     } else if (button == BTN_LEFT) {
         sni_click( P->sni, it->serial, AWL_SNI_ACTIVATE, m->m.x + cx, m->m.y, mon, cx );
@@ -553,6 +562,11 @@ static void sniwidget_view( widget_t* w, int32_t x ) {
 static void sniwidget_free( void* userdata ) {
     sniwidget_t* u = userdata;
     if (!u) return;
+    for (sniwidget_t** p = &sniwidgets; *p; p = &(*p)->next)
+        if (*p == u) {
+            *p = u->next;
+            break;
+        }
     for (int i = 0; i < u->nicons; i++)
         if (u->icons[i].img) pixman_image_unref( u->icons[i].img );
     free( u->icons );
@@ -634,31 +648,10 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     return w->width;
 }
 
-/** the readings measure() saw, so draw() renders text of the same width;
- * the popup (awl_window.h), its text and where draw() put the widget */
+/** the readings measure() saw, so draw() renders text of the same width */
 typedef struct {
     float temps[16];
-    awl_window_t* win;
-    char popup[2048];
-    uint32_t x;
 } tempwidget_userdata_t;
-
-/** every sensor: label, reading and the bar's color scale */
-static void tempwidget_popup_text( const awl_temperature_t* T, const float* temps, char* out, size_t size ) {
-    size_t len = 0;
-    out[0] = 0;
-    for (int i=0; i<T->f_ntemps && len < size; ++i) {
-        char reading[32];
-        if (temps[i] == AWL_TEMP_NONE) snprintf( reading, sizeof(reading), "-" );
-        else snprintf( reading, sizeof(reading), "%.1f °C", temps[i] );
-        int c = snprintf( out+len, size-len, "%s%s\t%s\t%.0f–%.0f °C", len ? "\n" : "",
-                          *T->f_labels[i] ? T->f_labels[i] : "sensor", reading,
-                          T->f_t_min[i], T->f_t_max[i] );
-        if (c < 0 || (size_t)c >= size-len) break;
-        len += (size_t)c;
-    }
-    if (!len) snprintf( out, size, "no sensors" );
-}
 
 static void tempwidget_text( const awl_temperature_t* T, int i, float t, char* text, size_t size ) {
     // only put the label if the string is set
@@ -683,13 +676,6 @@ static uint32_t tempwidget_measure( widget_t* w ) {
         tempwidget_text( P->temp, i, u->temps[i], text, sizeof(text) );
         width += TEXTW(w->bar->m, text);
     }
-    // an open popup follows the readings
-    char popup[sizeof u->popup];
-    tempwidget_popup_text( P->temp, u->temps, popup, sizeof(popup) );
-    if (strcmp( popup, u->popup )) {
-        strcpy( u->popup, popup );
-        if (u->win) awl_host->window_update( u->win, u->popup );
-    }
     return width;
 }
 
@@ -698,7 +684,6 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
     if (!P || !P->temp) return 0;
     const awl_temperature_t* T = P->temp;
     tempwidget_userdata_t* u = w->userdata;
-    u->x = x;
 
     for (int i=0; i<T->f_ntemps; ++i) {
         if (u->temps[i] == AWL_TEMP_NONE) continue;
@@ -713,12 +698,6 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
     return w->width;
 }
 
-/* with the bar: a monitor going away, or the plugins detaching */
-static void tempwidget_free( void* userdata ) {
-    tempwidget_userdata_t* u = userdata;
-    if (u && u->win) awl_host->window_destroy( u->win );
-    free( u );
-}
 
 static uint32_t batwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
@@ -955,32 +934,25 @@ static void ipwidget_window_paint( void* data, pixman_image_t* pix, struct fcft_
                              (unsigned)u->fh, AWL_WINDOW_ELLIPSIS, awl_config()->popup->fg );
 }
 
-static int ipwidget_window_hit( void* data, int px, int py ) {
-    (void)data; (void)px; (void)py;
-    return -1;
-}
-
-/* the popup centered under the widget, in logical pixels; with toggle,
- * hidden instead if it is shown */
-static void ipwidget_popup( widget_t* w, int toggle ) {
+/* the popup centered under the widget, in logical pixels */
+static void ipwidget_popup( widget_t* w ) {
     ipwidget_userdata_t* u = w->userdata;
     if (!u) return;
     if (!u->win) {
         static const awl_window_painter_t painter = {
             .measure = &ipwidget_window_measure,
             .paint = &ipwidget_window_paint,
-            .hit = &ipwidget_window_hit,
         };
         w->popup_window = u->win = awl_host->window_create();
         awl_host->window_set_painter( u->win, &painter, u );
     }
     Monitor* m = w->bar->m;
     float center = (float)u->x + (float)w->width / 2.0f;
-    awl_host->window_show( u->win, m, (int)(center / m->wlr_output->scale + 0.5f), "", toggle );
+    awl_host->window_show( u->win, m, (int)(center / m->wlr_output->scale + 0.5f) );
 }
 
 static void ipwidget_hover( widget_t* w ) {
-    ipwidget_popup( w, 0 );
+    ipwidget_popup( w );
 }
 
 static void ipwidget_leave( widget_t* w ) {

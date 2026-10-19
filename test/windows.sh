@@ -1,7 +1,7 @@
 #!/bin/bash
-# Scenario test of awl's text popups (awl_window.c, textwin*() in awl.c): a
+# Scenario test of awl's popups (awl_window.c, popup*() in awl.c): a
 # live.sh test instance whose popups it drives through AWL_TEST_WINDOWS (see
-# testwincmd() in awl.c), checking after every step where they are -- inside
+# testwincmd() in awl_test.h), checking after every step where they are -- inside
 # their monitor and against its window area's edge, hidden once the monitor
 # is gone or off, none after a plugin reload -- that awl is still alive, and
 # at the end that it exits cleanly, popups still open.
@@ -78,9 +78,8 @@ field() { awk -v n="$1" -v c="$2" '$1 == "win" && $2 == n { print $c }' <<<"$sta
 pnoneon() { ! awk -v mon="$1" '$1 == "pwin" && $3 == mon { v = 1 } END { exit !v }' <<<"$state"; }
 # none of the plugins' windows is visible
 pnone() { ! awk '$1 == "pwin" && $8 == 1 { v = 1 } END { exit !v }' <<<"$state"; }
-# where to point at MON's first bar widget with a hover popup of awl's own
-# (no popup_namespace, i.e. not the tray's): "X Y"
-hoverat() { awk -v mon="$1" '$1 == "hover" && $2 == mon && $3 == "-" { print $4, $5; exit }' <<<"$state"; }
+# where to point at MON's first bar widget with a hover popup: "X Y"
+hoverat() { awk -v mon="$1" '$1 == "hover" && $2 == mon { print $3, $4; exit }' <<<"$state"; }
 # the middle of the gap between the plugins' first visible window on MON
 # and its window area's edge: "X Y"
 pgap() {
@@ -342,28 +341,26 @@ else
 	point 300 300
 	win
 	check "leaving the popup closes it" pnone
-	# a click toggles, as for the IP and clock widgets
+	# hover only (awl.c's buttonpress()): a press on the widget closes its
+	# popup, and it stays closed until the pointer leaves and comes back
 	point "$hx" "$hy"
 	"$live" click "$hx" "$hy" left >/dev/null
 	sleep 0.2
 	win
 	check "a click on the widget closes the hover's popup" pnone
 	"$live" click "$hx" "$hy" left >/dev/null
+	sleep 0.3
+	win
+	check "another click doesn't open it" pnone
 	point 300 300
-	win
-	check "the next opens it, to stay" shown any $M1 pwin
-	# back on the widget long enough for its hover, as a hand would be
 	point "$hx" "$hy"
-	"$live" click "$hx" "$hy" left >/dev/null
-	sleep 0.2
 	win
-	check "a click on the widget closes it" pnone
-	"$live" click "$hx" "$hy" left >/dev/null
+	check "back on the widget: its hover opens it again" shown any $M1 pwin
 	point 300 300
 	"$live" click 300 300 left >/dev/null
 	sleep 0.2
 	win
-	check "a click elsewhere closes it" pnone
+	check "off the widget, a click elsewhere: closed" pnone
 	point "$hx" "$hy"
 	randr --output $M1 --scale 1.5
 	win

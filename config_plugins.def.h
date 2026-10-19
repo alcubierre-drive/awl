@@ -74,14 +74,15 @@ static const awl_popup_config_t popup_config = {
         .list_min_height = 120,
         .list_max_height = 200,
     },
-    /* the tray's menus (all left out: the popups' look) */
+    /* the tray's menus; what is 0 (or left out) is the popups', a negative
+     * border_width, radius or blur none */
     .menu = {
-        .bg           = 0x3c3c3c4d, /* the popups' (bg, fg, dim, hover) */
-        .fg           = 0xf8f8f2ff,
+        .bg           = 0,
+        .fg           = 0,
         .border       = 0,
-        .dim          = 0xf8f8f259, /* disabled entries, shortcuts, separators */
-        .highlight    = 0xffffff26,
-        .highlight_fg = 0, /* fg */
+        .dim          = 0, /* disabled entries, shortcuts, separators */
+        .highlight    = 0, /* the popups' hover */
+        .highlight_fg = 0, /* the menu's fg */
         .border_width = 0,
         .radius       = 0,
         .blur         = 0,

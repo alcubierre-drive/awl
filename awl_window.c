@@ -120,6 +120,7 @@ void awl_window_set_style( awl_window_t* win, const awl_window_style_t* style ) 
 }
 
 void awl_window_set_text( awl_window_t* win, const char* text ) {
+    if (!win) return;
     if (!text) text = "";
     if (win->text && !strcmp( win->text, text )) return;
     free( win->text );
@@ -129,6 +130,7 @@ void awl_window_set_text( awl_window_t* win, const char* text ) {
 }
 
 void awl_window_set_painter( awl_window_t* win, const awl_window_painter_t* painter, void* data ) {
+    if (!win) return;
     win->painter = painter ? *painter : (awl_window_painter_t){ 0 };
     win->painter_data = data;
     win->hover = -1;
@@ -137,6 +139,7 @@ void awl_window_set_painter( awl_window_t* win, const awl_window_painter_t* pain
 }
 
 void awl_window_redraw( awl_window_t* win ) {
+    if (!win) return;
     win->drawn = 0;
     if (win->m) awl_window_update( win, win->m );
 }
@@ -257,7 +260,7 @@ void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box
 }
 
 void awl_window_hide( awl_window_t* win ) {
-    if (!win->m) return;
+    if (!win || !win->m) return;
     win->m = NULL;
     if (win->hover != -1) {
         win->hover = -1;
@@ -269,7 +272,7 @@ void awl_window_hide( awl_window_t* win ) {
 }
 
 Monitor* awl_window_monitor( const awl_window_t* win ) {
-    return win->m;
+    return win ? win->m : NULL;
 }
 
 int awl_window_box( const awl_window_t* win, struct wlr_box* box ) {
@@ -282,22 +285,26 @@ void awl_window_removemon( awl_window_t* win, Monitor* m ) {
 }
 
 void awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* data ) {
+    if (!win) return;
     win->click = click;
     win->click_data = data;
     if (!click) awl_window_pointer_leave( win );
 }
 
 void awl_window_set_hidden( awl_window_t* win, awl_window_hidden_t hidden, void* data ) {
+    if (!win) return;
     win->hidden = hidden;
     win->hidden_data = data;
 }
 
 void awl_window_set_hover( awl_window_t* win, awl_window_hover_t hover, void* data ) {
+    if (!win) return;
     win->hover_cb = hover;
     win->hover_data = data;
 }
 
 void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data ) {
+    if (!win) return;
     win->scroll = scroll;
     win->scroll_data = data;
     if (!scroll && !win->click) awl_window_pointer_leave( win );

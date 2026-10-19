@@ -61,16 +61,13 @@ struct widget_t {
     uint32_t hover_delay_ms;
     /** called leave_delay_ms after the pointer has left a widget whose
      * callback_hover fired, unless it came back first (0: right away). While
-     * the pointer is inside a layer surface whose namespace starts with
-     * popup_namespace, or inside popup_window (the popup the hover opened),
-     * it counts as still on the widget. A press on the widget calls it at
+     * the pointer is inside popup_window (the popup the hover opened), it
+     * counts as still on the widget. A press on the widget calls it at
      * once (and cancels a hover not yet fired); hovering fires again only
      * after the pointer has left and come back. */
     void (*callback_leave)(widget_t* this);
     /** see `callback_leave` */
     uint32_t leave_delay_ms;
-    /** see `callback_leave` */
-    const char* popup_namespace;
     /** see `callback_leave`: the widget's awl_window (awl_host_t's
      * window_create()), if its popup is one; NULL if none */
     awl_window_t* popup_window;

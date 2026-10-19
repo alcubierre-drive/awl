@@ -106,59 +106,17 @@ static int tw( struct fcft_font* font, const char* s ) {
 
 /* ---- drawing ---- */
 
-/** how much of the pixel at x, y the w x h box with radius r covers (as
- * plugins/calpopup.c's) */
-static float coverage( float x, float y, float w, float h, float r ) {
-    if (w <= 0 || h <= 0) return 0;
-    r = fminf( r, fminf( w, h ) / 2 );
-    float qx = fabsf( x - w / 2 ) - (w / 2 - r), qy = fabsf( y - h / 2 ) - (h / 2 - r);
-    float ox = fmaxf( qx, 0 ), oy = fmaxf( qy, 0 );
-    float d = sqrtf( ox * ox + oy * oy ) + fminf( fmaxf( qx, qy ), 0 ) - r;
-    return fminf( fmaxf( 0.5f - d, 0 ), 1 );
-}
-
-/** c (0xRRGGBBAA) over the rounded box, antialiased; with t > 0 only its
- * outline, t wide */
-static void fill_shape( pixman_image_t* pix, float x, float y, float w, float h, float r, float t, uint32_t c ) {
-    if (!pix || w <= 0 || h <= 0) return;
-    uint32_t* data = pixman_image_get_data( pix );
-    int stride = pixman_image_get_stride( pix ) / 4;
-    int iw = pixman_image_get_width( pix ), ih = pixman_image_get_height( pix );
-    float a = (float)(c & 0xff) / 255.f;
-    float col[3] = { (float)(c >> 24) / 255.f * a, (float)((c >> 16) & 0xff) / 255.f * a,
-                     (float)((c >> 8) & 0xff) / 255.f * a };
-    for (int yy = (int)floorf( y ); yy < (int)ceilf( y + h ); yy++) {
-        if (yy < 0 || yy >= ih) continue;
-        for (int xx = (int)floorf( x ); xx < (int)ceilf( x + w ); xx++) {
-            if (xx < 0 || xx >= iw) continue;
-            float fx = (float)xx + 0.5f - x, fy = (float)yy + 0.5f - y;
-            float k = coverage( fx, fy, w, h, r );
-            if (t > 0) k -= coverage( fx - t, fy - t, w - 2 * t, h - 2 * t, fmaxf( r - t, 0 ) );
-            if (k <= 0) continue;
-            uint32_t d = data[yy * stride + xx];
-            const int shift[4] = { 16, 8, 0, 24 };
-            const float src[4] = { col[0] * k, col[1] * k, col[2] * k, a * k };
-            uint32_t out = 0;
-            for (int i = 0; i < 4; i++) {
-                float v = src[i] * 255 + (float)((d >> shift[i]) & 0xff) * (1 - a * k);
-                out |= (uint32_t)lroundf( fminf( v, 255 ) ) << shift[i];
-            }
-            data[yy * stride + xx] = out;
-        }
-    }
-}
-
 /** a check box or radio button of flags, s x s at x, y */
 static void draw_check( pixman_image_t* pix, uint32_t flags, float x, float y, float s, uint32_t fg ) {
     const float t = fmaxf( 1, roundf( s / 9 ) );
     const int radio = !!(flags & AWL_TRAY_MENU_RADIO);
     const float r = radio ? s / 2 : s / 5;
-    fill_shape( pix, x, y, s, s, r, t, fg );
+    awl_fill_shape( pix, x, y, s, s, r, t, fg );
     const float in = 2 * t + 1;
     if (flags & AWL_TRAY_MENU_CHECKED)
-        fill_shape( pix, x + in, y + in, s - 2 * in, s - 2 * in, radio ? (s - 2 * in) / 2 : r / 2, 0, fg );
+        awl_fill_shape( pix, x + in, y + in, s - 2 * in, s - 2 * in, radio ? (s - 2 * in) / 2 : r / 2, 0, fg );
     else if (flags & AWL_TRAY_MENU_MIXED)
-        fill_shape( pix, x + in, y + s / 2 - t, s - 2 * in, 2 * t, 0, 0, fg );
+        awl_fill_shape( pix, x + in, y + s / 2 - t, s - 2 * in, 2 * t, 0, 0, fg );
 }
 
 /* ---- icons: decoded here, at the monitor's scale; read on the tray's loop ---- */
@@ -278,7 +236,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         const int y = y0 + r->y;
         if (flags & AWL_TRAY_MENU_SEPARATOR) {
             float t = fmaxf( 1, (float)px( L, 1 ) );
-            fill_shape( pix, (float)(x0 + L->pad), (float)y + ((float)r->h - t) / 2, (float)(L->w - 2 * L->pad), t,
+            awl_fill_shape( pix, (float)(x0 + L->pad), (float)y + ((float)r->h - t) / 2, (float)(L->w - 2 * L->pad), t,
                         0, 0, c.dim );
             continue;
         }
@@ -286,7 +244,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         const int lit = i == hover || (sub && sub->node == r->node);
         /* rounded as the frame, at most 4 */
         if (lit)
-            fill_shape( pix, (float)x0, (float)y, (float)L->w, (float)r->h, (float)px( L, c.radius < 4 ? c.radius : 4 ),
+            awl_fill_shape( pix, (float)x0, (float)y, (float)L->w, (float)r->h, (float)px( L, c.radius < 4 ? c.radius : 4 ),
                         0, c.highlight );
         const uint32_t fg = (flags & AWL_TRAY_MENU_DISABLED) ? c.dim : lit ? c.highlight_fg : c.fg;
         int x = x0 + L->pad;
@@ -685,7 +643,7 @@ static void held_fire( void* data ) {
     if (M.held) apply( M.held );
 }
 
-void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x, int on_icon ) {
+void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x ) {
     static uint32_t gen;
     awl_vrb_printf( "tray: menu %llu: toggle on %s at %d (open: %llu)\n", (unsigned long long)serial, monitor,
                     center_x, (unsigned long long)M.serial );
@@ -700,7 +658,8 @@ void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int cent
     if (!M.held_timer) M.held_timer = awl_host->timer_add( held_fire, NULL );
     if (!M.leave_timer) M.leave_timer = awl_host->timer_add( leave_fire, NULL );
     M.serial = serial;
-    M.on_icon = on_icon;
+    /* opened by a click on it */
+    M.on_icon = 1;
     snprintf( M.monitor, sizeof M.monitor, "%s", monitor );
     M.center_x = center_x;
     M.gen = ++gen;
@@ -748,7 +707,7 @@ void awl_tray_menu_window_snap( awl_tray_menu_snap_t* snap ) {
     M.lv[0].node = 0;
     M.depth = 1;
     awl_host->window_set_painter( M.lv[0].win, &painter, &M.lv[0] );
-    awl_host->window_show( M.lv[0].win, m, M.center_x, NULL, 0 );
+    awl_host->window_show( M.lv[0].win, m, M.center_x );
     awl_tray_menu_event( M.serial, 0, "opened" );
 }
 

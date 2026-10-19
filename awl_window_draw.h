@@ -9,8 +9,8 @@
 
 #include "awl_draw.h"
 
+#include <math.h> /* awl_shape_coverage() */
 #include <stdint.h>
-#include <string.h> /* memcmp, awl_popup_menu_config() */
 
 /** between columns and rows, logical pixels */
 #define AWL_WINDOW_COLUMN_SPACING 12
@@ -47,31 +47,82 @@ typedef struct awl_popup_config_t {
          * which scrolls beyond the maximum; a maximum of 0 means none */
         int list_min_height, list_max_height;
     } calendar;
-    /** the tray's menus, their own look; all of it 0 (left out): the
-     * popups' (bg, fg, border, dim, hover, border_width, radius, blur) */
+    /** the tray's menus, their own look; what is 0 (left out) is the
+     * popups': bg, fg, border, dim, highlight (hover), highlight_fg (the
+     * menu's fg), border_width, radius and blur (blur_launcher). A negative
+     * border_width, radius or blur is none. */
     struct awl_popup_menu_config_t {
         uint32_t bg, fg, border;
         /** disabled entries, shortcuts, separators */
         uint32_t dim;
         /** the entry under the pointer, the one whose submenu is open: its
-         * background and its text (0: fg) */
+         * background and its text */
         uint32_t highlight, highlight_fg;
         int border_width, radius;
-        /** blur what is behind them, as the launcher (blur_launcher) */
+        /** blur what is behind them, as the launcher */
         int blur;
     } menu;
 } awl_popup_config_t;
 
-/** c's menu look with what is left out filled in: everything (all 0) from
- * the popups', highlight_fg from fg; blur_launcher is the popups' blur */
+/** c's menu look with what is left out filled in from the popups' (see
+ * menu), negative sizes and blur as 0; blur_launcher is the popups' blur */
 static inline struct awl_popup_menu_config_t awl_popup_menu_config( const awl_popup_config_t* c, int blur_launcher ) {
     struct awl_popup_menu_config_t m = c->menu;
-    static const struct awl_popup_menu_config_t none = { 0 };
-    if (!memcmp( &m, &none, sizeof m ))
-        m = (struct awl_popup_menu_config_t){ .bg = c->bg, .fg = c->fg, .border = c->border, .dim = c->dim,
-                .highlight = c->hover, .border_width = c->border_width, .radius = c->radius, .blur = blur_launcher };
+    if (!m.bg) m.bg = c->bg;
+    if (!m.fg) m.fg = c->fg;
+    if (!m.border) m.border = c->border;
+    if (!m.dim) m.dim = c->dim;
+    if (!m.highlight) m.highlight = c->hover;
     if (!m.highlight_fg) m.highlight_fg = m.fg;
+    m.border_width = m.border_width < 0 ? 0 : m.border_width ? m.border_width : c->border_width;
+    m.radius = m.radius < 0 ? 0 : m.radius ? m.radius : c->radius;
+    m.blur = m.blur < 0 ? 0 : m.blur ? m.blur : blur_launcher;
     return m;
+}
+
+/** How much of the pixel centered at x, y the w x h box with corner radius
+ * r at the origin covers, antialiased over a pixel: the frame's, and the
+ * painters' rounded shapes (the menus' rows, the calendar's days). */
+static inline float awl_shape_coverage( float x, float y, float w, float h, float r ) {
+    if (w <= 0 || h <= 0) return 0;
+    r = fminf( r, fminf( w, h ) / 2 );
+    float qx = fabsf( x - w / 2 ) - (w / 2 - r), qy = fabsf( y - h / 2 ) - (h / 2 - r);
+    float ox = fmaxf( qx, 0 ), oy = fmaxf( qy, 0 );
+    float d = sqrtf( ox * ox + oy * oy ) + fminf( fmaxf( qx, qy ), 0 ) - r;
+    return fminf( fmaxf( 0.5f - d, 0 ), 1 );
+}
+
+/** c (0xRRGGBBAA) over pix (premultiplied ARGB) in the w x h box at x, y
+ * with corner radius r, antialiased; with t > 0 only its outline, t wide.
+ * Physical pixels, for a painter's paint(). */
+static inline void awl_fill_shape( pixman_image_t* pix, float x, float y, float w, float h, float r, float t,
+                                   uint32_t c ) {
+    if (!pix || w <= 0 || h <= 0) return;
+    uint32_t* data = pixman_image_get_data( pix );
+    int stride = pixman_image_get_stride( pix ) / 4;
+    int iw = pixman_image_get_width( pix ), ih = pixman_image_get_height( pix );
+    float a = (float)(c & 0xff) / 255.f;
+    float col[3] = { (float)(c >> 24) / 255.f * a, (float)((c >> 16) & 0xff) / 255.f * a,
+                     (float)((c >> 8) & 0xff) / 255.f * a };
+    for (int yy = (int)floorf( y ); yy < (int)ceilf( y + h ); yy++) {
+        if (yy < 0 || yy >= ih) continue;
+        for (int xx = (int)floorf( x ); xx < (int)ceilf( x + w ); xx++) {
+            if (xx < 0 || xx >= iw) continue;
+            float fx = (float)xx + 0.5f - x, fy = (float)yy + 0.5f - y;
+            float k = awl_shape_coverage( fx, fy, w, h, r );
+            if (t > 0) k -= awl_shape_coverage( fx - t, fy - t, w - 2 * t, h - 2 * t, fmaxf( r - t, 0 ) );
+            if (k <= 0) continue;
+            uint32_t d = data[yy * stride + xx];
+            const int shift[4] = { 16, 8, 0, 24 };
+            const float src[4] = { col[0] * k, col[1] * k, col[2] * k, a * k };
+            uint32_t out = 0;
+            for (int i = 0; i < 4; i++) {
+                float v = src[i] * 255 + (float)((d >> shift[i]) & 0xff) * (1 - a * k);
+                out |= (uint32_t)lroundf( fminf( v, 255 ) ) << shift[i];
+            }
+            data[yy * stride + xx] = out;
+        }
+    }
 }
 
 /** How a window looks; awl fills it from popup_config. Colors are

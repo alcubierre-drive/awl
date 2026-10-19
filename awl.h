@@ -355,58 +355,36 @@ void arrange(Monitor *m);
 /** focuses c (NULL: none) and, if lift, raises it */
 void focusclient(Client *c, int lift);
 typedef struct awl_window awl_window_t;
-/** a new, hidden text popup (awl_window.h) for the plugins, styled like the
- * tray's; NULL before setup(). The plugins' detaching destroys the ones they
- * left. Several can be shown at once. */
-awl_window_t *textwincreate(void);
-/** nothing if win is NULL or already destroyed */
-void textwindestroy(awl_window_t *win);
+/** a new, hidden popup (awl_window.h) for the plugins, styled by
+ * popup_config; NULL before setup(). The library gives back what it made
+ * before it is unloaded; pluginsreap() destroys what it left. Several can be
+ * shown at once. The host table hands the plugins the rest of
+ * awl_window.h as it is. */
+awl_window_t *popupcreate(void);
+/** nothing if win is NULL */
+void popupdestroy(awl_window_t *win);
 /** shows win for a bar widget on m, centered on center_x (logical pixels
- * from m's left edge), on the bar's side; text as `awl_window_set_text()`.
- * With toggle, hides it instead if it is already shown on m. A press
- * anywhere but on the bar hides every popup. */
-void textwinshow(awl_window_t *win, Monitor *m, int center_x, const char *text, int toggle);
-/** replaces win's text if it is shown; nothing while it is hidden */
-void textwinupdate(awl_window_t *win, const char *text);
-void textwinhide(awl_window_t *win);
-/** gives win the pointer, presses going to click; NULL lets it through
- * again (`awl_window_set_click()`). A window that takes the pointer gets all
- * of it: also the scrolling, dropped without textwinsetscroll()'s callback. */
-void textwinsetclick(awl_window_t *win,
-        void (*click)(awl_window_t *win, int row, int col, uint32_t button, void *data), void *data);
-/** gives win the pointer, scrolling going to scroll; NULL lets it through
- * again unless it has a click callback (`awl_window_set_scroll()`) */
-void textwinsetscroll(awl_window_t *win,
-        void (*scroll)(awl_window_t *win, int row, int col, uint32_t orientation,
-                double delta, int32_t value120, void *data), void *data);
-typedef struct awl_window_painter_t awl_window_painter_t;
-/** makes win draw itself with painter instead of text, NULL for the text
- * again (`awl_window_set_painter()`) */
-void textwinsetpainter(awl_window_t *win, const awl_window_painter_t *painter, void *data);
-/** what win's painter draws changed (`awl_window_redraw()`) */
-void textwinredraw(awl_window_t *win);
-/** the monitor win is shown on, NULL while hidden or if it is no popup */
-Monitor *textwinmonitor(awl_window_t *win);
-/** calls hidden whenever win is hidden, by anyone (`awl_window_set_hidden()`) */
-void textwinsethidden(awl_window_t *win, void (*hidden)(awl_window_t *win, void *data), void *data);
+ * from m's left edge), on the bar's side; a popup that isn't a menu closes
+ * the menus open. A press anywhere but on the bar hides every popup. */
+void popupshow(awl_window_t *win, Monitor *m, int center_x);
+/** shows win on m beside the box x, y, w, h, a row of another popup, on
+ * its right unless left (`awl_window_show_beside()`) */
+void popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
+/** makes win look like a menu, popup_config.menu, from now on */
+void popupsetmenustyle(awl_window_t *win);
+/** where part of win's painter is, 0 if it is not shown
+ * (`awl_window_part_box()`) */
+int popuppartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h);
 /** the monitor whose output is named name, NULL if none */
 Monitor *monitornamed(const char *name);
 typedef struct awl_popup_config_t awl_popup_config_t;
 /** config_plugins.h's popup_config as it is now; valid until the next
  * config reload (main thread) */
 const awl_popup_config_t *popupconfig(void);
-/** shows win on m beside the box x, y, w, h, a row of another popup, on
- * its right unless left (`awl_window_show_beside()`) */
-void textwinshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
-/** makes win look like a menu, popup_config.menu, from now on (config
- * reloads too) */
-void textwinsetmenustyle(awl_window_t *win);
-/** calls hover whenever the row under the pointer changes
- * (`awl_window_set_hover()`) */
-void textwinsethover(awl_window_t *win, void (*hover)(awl_window_t *win, int row, int inside, void *data), void *data);
-/** where part of win's painter is, 0 if it is not shown
- * (`awl_window_part_box()`) */
-int textwinpartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h);
+/** after the plugin library's fini, before it is unloaded: destroys the
+ * popups and timers it left (warning about them), whose callbacks point
+ * into it */
+void pluginsreap(void);
 typedef struct awl_timer awl_timer_t;
 /** a timer on the main loop that calls fn( data ), unarmed */
 awl_timer_t *timeradd(void (*fn)(void *data), void *data);

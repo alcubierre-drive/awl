@@ -50,7 +50,9 @@ static void item_remove( int i ) {
     sd_bus_emit_signal( W.bus, WATCHER_PATH, WATCHER_IFACE, "StatusNotifierItemUnregistered", "s", W.items[i].id );
     free( W.items[i].id );
     free( W.items[i].bus );
-    W.items[i] = W.items[--W.nitems];
+    /* the rest keep their order, the registrations': hosts list them so */
+    memmove( &W.items[i], &W.items[i + 1], (size_t)(W.nitems - i - 1) * sizeof(*W.items) );
+    W.nitems--;
 }
 
 static void items_clear( void ) {
