@@ -234,6 +234,8 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the icon theme of the tray and its menus; what it lacks comes from the
      * desktop's (NULL: the desktop's) */
     c->tray.icon_theme = "Papirus-Dark";
+    // p->tray.bg = molokai_light_gray;
+    p->tray.bg = 0x657374ff;
 
     // c->popup.border = molokai_blue;
     // c->popup.border = molokai_light_gray;
