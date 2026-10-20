@@ -1,7 +1,27 @@
 # Plan: launcher and notification daemon in awl
 
-Status: planned (2026-10-20), nothing implemented yet. Replaces fuzzel (`menucmd`)
+Status (2026-10-20): 0a, 0b and the launcher (phase 1) are done; 0c, the
+notification daemon (phase 2) and the rest of phase 3 are open. Replaces fuzzel (`menucmd`)
 and fnott (autostart, `fnottctl actions`).
+
+Done, and how it differs from the plan below:
+
+- 0a: `window_set_key` (presses and repeats only, no releases; what the
+  callback doesn't take goes to the bindings), the grab in awl_popup.c
+  (`popupkeyboard()`, `popupsgrabupdate()`), `focusclient()` holds back
+  while it is held, locking hides the popups. Tray menus: Up/Down/Tab,
+  Right/Left, Return/space, Escape.
+- 0b: `window_show_at`, `awl_window_place_at()` (unit tested); also
+  `monitor_selected` in the host table. ABI 27.
+- Launcher: plugins/launcher.c, plugins/desktop_entry.c (parsing, Exec;
+  unit tested), plugins/fuzzy.c (unit tested). Not fzy: an fzf-style scorer
+  of its own that also allows typos (wrong, extra, swapped characters) on a
+  budget by query length, only inside runs of exact matches, with an LCS
+  prefilter. Icons are looked up and decoded on the index thread, not the
+  main one. Frecency in `$XDG_STATE_HOME/awl/launcher`. Path= goes through
+  `sh -c 'cd -- "$0" && exec "$@"'`, since spawn has no working directory.
+- Not yet: the `$PATH` mode, desktop Actions, the xdg-activation token, a
+  live.sh-driven launcher test (it was tested by hand in live.sh).
 
 Most of what both need exists already: awl windows with painters, styling and
 blur, placement by the bar, icon lookup (icons/icon.h), `actions->spawn`, sd-bus

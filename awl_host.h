@@ -126,6 +126,8 @@ typedef struct awl_host_t {
     void (*arrange)( Monitor* m );
     /** `monitornamed()`: the monitor of the output named name, NULL if none */
     Monitor* (*monitor_named)( const char* name );
+    /** the selected monitor (``selmon``), NULL if there is none */
+    Monitor* (*monitor_selected)( void );
 
     /* ---- popups (awl_window.h), NULL windows are fine everywhere ---- */
 
@@ -156,7 +158,12 @@ typedef struct awl_host_t {
      * (layout coordinates, logical size), a row of another window: a
      * submenu beside its menu, on the right unless left, else where it fits */
     void (*window_show_beside)( awl_window_t* win, Monitor* m, int x, int y, int w, int h, int left );
-    /** `awl_window_hide()` */
+    /** `popupshowat()`: shows the window on m at a spot of its window
+     * area, an AWL_WINDOW_AT_* (awl.h; the margin away from its edges),
+     * moved by dx, dy logical pixels; one that isn't a menu closes the
+     * menus open */
+    void (*window_show_at)( awl_window_t* win, Monitor* m, int at, int dx, int dy );
+    /** `popuphide()` */
     void (*window_hide)( awl_window_t* win );
     /** `awl_window_monitor()`: where the window is shown, NULL while hidden
      * (awl also hides it, on a press elsewhere or with its monitor) */
@@ -186,6 +193,16 @@ typedef struct awl_host_t {
      * is hidden, by window_hide or by awl (a press elsewhere, its monitor
      * going away); NULL: no more */
     void (*window_set_hidden)( awl_window_t* win, void (*hidden)( awl_window_t* win, void* data ), void* data );
+    /** `popupsetkey()`: while shown, the window has the keyboard (the
+     * newest such one): every key pressed, and repeated while held, goes to
+     * key( win, sym, utf8, mods, data ) before awl's bindings, which get
+     * what it doesn't take (it returns 0); no client gets any, none has the
+     * focus meanwhile. sym an XKB_KEY_*, utf8 what the key types ("" for
+     * nothing, a control character), mods WLR_MODIFIER_*'s. Locking the
+     * screen hides it. NULL: no more. */
+    void (*window_set_key)( awl_window_t* win,
+            int (*key)( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods, void* data ),
+            void* data );
 
     /* ---- timers on awl's main loop ---- */
 

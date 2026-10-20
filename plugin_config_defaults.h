@@ -13,6 +13,8 @@ static const int default_widgets[] = {
     AwlWidgetDock, AwlWidgetBattery, AwlWidgetNetwork, AwlWidgetBacklight,
 };
 
+static const char* const default_terminal[] = { "xterm", "-e", NULL };
+
 static const awl_plugin_config_t awl_plugin_config_defaults = {
     .widgets = { default_widgets, LENGTH( default_widgets ) },
     .colors = {
@@ -47,5 +49,12 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     .battery = {
         .dir = "/sys/class/power_supply/BAT0/",
         .scale = { .bad = 15, .warning = 25, .ok = 30 },
+    },
+    .launcher = {
+        .rows = 10, .width = 560, .icon_size = 24,
+        .terminal = default_terminal,
+        .prompt = "> ",
+        .at = AWL_WINDOW_AT_TOP, .dy = 0,
+        .match = molokai_orange, .dim = 0,
     },
 };

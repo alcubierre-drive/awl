@@ -6,6 +6,7 @@
 #include "awl_lockscreen.h"
 #include "awl_log.h"
 #include "awl_output.h"
+#include "awl_popup.h"
 
 static void applybounds(Client *c, struct wlr_box *bbox);
 static void applyrules(Client *c);
@@ -386,6 +387,11 @@ focusclient(Client *c, int lift)
         wlr_seat_keyboard_notify_clear_focus(seat);
         return;
     }
+
+    /* a popup has the keyboard (the launcher): c gets it once that is
+     * closed (popupsgrabupdate()) */
+    if (popupkeyboard())
+        return;
 
     /* Change cursor surface */
     motionnotify(0, NULL, 0, 0, 0, 0);

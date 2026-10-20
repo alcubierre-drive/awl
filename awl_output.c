@@ -203,6 +203,12 @@ monitornamed(const char *name)
 }
 
 Monitor *
+monitorselected(void)
+{
+    return selmon;
+}
+
+Monitor *
 nextmon(int add) {
     int i = 0, i_sel = 1;
 

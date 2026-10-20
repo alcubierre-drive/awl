@@ -38,3 +38,5 @@ Monitor *nextmon(int add);
 void setselmon(Monitor *m);
 /** the monitor whose output is named name, NULL if none */
 Monitor *monitornamed(const char *name);
+/** selmon, for the host table */
+Monitor *monitorselected(void);

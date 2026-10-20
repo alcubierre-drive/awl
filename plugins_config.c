@@ -33,9 +33,14 @@ AWL_ARRANGES
 #undef AWL_LAYOUT_REGISTER
 
 void AWL_ACTION( notifyconfig )( const Arg* arg ) { awl_notify_config(); }
+void AWL_ACTION( launcher )( const Arg* arg ) { awl_launcher_toggle(); }
 void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
     if (p) backlight_toggle( p->backlight );
+}
+void AWL_ACTION( tagmonf )( const Arg* arg ) {
+    AWL_ACTION(tagmon)(arg);
+    AWL_ACTION(focusmon)(arg);
 }
 
 /* ======================================================================
@@ -48,7 +53,7 @@ void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
  * SETLIST(p->widgets, widgets).
  * In bindings, MODKEY is c->modkey. They can call AWL_ACTION(name) of
  * what AWL_ACTIONS lists (awl_plugin_abi.h) and of the library's actions
- * above (notifyconfig, backlighttoggle), and functions defined here by
+ * above (notifyconfig, launcher, backlighttoggle), and functions defined here by
  * their own name; layouts AWL_LAYOUT(name) of what AWL_ARRANGES lists. The
  * molokai_* colors are in plugins/colors.h.
  * ====================================================================== */
@@ -96,7 +101,7 @@ static const MonitorRule monrules[] = {
 
 /* commands */
 static const char *termcmd[] = { "kitty", "-d", "$HOME", NULL };
-static const char *menucmd[] = { "fuzzel", NULL };
+static const char *const launcher_terminal[] = { "kitty", NULL };
 static const char *suspend[] = { "systemctl", "suspend", NULL };
 static const char *hyprcopy[] = { "hyprcopy", NULL };
 static const char *brightp[] = { "backlight-tooler", "-v5", NULL };
@@ -126,12 +131,10 @@ static const char* autostart[][8] = {
 };
 static const char* locker[] = { "swaylock", "-c", "00000000", "-p", NULL };
 
-static void tagmonf( const Arg* arg ) { AWL_ACTION(tagmon)(arg); AWL_ACTION(focusmon)(arg); }
-
 static const Key keys[] = {
     /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */
     /* modifier                  key                 function                    argument */
-    { MODKEY,                    XKB_KEY_p,          AWL_ACTION(spawn),            {.v = menucmd} },
+    { MODKEY,                    XKB_KEY_p,          AWL_ACTION(launcher),         {0} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_P,          AWL_ACTION(notifyconfig),     {0} },
     { MODKEY,                    XKB_KEY_Return,     AWL_ACTION(spawn),            {.v = termcmd} },
     { MODKEY,                    XKB_KEY_y,          AWL_ACTION(backlighttoggle),  {0} },
@@ -192,8 +195,8 @@ static const Key keys[] = {
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_l,          AWL_ACTION(incnmaster),     {.i = +1} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_j,          AWL_ACTION(focusmon),       {.i = -1} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_k,          AWL_ACTION(focusmon),       {.i = +1} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_O,          tagmonf,        {.i = -1} },
-    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_O,tagmonf, {.i = +1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_O,          AWL_ACTION(tagmonf),        {.i = -1} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_O,AWL_ACTION(tagmonf), {.i = +1} },
     TAGKEYS(          XKB_KEY_1, XKB_KEY_exclam,                     0),
     TAGKEYS(          XKB_KEY_2, XKB_KEY_quotedbl,                   1),
     TAGKEYS(          XKB_KEY_3, XKB_KEY_section,                    2),
@@ -386,6 +389,17 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     p->battery.scale.bad     = 10;
     p->battery.scale.warning = 20;
     p->battery.scale.ok      = 30;
+
+    /* the launcher (plugins/launcher.h); colors 0: the popups' */
+    // p->launcher.rows      = 10;
+    // p->launcher.width     = 560;
+    // p->launcher.icon_size = 24;
+    p->launcher.terminal = launcher_terminal; /* { "xterm", "-e", NULL } */
+    // p->launcher.prompt    = "> ";
+    // p->launcher.at        = AWL_WINDOW_AT_TOP;
+    // p->launcher.dy        = 0;
+    // p->launcher.match     = molokai_orange;
+    // p->launcher.dim       = 0;
 }
 
 /* ======================================================================

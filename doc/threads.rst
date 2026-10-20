@@ -33,6 +33,11 @@ The threads
    * - ``desktop``
      - plugins_desktop_panel.c
      - watches ``desktop_dir`` with inotify and lists it
+   * - ``launcher``
+     - plugins/launcher.c
+     - the launcher's index: reads the applications' .desktop files (again
+       on inotify's word), the launch counts, and looks up and decodes the
+       icons the launcher asks for
    * - ``wallpaper``
      - plugins/wallpaper.c
      - lists the wallpaper directory, picks one, decodes it
@@ -52,8 +57,8 @@ The rules
 The main thread never touches the file system.
    On a hung mount, e.g. a remote one, any file system call can block
    indefinitely, ``stat()`` and ``open()`` included. So the desktop panel's
-   scanner and the wallpaper's decoder do all of it, and the main thread
-   only gets their results.
+   scanner, the launcher's index and the wallpaper's decoder do all of it,
+   and the main thread only gets their results.
 
 Results are handed over, not shared.
    A thread publishes its result whole, through an atomic pointer or
@@ -82,7 +87,7 @@ Threads are woken, never cancelled.
 
 A stuck thread is left behind.
    A thread blocked in the kernel, e.g. on a dead mount, can't look. The
-   scanner and the decoder are given 500 ms to stop; after that, their
+   scanner, the launcher's index and the decoder are given 500 ms to stop; after that, their
    state is abandoned with them, never freed, and since their code must stay
    mapped, the old library is never unloaded (`awl_plugin_api_t.fini`
    reports it). A reload still starts fresh threads in the new library.
@@ -109,6 +114,7 @@ picks up whatever they published.
        scanner["desktop thread<br/>desktop_dir"] -- "changed list" --> pending[("pending<br/>DesktopFiles*")]
        changer["wallpaper thread<br/>pick, decode"] -- "decoded image" --> image[("pending<br/>awl_image_t*")]
        tray["tray thread<br/>StatusNotifier host, menus"] -- "items, icon files" --> snap[("snapshot<br/>awl_sni_snap_t*")]
+       launcher["launcher thread<br/>.desktop files, icons"] -- "index, icons" --> lpending[("pending<br/>index_t*, icons")]
      end
      logind["logind thread<br/>plugins/logind.c"]
      redraw(["redraw eventfd<br/>awl_redraw.c"])

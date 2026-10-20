@@ -7,7 +7,8 @@
  * corner radius, padding; blurred behind like the launcher), in its
  * ``font`` (by default the bar's), its ``margin`` away from the bar and the
  * monitor's sides. Not a client: no Wayland
- * surface, no keyboard focus. Without a click or scroll callback it takes no
+ * surface; no keyboard focus, but with a key callback it takes the keys
+ * while shown (awl_window_set_key()). Without a click or scroll callback it takes no
  * input, clicks, scrolling and the pointer go through to what is below; with
  * either, awl_cursor.c routes all of the pointer to it (awl_window_takes_pointer()):
  * it gets the presses and the scrolling, a callback missing for one of them
@@ -43,6 +44,12 @@ typedef void (*awl_window_hidden_t)( awl_window_t* win, void* data );
  * can't be chosen, or off win); inside: whether it is on win at all */
 typedef void (*awl_window_hover_t)( awl_window_t* win, int row, int inside, void* data );
 
+/** a key pressed (or repeated) while win has the keyboard: sym an
+ * XKB_KEY_*, utf8 what it types ("" for nothing), mods WLR_MODIFIER_*'s;
+ * returns whether it took the key, else awl's key bindings get it */
+typedef int (*awl_window_key_t)( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods,
+                                 void* data );
+
 /** A hidden, empty window in parent, an empty scene tree already placed in
  * the stacking order. */
 awl_window_t* awl_window_create( struct wlr_scene_tree* parent, const awl_window_style_t* style );
@@ -75,6 +82,10 @@ void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top );
  * right of it (left, if left), else on the other side, where it fits on m,
  * its content's top at anchor's (awl_window_place_beside()). */
 void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left );
+/** Shows the window on m, or moves it there, at a spot of m's window area,
+ * an AWL_WINDOW_AT_* (awl.h), the margin away from its edges, moved by
+ * dx, dy logical pixels (awl_window_place_at()). */
+void awl_window_show_at( awl_window_t* win, Monitor* m, int at, int dx, int dy );
 void awl_window_hide( awl_window_t* win );
 /** the monitor it is shown on, NULL while hidden */
 Monitor* awl_window_monitor( const awl_window_t* win );
@@ -92,6 +103,14 @@ void awl_window_removemon( awl_window_t* win, Monitor* m );
 /** Gives win the pointer, presses going to click (with data); NULL lets it
  * all through again. */
 void awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* data );
+/** While shown, win takes the keyboard: every key pressed goes to key
+ * (with data) before awl's bindings, none to the clients (awl_popup.h
+ * holds the grab); NULL: no more. */
+void awl_window_set_key( awl_window_t* win, awl_window_key_t key, void* data );
+/** whether win has a key callback and is shown */
+int awl_window_takes_keys( const awl_window_t* win );
+/** a key for win: calls its key callback; returns whether it took it */
+int awl_window_key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods );
 /** Gives win the pointer, scrolling going to scroll (with data); NULL lets
  * it through again unless there is a click callback. */
 void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data );

@@ -3,6 +3,7 @@
 #include "awl_cursor.h"
 #include "awl_lockscreen.h"
 #include "awl_log.h"
+#include "awl_popup.h"
 
 typedef struct {
     struct wl_list link;
@@ -11,6 +12,9 @@ typedef struct {
     int nsyms;
     const xkb_keysym_t *keysyms; /* invalid if nsyms == 0 */
     uint32_t mods; /* invalid if nsyms == 0 */
+    /* repeating for the popup that has the keyboard, keycode's (xkb) */
+    int popupkey;
+    uint32_t keycode;
     struct wl_event_source *key_repeat_source;
 
     struct wl_listener modifiers;
@@ -33,6 +37,7 @@ static void createpointer(struct wlr_pointer *pointer);
 static void destroyidleinhibitor(struct wl_listener *listener, void *data);
 static void destroykeyboardgroup(struct wl_listener *listener, void *data);
 static int keybinding(uint32_t mods, xkb_keysym_t sym);
+static int keypopup(KeyboardGroup *group, uint32_t keycode, uint32_t mods);
 static void keypress(struct wl_listener *listener, void *data);
 static void keypressmod(struct wl_listener *listener, void *data);
 static int keyrepeat(void *data);
@@ -263,6 +268,32 @@ keybinding(uint32_t mods, xkb_keysym_t sym)
     return 0;
 }
 
+/** a press of keycode (xkb's) for the popup that has the keyboard, the
+ * bindings for what it doesn't take; returns whether either took it */
+int
+keypopup(KeyboardGroup *group, uint32_t keycode, uint32_t mods)
+{
+    struct xkb_state *state = group->wlr_group->keyboard.xkb_state;
+    const xkb_keysym_t *syms;
+    int i, handled = 0, nsyms = xkb_state_key_get_syms(state, keycode, &syms);
+    awl_window_t *win;
+    char utf8[16];
+
+    /* what it types, if anything: not Return's or Ctrl+W's control
+     * character */
+    xkb_state_key_get_utf8(state, keycode, utf8, sizeof(utf8));
+    if ((unsigned char)utf8[0] < 0x20 || utf8[0] == 0x7f)
+        utf8[0] = '\0';
+    for (i = 0; i < nsyms; i++) {
+        /* the callback may hide it, or take another key */
+        if ((win = popupkeyboard()) && awl_window_key(win, syms[i], utf8, mods))
+            handled = 1;
+        else
+            handled = keybinding(mods, syms[i]) || handled;
+    }
+    return handled;
+}
+
 void
 keypress(struct wl_listener *listener, void *data)
 {
@@ -286,6 +317,29 @@ keypress(struct wl_listener *listener, void *data)
     if (locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
         lockkeystroke();
 
+    /* A popup that has the keyboard (the launcher) gets every key before the
+     * bindings, and no client gets any: none has the focus meanwhile. */
+    if (!locked && popupkeyboard()) {
+        if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED
+                && keypopup(group, keycode, mods)
+                && group->wlr_group->keyboard.repeat_info.delay > 0) {
+            group->popupkey = 1;
+            group->keycode = keycode;
+            group->mods = mods;
+            group->nsyms = 1;
+            wl_event_source_timer_update(group->key_repeat_source,
+                    group->wlr_group->keyboard.repeat_info.delay);
+        } else if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED
+                || !group->popupkey || keycode == group->keycode) {
+            /* a release stops a binding's repeat too: the binding that
+             * opened the popup (the launcher's) would toggle it again and
+             * again while nothing else is pressed */
+            group->nsyms = 0;
+            wl_event_source_timer_update(group->key_repeat_source, 0);
+        }
+        return;
+    }
+
     /* On _press_ if there is no active screen locker,
      * attempt to process a compositor keybinding. */
     if (!locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
@@ -294,6 +348,7 @@ keypress(struct wl_listener *listener, void *data)
     }
 
     if (handled && group->wlr_group->keyboard.repeat_info.delay > 0) {
+        group->popupkey = 0;
         group->mods = mods;
         group->keysyms = syms;
         group->nsyms = nsyms;
@@ -337,6 +392,20 @@ keyrepeat(void *data)
     wl_event_source_timer_update(group->key_repeat_source,
             1000 / group->wlr_group->keyboard.repeat_info.rate);
 
+    /* a binding's repeat doesn't go on into a popup's grab (see keypress()) */
+    if (!group->popupkey && popupkeyboard()) {
+        group->nsyms = 0;
+        wl_event_source_timer_update(group->key_repeat_source, 0);
+        return 0;
+    }
+    if (group->popupkey) {
+        /* stops with the popup, and when the screen is locked */
+        if (locked || !popupkeyboard() || !keypopup(group, group->keycode, group->mods)) {
+            group->nsyms = 0;
+            wl_event_source_timer_update(group->key_repeat_source, 0);
+        }
+        return 0;
+    }
     for (i = 0; i < group->nsyms; i++)
         keybinding(group->mods, group->keysyms[i]);
 

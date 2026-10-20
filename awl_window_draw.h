@@ -115,3 +115,11 @@ void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int
  * within the window area area_y, area_h as for awl_window_place(). */
 void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
                               int ax, int ay, int aw, int left, int margin, int* x, int* y );
+
+/** Where a lw x lh window (logical pixels) goes at spot at (an
+ * AWL_WINDOW_AT_*) of the window area: the monitor at mon_x, mon_w across,
+ * area_y, area_h down (layout coordinates), awl_window_margin() of margin
+ * away from the edges it is at, then moved by dx, dy, but kept within the
+ * monitor and the area (at its top left where it doesn't fit). */
+void awl_window_place_at( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
+                          int at, int dx, int dy, int margin, int* x, int* y );

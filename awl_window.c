@@ -15,10 +15,14 @@ struct awl_window {
     char* text;
     /** where it is shown, NULL while hidden */
     Monitor* m;
+    /** how it is placed: by the bar (awl_window_show()), beside anchor
+     * (awl_window_show_beside()) or at a spot of the window area
+     * (awl_window_show_at()) */
+    enum { PLACE_BAR, PLACE_BESIDE, PLACE_AT } placement;
     int center_x, top;
-    /** shown beside anchor instead (awl_window_show_beside()) */
-    int beside, left;
+    int left;
     struct wlr_box anchor;
+    int at, dx, dy;
     /** what the buffer was drawn for; drawn = 0 forces a redraw */
     int drawn;
     float scale;
@@ -37,6 +41,9 @@ struct awl_window {
     void* hidden_data;
     awl_window_hover_t hover_cb;
     void* hover_data;
+    /** takes the keyboard while shown, if key is set */
+    awl_window_key_t key;
+    void* key_data;
     int hover;
     /** the pointer is on it (awl_window_pointer_motion() since the last
      * awl_window_pointer_leave()) */
@@ -210,7 +217,10 @@ static int draw( awl_window_t* win ) {
 static void place( awl_window_t* win ) {
     Monitor* m = win->m;
     int x, y;
-    if (win->beside)
+    if (win->placement == PLACE_AT)
+        awl_window_place_at( m->m.x, m->m.width, m->w.y, m->w.height, win->lw, win->lh, win->at, win->dx,
+                             win->dy, win->style.margin, &x, &y );
+    else if (win->placement == PLACE_BESIDE)
         /* the content's top at the anchor's */
         awl_window_place_beside( m->m.x, m->m.width, m->w.y, m->w.height, win->lw, win->lh, win->anchor.x,
                                  win->anchor.y - (int)lroundf( win->layout.y0 / win->scale ), win->anchor.width,
@@ -246,16 +256,26 @@ void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top ) {
     win->m = m;
     win->center_x = center_x;
     win->top = top;
-    win->beside = 0;
+    win->placement = PLACE_BAR;
     awl_window_update( win, m );
 }
 
 void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left ) {
     if (win->m != m) win->drawn = 0;
     win->m = m;
-    win->beside = 1;
+    win->placement = PLACE_BESIDE;
     win->left = left;
     win->anchor = *anchor;
+    awl_window_update( win, m );
+}
+
+void awl_window_show_at( awl_window_t* win, Monitor* m, int at, int dx, int dy ) {
+    if (win->m != m) win->drawn = 0;
+    win->m = m;
+    win->placement = PLACE_AT;
+    win->at = at;
+    win->dx = dx;
+    win->dy = dy;
     awl_window_update( win, m );
 }
 
@@ -301,6 +321,20 @@ void awl_window_set_hover( awl_window_t* win, awl_window_hover_t hover, void* da
     if (!win) return;
     win->hover_cb = hover;
     win->hover_data = data;
+}
+
+void awl_window_set_key( awl_window_t* win, awl_window_key_t key, void* data ) {
+    if (!win) return;
+    win->key = key;
+    win->key_data = data;
+}
+
+int awl_window_takes_keys( const awl_window_t* win ) {
+    return win->key && win->m;
+}
+
+int awl_window_key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods ) {
+    return win->key && win->key( win, sym, utf8, mods, win->key_data );
 }
 
 void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data ) {

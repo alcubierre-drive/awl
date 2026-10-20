@@ -6,6 +6,9 @@
  * layout that no longer has a submenu open waits LAYOUT_GRACE for one that
  * does (apps that rebuild their menus, network-manager-applet's rescans).
  * Off the menu, its submenus and its item for LEAVE_DELAY, it closes.
+ * While open it has the keyboard: Up/Down choose a row of the deepest level,
+ * Return activates it, Right/Left open and close submenus, Escape closes
+ * one level.
  * Everything here runs on awl's main thread: what the tray's loop sends
  * comes through sni.c's mailbox, awl_window's callbacks are awl's. */
 
@@ -16,6 +19,7 @@
 #include "../icons/icon.h"
 
 #include <linux/input-event-codes.h>
+#include <xkbcommon/xkbcommon-keysyms.h>
 
 #include <math.h>
 #include <stdint.h>
@@ -51,6 +55,8 @@ typedef struct {
     /** a submenu went left of its menu: its own go there too */
     int left;
     double acc;
+    /** the row highlighted: the pointer's (hover()), or the keys' */
+    int sel;
 
     /* measure()'s layout, physical pixels; x0 paint()'s */
     float scale;
@@ -242,7 +248,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             continue;
         }
         /* the row whose submenu is open stays highlighted */
-        const int lit = i == hover || (sub && sub->node == r->node);
+        const int lit = i == L->sel || (sub && sub->node == r->node);
         /* rounded as the frame, at most 4 */
         if (lit)
             awl_fill_shape( pix, (float)x0, (float)y, (float)L->w, (float)r->h, (float)px( L, c.radius < 4 ? c.radius : 4 ),
@@ -335,6 +341,7 @@ static void level_free( level_t* L ) {
     L->top = 0;
     L->left = 0;
     L->acc = 0;
+    L->sel = -1;
 }
 
 static void leave_check( void );
@@ -394,6 +401,7 @@ static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, d
                     void* data );
 static void hover( awl_window_t* win, int row, int inside, void* data );
 static void hidden( awl_window_t* win, void* data );
+static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods, void* data );
 
 /** level k's window, made on first use; NULL before awl is set up */
 static awl_window_t* window( int k ) {
@@ -406,6 +414,8 @@ static awl_window_t* window( int k ) {
     awl_host->window_set_scroll( L->win, scroll, data );
     awl_host->window_set_hover( L->win, hover, data );
     awl_host->window_set_hidden( L->win, hidden, data );
+    /* the menu has the keys, for all its levels */
+    if (!k) awl_host->window_set_key( L->win, key, NULL );
     awl_host->window_set_menu_style( L->win );
     return L->win;
 }
@@ -513,6 +523,10 @@ static void hover( awl_window_t* win, int row, int inside, void* data ) {
     int k = (int)(intptr_t)data;
     if (!M.snap || k >= M.depth || row >= M.lv[k].nrows) return;
     M.inside[k] = (char)inside;
+    if (M.lv[k].sel != row) {
+        M.lv[k].sel = row;
+        awl_host->window_redraw( win );
+    }
     leave_check();
     /* into a submenu in time: what hovering its menus asked for doesn't
      * happen */
@@ -550,6 +564,76 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
     }
     awl_tray_menu_event( M.serial, n->id, "clicked" );
     close_menu( 1 );
+}
+
+/** whether level L's row i can be chosen */
+static int choosable( const level_t* L, int i ) {
+    return i >= 0 && i < L->nrows &&
+           !(M.snap->nodes[L->rows[i].node].flags & (AWL_TRAY_MENU_SEPARATOR | AWL_TRAY_MENU_DISABLED));
+}
+
+/** moves level k's highlight to the next row that can be chosen in
+ * direction dir (1 down, -1 up), round the end; scrolls it into view */
+static void move_sel( int k, int dir ) {
+    level_t* L = &M.lv[k];
+    int i = L->sel;
+    for (int n = 0; n < L->nrows; n++) {
+        i = i < 0 ? (dir > 0 ? 0 : L->nrows - 1) : (i + dir + L->nrows) % L->nrows;
+        if (choosable( L, i )) break;
+    }
+    if (!choosable( L, i )) return;
+    L->sel = i;
+    if (i < L->top) L->top = i;
+    else if (L->shown && i >= L->top + L->shown) L->top = i - L->shown + 1;
+    awl_host->window_redraw( L->win );
+    if (k + 1 < M.depth) place_level( k + 1 );
+}
+
+/** opens the submenu of level k's highlighted row with its first row
+ * highlighted; returns whether it is one */
+static int open_sel( int k ) {
+    level_t* L = &M.lv[k];
+    if (!choosable( L, L->sel ) || !(M.snap->nodes[L->rows[L->sel].node].flags & AWL_TRAY_MENU_SUBMENU))
+        return 0;
+    pend_cancel();
+    open_sub( k, L->sel );
+    if (M.depth > k + 1) move_sel( k + 1, 1 );
+    return 1;
+}
+
+static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods, void* data ) {
+    if (!M.snap || !M.depth) return 0;
+    const int k = M.depth - 1;
+    level_t* L = &M.lv[k];
+    switch (sym) {
+    case XKB_KEY_Escape:
+        if (k) close_from( k, 1 );
+        else close_menu( 1 );
+        return 1;
+    case XKB_KEY_Down:
+    case XKB_KEY_Tab:
+        move_sel( k, 1 );
+        return 1;
+    case XKB_KEY_Up:
+    case XKB_KEY_ISO_Left_Tab:
+        move_sel( k, -1 );
+        return 1;
+    case XKB_KEY_Right:
+        open_sel( k );
+        return 1;
+    case XKB_KEY_Left:
+        if (k) close_from( k, 1 );
+        return 1;
+    case XKB_KEY_Return:
+    case XKB_KEY_KP_Enter:
+    case XKB_KEY_space:
+        if (choosable( L, L->sel ) && !open_sel( k )) {
+            awl_tray_menu_event( M.serial, M.snap->nodes[L->rows[L->sel].node].id, "clicked" );
+            close_menu( 1 );
+        }
+        return 1;
+    }
+    return 0;
 }
 
 static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, double delta, int32_t value120,

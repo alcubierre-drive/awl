@@ -80,6 +80,22 @@ typedef struct awl_plugin_config_t {
          * (linearly in between); colors.good while charging */
         struct { float bad, warning, ok; } scale;
     } battery;
+    /** the launcher (plugins/launcher.h), a popup: styled as the others
+     * (`awl_config_t.popup`, blurred with blur.launcher) */
+    struct {
+        /** result rows; the window's width; the icons' size */
+        int rows, width, icon_size;
+        /** what applications with Terminal=true run in: an argv (NULL
+         * terminated) the command is appended to, e.g. { "foot", NULL } */
+        const char* const* terminal;
+        /** before the query */
+        const char* prompt;
+        /** where it shows: an AWL_WINDOW_AT_* (awl.h), moved down by dy */
+        int at, dy;
+        /** the characters the query matched; the description (GenericName),
+         * 0: the popups' dim */
+        uint32_t match, dim;
+    } launcher;
 } awl_plugin_config_t;
 
 /** The running plugins' state, see `awl_plugin_get()`. */
@@ -135,6 +151,15 @@ void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* da
                        int w, int h, int r, float scale );
 /** plugins_desktop_panel.c: `awl_plugin_api_t.desktop_click` */
 int awl_desktop_click( int button, uint32_t mods );
+
+/** plugins/launcher.c: starts the launcher's index thread */
+void awl_launcher_start( void );
+/** plugins/launcher.c: closes the launcher, stops its thread; returns
+ * nonzero if it had to be left running */
+int awl_launcher_stop( void );
+/** plugins/launcher.c: opens the launcher on the selected monitor, or
+ * closes it (the launcher action) */
+void awl_launcher_toggle( void );
 
 /** plugins_config.c: makes both configs, awl's defaults
  * (`awl_host_t.config_defaults`) and the plugins' with configure() (the

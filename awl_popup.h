@@ -40,6 +40,21 @@ void popupdestroy(awl_window_t *win);
  * from m's left edge), on the bar's side; a popup that isn't a menu closes
  * the menus open. A press anywhere but on the bar hides every popup. */
 void popupshow(awl_window_t *win, Monitor *m, int center_x);
+/** shows win on m at a spot of its window area, an AWL_WINDOW_AT_*, moved
+ * by dx, dy (`awl_window_show_at()`); closes the menus open, as popupshow() */
+void popupshowat(awl_window_t *win, Monitor *m, int at, int dx, int dy);
+/** hides win (`awl_window_hide()`) */
+void popuphide(awl_window_t *win);
+/** win takes the keyboard while shown (`awl_window_set_key()`) */
+void popupsetkey(awl_window_t *win, awl_window_key_t key, void *data);
+/** the popup that has the keyboard: the newest shown one with a key
+ * callback, NULL if none. While there is one, no client has the keyboard
+ * focus: keypress() hands it every key before the bindings. */
+awl_window_t *popupkeyboard(void);
+/** after popups were shown or hidden: takes the keyboard focus from the
+ * clients when a popup takes the keys, gives it back (focustop(selmon))
+ * when none does anymore */
+void popupsgrabupdate(void);
 /** shows win on m beside the box x, y, w, h, a row of another popup, on
  * its right unless left (`awl_window_show_beside()`) */
 void popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);

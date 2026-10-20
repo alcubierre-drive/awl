@@ -160,8 +160,9 @@ static int
 hovertimeout(void *data)
 {
     (void)data;
-    /* not while a layer surface (e.g. a launcher) holds the keyboard */
-    if (!hover_widget || locked || exclusive_focus)
+    /* not while a layer surface or a popup (e.g. a launcher) holds the
+     * keyboard */
+    if (!hover_widget || locked || exclusive_focus || popupkeyboard())
         return 0;
     if (hover_active && hover_active != hover_widget) {
         setleavepending(0);

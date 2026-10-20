@@ -53,6 +53,11 @@ with it.
      - awl's own popups (text, or a plugin's painter), any number at once: draws and places them (awl_window.c, awl_popup.c)
      - what it says and when it opens (plugins_widgets.c; for now only the
        temperature widget, as a test)
+   * - Launcher
+     - a popup that has the keyboard while shown (awl_popup.c's grab,
+       awl_input.c hands it the keys before the bindings)
+     - the index of .desktop files, the fuzzy matching, the window and its
+       keys (plugins/launcher.c, plugins/fuzzy.c, plugins/desktop_entry.c)
    * - Desktop panel
      - scene nodes, buffers, placement (awl_desktop.c)
      - scans ``desktop_dir``, lays out and draws the list, handles

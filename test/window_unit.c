@@ -280,6 +280,25 @@ static void test_place( void ) {
     /* taller than the area: its top */
     awl_window_place_beside( 1280, 1280, 33, 654, 100, 900, 1380, 100, 120, 0, 6, &x, &y );
     CHECK( y == 33 );
+
+    printf( "-- place at\n" );
+    /* a 1280 x 654 area under a 33 px bar, on the second monitor */
+    awl_window_place_at( 1280, 1280, 33, 654, 400, 300, AWL_WINDOW_AT_TOP, 0, 0, 6, &x, &y );
+    CHECK( x == 1280 + 440 && y == 33 + 6 );
+    awl_window_place_at( 1280, 1280, 33, 654, 400, 300, AWL_WINDOW_AT_CENTER, 0, 0, 6, &x, &y );
+    CHECK( x == 1280 + 440 && y == 33 + 177 );
+    awl_window_place_at( 1280, 1280, 33, 654, 400, 100, AWL_WINDOW_AT_TOP_RIGHT, 0, 0, 6, &x, &y );
+    CHECK( x == 1280 + 1280 - 6 - 400 && y == 33 + 6 );
+    awl_window_place_at( 1280, 1280, 33, 654, 400, 100, AWL_WINDOW_AT_BOTTOM_LEFT, 0, 0, 6, &x, &y );
+    CHECK( x == 1280 + 6 && y == 33 + 654 - 6 - 100 );
+    /* moved: notifications stacked down from a corner */
+    awl_window_place_at( 1280, 1280, 33, 654, 400, 100, AWL_WINDOW_AT_TOP_RIGHT, 0, 110, 6, &x, &y );
+    CHECK( y == 33 + 6 + 110 );
+    /* but kept within the area and the monitor */
+    awl_window_place_at( 1280, 1280, 33, 654, 400, 100, AWL_WINDOW_AT_TOP_RIGHT, 50, 600, 6, &x, &y );
+    CHECK( x == 1280 + 1280 - 400 && y == 33 + 654 - 100 );
+    awl_window_place_at( 1280, 1280, 33, 654, 2000, 1000, AWL_WINDOW_AT_CENTER, 0, 0, 6, &x, &y );
+    CHECK( x == 1280 && y == 33 );
 }
 
 int main( void ) {

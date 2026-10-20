@@ -78,9 +78,9 @@ $(AWL_OBJ): config.mk
 # the optimized build next to them stays as it is. config.mk's flags minus
 # optimization and LTO.
 DEVNOOPT    = -O% -flto% -march=% -mtune=%
-dev/%.o dev/awl dev/libawlplugins.so dev/libawltray-env.so dev/window_unit: CFLAGS := $(filter-out $(DEVNOOPT),$(CFLAGS)) \
+dev/%.o dev/awl dev/libawlplugins.so dev/libawltray-env.so dev/window_unit dev/fuzzy_unit dev/desktop_entry_unit: CFLAGS := $(filter-out $(DEVNOOPT),$(CFLAGS)) \
 	-O0 -ggdb3 -fno-omit-frame-pointer
-dev/awl dev/libawlplugins.so dev/libawltray-env.so dev/window_unit: LDFLAGS := $(filter-out $(DEVNOOPT),$(LDFLAGS))
+dev/awl dev/libawlplugins.so dev/libawltray-env.so dev/window_unit dev/fuzzy_unit dev/desktop_entry_unit: LDFLAGS := $(filter-out $(DEVNOOPT),$(LDFLAGS))
 DEV_AWL_OBJ     := $(addprefix dev/,$(AWL_OBJ))
 DEV_PLUGINS_OBJ := $(addprefix dev/,$(PLUGINS_OBJ))
 DEPS += $(patsubst %.o,%.d,$(DEV_AWL_OBJ) $(DEV_PLUGINS_OBJ)) env_shim.d dev/env_shim.d
@@ -102,12 +102,19 @@ dev/%.o: %.c
 .PHONY: dev
 
 # make check: test/window_unit.c, awl_window_draw.c without a compositor
-# (test/windows.sh tests the popups in a running awl)
+# (test/windows.sh tests the popups in a running awl), test/fuzzy_unit.c and
+# test/desktop_entry_unit.c, the launcher's matcher and .desktop files
 dev/window_unit: test/window_unit.c dev/awl_window_draw.o dev/awl_draw.o dev/awl_log.o
 	$(CC) $(CPPFLAGS) $(AWLCFLAGS) test/window_unit.c dev/awl_window_draw.o dev/awl_draw.o dev/awl_log.o \
 		$(LDFLAGS) `$(PKG_CONFIG) --libs fcft pixman-1` -lm -o $@
-check: dev/window_unit
+dev/fuzzy_unit: test/fuzzy_unit.c dev/plugins/fuzzy.o
+	$(CC) $(CPPFLAGS) $(AWLCFLAGS) test/fuzzy_unit.c dev/plugins/fuzzy.o $(LDFLAGS) -o $@
+dev/desktop_entry_unit: test/desktop_entry_unit.c dev/plugins/desktop_entry.o
+	$(CC) $(CPPFLAGS) $(AWLCFLAGS) test/desktop_entry_unit.c dev/plugins/desktop_entry.o $(LDFLAGS) -o $@
+check: dev/window_unit dev/fuzzy_unit dev/desktop_entry_unit
 	dev/window_unit
+	dev/fuzzy_unit
+	dev/desktop_entry_unit
 .PHONY: check
 awl_util.o: awl_util.c awl_util.h
 

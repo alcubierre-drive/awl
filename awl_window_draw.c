@@ -258,3 +258,42 @@ void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int 
     if (*y > area_y + area_h - my - lh) *y = area_y + area_h - my - lh;
     if (*y < area_y + my) *y = area_y + my;
 }
+
+void awl_window_place_at( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
+                          int at, int dx, int dy, int margin, int* x, int* y ) {
+    const int mx = awl_window_margin( margin, mon_w ), my = awl_window_margin( margin, area_h );
+    int px, py;
+    switch (at) {
+    case AWL_WINDOW_AT_TOP_LEFT:
+    case AWL_WINDOW_AT_BOTTOM_LEFT:
+        px = mx;
+        break;
+    case AWL_WINDOW_AT_TOP_RIGHT:
+    case AWL_WINDOW_AT_BOTTOM_RIGHT:
+        px = mon_w - mx - lw;
+        break;
+    default:
+        px = (mon_w - lw) / 2;
+        break;
+    }
+    switch (at) {
+    case AWL_WINDOW_AT_CENTER:
+        py = (area_h - lh) / 2;
+        break;
+    case AWL_WINDOW_AT_BOTTOM_LEFT:
+    case AWL_WINDOW_AT_BOTTOM_RIGHT:
+        py = area_h - my - lh;
+        break;
+    default:
+        py = my;
+        break;
+    }
+    px += dx;
+    py += dy;
+    if (px > mon_w - lw) px = mon_w - lw;
+    if (px < 0) px = 0;
+    if (py > area_h - lh) py = area_h - lh;
+    if (py < 0) py = 0;
+    *x = mon_x + px;
+    *y = area_y + py;
+}

@@ -18,6 +18,11 @@
 #                           click left|middle|right, or scroll wheel:N (N
 #                           notches down, negative up), hwheel:N (right),
 #                           finger:D (a touchpad's D down), see vptr.c
+#                           Without a BUTTON it only moves. NB: in the headless
+#                           instance the bar's widgets take clicks about 30 px
+#                           right of where they're drawn (they don't fit, see
+#                           the log): the tray icon drawn at x 1157 reacts at
+#                           ~1190. Known and left alone; aim right of it.
 #   live.sh win [CMD]       a command for awl's text popups (AWL_TEST_WINDOWS,
 #                           see testwincmd() in awl_test.c), e.g. win show 0
 #                           HEADLESS-1 640 'a\tb\nc'; then prints their state

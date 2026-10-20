@@ -5,6 +5,7 @@
 #include "awl_config.h"
 #include "awl_cursor.h"
 #include "awl_log.h"
+#include "awl_popup.h"
 #include "awl_output.h"
 #include "awl_plugin_host.h"
 #include "awl_spawn.h"
@@ -329,6 +330,9 @@ locksession(struct wl_listener *listener, void *data)
     }
     lock = session_lock->data = ecalloc(1, sizeof(*lock));
     focusclient(NULL, 0);
+    /* the launcher drops the keyboard, the menus go: they'd only wait under
+     * the locker */
+    popupshideall();
 
     lock->scene = wlr_scene_tree_create(layers[LyrBlock]);
     cur_lock = lock->lock = session_lock;

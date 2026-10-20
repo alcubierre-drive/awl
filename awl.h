@@ -284,6 +284,18 @@ typedef struct awl_window_painter_t {
     int (*box)( void* data, int part, int* x, int* y, int* w, int* h );
 } awl_window_painter_t;
 
+/** where awl_window_show_at() puts a window in its monitor's window area */
+enum {
+    AWL_WINDOW_AT_CENTER,
+    /** centered, at the top: a launcher's place */
+    AWL_WINDOW_AT_TOP,
+    /** the corners: notifications' places */
+    AWL_WINDOW_AT_TOP_LEFT,
+    AWL_WINDOW_AT_TOP_RIGHT,
+    AWL_WINDOW_AT_BOTTOM_LEFT,
+    AWL_WINDOW_AT_BOTTOM_RIGHT,
+};
+
 /** `awl_config_t.popup`: how awl's own popups (awl_window.h) look, the bar
  * widgets' (the clock's calendar, the IP addresses) and awl's. Colors
  * 0xRRGGBBAA, sizes logical pixels. */

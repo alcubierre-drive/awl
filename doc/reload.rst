@@ -120,8 +120,9 @@ on a reload and at exit:
      restart["plugin_restart"] --> reload["awl_plugins_reload()"] --> fini2["api->fini()<br/>of the old library"] --> init2["api->init()<br/>of the new one"]
      cleanup["awl exits:<br/>cleanup()"] --> unload["awl_plugins_unload()"] --> fini3["api->fini()"]
 
-What ``api->init()`` and ``api->fini()`` do (plugins.c). The scanner and the
-wallpaper thread may get stuck on a dead mount, so they are given 500 ms;
+What ``api->init()`` and ``api->fini()`` do (plugins.c). The scanner, the
+launcher's index and the wallpaper thread may get stuck on a dead mount, so
+they are given 500 ms;
 the poller, which may hang in a sysfs read, and the tray's loop, which
 reads icon files, 2 s each. What a stuck one runs or polls is leaked, not
 freed.
@@ -133,11 +134,11 @@ freed.
        direction TB
        i1["awl_plugin_start():<br/>ip, stats, temp, bat, date"] --> i1b["awl_loop_new(), sni_new(),<br/>awl_loop_start(): tray thread"] --> i2["poller_new()"]
        i2 --> i3["pulse_init(), backlight_init()<br/>on the poller's loop"] --> i4["poller_start():<br/>poller thread"]
-       i4 --> i5["awl_desktop_start():<br/>desktop thread"] --> i6["awl_wallpaper_start():<br/>wallpaper thread"]
+       i4 --> i5["awl_desktop_start():<br/>desktop thread"] --> i5b["awl_launcher_start():<br/>launcher thread"] --> i6["awl_wallpaper_start():<br/>wallpaper thread"]
      end
      subgraph fini["api->fini()"]
        direction TB
-       f1["awl_desktop_stop():<br/>up to 500 ms"] --> f2["awl_wallpaper_stop():<br/>up to 500 ms"]
+       f1["awl_desktop_stop():<br/>up to 500 ms"] --> f1b["awl_launcher_stop():<br/>up to 500 ms"] --> f2["awl_wallpaper_stop():<br/>up to 500 ms"]
        f2 --> ft["awl_loop_stop():<br/>the tray's, up to 2 s;<br/>its popups go, sni_free() unless stuck"]
        ft --> f3["poller_stop():<br/>up to 2 s"]
        f3 -- exited --> f4["pulse_free(), backlight_free(),<br/>poller_free(), the rest freed"]
@@ -183,7 +184,7 @@ in awl the function itself, so the arrays of awl_config_defaults.h can be
 copied into the ``CUSTOM`` part as they are. A function a binding names so
 has to be listed in `AWL_ACTIONS` (or `AWL_ARRANGES` for layouts), or be one
 of the library's own actions, defined next to the wrappers
-(``notifyconfig``, ``backlighttoggle``); a function defined in the
+(``notifyconfig``, ``launcher``, ``backlighttoggle``); a function defined in the
 ``CUSTOM`` part is named as it is. The wrappers and those actions aren't
 static, so any of them may stay unbound without a warning, and the library
 exports none of them. awl's defaults can bind only `AWL_ACTIONS`.

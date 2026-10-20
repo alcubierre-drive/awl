@@ -1,9 +1,11 @@
 #include "awl_popup.h"
 #include "awl_bar.h"
+#include "awl_client.h"
 #include "awl_config.h"
 #include "awl_cursor.h"
 #include "awl_lockscreen.h"
 #include "awl_log.h"
+#include "awl_output.h"
 #include "awl_test.h"
 
 static awl_window_style_t popupstyle(int menu);
@@ -14,6 +16,8 @@ struct wl_list popups = {&popups, &popups};
 static struct wlr_scene_tree *popup_tree;
 /** the popup the pointer is over, if it takes the pointer */
 static awl_window_t *popup_hovered;
+/** the popup that had the keyboard at the last popupsgrabupdate() */
+static awl_window_t *popup_keyboard;
 
 int
 pointerinpopup(awl_window_t *win)
@@ -100,22 +104,85 @@ popupdestroy(awl_window_t *win)
     wl_list_remove(&p->link);
     awl_window_destroy(p->win);
     free(p);
+    popupsgrabupdate();
+}
+
+/** another popup than a menu (the calendar the clock's hover opens)
+ * closes the menu open at once, instead of covering it until it notices the
+ * pointer left (its hidden callback closes its submenus too) */
+static void
+closemenus(Popup *p)
+{
+    Popup *o;
+    if (!p->menu)
+        wl_list_for_each(o, &popups, link)
+            if (o->menu && awl_window_monitor(o->win))
+                awl_window_hide(o->win);
 }
 
 void
 popupshow(awl_window_t *win, Monitor *m, int center_x)
 {
-    Popup *p = popupfind(win), *o;
+    Popup *p = popupfind(win);
     if (!m || !p)
         return;
-    /* another popup (the calendar the clock's hover opens) closes the menu
-     * open at once, instead of covering it until it notices the pointer
-     * left (its hidden callback closes its submenus too) */
-    if (!p->menu)
-        wl_list_for_each(o, &popups, link)
-            if (o->menu && awl_window_monitor(o->win))
-                awl_window_hide(o->win);
+    closemenus(p);
     awl_window_show(win, m, center_x, cfg->bar.top);
+    popupsgrabupdate();
+}
+
+void
+popupshowat(awl_window_t *win, Monitor *m, int at, int dx, int dy)
+{
+    Popup *p = popupfind(win);
+    if (!m || !p)
+        return;
+    closemenus(p);
+    awl_window_show_at(win, m, at, dx, dy);
+    popupsgrabupdate();
+}
+
+void
+popuphide(awl_window_t *win)
+{
+    awl_window_hide(win);
+    popupsgrabupdate();
+}
+
+void
+popupsetkey(awl_window_t *win, awl_window_key_t key, void *data)
+{
+    awl_window_set_key(win, key, data);
+    popupsgrabupdate();
+}
+
+awl_window_t *
+popupkeyboard(void)
+{
+    Popup *p;
+    wl_list_for_each_reverse(p, &popups, link)
+        if (awl_window_takes_keys(p->win))
+            return p->win;
+    return NULL;
+}
+
+void
+popupsgrabupdate(void)
+{
+    awl_window_t *win = popupkeyboard();
+    if (!win == !popup_keyboard) {
+        popup_keyboard = win;
+        return;
+    }
+    popup_keyboard = win;
+    awl_dbg_printf(awl_loglevel_vrb, "popup %p: %s the keyboard\n", (void *)win,
+            win ? "takes" : "gives back");
+    if (locked)
+        return;
+    if (win)
+        wlr_seat_keyboard_notify_clear_focus(seat);
+    else if (!exclusive_focus)
+        focusclient(focustop(selmon), 0);
 }
 
 awl_window_t *
@@ -178,6 +245,7 @@ popupshideall(void)
     Popup *p;
     wl_list_for_each(p, &popups, link)
         awl_window_hide(p->win);
+    popupsgrabupdate();
 }
 
 void
@@ -185,6 +253,7 @@ popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int l
 {
     if (m && win)
         awl_window_show_beside(win, m, &(struct wlr_box){x, y, w, h}, left);
+    popupsgrabupdate();
 }
 
 void
@@ -218,6 +287,7 @@ popupsremovemon(Monitor *m)
     Popup *p;
     wl_list_for_each(p, &popups, link)
         awl_window_removemon(p->win, m);
+    popupsgrabupdate();
 }
 
 void
@@ -249,4 +319,5 @@ void
 popupsfini(void)
 {
     popup_tree = NULL;
+    popup_keyboard = NULL;
 }
