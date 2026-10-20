@@ -40,6 +40,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .good          = molokai_green,
         .warning       = molokai_orange,
         .bad           = molokai_red,
+        .full          = molokai_blue,
     },
     .temperature = {
         /* idles around 50, throttles at TjMax (110) */
@@ -48,7 +49,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     },
     .battery = {
         .dir = "/sys/class/power_supply/BAT0/",
-        .scale = { .bad = 15, .warning = 25, .ok = 30 },
+        .scale = { .bad = 15, .warning = 25, .ok = 30, .full = 90 },
     },
     .launcher = {
         .rows = 10, .width = 560, .icon_size = 24,

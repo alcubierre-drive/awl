@@ -292,6 +292,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // p->colors.good          = molokai_green;
     // p->colors.warning       = molokai_orange;
     // p->colors.bad           = molokai_red;
+    // p->colors.full          = molokai_blue;
 
     /* the tray; what the icon theme lacks comes from the desktop's (NULL:
      * the desktop's) */
@@ -389,6 +390,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     p->battery.scale.bad     = 10;
     p->battery.scale.warning = 20;
     p->battery.scale.ok      = 30;
+    // p->battery.scale.full = 90;
 
     /* the launcher (plugins/launcher.h); colors 0: the popups' */
     // p->launcher.rows      = 10;

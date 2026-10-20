@@ -50,7 +50,8 @@ enum {
 #define AWL_BAR_COLORS( X ) \
     X( bg ) X( fg ) X( tag_bg ) X( tag_occupied ) X( tag_urgent ) X( tag_selected ) X( selmon ) \
     X( pertag ) X( win_bg ) X( win_focused ) X( win_urgent ) X( win_minimized ) X( win_fg ) \
-    X( clock_meter ) X( stats_bg ) X( cpu ) X( io ) X( mem ) X( swap ) X( good ) X( warning ) X( bad )
+    X( clock_meter ) X( stats_bg ) X( cpu ) X( io ) X( mem ) X( swap ) X( good ) X( warning ) X( bad ) \
+    X( full )
 
 #define AWL_BAR_COLOR_U32( name ) uint32_t name;
 #define AWL_BAR_COLOR_PIXMAN( name ) pixman_color_t name;
@@ -78,7 +79,7 @@ typedef struct awl_plugin_config_t {
         /** its color scale, percent of the charge: colors.bad up to bad,
          * to colors.warning at warning, to colors.fg at ok and above
          * (linearly in between); colors.good while charging */
-        struct { float bad, warning, ok; } scale;
+        struct { float bad, warning, ok, full; } scale;
     } battery;
     /** the launcher (plugins/launcher.h), a popup: styled as the others
      * (`awl_config_t.popup`, blurred with blur.launcher) */
