@@ -4,7 +4,6 @@
 #include "awl_cursor.h"
 #include "awl_input.h"
 #include "awl_output.h"
-#include "awl_redraw.h"
 
 static size_t pertagslot(const Monitor *m);
 static struct PertagLayout *monlt(Monitor *m);
@@ -50,7 +49,7 @@ arrange(Monitor *m)
     motionnotify(0, NULL, 0, 0, 0, 0);
     checkidleinhibitor(NULL);
     /* layout symbol, taskbar order and window states may have changed */
-    awl_redraw_request();
+    barsdirty();
 }
 
 void
@@ -226,7 +225,7 @@ togglepertag(const Arg *arg)
         selmon->ptlt[slot] = selmon->ptlt[0];
     else
         selmon->ptlt[0] = selmon->ptlt[slot];
-    drawbar(selmon);
+    barsdirty();
 }
 
 /** the next (arg->i > 0) or previous (< 0) of cfg->layouts on selmon */
@@ -257,7 +256,7 @@ setlayout(const Arg *arg)
     if (l)
         ml->lt[ml->sellt] = l;
     arrange(selmon);
-    drawbar(selmon);
+    barsdirty();
 }
 
 /** l, pointing into the old layouts table, moved to the same index in the
@@ -322,7 +321,7 @@ tag(const Arg *arg)
     sel->tags = arg->ui & TAGMASK;
     focusclient(focustop(selmon), 1);
     arrange(selmon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -379,7 +378,7 @@ toggletag(const Arg *arg)
     sel->tags = newtags;
     focusclient(focustop(selmon), 1);
     arrange(selmon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -392,7 +391,7 @@ toggleview(const Arg *arg)
     selmon->tagset[selmon->seltags] = newtagset;
     focusclient(focustop(selmon), 1);
     arrange(selmon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -405,7 +404,7 @@ view(const Arg *arg)
         selmon->tagset[selmon->seltags] = arg->ui & TAGMASK;
     focusclient(focustop(selmon), 1);
     arrange(selmon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -427,5 +426,5 @@ cycle_view(const Arg* arg)
 
     focusclient(focustop(selmon), 1);
     arrange(selmon);
-    drawbars();
+    barsdirty();
 }

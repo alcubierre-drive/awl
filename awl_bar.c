@@ -11,8 +11,8 @@
 #include "awl_plugin_host.h"
 #include "awl_popup.h"
 
+static widget_t *barwidgetin(Monitor *m, double cx, unsigned int *xrel);
 static widget_t *barwidgetatx(Monitor *m, double cx, double cy, unsigned int *xrel);
-static widget_t *barwidgetat(Monitor *m, double cx, double cy);
 static void updateview(widget_t *w, unsigned int xrel);
 static void setleavepending(int pending);
 static int leavetimeout(void *data);
@@ -24,6 +24,9 @@ static bool buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer, uint32_t
         void **data, uint32_t *format, size_t *stride);
 static void buffer_end_data_ptr_access(struct wlr_buffer *buffer);
 static void baroverflow(Monitor *m, uint32_t over);
+static void barview(Monitor *m);
+static void drawbar(Monitor *m);
+static void redrawidle(void *data);
 static Buffer *newbarbuffer(Monitor *m);
 static Buffer *barbuffer(Monitor *m);
 static int bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *damage);
@@ -60,20 +63,21 @@ static widget_t *hover_widget, *hover_active;
 static int leave_pending;
 /** the widget with a callback_view the pointer is on (widget_t.callback_view) */
 static widget_t *view_widget;
+/** barsdirty()'s redraw, NULL while none is due */
+static struct wl_event_source *redraw_idle;
 
-/** the bar widget at cx, cy; *xrel (may be NULL) its x there, from the
- * widget's left edge in buffer pixels */
+/** the widget of m's bar at layout x cx, if the bar is there; *xrel (may be
+ * NULL) its x there, from the widget's left edge in buffer pixels. The one
+ * place that knows how the bar is laid out: hovering, scrolling and clicks
+ * all find their widget here. */
 static widget_t *
-barwidgetatx(Monitor *m, double cx, double cy, unsigned int *xrel)
+barwidgetin(Monitor *m, double cx, unsigned int *xrel)
 {
-    struct wlr_scene_node *node;
-    struct wlr_scene_buffer *buffer;
     unsigned int cursor_x, xpos = 0;
     awl_draw_t *d = &m->drw;
     int i;
 
-    if (!d->m || !(node = wlr_scene_node_at(&layers[LyrBottom]->node, cx, cy, NULL, NULL))
-            || !(buffer = wlr_scene_buffer_from_node(node)) || buffer != m->scene_buffer)
+    if (!d->m || cx < m->m.x)
         return NULL;
     cursor_x = (unsigned int)((cx - m->m.x) * m->wlr_output->scale);
 #define AT(w) do { if (xrel) *xrel = cursor_x - xpos; return (w); } while (0)
@@ -95,10 +99,18 @@ barwidgetatx(Monitor *m, double cx, double cy, unsigned int *xrel)
     return NULL;
 }
 
+/** the bar widget at cx, cy, if m's bar is what is there; *xrel as for
+ * barwidgetin() */
 static widget_t *
-barwidgetat(Monitor *m, double cx, double cy)
+barwidgetatx(Monitor *m, double cx, double cy, unsigned int *xrel)
 {
-    return barwidgetatx(m, cx, cy, NULL);
+    struct wlr_scene_node *node;
+    struct wlr_scene_buffer *buffer;
+
+    if (!m->drw.m || !(node = wlr_scene_node_at(&layers[LyrBottom]->node, cx, cy, NULL, NULL))
+            || !(buffer = wlr_scene_buffer_from_node(node)) || buffer != m->scene_buffer)
+        return NULL;
+    return barwidgetin(m, cx, xrel);
 }
 
 /** the pointer is on w at xrel (NULL: on no widget): callback_view tells
@@ -237,33 +249,32 @@ buffer_end_data_ptr_access(struct wlr_buffer *buffer)
 static void
 baroverflow(Monitor *m, uint32_t over)
 {
-    /* by monitor: a Monitor field would change the plugin ABI */
-    static struct { Monitor *m; uint32_t over; } seen[16];
-    size_t i, free_slot = LENGTH(seen);
-
-    for (i = 0; i < LENGTH(seen) && seen[i].m != m; i++)
-        if (!seen[i].m && free_slot == LENGTH(seen))
-            free_slot = i;
-    if (i == LENGTH(seen)) {
-        if (!over || free_slot == LENGTH(seen))
-            return;
-        i = free_slot;
-        seen[i].m = m;
-        seen[i].over = 0;
-    }
-    if (seen[i].over == over)
+    if (m->bar_over == over)
         return;
     if (over)
         awl_err_printf("bar on %s: the widgets don't fit, %u pixels too wide\n",
                 m->wlr_output->name, over);
     else
         awl_log_printf("bar on %s: the widgets fit again\n", m->wlr_output->name);
-    seen[i].over = over;
-    if (!over)
-        seen[i].m = NULL;
+    m->bar_over = over;
 }
 
-void
+/** what m's widgets need of m, into its awl_draw_t */
+static void
+barview(Monitor *m)
+{
+    awl_draw_t *d = &m->drw;
+
+    memcpy(d->ltsymbol, m->ltsymbol, sizeof(d->ltsymbol));
+    d->output = m->wlr_output->name;
+    d->scale = m->wlr_output->scale;
+    d->height = m->b.height;
+    d->lrpad = m->lrpad;
+    d->x = m->m.x;
+    d->y = m->m.y;
+}
+
+static void
 drawbar(Monitor *m)
 {
     if (in_cleanupmon) return;
@@ -284,6 +295,7 @@ drawbar(Monitor *m)
 
     memset( m->drw.tagwindows, 0, sizeof(m->drw.tagwindows) );
     m->drw.n_tagwindows = 0;
+    barview(m);
 
     if (!m->showbar)
         return;
@@ -478,6 +490,22 @@ drawbars(void)
     }
 }
 
+static void
+redrawidle(void *data)
+{
+    (void)data;
+    redraw_idle = NULL;
+    drawbars();
+}
+
+void
+barsdirty(void)
+{
+    /* hover_timer: between barinit() and barfini() */
+    if (!redraw_idle && hover_timer)
+        redraw_idle = wl_event_loop_add_idle(event_loop, redrawidle, NULL);
+}
+
 void togglebar(const Arg *arg) { togglebar_mon(selmon); }
 void togglebar_mon(Monitor* m) {
     if (!m) return;
@@ -523,8 +551,10 @@ updatebar(Monitor *m)
     m->b.width = rw;
     m->b.real_width = (int)((float)m->b.width / m->wlr_output->scale);
 
-    if (m->b.scale == m->wlr_output->scale && m->drw.m)
+    if (m->b.scale == m->wlr_output->scale && m->drw.m) {
+        barview(m);
         return;
+    }
 
     /* falls back to monospace; keeps the old font if even that fails */
     awl_draw_set_font(&m->drw, cfg->font, (float)cfg->fontsize, m->wlr_output->scale, 1);
@@ -538,6 +568,7 @@ updatebar(Monitor *m)
     updatefonts(m);
     desktop_fontchanged(m);
     popupsupdate(m);
+    barview(m);
 }
 
 void
@@ -550,6 +581,10 @@ barinit(void)
 void
 barfini(void)
 {
+    if (redraw_idle) {
+        wl_event_source_remove(redraw_idle);
+        redraw_idle = NULL;
+    }
     if (hover_timer) {
         wl_event_source_remove(hover_timer);
         hover_timer = NULL;
@@ -582,7 +617,7 @@ baraddmon(Monitor *m)
 
     m->showbar = !!cfg->bar.show;
     updatebar(m);
-    drawbar(m);
+    barsdirty();
 }
 
 void
@@ -718,41 +753,19 @@ pointeronbar(void)
 int
 baraxis(double delta)
 {
-    unsigned int cursor_x, xpos = 0;
+    unsigned int xrel;
+    widget_t *w;
 
-    if (!pointeronbar())
+    if (!pointeronbar() || !(w = barwidgetin(selmon, cursor->x, &xrel)))
         return 0;
-    cursor_x = cursor->x;
-    cursor_x -= selmon->m.x;
-    cursor_x *= selmon->wlr_output->scale;
-    for (int i=0; i<selmon->drw.n_widgets_left; ++i) {
-        if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.widgets_left[i].width) {
-            widget_wrap_scroll_callback( &selmon->drw.widgets_left[i], cursor_x - xpos, delta );
-            return 1;
-        }
-        xpos += selmon->drw.widgets_left[i].width;
-    }
-    xpos = selmon->drw.center_widget_start;
-    if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.center_widget_space)
-        if (selmon->drw.has_center_widget) {
-            widget_wrap_scroll_callback( &selmon->drw.center_widget, cursor_x - xpos, delta );
-            return 1;
-        }
-    xpos += selmon->drw.center_widget_space;
-    for (int i=selmon->drw.n_widgets_right-1; i>=0; --i) {
-        if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.widgets_right[i].width) {
-            widget_wrap_scroll_callback( &selmon->drw.widgets_right[i], cursor_x - xpos, delta );
-            return 1;
-        }
-        xpos += selmon->drw.widgets_right[i].width;
-    }
-    return 0;
+    widget_wrap_scroll_callback(w, xrel, delta);
+    return 1;
 }
 
 int
 barbutton(uint32_t button, unsigned int *click)
 {
-    unsigned int cursor_x, xpos = 0;
+    unsigned int xrel = 0;
     widget_t *pressed;
 
     if (!pointeronbar())
@@ -760,49 +773,16 @@ barbutton(uint32_t button, unsigned int *click)
     /* hover popups are hover only: a press on the widget closes what
      * its hover opened, or keeps it from opening, until the pointer
      * leaves and comes back */
-    pressed = barwidgetat(selmon, cursor->x, cursor->y);
+    pressed = barwidgetin(selmon, cursor->x, &xrel);
     if (pressed && pressed == hover_widget)
         wl_event_source_timer_update(hover_timer, 0);
     if (hover_active && pressed == hover_active) {
         setleavepending(0);
         leavetimeout(NULL);
     }
-    cursor_x = cursor->x;
-    cursor_x -= selmon->m.x;
-    cursor_x *= selmon->wlr_output->scale;
-    for (int i=0; i<selmon->drw.n_widgets_left; ++i) {
-        if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.widgets_left[i].width) {
-            *click = ClkBar;
-            if (selmon->drw.widgets_left[i].callback_click) {
-                (*selmon->drw.widgets_left[i].callback_click)(&selmon->drw.widgets_left[i],
-                        cursor_x - xpos, button);
-                return 1;
-            }
-        }
-        xpos += selmon->drw.widgets_left[i].width;
-    }
-    xpos = selmon->drw.center_widget_start;
-    if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.center_widget_space) {
-        *click = ClkBar;
-        if (selmon->drw.has_center_widget) {
-            if (selmon->drw.center_widget.callback_click) {
-                (*selmon->drw.center_widget.callback_click)(&selmon->drw.center_widget,
-                        cursor_x - xpos, button);
-                return 1;
-            }
-        }
-    }
-    xpos += selmon->drw.center_widget_space;
-    for (int i=selmon->drw.n_widgets_right-1; i>=0; --i) {
-        if (cursor_x >= xpos && cursor_x < xpos + selmon->drw.widgets_right[i].width) {
-            *click = ClkBar;
-            if (selmon->drw.widgets_right[i].callback_click) {
-                (*selmon->drw.widgets_right[i].callback_click)(&selmon->drw.widgets_right[i],
-                        cursor_x - xpos, button);
-                return 1;
-            }
-        }
-        xpos += selmon->drw.widgets_right[i].width;
-    }
-    return 0;
+    *click = ClkBar;
+    if (!pressed || !pressed->callback_click)
+        return 0;
+    pressed->callback_click(pressed, xrel, button);
+    return 1;
 }

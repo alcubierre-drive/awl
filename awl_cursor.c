@@ -292,9 +292,6 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
     struct wlr_surface *surface = NULL;
     struct wlr_pointer_constraint_v1 *constraint;
 
-    /* Find the client under the pointer and send the event along. */
-    xytonode(cursor->x, cursor->y, &surface, &c, NULL, &sx, &sy);
-
     /* time is 0 in internal calls meant to restore pointer focus. */
     if (time) {
         wlr_relative_pointer_manager_v1_send_relative_motion(
@@ -328,7 +325,7 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
             setselmon(xytomon(cursor->x, cursor->y));
     }
 
-    /* the cursor has moved: look again */
+    /* Find the client under the pointer and send the event along. */
     xytonode(cursor->x, cursor->y, &surface, &c, NULL, &sx, &sy);
 
     if (cursor_mode == CurPressed && !seat->drag
@@ -508,7 +505,10 @@ xytonode(double x, double y, struct wlr_surface **psurface,
     LayerSurface *l = NULL;
     int layer;
 
-    for (layer = NUM_LAYERS - 1; !surface && layer >= 0; layer--) {
+    /* the topmost layer with something of a client's or a layer surface's
+     * there has it: what is below a window's border must not lend it its
+     * surface */
+    for (layer = NUM_LAYERS - 1; !surface && !c && !l && layer >= 0; layer--) {
         if (!(node = wlr_scene_node_at(&layers[layer]->node, x, y, nx, ny)))
             continue;
 

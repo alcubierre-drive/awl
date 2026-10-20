@@ -7,8 +7,6 @@ int fd_set_nonblock(int fd);
  * names', a new array (free() it) of environ's strings and entries; NULL
  * out of memory */
 char **envwith(const char *const *entries);
-/** execvp() with envp as the environment */
-int execvpenv(const char *file, char *const argv[], char *const envp[]);
 /** whether a and b are the same string, or both NULL */
 int streqnull(const char *a, const char *b);
 /** strdup(), and NULL for NULL */

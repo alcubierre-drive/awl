@@ -147,6 +147,7 @@ struct Monitor {
     struct wlr_scene_blur *bar_blur; /* behind the bar's window list */
     Buffer *bar_bufs[2]; /* bar render targets, reused; see barbuffer() */
     Buffer *bar_shown; /* the slot scene_buffer shows, NULL if unknown */
+    uint32_t bar_over; /* how far the bar's widgets overflow it, see baroverflow() */
     struct wlr_scene_rect *fullscreen_bg; /* See createmon() for info */
     struct wl_listener frame;
     struct wl_listener destroy;

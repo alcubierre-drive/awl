@@ -4,7 +4,7 @@ The tray
 The tray is a bar widget like the others, in C, without GTK. awl itself is
 the StatusNotifierWatcher (awl_sni.h), on its main loop, so the items'
 registrations outlive a plugin reload; the widget's host (plugins/sni.h)
-runs on the plugins' loop with sd-bus, and the menus' D-Bus half is
+runs on a loop of its own (plugins/loop.h) with sd-bus, and the menus' D-Bus half is
 plugins/sni_menu.h. The widget's menus and tooltips are popups of the plugin
 library's own, given back before it is unloaded.
 

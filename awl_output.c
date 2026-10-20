@@ -92,7 +92,7 @@ closemon(Monitor *m)
             setmon(c, selmon, c->tags);
     }
     focusclient(focustop(selmon), 1);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -229,7 +229,7 @@ setselmon(Monitor *m)
     if (m == selmon)
         return;
     selmon = m;
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -485,8 +485,9 @@ updatemons(struct wl_listener *listener, void *data)
             m->closedbar = 0;
             togglebar_mon(m);
         }
-        updatebar(m), drawbar(m);
+        updatebar(m);
     }
+    barsdirty();
 
     /* FIXME: figure out why the cursor image is at 0,0 after turning all
      * the monitors on.

@@ -17,7 +17,7 @@
 
 /* awl.h's TEXTW calls into awl directly */
 #undef TEXTW
-#define TEXTW(mon, text) (awl_host->text_width((mon)->drw.font, text) + (mon)->lrpad)
+#define TEXTW(bar, text) (awl_host->text_width((bar)->font, text) + (bar)->lrpad)
 
 static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void tagwidget_scroll( widget_t* w, uint32_t x, int amount );
@@ -166,7 +166,7 @@ void awl_widgets_create( awl_draw_t* drw ) {
 }
 
 #define TEXT( width, string, fg, bg ) \
-    awl_host->text( pix, w->bar->font, x, -2, width, w->bar->m->b.height, w->bar->m->lrpad/2, string, \
+    awl_host->text( pix, w->bar->font, x, -2, width, w->bar->height, w->bar->lrpad/2, string, \
             fg, bg )
 
 static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
@@ -175,7 +175,7 @@ static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     int width = 0;
     for (int t=0; t<w->bar->ntags; ++t) {
         char num[16] = ""; snprintf( num, sizeof(num)-1, "%i", t+1 );
-        int ww = TEXTW(w->bar->m, "0");
+        int ww = TEXTW(w->bar, "0");
         pixman_color_t bg_color = P->colors.tag_bg,
                        fg_color = P->colors.fg;
         if (w->bar->occ & (1 << t))
@@ -187,7 +187,7 @@ static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
         TEXT( ww, num, fg_color, bg_color );
         /* the selected monitor: a bar under the "1", where TEXT() put it */
         if (t == 0 && w->bar->selmon && w->bar->selmon != -1) {
-            int hh = w->bar->m->b.height;
+            int hh = w->bar->height;
             int h = hh / 8;
             if (h < 2) h = 2;
             int w = (ww < hh ? ww : hh)/2;
@@ -219,11 +219,10 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
     }
 
     // calculate space per window
+    // the first space % n_windows get one pixel more
     uint32_t spaces[n_windows];
     for (int wi=0; wi<n_windows; ++wi)
-        spaces[wi] = 0;
-    for (uint32_t s=0; s<space; ++s)
-        spaces[s%n_windows]++;
+        spaces[wi] = space / n_windows + ((uint32_t)wi < space % n_windows);
     int nospace = 0;
     for (int wi=0; wi<n_windows; ++wi)
         if (spaces[wi] <= 20)
@@ -263,11 +262,11 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
 static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P) return 0;
-    int ww = TEXTW(w->bar->m, "XXX");
-    TEXT( ww, w->bar->m->ltsymbol, P->colors.fg, P->colors.bg );
+    int ww = TEXTW(w->bar, "XXX");
+    TEXT( ww, w->bar->ltsymbol, P->colors.fg, P->colors.bg );
     /* each tag has its own layout: a red frame around the symbol */
     if (w->bar->pertag) {
-        int hh = w->bar->m->b.height;
+        int hh = w->bar->height;
         int t = hh / 8;
         if (t < 1) t = 1;
         pixman_color_t c = P->colors.pertag;
@@ -296,7 +295,7 @@ static textsnap_t* textsnap( widget_t* w ) {
 
 static uint32_t textsnap_width( widget_t* w ) {
     textsnap_t* s = w->userdata;
-    return s && *s->text ? TEXTW( w->bar->m, s->text ) : 0;
+    return s && *s->text ? TEXTW( w->bar, s->text ) : 0;
 }
 
 static uint32_t textsnap_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
@@ -331,9 +330,9 @@ static uint32_t clockwidget_measure( widget_t* w ) {
         u->sec = secs % 60;
     }
     // time text plus the seconds meter, which eats into the text's padding
-    int mw = 3 * w->bar->m->wlr_output->scale + 0.5f;
+    int mw = 3 * w->bar->scale + 0.5f;
     if (mw < 2) mw = 2;
-    return TEXTW( w->bar->m, "--:--" ) + mw - (int)(clock_meter_pad * w->bar->m->wlr_output->scale + 0.5f);
+    return TEXTW( w->bar, "--:--" ) + mw - (int)(clock_meter_pad * w->bar->scale + 0.5f);
 }
 
 static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
@@ -342,14 +341,14 @@ static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
     clockwidget_userdata_t* u = w->userdata;
     u->x = x;
 
-    int mw = 3 * w->bar->m->wlr_output->scale + 0.5f;
+    int mw = 3 * w->bar->scale + 0.5f;
     if (mw < 2) mw = 2;
     int ww = w->width - mw;
     TEXT( ww, u->timestr, P->colors.fg, P->colors.bg );
 
     // seconds meter right of the time: empty at :00, full at :59
     int sec = u->sec;
-    int bar_height = w->bar->m->b.height;
+    int bar_height = w->bar->height;
     int ydiv = sec < 0 ? bar_height : bar_height - (sec * bar_height + 29) / 59;
     pixman_box32_t bg = { .x1 = x+ww, .x2 = x+ww+mw, .y1 = 0, .y2 = ydiv },
                    fg = { .x1 = x+ww, .x2 = x+ww+mw, .y1 = ydiv, .y2 = bar_height };
@@ -422,8 +421,8 @@ static uint32_t sniwidget_measure( widget_t* w ) {
     sniwidget_t* u = sniwidget( w );
     if (!P || !P->sni || !u) return 0;
     sni_main_poll( P->sni );
-    float scale = w->bar->m->wlr_output->scale;
-    int h = (int)w->bar->m->b.height;
+    float scale = w->bar->scale;
+    int h = (int)w->bar->height;
     u->px = (int)lroundf( awl_config()->tray.icon_size * scale );
     if (u->px > h - 2) u->px = h - 2;
     if (u->px < 1) u->px = 1;
@@ -457,7 +456,7 @@ static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     sniwidget_t* u = w->userdata;
     if (!P || !u) return 0;
     u->x = x;
-    int h = (int)w->bar->m->b.height;
+    int h = (int)w->bar->height;
     pixman_color_t bg = color_8bit_to_16bit( awl_config()->tray.bg );
     pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &bg, 1, &(pixman_box32_t){
         .x1 = x, .x2 = x + w->width, .y1 = 0, .y2 = h } );
@@ -488,7 +487,7 @@ static int sniwidget_at( const sniwidget_t* u, int32_t x ) {
 
 /** icon i's center, logical pixels from the monitor's left edge */
 static int sniwidget_center( widget_t* w, const sniwidget_t* u, int i ) {
-    return (int)lround( (u->x + u->gap + i * (u->px + u->gap) + u->px / 2.0) / w->bar->m->wlr_output->scale );
+    return (int)lround( (u->x + u->gap + i * (u->px + u->gap) + u->px / 2.0) / w->bar->scale );
 }
 
 /** Right: the menu. Left: what the item does when activated, unless it says
@@ -503,8 +502,8 @@ static void sniwidget_click( widget_t* w, uint32_t x, int button ) {
     const awl_sni_item_t* it = &u->snap->items[i];
     awl_tray_tooltip_drop( u->tip );
     u->tip = 0;
-    Monitor* m = w->bar->m;
-    const char* mon = m->wlr_output->name;
+    const awl_draw_t* bar = w->bar;
+    const char* mon = bar->output;
     int cx = sniwidget_center( w, u, i );
     if (awl_tray_menu_window_shows( it->menu )) {
         awl_tray_menu_window_toggle( it->menu, mon, cx );
@@ -512,11 +511,11 @@ static void sniwidget_click( widget_t* w, uint32_t x, int button ) {
     }
     if ((button == BTN_LEFT && it->item_is_menu) || button == BTN_RIGHT) {
         if (it->menu) awl_tray_menu_window_toggle( it->menu, mon, cx );
-        else sni_click( P->sni, it->serial, AWL_SNI_CONTEXT, m->m.x + cx, m->m.y, mon, cx );
+        else sni_click( P->sni, it->serial, AWL_SNI_CONTEXT, bar->x + cx, bar->y, mon, cx );
     } else if (button == BTN_LEFT) {
-        sni_click( P->sni, it->serial, AWL_SNI_ACTIVATE, m->m.x + cx, m->m.y, mon, cx );
+        sni_click( P->sni, it->serial, AWL_SNI_ACTIVATE, bar->x + cx, bar->y, mon, cx );
     } else if (button == BTN_MIDDLE) {
-        sni_click( P->sni, it->serial, AWL_SNI_SECONDARY, m->m.x + cx, m->m.y, mon, cx );
+        sni_click( P->sni, it->serial, AWL_SNI_SECONDARY, bar->x + cx, bar->y, mon, cx );
     }
 }
 
@@ -547,7 +546,7 @@ static void sniwidget_view( widget_t* w, int32_t x ) {
     if (i < 0 || !*u->snap->items[i].name) return;
     if (!++next_tip) next_tip = 1;
     u->tip = next_tip;
-    awl_tray_tooltip_show( u->tip, w->bar->m->wlr_output->name, sniwidget_center( w, u, i ),
+    awl_tray_tooltip_show( u->tip, w->bar->output, sniwidget_center( w, u, i ),
                            u->snap->items[i].name );
 }
 
@@ -578,7 +577,7 @@ static uint32_t pulsewidget_measure( widget_t* w ) {
                                       P->colors.fg;
     s->bg = P->colors.bg;
     // fixed width so the bar doesn't jitter while the volume changes
-    return TEXTW( w->bar->m, "V___%" );
+    return TEXTW( w->bar, "V___%" );
 }
 
 typedef struct {
@@ -599,7 +598,7 @@ static uint32_t statuswidget_measure( widget_t* w ) {
     // one column per sample, accumulated the same way draw() places them
     float xx = 0;
     int n = st->ncpu + st->nmem + u->nswp;
-    for (int i=0; i<n; ++i) xx += w->bar->m->wlr_output->scale;
+    for (int i=0; i<n; ++i) xx += w->bar->scale;
     return xx;
 }
 
@@ -615,7 +614,7 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
                                     &P->colors.swap };
 
     unsigned samples = atomic_load( &st->samples );
-    int bar_height = w->bar->m->b.height;
+    int bar_height = w->bar->height;
     float xx = 0;
     for (int g=0; g<3; ++g) {
         // newest sample first
@@ -625,7 +624,7 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
             // the CPU graph stacks the time spent waiting for I/O on top
             float io = g == 0 ? stats_sample( st->io, n[g], samples, i ) : 0;
             int yio = bar_height - (val + io < 1 ? val + io : 1) * bar_height;
-            float next_x = xx + w->bar->m->wlr_output->scale;
+            float next_x = xx + w->bar->scale;
             u->bg[i] = (pixman_box32_t){.x1=x+(int32_t)xx,.x2=x+(int32_t)next_x,.y1=0, .y2=yio};
             u->io[i] = (pixman_box32_t){.x1=x+(int32_t)xx,.x2=x+(int32_t)next_x,.y1=yio,.y2=ydiv};
             u->fg[i] = (pixman_box32_t){.x1=x+(int32_t)xx,.x2=x+(int32_t)next_x,.y1=ydiv,.y2=bar_height};
@@ -640,9 +639,11 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     return w->width;
 }
 
-/** the readings measure() saw, so draw() renders text of the same width */
+/** the readings measure() saw and their texts' widths, so draw() renders
+ * text of the same width */
 typedef struct {
     float temps[16];
+    uint32_t widths[16];
 } tempwidget_userdata_t;
 
 static void tempwidget_text( const awl_temperature_t* T, int i, float t, char* text, size_t size ) {
@@ -666,7 +667,8 @@ static uint32_t tempwidget_measure( widget_t* w ) {
         if (u->temps[i] == AWL_TEMP_NONE) continue; // unreadable
         char text[128];
         tempwidget_text( P->temp, i, u->temps[i], text, sizeof(text) );
-        width += TEXTW(w->bar->m, text);
+        u->widths[i] = TEXTW(w->bar, text);
+        width += u->widths[i];
     }
     return width;
 }
@@ -683,9 +685,8 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
         tempwidget_text( T, i, u->temps[i], text, sizeof(text) );
         pixman_color_t fgcolor = color_8bit_to_16bit(
                 P->temp_color( u->temps[i], T->f_t_min[i], T->f_t_max[i] ) );
-        uint32_t ww = TEXTW(w->bar->m, text);
-        TEXT( ww, text, fgcolor, P->colors.bg );
-        x += ww;
+        TEXT( u->widths[i], text, fgcolor, P->colors.bg );
+        x += u->widths[i];
     }
     return w->width;
 }
@@ -749,13 +750,13 @@ static uint32_t dockwidget_measure( widget_t* w ) {
     s->fg = P->colors.fg;
     s->bg = P->colors.bg;
     if (!*s->text) return 0;
-    return TEXTW( w->bar->m, s->text ) - w->bar->m->lrpad/2;
+    return TEXTW( w->bar, s->text ) - w->bar->lrpad/2;
 }
 
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     textsnap_t* s = w->userdata;
     if (!s) return 0;
-    awl_host->text( pix, w->bar->font, x, -2, w->width, w->bar->m->b.height, 0, s->text, s->fg, s->bg );
+    awl_host->text( pix, w->bar->font, x, -2, w->width, w->bar->height, 0, s->text, s->fg, s->bg );
     return w->width;
 }
 
@@ -937,7 +938,7 @@ static void ipwidget_window_paint( void* data, pixman_image_t* pix, struct fcft_
 }
 
 /* the popup centered under the widget, in logical pixels */
-static void ipwidget_popup( widget_t* w ) {
+static void ipwidget_hover( widget_t* w ) {
     ipwidget_userdata_t* u = w->userdata;
     if (!u) return;
     if (!u->win) {
@@ -948,13 +949,8 @@ static void ipwidget_popup( widget_t* w ) {
         w->popup_window = u->win = awl_host->window_create();
         awl_host->window_set_painter( u->win, &painter, u );
     }
-    Monitor* m = w->bar->m;
     float center = (float)u->x + (float)w->width / 2.0f;
-    awl_host->window_show( u->win, m, (int)(center / m->wlr_output->scale + 0.5f) );
-}
-
-static void ipwidget_hover( widget_t* w ) {
-    ipwidget_popup( w );
+    awl_host->window_show( u->win, w->bar->m, (int)(center / w->bar->scale + 0.5f) );
 }
 
 static void ipwidget_leave( widget_t* w ) {
@@ -1000,18 +996,18 @@ static void taskbarwidget_click( widget_t* w, uint32_t x, int button ) {
     int win_idx = (double)x / (double)w->width * (double)w->bar->n_tagwindows;
     if (win_idx >= w->bar->n_tagwindows || win_idx < 0) return;
 
+    Client* c = windows[win_idx].c;
+    // a minimized window comes back, an unfocused one gets the focus, the
+    // focused one is minimized; client_set_visible() arranges
     if (!windows[win_idx].visible) {
-        windows[win_idx].c->isvisible = 1;
-        awl_host->focusclient(windows[win_idx].c, 1);
-        goto arrange;
+        awl_host->client_set_visible(c, 1);
+        awl_host->focusclient(c, 1);
+    } else if (!windows[win_idx].focused) {
+        awl_host->focusclient(c, 1);
+        awl_host->client_set_visible(c, 1);
+    } else {
+        awl_host->client_set_visible(c, 0);
     }
-    if (!windows[win_idx].focused) {
-        awl_host->focusclient(windows[win_idx].c, 1);
-        goto arrange;
-    }
-    windows[win_idx].c->isvisible = 0;
-arrange:
-    awl_host->arrange(windows[win_idx].c->mon);
 }
 
 static void pulsewidget_click( widget_t* w, uint32_t x, int button ) {
@@ -1033,7 +1029,7 @@ static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount ) {
 static int clockwidget_center( widget_t* w ) {
     clockwidget_userdata_t* u = w->userdata;
     float center = (float)(u ? u->x : 0) + (float)w->width / 2.0f;
-    return (int)(center / w->bar->m->wlr_output->scale + 0.5f);
+    return (int)(center / w->bar->scale + 0.5f);
 }
 
 static void clockwidget_hover( widget_t* w ) {
@@ -1145,8 +1141,7 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     // the moon if the brightness is known, a stop sign if the daemon's
     // number is nonsense, then open eyes for automatic updates or closed
     // ones (as wide as the open ones) for manual brightness
-    Monitor* m = w->bar->m;
-    float scale = m->wlr_output->scale;
+    float scale = w->bar->scale;
     if (screen >= 0) {
         s->moons = backlight_moons(screen);
     } else if (screen == BACKLIGHT_INVALID) {
@@ -1158,9 +1153,9 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     s->closed = !enabled;
     s->gap = *s->moons.m1 ? (int)(backlight_emoji_gap * scale + 0.5f) : 0;
     s->rpad = (int)(backlight_emoji_rpad * scale + 0.5f);
-    if (s->rpad > m->lrpad/2) s->rpad = m->lrpad/2;
-    uint32_t w1 = TEXTW( m, s->moons.m1 ), w2 = TEXTW( m, s->moons.m2 );
-    return (w1 > w2 ? w1 : w2) + s->gap + TEXTW( m, s->mode ) - m->lrpad - s->rpad;
+    if (s->rpad > w->bar->lrpad/2) s->rpad = w->bar->lrpad/2;
+    uint32_t w1 = TEXTW( w->bar, s->moons.m1 ), w2 = TEXTW( w->bar, s->moons.m2 );
+    return (w1 > w2 ? w1 : w2) + s->gap + TEXTW( w->bar, s->mode ) - w->bar->lrpad - s->rpad;
 }
 
 /** Composites the one-glyph string `text` into dst at alpha (0..1), placed
@@ -1295,10 +1290,9 @@ static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* p
     if (!s->mode) return textsnap_draw( w, x, pix );
     // the moon with the left padding and the gap, then the mode filling the
     // rest; TEXT() pads by lrpad/2 on the left
-    Monitor* m = w->bar->m;
     uint32_t w1 = awl_host->text_width( w->bar->font, s->moons.m1 ),
              w2 = awl_host->text_width( w->bar->font, s->moons.m2 );
-    uint32_t mw = m->lrpad/2 + (w1 > w2 ? w1 : w2) + s->gap;
+    uint32_t mw = w->bar->lrpad/2 + (w1 > w2 ? w1 : w2) + s->gap;
     if (mw > w->width) mw = w->width;
     struct fcft_font* font = w->bar->font;
     double a2 = s->moons.alpha_m2;
@@ -1309,11 +1303,11 @@ static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* p
         // a scratch image (m1 at 1-a, m2 at a, added up) laid over it, so
         // each pixel is the exact mix even where only one of them covers it
         TEXT( mw, "", s->text.fg, s->text.bg );
-        int h = m->b.height, y = -2;
+        int h = w->bar->height, y = -2;
         int ty = y + (h - font->height) / 2 + font->ascent;
         pixman_image_t* tmp = mw ? pixman_image_create_bits( PIXMAN_a8r8g8b8, mw, h, NULL, 0 ) : NULL;
         if (tmp) {
-            int px = m->lrpad/2;
+            int px = w->bar->lrpad/2;
             backlight_glyph( tmp, font, s->moons.m1, px, ty, 1.0 - a2 );
             backlight_glyph( tmp, font, s->moons.m2, px, ty, a2 );
             pixman_image_composite32( PIXMAN_OP_OVER, tmp, NULL, pix, 0, 0, 0, 0,
@@ -1323,13 +1317,13 @@ static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* p
     }
     // the closed eyes: the background, then the image where 👀 would be
     int closed = s->closed && font;
-    awl_host->text( pix, w->bar->font, x + mw, -2, w->width - mw, m->b.height, 0,
+    awl_host->text( pix, w->bar->font, x + mw, -2, w->width - mw, w->bar->height, 0,
             closed ? "" : s->mode, s->text.fg, s->text.bg );
     if (closed) {
-        int h = m->b.height, y = -2;
+        int h = w->bar->height, y = -2;
         int ty = y + (h - font->height) / 2 + font->ascent;
         if (!backlight_eyes_closed( pix, font, (int)(x + mw), ty ))
-            awl_host->text( pix, w->bar->font, x + mw, -2, w->width - mw, m->b.height, 0, s->mode,
+            awl_host->text( pix, w->bar->font, x + mw, -2, w->width - mw, w->bar->height, 0, s->mode,
                     s->text.fg, s->text.bg );
     }
     return w->width;

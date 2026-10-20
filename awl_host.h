@@ -49,10 +49,11 @@ typedef enum awl_logind_flags {
 typedef struct awl_host_t {
     /** `AWL_PLUGIN_ABI` as awl was built */
     uint32_t abi;
-    /** sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor,
-     * sizeof_client and sizeof_config: the layouts the library compiles
-     * against */
-    size_t sizeof_host, sizeof_draw, sizeof_widget, sizeof_monitor, sizeof_client, sizeof_config;
+    /** sizeof_host, sizeof_draw, sizeof_widget and sizeof_config: the
+     * layouts the library compiles against. `Monitor` and `Client` aren't
+     * among them: the library only passes them back to awl, it never reads
+     * them (what a bar's widgets need of its monitor is in `awl_draw_t`). */
+    size_t sizeof_host, sizeof_draw, sizeof_widget, sizeof_config;
 
     /* ---- any thread ---- */
 
@@ -118,6 +119,9 @@ typedef struct awl_host_t {
     const awl_arranges_t* arranges;
     /** `focusclient()` */
     void (*focusclient)( Client* c, int lift );
+    /** `clientsetvisible()`: shows c, or minimizes it, and arranges its
+     * monitor */
+    void (*client_set_visible)( Client* c, int visible );
     /** `arrange()` */
     void (*arrange)( Monitor* m );
     /** `monitornamed()`: the monitor of the output named name, NULL if none */

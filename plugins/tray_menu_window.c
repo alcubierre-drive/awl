@@ -100,10 +100,6 @@ static int px( const level_t* L, float v ) {
     return (int)lroundf( v * L->scale );
 }
 
-static int tw( struct fcft_font* font, const char* s ) {
-    return (int)awl_host->text_width( font, s );
-}
-
 /* ---- drawing ---- */
 
 /** a check box or radio button of flags, s x s at x, y */
@@ -176,9 +172,9 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
         checks |= !!(n->flags & (AWL_TRAY_MENU_CHECK | AWL_TRAY_MENU_RADIO));
         icons |= !!n->icon;
         subs |= !!(n->flags & AWL_TRAY_MENU_SUBMENU);
-        int lw = tw( font, n->label );
+        int lw = (int)awl_host->text_width( font, n->label );
         if (lw > label_w) label_w = lw;
-        if (n->shortcut && (lw = tw( font, n->shortcut )) > shortcut_w) shortcut_w = lw;
+        if (n->shortcut && (lw = (int)awl_host->text_width( font, n->shortcut )) > shortcut_w) shortcut_w = lw;
     }
     if (!L->nrows) return 0;
 
@@ -190,7 +186,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
         M.icon_px = fh;
     }
     L->icon_w = icons ? M.icon_px + L->gap : 0;
-    L->arrow_w = subs ? tw( font, MORE ) + L->gap : 0;
+    L->arrow_w = subs ? (int)awl_host->text_width( font, MORE ) + L->gap : 0;
     L->label_w = label_w;
     int W = 2 * L->pad + L->check_w + L->icon_w + label_w + (shortcut_w ? 2 * L->gap + shortcut_w : 0) +
             L->arrow_w;
@@ -278,7 +274,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         x += L->icon_w;
         int right = x0 + L->w - L->pad - L->arrow_w;
         if (n->shortcut) {
-            int sw = tw( font, n->shortcut );
+            int sw = (int)awl_host->text_width( font, n->shortcut );
             if (right - sw > x + L->gap) {
                 awl_host->text_over( pix, font, right - sw, y, (unsigned)sw, (unsigned)r->h, n->shortcut, dim );
                 right -= sw + 2 * L->gap;
@@ -286,7 +282,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         }
         if (right > x) awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)r->h, n->label, fg );
         if (flags & AWL_TRAY_MENU_SUBMENU) {
-            int aw = tw( font, MORE );
+            int aw = (int)awl_host->text_width( font, MORE );
             awl_host->text_over( pix, font, x0 + L->w - L->pad - aw, y, (unsigned)aw, (unsigned)r->h, MORE, fg );
         }
     }

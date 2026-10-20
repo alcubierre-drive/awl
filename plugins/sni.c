@@ -5,7 +5,6 @@
 #include "../plugins.h"
 #include "tray_menu.h"
 #include <errno.h>
-#include <poll.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,8 +12,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/eventfd.h>
-#include <sys/time.h>
+#include <sys/epoll.h>
 #include <systemd/sd-bus.h>
+#include <systemd/sd-event.h>
 
 #define WATCHER_NAME  "org.kde.StatusNotifierWatcher"
 #define WATCHER_PATH  "/StatusNotifierWatcher"
@@ -34,7 +34,7 @@ typedef struct item {
     /** "bus/path" as the watcher lists it */
     char *id, *bus_name, *path;
     sd_bus_slot* match;
-    pa_time_event* debounce;
+    sd_event_source* debounce;
     /** item_ifaces' index the item answers to */
     int iface;
     /** GetAll answered once; one is out; again: one more once it is back */
@@ -82,16 +82,15 @@ typedef struct mail {
 } mail_t;
 
 struct awl_sni_t {
-    pa_mainloop_api* api;
+    sd_event* event;
 
     /* the loop's */
     sd_bus* bus;
-    sd_bus_slot *owner_match, *signal_match, *props_match, *listing;
-    pa_io_event* io;
-    pa_time_event* timeout;
-    pa_time_event* retry;
-    pa_io_event* wake;
-    int failed;
+    sd_bus_slot *owner_match, *signal_match, *props_match, *listing, *disconnected;
+    /** bus_lost()'s, armed while the bus is to be dropped */
+    sd_event_source* lost;
+    sd_event_source* retry;
+    sd_event_source* wake;
     item_t** items;
     int nitems, cap;
     uint64_t next_serial;
@@ -125,19 +124,7 @@ enum {
 /** the one there is, for tray_menu_window.c's requests and sni_menu.c */
 static awl_sni_t* the;
 
-static void bus_update( awl_sni_t* s );
-
-static struct timeval in_usec( uint64_t usec ) {
-    struct timeval tv;
-    gettimeofday( &tv, NULL );
-    tv.tv_sec += usec / 1000000;
-    tv.tv_usec += usec % 1000000;
-    if (tv.tv_usec >= 1000000) {
-        tv.tv_sec++;
-        tv.tv_usec -= 1000000;
-    }
-    return tv;
-}
+static void bus_lost( awl_sni_t* s );
 
 /* ---- blobs and snapshots ---- */
 
@@ -455,7 +442,7 @@ static item_t* item_find( awl_sni_t* s, uint64_t serial ) {
 
 static void item_free( awl_sni_t* s, item_t* it ) {
     sd_bus_slot_unref( it->match );
-    if (it->debounce) s->api->time_free( it->debounce );
+    sd_event_source_disable_unref( it->debounce );
     sni_menu_free( it->menu );
     free( it->id );
     free( it->bus_name );
@@ -646,20 +633,20 @@ static void fetch( awl_sni_t* s, item_t* it ) {
     }
     if (sd_bus_call_method_async( s->bus, NULL, it->bus_name, it->path, "org.freedesktop.DBus.Properties", "GetAll",
                                   on_props, (void*)(uintptr_t)it->serial, "s", item_ifaces[it->iface] ) < 0)
-        s->failed = 1;
+        bus_lost( s );
     else
         it->fetching = 1;
 }
 
-static void debounce_fire( pa_mainloop_api* a, pa_time_event* e, const struct timeval* tv, void* userdata ) {
-    (void)tv;
+static int debounce_fire( sd_event_source* e, uint64_t usec, void* userdata ) {
+    (void)usec;
     awl_sni_t* s = the;
     item_t* it = s ? item_find( s, (uint64_t)(uintptr_t)userdata ) : NULL;
-    a->time_free( e );
-    if (!it) return;
+    sd_event_source_disable_unref( e );
+    if (!it) return 0;
     it->debounce = NULL;
     fetch( s, it );
-    bus_update( s );
+    return 0;
 }
 
 /** any signal of the item: its New* ones re-read the properties */
@@ -669,10 +656,9 @@ static int on_item_signal( sd_bus_message* m, void* userdata, sd_bus_error* ret_
     item_t* it = s ? item_find( s, (uint64_t)(uintptr_t)userdata ) : NULL;
     const char* member = sd_bus_message_get_member( m );
     if (!it || !member || (strncmp( member, "New", 3 ) && strncmp( member, "XAyatanaNew", 11 ))) return 0;
-    if (!it->debounce) {
-        struct timeval tv = in_usec( DEBOUNCE_USEC );
-        it->debounce = s->api->time_new( s->api, &tv, debounce_fire, userdata );
-    }
+    if (!it->debounce && sd_event_add_time_relative( s->event, &it->debounce, CLOCK_MONOTONIC, DEBOUNCE_USEC, 0,
+                                                      debounce_fire, userdata ) < 0)
+        it->debounce = NULL;
     return 0;
 }
 
@@ -694,7 +680,7 @@ static item_t* item_new( awl_sni_t* s, const char* id ) {
     char rule[1024];
     snprintf( rule, sizeof rule, "type='signal',sender='%s',path='%s'", it->bus_name, it->path );
     if (sd_bus_add_match_async( s->bus, &it->match, rule, on_item_signal, NULL, (void*)(uintptr_t)it->serial ) < 0)
-        s->failed = 1;
+        bus_lost( s );
     /* after the match: a change between the two isn't missed */
     fetch( s, it );
     return it;
@@ -760,7 +746,7 @@ static void list_items( awl_sni_t* s ) {
     s->listing = sd_bus_slot_unref( s->listing );
     if (sd_bus_call_method_async( s->bus, &s->listing, WATCHER_NAME, WATCHER_PATH, "org.freedesktop.DBus.Properties",
                                   "Get", on_listing, s, "ss", WATCHER_IFACE, "RegisteredStatusNotifierItems" ) < 0)
-        s->failed = 1;
+        bus_lost( s );
 }
 
 static void watcher_there( awl_sni_t* s ) {
@@ -807,14 +793,14 @@ static int on_owner( sd_bus_message* m, void* userdata, sd_bus_error* ret_error 
         /* awl's own may just not have its name yet */
         awl_vrb_printf( "sni: no watcher yet (awl's, awl_sni.h), waiting for one\n" );
     else
-        s->failed = 1;
+        bus_lost( s );
     return 0;
 }
 
 static int on_subscribed( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
     awl_sni_t* s = userdata;
-    if (sd_bus_message_is_method_error( m, NULL )) s->failed = 1;
+    if (sd_bus_message_is_method_error( m, NULL )) bus_lost( s );
     return 0;
 }
 
@@ -886,8 +872,8 @@ static void run( awl_sni_t* s, req_t* r ) {
     }
 }
 
-static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
-    (void)a; (void)e; (void)f;
+static int wake_callback( sd_event_source* e, int fd, uint32_t revents, void* userdata ) {
+    (void)e; (void)revents;
     awl_sni_t* s = userdata;
     uint64_t count;
     if (read( fd, &count, sizeof count ) < 0) {}
@@ -901,7 +887,7 @@ static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_eve
         run( s, r );
         free( r );
     }
-    if (s->bus) bus_update( s );
+    return 0;
 }
 
 /* ---- the connection ---- */
@@ -909,41 +895,55 @@ static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_eve
 static void schedule_retry( awl_sni_t* s, uint64_t usec );
 
 static void drop_bus( awl_sni_t* s ) {
-    if (s->io) s->api->io_free( s->io );
-    if (s->timeout) s->api->time_free( s->timeout );
-    s->io = NULL;
-    s->timeout = NULL;
+    s->lost = sd_event_source_disable_unref( s->lost );
     for (int i = 0; i < s->nitems; i++) item_free( s, s->items[i] );
     s->nitems = 0;
     s->listing = sd_bus_slot_unref( s->listing );
     s->owner_match = sd_bus_slot_unref( s->owner_match );
     s->signal_match = sd_bus_slot_unref( s->signal_match );
     s->props_match = sd_bus_slot_unref( s->props_match );
-    /* not sd_bus_flush_close_unref(): that blocks until the queue is out */
-    if (s->bus) sd_bus_close( s->bus );
+    s->disconnected = sd_bus_slot_unref( s->disconnected );
+    if (s->bus) {
+        sd_bus_detach_event( s->bus );
+        /* not sd_bus_flush_close_unref(): that blocks until the queue is out */
+        sd_bus_close( s->bus );
+    }
     s->bus = sd_bus_unref( s->bus );
-    s->failed = 0;
 }
 
-static void bus_io( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
-    (void)a; (void)e; (void)fd; (void)f;
-    bus_update( userdata );
-}
-
-static void bus_timeout( pa_mainloop_api* a, pa_time_event* e, const struct timeval* tv, void* userdata ) {
-    (void)tv;
+static int lost_fire( sd_event_source* e, void* userdata ) {
+    (void)e;
     awl_sni_t* s = userdata;
-    a->time_free( e );
-    s->timeout = NULL;
-    bus_update( s );
+    awl_wrn_printf( "sni: lost the session bus, reconnecting\n" );
+    drop_bus( s );
+    publish( s );
+    schedule_retry( s, RETRY_USEC );
+    return 0;
+}
+
+/** The bus failed us (a call that couldn't be sent, a match refused, the
+ * connection gone): it is dropped and connected anew, from the loop's next
+ * round, not from within the sd-bus callback that tells it. */
+static void bus_lost( awl_sni_t* s ) {
+    if (!s->bus || s->lost) return;
+    if (sd_event_add_defer( s->event, &s->lost, lost_fire, s ) < 0) s->lost = NULL;
+}
+
+/** the connection's end, which sd-bus tells as a local Disconnected signal */
+static int on_message( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
+    (void)ret_error;
+    if (sd_bus_message_is_signal( m, "org.freedesktop.DBus.Local", "Disconnected" )) bus_lost( userdata );
+    return 0;
 }
 
 static void connect_bus( awl_sni_t* s ) {
     s->px = atomic_load( &s->want_px );
-    /* the bus handles these in order: the matches are in place before the
-     * owner is asked for, so no change slips through in between */
+    /* sd-bus runs on the loop by itself (sd_bus_attach_event()). The bus
+     * handles these in order: the matches are in place before the owner is
+     * asked for, so no change slips through in between */
     if (sd_bus_open_user_with_description( &s->bus, "awl-sni-host" ) < 0 ||
-        !(s->io = s->api->io_new( s->api, sd_bus_get_fd( s->bus ), PA_IO_EVENT_INPUT, bus_io, s )) ||
+        sd_bus_attach_event( s->bus, s->event, SD_EVENT_PRIORITY_NORMAL ) < 0 ||
+        sd_bus_add_filter( s->bus, &s->disconnected, on_message, s ) < 0 ||
         sd_bus_add_match_async( s->bus, &s->owner_match,
                 "type='signal',sender='org.freedesktop.DBus',path='/org/freedesktop/DBus',"
                 "interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='" WATCHER_NAME "'",
@@ -961,71 +961,35 @@ static void connect_bus( awl_sni_t* s ) {
         drop_bus( s );
         publish( s );
         schedule_retry( s, RETRY_USEC );
-        return;
     }
-    bus_update( s );
 }
 
-static void retry_callback( pa_mainloop_api* a, pa_time_event* e, const struct timeval* tv, void* userdata ) {
-    (void)tv;
+static int retry_callback( sd_event_source* e, uint64_t usec, void* userdata ) {
+    (void)usec;
     awl_sni_t* s = userdata;
-    a->time_free( e );
-    s->retry = NULL;
+    s->retry = sd_event_source_disable_unref( e );
     connect_bus( s );
+    return 0;
 }
 
 static void schedule_retry( awl_sni_t* s, uint64_t usec ) {
     if (s->retry) return;
-    struct timeval tv = in_usec( usec );
-    s->retry = s->api->time_new( s->api, &tv, retry_callback, s );
+    if (sd_event_add_time_relative( s->event, &s->retry, CLOCK_MONOTONIC, usec, 0, retry_callback, s ) < 0)
+        s->retry = NULL;
 }
 
-/** Handles whatever the bus has, then waits for what it wants next. */
-static void bus_update( awl_sni_t* s ) {
-    int r;
-    while ((r = sd_bus_process( s->bus, NULL )) > 0)
-        ;
-    if (r < 0 || s->failed) {
-        awl_wrn_printf( "sni: lost the session bus, reconnecting\n" );
-        drop_bus( s );
-        publish( s );
-        schedule_retry( s, RETRY_USEC );
-        return;
-    }
-
-    int events = sd_bus_get_events( s->bus );
-    s->api->io_enable( s->io, (events & POLLIN ? PA_IO_EVENT_INPUT : 0) |
-                              (events & POLLOUT ? PA_IO_EVENT_OUTPUT : 0) );
-
-    uint64_t until;
-    if (sd_bus_get_timeout( s->bus, &until ) < 0 || until == UINT64_MAX) {
-        if (s->timeout) s->api->time_free( s->timeout );
-        s->timeout = NULL;
-        return;
-    }
-    /* until is on CLOCK_MONOTONIC */
-    struct timespec ts;
-    clock_gettime( CLOCK_MONOTONIC, &ts );
-    uint64_t now = (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
-    struct timeval tv = in_usec( until > now ? until - now : 0 );
-    if (s->timeout)
-        s->api->time_restart( s->timeout, &tv );
-    else
-        s->timeout = s->api->time_new( s->api, &tv, bus_timeout, s );
-}
-
-awl_sni_t* sni_new( pa_mainloop_api* api ) {
+awl_sni_t* sni_new( sd_event* event ) {
     if (the) return NULL;
     awl_sni_t* s = calloc( 1, sizeof(*s) );
     if (!s) return NULL;
-    s->api = api;
+    s->event = sd_event_ref( event );
     s->wake_fd = eventfd( 0, EFD_CLOEXEC | EFD_NONBLOCK );
     pthread_mutex_init( &s->lock, NULL );
     s->reqs_tail = &s->reqs;
     s->mail_tail = &s->mail;
     atomic_init( &s->want_px, 16 );
     if (s->wake_fd < 0 || !(s->snap = snap_new( 0 )) ||
-        !(s->wake = api->io_new( api, s->wake_fd, PA_IO_EVENT_INPUT, wake_callback, s )))
+        sd_event_add_io( event, &s->wake, s->wake_fd, EPOLLIN, wake_callback, s ) < 0)
         goto fail;
     the = s;
     /* the first connection from the loop: no socket work on the caller's thread */
@@ -1034,8 +998,9 @@ awl_sni_t* sni_new( pa_mainloop_api* api ) {
     return s;
 fail:
     the = NULL;
-    if (s->wake) api->io_free( s->wake );
+    sd_event_source_disable_unref( s->wake );
     if (s->wake_fd >= 0) close( s->wake_fd );
+    sd_event_unref( s->event );
     sni_snap_unref( s->snap );
     pthread_mutex_destroy( &s->lock );
     free( s );
@@ -1045,15 +1010,15 @@ fail:
 void sni_free( awl_sni_t* s ) {
     if (!s) return;
     awl_host->timer_remove( s->poll_timer );
-    /* the loop has stopped (poller_stop()), so the "closed" of a menu that
+    /* the loop has stopped (awl_loop_stop()), so the "closed" of a menu that
      * was open (tray_menu_window.c's fini queued it) goes out from here,
      * still on the bus: the item would think it open otherwise. Only
      * written out, if the socket takes it at once; the rest is dropped */
     for (req_t* r = s->reqs; r; r = r->next)
         if (r->kind == REQ_MENU_EVENT && !strcmp( r->event, "closed" )) run( s, r );
     drop_bus( s );
-    if (s->retry) s->api->time_free( s->retry );
-    s->api->io_free( s->wake );
+    sd_event_source_disable_unref( s->retry );
+    sd_event_source_disable_unref( s->wake );
     close( s->wake_fd );
     for (mail_t* m = take_mail( s ), *next; m; m = next) {
         next = m->next;
@@ -1068,6 +1033,7 @@ void sni_free( awl_sni_t* s ) {
     free( s->items );
     sni_snap_unref( s->snap );
     pthread_mutex_destroy( &s->lock );
+    sd_event_unref( s->event );
     the = NULL;
     free( s );
 }

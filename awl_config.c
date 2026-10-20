@@ -166,7 +166,7 @@ configapply(void)
     popupsrestyle();
     awl_alert_configure();
 
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -207,7 +207,7 @@ pluginsattach(void)
 {
     configuse();
     barwidgetsattach();
-    drawbars();
+    barsdirty();
     desktop_reloaded();
 }
 

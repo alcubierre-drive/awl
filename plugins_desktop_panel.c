@@ -245,10 +245,6 @@ static uint32_t color( const Filename* f ) {
     return f->ishidden ? fade( c, DESK->hidden_alpha ) : c;
 }
 
-static int textw( struct fcft_font* font, const char* text ) {
-    return (int)awl_host->text_width( font, text );
-}
-
 void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int radius, float s,
                           int* x, int* y, int* w, int* h ) {
     PanelLayout* l = &desk.lay;
@@ -271,14 +267,14 @@ void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int 
     int width = 2 * l->pad;
     l->ncols = l->shown = 0;
     if (l->n == 0) {
-        l->col_w[l->ncols++] = textw( font, "(empty)" );
+        l->col_w[l->ncols++] = (int)awl_host->text_width( font, "(empty)" );
         width += l->col_w[0];
     }
     while (l->shown < l->n) {
         int cw = 0, end = MIN( l->n, l->shown + l->rows );
         for (int i = l->shown; i < end; i++) {
             label( &desk.files[l->idx[i]], buf, sizeof(buf) );
-            cw = MAX( cw, textw( font, buf ) );
+            cw = MAX( cw, (int)awl_host->text_width( font, buf ) );
         }
         cw = MIN( cw, max_col_w );
         if (l->ncols && width + l->gap + cw > avail_w) break;
@@ -290,7 +286,7 @@ void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int 
     l->more[0] = 0;
     if (l->shown < l->n) {
         snprintf( l->more, sizeof(l->more), "… %d more", l->n - l->shown + 1 );
-        int extra = textw( font, l->more ) - l->col_w[l->ncols - 1];
+        int extra = (int)awl_host->text_width( font, l->more ) - l->col_w[l->ncols - 1];
         extra = MIN( extra, avail_w - width );
         if (extra > 0) {
             l->col_w[l->ncols - 1] += extra;

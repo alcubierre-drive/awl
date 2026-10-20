@@ -81,8 +81,6 @@ static awl_host_t host = {
     .sizeof_host = sizeof(awl_host_t),
     .sizeof_draw = sizeof(awl_draw_t),
     .sizeof_widget = sizeof(widget_t),
-    .sizeof_monitor = sizeof(Monitor),
-    .sizeof_client = sizeof(Client),
     .sizeof_config = sizeof(awl_config_t),
 
     .redraw_request = awl_redraw_request,
@@ -110,6 +108,7 @@ static awl_host_t host = {
     .actions = &awl_actions,
     .arranges = &awl_arranges,
     .focusclient = focusclient,
+    .client_set_visible = clientsetvisible,
     .arrange = arrange,
     .monitor_named = monitornamed,
 

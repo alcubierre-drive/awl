@@ -15,7 +15,7 @@
 /** the hover's timers, before the first monitor */
 void barinit(void);
 void barfini(void);
-/** sets up m's bar with the library's widgets, and draws it */
+/** sets up m's bar with the library's widgets; it is drawn with the others */
 void baraddmon(Monitor *m);
 /** m is going: forgets the hover's widgets in its bar, releases its fonts
  * and tears its bar down (closemon() then leaves the bar alone);
@@ -34,8 +34,11 @@ void barconfigure(void);
 /** m's bar width, and its font and height if m's scale changed (or it has
  * none yet) */
 void updatebar(Monitor *m);
-void drawbar(Monitor *m);
+/** redraws every bar now; barsdirty() is what to call on a change */
 void drawbars(void);
+/** Something the bars show changed: they are redrawn once the event loop
+ * has handled what it has now, however many changes came in. */
+void barsdirty(void);
 /** shows or hides m's bar */
 void togglebar_mon(Monitor *m);
 /** a new, cleared Buffer of width x height pixels for the scene: the bars'
@@ -54,6 +57,5 @@ void updatehover(Client *c);
 int baraxis(double delta);
 /** A press with the pointer on selmon's bar: closes what the hover of the
  * widget there opened, or keeps it from opening. Returns 1 if the widget's
- * callback_click took the press; else ``*click`` becomes ClkBar if the
- * pointer is on a widget, or where the window list goes. */
+ * callback_click took the press; else ``*click`` becomes ClkBar. */
 int barbutton(uint32_t button, unsigned int *click);

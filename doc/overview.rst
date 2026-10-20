@@ -72,9 +72,11 @@ with it.
 
 The library never calls into awl directly: awl hands it a table of
 functions, `awl_host_t` (awl_host.h), and gets one back, `awl_plugin_api_t`.
-It does read awl's structs (`Monitor`, `Client`, `awl_draw_t`, ...), so both
-have to be built from the same headers; the library checks that when it is
-loaded. The library has no symbol reference into awl; awl exports
+It does read some of awl's structs (`awl_draw_t`, `widget_t`, `awl_config_t`,
+`Arg`), so both have to be built from the same headers; the library checks
+that when it is loaded. `Monitor` and `Client` are opaque to it: what a
+bar's widgets need of its monitor awl copies into `awl_draw_t`, so a change
+to them is no change of the ABI. The library has no symbol reference into awl; awl exports
 nothing.
 
 Logging works the same way. awl_log.c, in awl, writes every message to

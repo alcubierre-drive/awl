@@ -102,6 +102,8 @@ static int getmem( float* mem, float* swp ) {
             swp_total = buf;
         else if (swp_free == 0 && sscanf(line, "SwapFree: %lu kB", &buf))
             swp_free = buf;
+        if (mem_total && mem_avail && swp_total && swp_free)
+            break;
     }
     free(line);
     fclose(f);

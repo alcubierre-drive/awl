@@ -379,7 +379,7 @@ focusclient(Client *c, int lift)
             client_activate_surface(old, 0);
         }
     }
-    drawbars();
+    barsdirty();
 
     if (!c) {
         /* With no client, all we have left is to clear focus */
@@ -544,7 +544,7 @@ mapnotify(struct wl_listener *listener, void *data)
     } else {
         applyrules(c);
     }
-    drawbars();
+    barsdirty();
 
 unset_fullscreen:
     m = c->mon ? c->mon : xytomon(c->geom.x, c->geom.y);
@@ -638,7 +638,7 @@ setfloating(Client *c, int floating)
             (p && p->isfullscreen) ? LyrFS
             : c->isfloating ? LyrFloat : LyrTile]);
     arrange(c->mon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -661,7 +661,7 @@ setfullscreen(Client *c, int fullscreen)
         resize(c, c->prev, 0);
     }
     arrange(c->mon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -761,7 +761,7 @@ unmapnotify(struct wl_listener *listener, void *data)
     }
 
     wlr_scene_node_destroy(&c->scene->node);
-    drawbars();
+    barsdirty();
     motionnotify(0, NULL, 0, 0, 0, 0);
 }
 
@@ -769,8 +769,9 @@ void
 updatetitle(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, set_title);
-    if (c == focustop(c->mon))
-        drawbars();
+    /* the task bar lists every window of its monitor's current tags */
+    if (c->mon && (c->tags & c->mon->tagset[c->mon->seltags]))
+        barsdirty();
 }
 
 void
@@ -783,7 +784,7 @@ urgent(struct wl_listener *listener, void *data)
         return;
 
     c->isurgent = 1;
-    drawbars();
+    barsdirty();
 
     if (client_surface(c)->mapped)
         client_set_border_color(c, (float[])RGBA(borders[BorderUrg]));
@@ -796,7 +797,7 @@ setontop(Client* c, int ontop)
     if (!c->mon) return;
     wlr_scene_node_reparent(&c->scene->node, c->isontop ? layers[LyrTop] : c->isfloating ? layers[LyrFloat] : layers[LyrTile]);
     arrange(c->mon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -808,6 +809,14 @@ toggleontop(const Arg* arg)
 }
 
 void
+clientsetvisible(Client *c, int visible)
+{
+    c->isvisible = !!visible;
+    if (c->mon)
+        arrange(c->mon);
+}
+
+void
 minimize(const Arg* arg)
 {
     (void)arg;
@@ -816,7 +825,7 @@ minimize(const Arg* arg)
     sel->isvisible = 0;
     focusclient(focustop(selmon), 1);
     arrange(sel->mon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -834,7 +843,7 @@ unminimize(const Arg* arg)
     if (!found_client) return;
     focusclient(c, 1);
     arrange(selmon);
-    drawbars();
+    barsdirty();
 }
 
 void
@@ -846,7 +855,7 @@ maximize(const Arg* arg)
     if (sel->ismaximized)
         sel->geom = sel->mon->w;
     arrange(sel->mon);
-    drawbars();
+    barsdirty();
 }
 
 void

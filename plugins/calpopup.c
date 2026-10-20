@@ -100,14 +100,10 @@ static int px( float v ) {
     return (int)lroundf( v * C.scale );
 }
 
-static int tw( struct fcft_font* font, const char* s ) {
-    return (int)awl_host->text_width( font, s );
-}
-
 /** text centered in b (offset by x0, y0), cut with an ellipsis if wider */
 static void text_center( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, box_t b,
                          const char* s, uint32_t fg ) {
-    int w = tw( font, s );
+    int w = (int)awl_host->text_width( font, s );
     int x = w < b.w ? b.x + (b.w - w) / 2 : b.x;
     awl_host->text_over( pix, font, x0 + x, y0 + b.y, (unsigned)(w < b.w ? w + 1 : b.w), (unsigned)b.h, s, fg );
 }
@@ -126,17 +122,17 @@ static void fit_font( struct fcft_font* font ) {
     C.widest_day = C.widest_month = C.widest_wday = 0;
     for (int d = 1; d <= 366; d++) { /* 2024 is a leap year */
         strtime( buf, sizeof buf, "%A, %e %B", awl_calendar_day_start( 2024, 0, d ) );
-        int w = tw( font, buf );
+        int w = (int)awl_host->text_width( font, buf );
         if (w > C.widest_day) C.widest_day = w;
     }
     for (int m = 0; m < 12; m++) {
         strtime( buf, sizeof buf, "%B", awl_calendar_day_start( 2024, m, 1 ) );
-        int w = tw( font, buf );
+        int w = (int)awl_host->text_width( font, buf );
         if (w > C.widest_month) C.widest_month = w;
     }
     for (int d = 0; d < 7; d++) { /* 2024-01-07 is a Sunday */
         strtime( buf, sizeof buf, "%a", awl_calendar_day_start( 2024, 0, 7 + d ) );
-        int w = tw( font, buf );
+        int w = (int)awl_host->text_width( font, buf );
         if (w > C.widest_wday) C.widest_wday = w;
     }
 }
@@ -171,12 +167,14 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     memset( C.has, 0, sizeof C.has );
     const int fh = C.fh = font->height, pad = px( 5 ), gap = C.gap = px( 6 );
     const int bh = C.bh = fh + px( 6 ), cell_h = C.cell_h = fh + px( 6 );
-    const int arrow_w = (tw( font, "‹" ) > tw( font, "›" ) ? tw( font, "‹" ) : tw( font, "›" )) + 2 * pad;
-    int cell_w = tw( font, "00" ) > C.widest_wday ? tw( font, "00" ) : C.widest_wday;
+    const int arrow_w = MAX( (int)awl_host->text_width( font, "‹" ), (int)awl_host->text_width( font, "›" ) ) + 2 * pad;
+    int cell_w = MAX( (int)awl_host->text_width( font, "00" ), C.widest_wday );
     cell_w += 2 * pad;
-    const int month_w = C.widest_month + 2 * pad, year_w = tw( font, "0000" ) + 2 * pad;
+    const int month_w = C.widest_month + 2 * pad;
+    const int year_w = (int)awl_host->text_width( font, "0000" ) + 2 * pad;
     const int day_w = C.widest_day + 2 * pad;
-    const int today_w = tw( font, "Today" ) + 2 * pad, evo_w = tw( font, "Evolution" ) + 2 * pad;
+    const int today_w = (int)awl_host->text_width( font, "Today" ) + 2 * pad;
+    const int evo_w = (int)awl_host->text_width( font, "Evolution" ) + 2 * pad;
 
     /* as wide as the widest of the rows */
     int W = 8 * cell_w;
@@ -187,13 +185,15 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     int n = 0;
     const awl_cal_event_t** ev = C.plain ? NULL : day_events( &n );
     C.dot_w = fh / 2;
-    C.time_w = tw( font, "all day" ) > tw( font, "00:00–00:00" ) ? tw( font, "all day" ) : tw( font, "00:00–00:00" );
+    C.time_w = MAX( (int)awl_host->text_width( font, "all day" ), (int)awl_host->text_width( font, "00:00–00:00" ) );
     if (!C.plain) {
         /* a summary gets about 30 characters, as the GTK popup gave it */
-        int cap = 30 * tw( font, "x" ), widest = tw( font, "No events" );
+        int cap = 30 * (int)awl_host->text_width( font, "x" );
+        int widest = (int)awl_host->text_width( font, "No events" );
         for (int i = 0; ev && i < n; i++) {
-            int sw = tw( font, ev[i]->summary );
-            if (*ev[i]->location) sw += tw( font, " · " ) + tw( font, ev[i]->location );
+            int sw = (int)awl_host->text_width( font, ev[i]->summary );
+            if (*ev[i]->location)
+                sw += (int)awl_host->text_width( font, " · " ) + (int)awl_host->text_width( font, ev[i]->location );
             if (sw > cap) sw = cap;
             sw += C.dot_w + gap + C.time_w + gap;
             if (sw > widest) widest = sw;
@@ -360,10 +360,10 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         x += C.time_w + C.gap;
         int room = x0 + C.w - x;
         if (room <= 0) continue;
-        int sw = tw( font, e->summary );
+        int sw = (int)awl_host->text_width( font, e->summary );
         awl_host->text_over( pix, font, x, y, (unsigned)(sw < room ? sw + 1 : room), (unsigned)C.row_h, e->summary, c->fg );
         room -= sw;
-        if (*e->location && room > tw( font, " · …" )) {
+        if (*e->location && room > (int)awl_host->text_width( font, " · …" )) {
             snprintf( buf, sizeof buf, " · %s", e->location );
             awl_host->text_over( pix, font, x + sw, y, (unsigned)room, (unsigned)C.row_h, buf, c->dim );
         }

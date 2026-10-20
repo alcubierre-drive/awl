@@ -97,7 +97,8 @@ typedef struct awl_draw_window_t {
     Client* c;
 } awl_draw_window_t;
 
-/** A bar, Monitor.drw: its font, its widgets and what awl tells them. */
+/** A bar, Monitor.drw: its font, its widgets and what awl tells them,
+ * which awl sets before every redraw. */
 struct awl_draw_t {
     /** the bar's image while awl draws it (between awl_draw_prepare_drawing()
      * and awl_draw_finish_drawing()), else NULL */
@@ -125,8 +126,19 @@ struct awl_draw_t {
     int selmon;
     /** nonzero if the monitor gives each tag its own layout (Monitor.pertag) */
     int pertag;
+    /** the monitor's layout symbol (Monitor.ltsymbol) */
+    char ltsymbol[16];
+    /** what the widgets need of the monitor, so they never read it: its
+     * output's name (valid while the bar is) and scale, the bar's height
+     * and text padding (Monitor.lrpad, left and right together) in buffer
+     * pixels, and where the monitor is in the layout (logical pixels) */
+    const char *output;
+    float scale;
+    int height, lrpad;
+    int x, y;
 
-    /** the bar's monitor; NULL before awl_draw_setup() and after
+    /** the bar's monitor, opaque to the library (to hand back to awl, e.g.
+     * `awl_host_t.window_show`); NULL before awl_draw_setup() and after
      * awl_draw_teardown(), while the monitor has no bar */
     Monitor* m;
 };

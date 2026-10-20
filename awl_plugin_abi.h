@@ -14,8 +14,9 @@
  * references into awl (no ``-rdynamic``).
  *
  * The library still reads awl's structs directly (`awl_draw_t`, `widget_t`,
- * `Monitor`, `Client`, `awl_config_t`, `Arg`; all in awl.h), so it has to be
- * built from the same headers as the running awl. The entry point refuses a
+ * `awl_config_t`, `Arg`; all in awl.h), so it has to be built from the same
+ * headers as the running awl. `Monitor` and `Client` are opaque to it: it
+ * only hands them back to awl. The entry point refuses a
  * host whose ABI version or struct sizes differ from its own. Bump `AWL_PLUGIN_ABI` whenever either table
  * changes.
  */
@@ -27,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 25
+#define AWL_PLUGIN_ABI 26
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 

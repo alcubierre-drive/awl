@@ -144,7 +144,7 @@ destroylock(SessionLock *lock, int unlock)
     motionnotify(0, NULL, 0, 0, 0, 0);
 
     /* catch up on everything skipped while locked */
-    drawbars();
+    barsdirty();
 
 destroy:
     wl_list_remove(&lock->new_surface.link);

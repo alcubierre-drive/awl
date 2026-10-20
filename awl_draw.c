@@ -282,7 +282,7 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
         ty = y + (h - font->height) / 2 + font->ascent;
 
         /* draw ellipsis if remaining text doesn't fit */
-        if (!noellipsis && x_kern + glyph->advance.x + eg->advance.x > w && *(text + 1) != '\0') {
+        if (!noellipsis && x_kern + glyph->advance.x + eg->advance.x > w && text[utf8charlen] != '\0') {
             if ((int)text_width(font, text) - glyph->advance.x < eg->advance.x) {
                 noellipsis = 1;
             } else {

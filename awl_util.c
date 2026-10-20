@@ -81,12 +81,6 @@ envwith(const char *const *entries)
 }
 
 int
-execvpenv(const char *file, char *const argv[], char *const envp[])
-{
-    return execvpe(file, argv, envp);
-}
-
-int
 streqnull(const char *a, const char *b)
 {
     return a == b || (a && b && !strcmp(a, b));

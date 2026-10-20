@@ -105,7 +105,7 @@ sethints(struct wl_listener *listener, void *data)
         return;
 
     c->isurgent = xcb_icccm_wm_hints_get_urgency(c->surface.xwayland->hints);
-    drawbars();
+    barsdirty();
 
     if (c->isurgent && surface && surface->mapped)
         client_set_border_color(c, (float[])RGBA(borders[BorderUrg]));

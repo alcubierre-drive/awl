@@ -23,8 +23,8 @@ What a reload picks up
      - config.mk: compile-time switches
    * -
      - any change to `awl_host_t`, `awl_plugin_api_t` or to a struct both
-       sides read (`Monitor`, `Client`, `awl_config_t`, `awl_draw_t`,
-       `widget_t`, `Arg`; all in awl.h), i.e.
+       sides read (`awl_config_t`, `awl_draw_t`, `widget_t`, `Arg`; all in
+       awl.h), i.e.
        anything that bumps `AWL_PLUGIN_ABI`
 
 Monitor rules apply to outputs that appear after the reload. A library that
@@ -122,24 +122,26 @@ on a reload and at exit:
 
 What ``api->init()`` and ``api->fini()`` do (plugins.c). The scanner and the
 wallpaper thread may get stuck on a dead mount, so they are given 500 ms;
-the poller, which may hang in a sysfs read, 2 s. A stuck poller's plugins
-(everything on its loop or polled by it) are leaked, not freed.
+the poller, which may hang in a sysfs read, and the tray's loop, which
+reads icon files, 2 s each. What a stuck one runs or polls is leaked, not
+freed.
 
 .. mermaid::
 
    flowchart LR
      subgraph init["api->init(paused)"]
        direction TB
-       i1["awl_plugin_start():<br/>ip, stats, temp, bat, date"] --> i2["poller_new()"]
+       i1["awl_plugin_start():<br/>ip, stats, temp, bat, date"] --> i1b["awl_loop_new(), sni_new(),<br/>awl_loop_start(): tray thread"] --> i2["poller_new()"]
        i2 --> i3["pulse_init(), backlight_init()<br/>on the poller's loop"] --> i4["poller_start():<br/>poller thread"]
        i4 --> i5["awl_desktop_start():<br/>desktop thread"] --> i6["awl_wallpaper_start():<br/>wallpaper thread"]
      end
      subgraph fini["api->fini()"]
        direction TB
        f1["awl_desktop_stop():<br/>up to 500 ms"] --> f2["awl_wallpaper_stop():<br/>up to 500 ms"]
-       f2 --> f3["poller_stop():<br/>up to 2 s"]
+       f2 --> ft["awl_loop_stop():<br/>the tray's, up to 2 s;<br/>its popups go, sni_free() unless stuck"]
+       ft --> f3["poller_stop():<br/>up to 2 s"]
        f3 -- exited --> f4["pulse_free(), backlight_free(),<br/>poller_free(), the rest freed"]
-       f3 -- stuck --> f5["only the tray's popups go,<br/>the rest is leaked"]
+       f3 -- stuck --> f5["the rest is leaked"]
        f4 --> stuck{"a thread<br/>left running?"}
        f5 --> stuck
        stuck -- no --> r0["returns 0:<br/>the library may be closed"]

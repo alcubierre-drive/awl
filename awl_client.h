@@ -38,6 +38,8 @@ void updatetitle(struct wl_listener *listener, void *data);
 
 /** focuses c (NULL: none) and, if lift, raises it */
 void focusclient(Client *c, int lift);
+/** shows c, or minimizes it (Client.isvisible), and arranges its monitor */
+void clientsetvisible(Client *c, int visible);
 /** the topmost visible client of m in focus order, NULL if none */
 Client *focustop(Monitor *m);
 /** c to geo (layout coordinates, with its border), within the layout's box

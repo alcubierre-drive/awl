@@ -7,6 +7,7 @@
 #include "plugins/date.h"
 #include "plugins/pulsetest.h"
 #include "plugins/poller.h"
+#include "plugins/loop.h"
 #include "plugins/persistent.h"
 #include "plugins/logind.h"
 #include "plugins/calpopup.h"
@@ -20,6 +21,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+/** how long the tray's loop gets to stop: it may hang in an icon file's
+ * read, like the poller in sysfs */
+#define TRAY_STOP_TIMEOUT_MS 2000
 
 static void awl_plugin_start( awl_plugin_data_t* p ) {
     const awl_plugin_config_t* pc = awl_plugin_config();
@@ -49,54 +54,75 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
 
     p->bat = bat_init( pc->battery.dir );
     p->date = date_init();
-    // one thread for all of them, see plugins/poller.h
+    // the tray on a loop of its own: its D-Bus traffic and icon lookups
+    // never hold up the poller's tick (plugins/loop.h)
+    if ((p->tray_loop = awl_loop_new())) {
+        p->sni = sni_new( awl_loop_event( p->tray_loop ) );
+        if (p->sni && awl_loop_start( p->tray_loop, "tray" )) {
+            awl_tray_menu_window_fini();
+            awl_tray_tooltip_fini();
+            sni_free( p->sni );
+            p->sni = NULL;
+        }
+        if (!p->sni) {
+            awl_loop_free( p->tray_loop );
+            p->tray_loop = NULL;
+        }
+    }
+    // one thread for all of the others, see plugins/poller.h
     p->poller = poller_new( p->stats, p->temp, p->date, p->bat, p->ip );
     if (!p->poller) return;
     p->pulse = pulse_init( poller_api( p->poller ) );
     p->backlight = backlight_init( poller_api( p->poller ) );
-    p->sni = sni_new( poller_api( p->poller ) );
     poller_set_paused( p->poller, p->paused );
     if (poller_start( p->poller )) {
         pulse_free( p->pulse );
         backlight_free( p->backlight );
-        awl_tray_menu_window_fini();
-        awl_tray_tooltip_fini();
-        sni_free( p->sni );
         poller_free( p->poller );
         p->pulse = NULL;
         p->backlight = NULL;
-        p->sni = NULL;
         p->poller = NULL;
     }
 }
 
-/** returns nonzero if the poller is stuck (poller_stop()) */
+/** returns nonzero if the tray's loop is stuck (it reads icon files, which
+ * may be on a dead mount) */
+static int awl_tray_stop( awl_plugin_data_t* p ) {
+    int stuck = awl_loop_stop( p->tray_loop, TRAY_STOP_TIMEOUT_MS );
+    if (stuck)
+        awl_wrn_printf( "plugins: the tray thread is stuck, leaking what it uses\n" );
+    /* the tray's popups and timers, main thread's; they only queue to sni
+     * under its lock, so they go even if it is stuck. A menu open queues
+     * its "closed", which sni_free() still sends. sni's poll timer goes
+     * with pluginsreap() if sni stays. */
+    awl_tray_menu_window_fini();
+    awl_tray_tooltip_fini();
+    if (stuck)
+        return 1;
+    sni_free( p->sni );
+    awl_loop_free( p->tray_loop );
+    return 0;
+}
+
+/** returns nonzero if the poller or the tray's loop is stuck */
 static int awl_plugin_stop( awl_plugin_data_t* p ) {
+    int stuck = awl_tray_stop( p );
     if (poller_stop(p->poller)) {
         awl_wrn_printf( "plugins: the poller thread is stuck, leaking what it uses\n" );
-        /* its loop still holds pulse, backlight, sni and ip's nm, and it polls
+        /* its loop still holds pulse, backlight and ip's nm, and it polls
          * stats, temp, bat, date and ip: all leaked with the library, which
-         * stays mapped. The tray's popups are the main thread's and only
-         * queue to sni under its lock, so they still go; sni's poll timer
-         * goes with pluginsreap(). Nothing here reads p itself. */
-        awl_tray_menu_window_fini();
-        awl_tray_tooltip_fini();
+         * stays mapped. Nothing here reads p itself. */
         return 1;
     }
     pulse_free(p->pulse);
     backlight_free(p->backlight);
-    /* the tray's popups and timers, main thread's; a menu open queues its
-     * "closed", which sni_free() still sends */
-    awl_tray_menu_window_fini();
-    awl_tray_tooltip_fini();
-    sni_free(p->sni);
     poller_free(p->poller);
     ip_free(p->ip);
     stats_free(p->stats);
     free(p->temp);
     bat_free(p->bat);
     date_free(p->date);
-    return 0;
+    return stuck;
 }
 
 /* everything below is the library's side of awl_plugin_abi.h */
@@ -239,11 +265,6 @@ static int cmpline( const void* a, const void* b ) {
     return strcmp( *(char* const*)a, *(char* const*)b );
 }
 
-void awl_backlight_toggle( void ) {
-    awl_plugin_data_t* p = awl_plugin_get();
-    if (p) backlight_toggle( p->backlight );
-}
-
 void awl_notify_config( void ) {
     ConfigLines cl = { 0 };
     /* holds the lock throughout; nothing waits under it but malloc() */
@@ -332,8 +353,6 @@ const awl_plugin_api_t* awl_plugin_entry( const awl_host_t* host ) {
         host->sizeof_host != sizeof(awl_host_t) ||
         host->sizeof_draw != sizeof(awl_draw_t) ||
         host->sizeof_widget != sizeof(widget_t) ||
-        host->sizeof_monitor != sizeof(Monitor) ||
-        host->sizeof_client != sizeof(Client) ||
         host->sizeof_config != sizeof(awl_config_t))
         return NULL;
     awl_host = host;

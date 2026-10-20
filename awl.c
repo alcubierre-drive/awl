@@ -284,7 +284,7 @@ run(char *startup_cmd)
     if (fd_set_nonblock(STDOUT_FILENO) < 0)
         close(STDOUT_FILENO);
 
-    drawbars();
+    barsdirty();
 
     /* At this point the outputs are initialized, choose initial selmon based on
      * cursor position, and set default cursor image */

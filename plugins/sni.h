@@ -2,8 +2,9 @@
 
 /**
  * The tray's host (StatusNotifierHost): follows awl's watcher (awl_sni.h)
- * and every item it lists, on the session bus, from the plugins' loop
- * (poller.h), with sd-bus and only asynchronous calls, like plugins/nm.c.
+ * and every item it lists, on the session bus, from a loop of its own
+ * (loop.h, plugins.c starts it): sd-bus attached to its sd-event loop, and
+ * only asynchronous calls.
  * For each item it keeps its properties (re-read on the item's New*
  * signals), picks the icon to show (the attention one while the item needs
  * attention, if it has one) and reads its file, looked up in the item's
@@ -25,7 +26,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
-#include <pulse/mainloop-api.h>
+#include <systemd/sd-event.h>
 #include "../icons/icon.h"
 
 /** an item's Status */
@@ -71,9 +72,9 @@ typedef struct awl_sni_snap_t {
 
 typedef struct awl_sni_t awl_sni_t;
 
-/** On api's loop, which isn't running yet; it connects from the loop. NULL
+/** On event's loop, which isn't running yet; it connects from the loop. NULL
  * on failure. One at a time. */
-awl_sni_t* sni_new( pa_mainloop_api* api );
+awl_sni_t* sni_new( sd_event* event );
 /** After the loop has stopped, and after awl_tray_menu_window_fini() (whose
  * "closed" it still sends); main thread. */
 void sni_free( awl_sni_t* s );

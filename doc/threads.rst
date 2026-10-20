@@ -23,10 +23,13 @@ The threads
      - plugins/poller.c
      - one PulseAudio main loop for all status plugins: CPU, memory,
        temperature and clock once per second; battery and IP address on
-       kernel events; volume and the backlight-tooler daemon on their own events;
-       the tray's StatusNotifier host and the items' menus (plugins/sni.c,
-       sd-bus). The StatusNotifierWatcher is awl's, on the main thread
-       (awl_sni.c)
+       kernel events; volume and the backlight-tooler daemon on their own events
+   * - ``tray``
+     - plugins/loop.c
+     - an sd-event loop of its own for the tray's StatusNotifier host and
+       the items' menus (plugins/sni.c, sd-bus attached to it): it looks up and reads
+       the icon files, which must not hold up the poller's 1 s tick. The
+       StatusNotifierWatcher is awl's, on the main thread (awl_sni.c)
    * - ``desktop``
      - plugins_desktop_panel.c
      - watches ``desktop_dir`` with inotify and lists it
@@ -105,6 +108,7 @@ picks up whatever they published.
        poller["poller thread<br/>stats, temp, clock, battery,<br/>IP, volume, backlight"] -- "readings" --> atomics[("atomics<br/>awl_stats_t, ...")]
        scanner["desktop thread<br/>desktop_dir"] -- "changed list" --> pending[("pending<br/>DesktopFiles*")]
        changer["wallpaper thread<br/>pick, decode"] -- "decoded image" --> image[("pending<br/>awl_image_t*")]
+       tray["tray thread<br/>StatusNotifier host, menus"] -- "items, icon files" --> snap[("snapshot<br/>awl_sni_snap_t*")]
      end
      logind["logind thread<br/>plugins/logind.c"]
      redraw(["redraw eventfd<br/>awl_redraw.c"])
@@ -126,6 +130,7 @@ picks up whatever they published.
      lockfd -. "readable" .-> loop
      main -. "session_covered()" .-> logind
      atomics -- "widgets read them" --> bars
+     snap -- "the tray widget takes it" --> bars
      pending -- "awl_desktop_version()" --> panels
      image -- "awl_wallpaper_take()" --> wp
      main -. "wake_fd" .-> lib
@@ -136,7 +141,8 @@ The life of a thread
 Every thread of the library is an `awl_thread_t`, started and stopped the
 same way. Only the poller is waited for without a limit: the only files it
 reads are in ``/proc`` and ``/sys``, which can't hang like a remote mount.
-The logind thread touches no files at all; it gets 2 s. The calendar
+The logind thread touches no files at all; it gets 2 s, and so does the
+tray thread, which reads icon files from the themes. The calendar
 thread cancels its query (a D-Bus call to evolution-data-server) and gets
 1 s.
 

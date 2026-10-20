@@ -24,6 +24,11 @@ plugins/poller.c
 
 .. c:autodoc:: plugins/poller.c
 
+plugins/loop.h
+^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/loop.h
+
 plugins/logind.h
 ^^^^^^^^^^^^^^^^
 

@@ -6,14 +6,16 @@
 #include "tray/awl_tray.h"
 #include <fcntl.h>
 
-/** vfork(2) is a glibc/BSD extension not declared under the strict
- * -D_POSIX_C_SOURCE=200809L this file is built with, though it's present
- * in libc regardless; declare it ourselves rather than widen the feature
- * test macros for the whole translation unit. Used instead of fork() when
- * spawning children after awl's background threads (plugin monitors, GPU
- * driver threads) are running, since fork() alone risks inheriting a lock
- * one of those threads held at the moment of the fork -- see spawn_pid(). */
+/** vfork(2) and execvpe(3) are glibc/BSD extensions not declared under the
+ * strict -D_POSIX_C_SOURCE=200809L this file is built with, though they're
+ * present in libc regardless; declare them ourselves rather than widen the
+ * feature test macros for the whole translation unit. vfork() is used
+ * instead of fork() when spawning children after awl's background threads
+ * (plugin monitors, GPU driver threads) are running, since fork() alone
+ * risks inheriting a lock one of those threads held at the moment of the
+ * fork -- see spawn_pid(). */
 extern pid_t vfork(void);
+extern int execvpe(const char *file, char *const argv[], char *const envp[]);
 
 /** how long awl waits on exit for its children */
 #define CHILD_STOP_MS 3000
@@ -74,7 +76,7 @@ spawn_pid(const Arg *arg)
             if (tray->fds[i] >= 0)
                 fcntl(tray->fds[i], F_SETFD, 0);
         if (envp)
-            execvpenv(argv[0], argv, envp);
+            execvpe(argv[0], argv, envp);
         else
             execvp(argv[0], argv);
         awl_err_printf("execvp %s failed: %s\n", argv[0], strerror(errno));

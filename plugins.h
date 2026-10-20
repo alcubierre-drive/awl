@@ -12,6 +12,7 @@
 #include "plugins/date.h"
 #include "plugins/pulsetest.h"
 #include "plugins/poller.h"
+#include "plugins/loop.h"
 #include "plugins/wallpaper.h"
 #include "plugins/sni.h"
 
@@ -94,8 +95,9 @@ typedef struct awl_plugin_data_t {
     pulse_test_t* pulse;
     awl_backlight_t* backlight;
     awl_poller_t* poller;
-    /** the tray's host */
+    /** the tray's host, and the loop it runs on (plugins/loop.h) */
     awl_sni_t* sni;
+    awl_loop_t* tray_loop;
     int paused;
 
     /** `awl_plugin_config_t.colors` as pixman's */
@@ -111,9 +113,6 @@ void awl_notify( const char* title, const char* body );
  * one ``key=value`` line per entry, sorted by key; an owned value (one the
  * dictionary frees) as ``key=pointer(free function)``. Main thread. */
 void awl_notify_config( void );
-/** plugins.c: `backlight_toggle()` on the running plugins' daemon, if any
- * (the backlighttoggle action); main thread */
-void awl_backlight_toggle( void );
 /** plugins.c: a notification "x/N" once the wallpaper all changes asked for
  * end on is shown; main thread */
 void awl_notify_wallpaper_shown( const char* title );

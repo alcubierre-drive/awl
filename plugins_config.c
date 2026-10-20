@@ -33,7 +33,10 @@ AWL_ARRANGES
 #undef AWL_LAYOUT_REGISTER
 
 void AWL_ACTION( notifyconfig )( const Arg* arg ) { awl_notify_config(); }
-void AWL_ACTION( backlighttoggle )( const Arg* arg ) { awl_backlight_toggle(); }
+void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) backlight_toggle( p->backlight );
+}
 
 /* ======================================================================
  * CUSTOM: the user's configuration, from here to "CUSTOM end".
