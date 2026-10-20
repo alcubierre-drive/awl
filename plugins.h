@@ -110,6 +110,8 @@ typedef struct awl_plugin_config_t {
         /** the characters the query matched; the description (GenericName),
          * 0: the popups' dim */
         uint32_t match, dim;
+        /** the prompt, 0: dim; the query and the cursor, 0: the popups' fg */
+        uint32_t prompt_color, query_color;
     } launcher;
 } awl_plugin_config_t;
 

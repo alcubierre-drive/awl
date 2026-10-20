@@ -400,18 +400,20 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // p->battery.scale.full = 90;
 
     /* the launcher (plugins/launcher.h); colors 0: the popups' */
-    p->launcher.layout    = AWL_LAUNCHER_BAR; /* a strip over the bar */
-    // p->launcher.input_width = 120;  /* the query's, at least */
-    p->launcher.strip_at  = AWL_WINDOW_AT_STRIP_TOP; /* or _STRIP_TOP, _STRIP_BOTTOM */
-    // p->launcher.rows      = 10;
-    // p->launcher.width     = 560;
-    // p->launcher.icon_size = 24;
-    p->launcher.terminal = launcher_terminal; /* { "xterm", "-e", NULL } */
-    // p->launcher.prompt    = "> ";
-    // p->launcher.at        = AWL_WINDOW_AT_TOP;
-    // p->launcher.dy        = 0;
-    // p->launcher.match     = molokai_orange;
-    // p->launcher.dim       = 0;
+    p->launcher.layout       = AWL_LAUNCHER_BAR; /* a strip over the bar */
+    // p->launcher.input_width  = 120;  /* the query's, at least */
+    p->launcher.strip_at     = AWL_WINDOW_AT_STRIP_TOP; /* or _STRIP_TOP, _STRIP_BOTTOM */
+    // p->launcher.rows        = 10;
+    // p->launcher.width       = 560;
+    // p->launcher.icon_size   = 24;
+    p->launcher.terminal     = launcher_terminal; /* { "xterm", "-e", NULL } */
+    // p->launcher.prompt      = "> ";
+    // p->launcher.at          = AWL_WINDOW_AT_TOP;
+    // p->launcher.dy          = 0;
+    // p->launcher.match       = molokai_orange;
+    // p->launcher.dim         = 0;
+    p->launcher.prompt_color = molokai_orange; /* 0: dim */
+    p->launcher.query_color  = molokai_orange; /* 0: the popups' fg, as the cursor */
 }
 
 /* ======================================================================

@@ -840,11 +840,15 @@ static int text_marked( pixman_image_t* pix, struct fcft_font* font, const char*
 }
 
 /** the prompt and the query from x to right in a line h high at y, the
- * query's tail if it is too long, and the cursor after it */
+ * query's tail if it is too long, and the cursor after it (in the query's
+ * color); fg, dim: the colors for those that aren't configured */
 static void paint_query( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg,
                          uint32_t dim ) {
+    if (CFG->query_color) fg = CFG->query_color;
     const char* prompt = CFG->prompt ? CFG->prompt : "";
-    if (*prompt) awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)h, prompt, dim );
+    if (*prompt)
+        awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)h, prompt,
+                             CFG->prompt_color ? CFG->prompt_color : dim );
     x += (int)awl_host->text_width( font, prompt );
     const int cursor_w = px( 1.5f ) > 1 ? px( 1.5f ) : 1;
     const char* q = L.query;
