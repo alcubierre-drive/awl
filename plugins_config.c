@@ -380,6 +380,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // p->temperature.thermal_zone.min = 40;
     // p->temperature.thermal_zone.max = 90;
     // p->battery.dir = "/sys/class/power_supply/BAT0/";
+    p->battery.scale.bad     = 10;
+    p->battery.scale.warning = 20;
+    p->battery.scale.ok      = 30;
 }
 
 /* ======================================================================

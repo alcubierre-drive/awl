@@ -71,9 +71,13 @@ typedef struct awl_plugin_config_t {
     struct {
         struct { float min, max; } coretemp, thermal_zone;
     } temperature;
-    /** the battery's sysfs directory, with a trailing '/' */
     struct {
+        /** the battery's sysfs directory, with a trailing '/' */
         const char* dir;
+        /** its color scale, percent of the charge: colors.bad up to bad,
+         * to colors.warning at warning, to colors.fg at ok and above
+         * (linearly in between); colors.good while charging */
+        struct { float bad, warning, ok; } scale;
     } battery;
 } awl_plugin_config_t;
 

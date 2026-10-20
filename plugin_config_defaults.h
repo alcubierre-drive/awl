@@ -46,5 +46,6 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     },
     .battery = {
         .dir = "/sys/class/power_supply/BAT0/",
+        .scale = { .bad = 15, .warning = 25, .ok = 30 },
     },
 };

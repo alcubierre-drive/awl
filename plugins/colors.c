@@ -34,3 +34,13 @@ pixman_color_t alpha_blend_16( pixman_color_t B, pixman_color_t A ) {
     return fcolor2pixman(uR.c);
 }
 
+pixman_color_t color_mix_16( pixman_color_t A, pixman_color_t B, float t ) {
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    fcolor_u uA, uB, uR;
+    uA.c = pixman2fcolor(A);
+    uB.c = pixman2fcolor(B);
+    for (int i=0; i<4; ++i)
+        uR.f[i] = uA.f[i] + (uB.f[i] - uA.f[i]) * t;
+    return fcolor2pixman(uR.c);
+}

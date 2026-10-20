@@ -691,6 +691,19 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
 }
 
 
+/** The battery's color at percent charge, on `awl_plugin_config_t.battery`'s
+ * scale: bad, to warning, to fg, clipped at either end. */
+static pixman_color_t batwidget_color( const awl_plugin_data_t* P, float percent ) {
+    const awl_plugin_config_t* pc = awl_plugin_config();
+    float bad = pc->battery.scale.bad, warning = pc->battery.scale.warning, ok = pc->battery.scale.ok;
+    // a step where two limits coincide, no division by zero (-Ofast)
+    if (percent < warning)
+        return percent <= bad ? P->colors.bad :
+            color_mix_16( P->colors.bad, P->colors.warning, (percent - bad) / (warning - bad) );
+    return percent >= ok ? P->colors.fg :
+        color_mix_16( P->colors.warning, P->colors.fg, (percent - warning) / (ok - warning) );
+}
+
 static uint32_t batwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->bat) return 0;
@@ -701,10 +714,7 @@ static uint32_t batwidget_measure( widget_t* w ) {
 
     textsnap_t* s = textsnap( w );
     snprintf( s->text, sizeof(s->text), "%3.0f%%", charge * 100.0 );
-    s->fg = P->colors.fg;
-    if (charge < 0.3)   s->fg = P->colors.warning;
-    if (charge < 0.15)  s->fg = P->colors.bad;
-    if (charging)       s->fg = P->colors.good;
+    s->fg = charging ? P->colors.good : batwidget_color( P, charge * 100.0f );
     s->bg = P->colors.bg;
     return textsnap_width( w );
 }
