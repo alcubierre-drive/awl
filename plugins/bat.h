@@ -10,16 +10,20 @@ typedef struct awl_battery_t {
     /** 1: a Thunderbolt dock is plugged in and authorized, 0:
      * none, -1: no Thunderbolt bus */
     atomic_int docked;
+    /** 1: the AC adapter is online, 0: offline, -1: unknown */
+    atomic_int ac;
 
     /** kernel uevents (netlink), -1 if unavailable */
     int uevent_fd;
-    /** the battery's sysfs directory, with a trailing '/' */
-    char dir[256];
+    /** the battery's and the AC adapter's sysfs directories, with a trailing '/' */
+    char dir[256], ac_dir[256];
 } awl_battery_t;
 
-/** reads the battery in dir (`awl_plugin_config_t.battery`) */
-awl_battery_t* bat_init( const char* dir );
-/** Re-reads the battery; returns nonzero if charge or state changed. */
+/** reads the battery in dir and the AC adapter in ac_dir
+ * (`awl_plugin_config_t.battery`) */
+awl_battery_t* bat_init( const char* dir, const char* ac_dir );
+/** Re-reads the battery and the AC adapter; returns nonzero if charge or
+ * state changed. */
 int bat_update( awl_battery_t* b );
 /** Re-reads whether a dock is attached; returns nonzero if that changed. */
 int bat_dock_update( awl_battery_t* b );

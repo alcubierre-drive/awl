@@ -19,13 +19,23 @@
  * touches the file system. The window and the matching are the main
  * thread's.
  *
+ * A second mode, run (`AWL_LAUNCHER_RUN`, like dmenu_run): it lists the
+ * executables in $PATH and the command lines run before
+ * ($XDG_STATE_HOME/awl/run, the most used `MAX_HISTORY` of them), matched
+ * and ranked the same way, and runs one with /bin/sh -c. Return runs the
+ * chosen one (the query as typed if nothing matched), Shift+Return the
+ * query as typed, Ctrl with either in the terminal; Tab puts the chosen one
+ * into the query, to add arguments. The other mode's action switches over
+ * while it is open, its own closes it.
+ *
  * Two layouts (`awl_plugin_config_t.launcher`'s): a box with the query
  * above a list of results, or a strip over the bar with the results in a
  * row beside the query (like awesome's menubar), paged so that the chosen
  * one is shown.
  *
  * Keys: typing edits the query (BackSpace, Ctrl+W a word, Ctrl+U all of
- * it); Up/Down, Tab/Shift+Tab, Ctrl+P/Ctrl+N and Page Up/Down move, so do
+ * it); Up/Down, Tab/Shift+Tab (but run's Tab), Ctrl+P/Ctrl+N and Page
+ * Up/Down move, so do
  * Left/Right in the strip;
  * Return launches, Escape closes. Keys it doesn't take go to awl's
  * bindings, so the launcher's own closes it again. The pointer chooses,

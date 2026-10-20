@@ -36,7 +36,7 @@
 /* awl: an SVG's embedded image (a data: URL), decoded by stb_image, is
  * logged as icons/icon.c logs its decodes: plutosvg.c's one call of this
  * goes through here */
-#include "../awl_log.h"
+#include "../../awl_log.h"
 static plutovg_surface_t* awl_svg_image( const char* data, int length )
 {
     plutovg_surface_t* image = plutovg_surface_load_from_image_base64( data, length );

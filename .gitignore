@@ -11,3 +11,5 @@ doc/_build
 plugins_git.h
 dev/
 libawltray-env.so
+/build/
+/build-dev/

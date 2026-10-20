@@ -17,7 +17,7 @@ extensions = ['hawkmoth', 'sphinxcontrib.mermaid']
 # mermaid.js from its CDN, so viewing them needs a network connection)
 
 # The C sources are parsed with libclang (the libclang wheel), with the flags
-# the Makefile builds with, so the parser sees what the compiler sees.
+# meson.build builds with, so the parser sees what the compiler sees.
 hawkmoth_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 _pkgs = ['wlroots-0.20', 'wayland-server', 'libpulse', 'xkbcommon', 'libinput',
@@ -28,8 +28,10 @@ _pkg_cflags = subprocess.run(['pkg-config', '--cflags', *_pkgs], capture_output=
 hawkmoth_clang = [
     '-std=c11',
     '-I' + hawkmoth_root,
+    # the generated headers (protocols, version.h): meson setup build
+    '-I' + os.path.join(hawkmoth_root, 'build'),
     '-DWLR_USE_UNSTABLE', '-D_POSIX_C_SOURCE=200809L', '-DXWAYLAND',
-    # CUSTOM: where this machine's scenefx is installed (config.mk's AWL_LIBS)
+    # CUSTOM: where this machine's scenefx is installed (meson.options' awl_libs)
     '-I' + os.path.expanduser('~/Desktop/awl-libs/include/scenefx-0.5'),
     # every header is also parsed on its own
     '-Wno-pragma-once-outside-header',
@@ -38,7 +40,7 @@ hawkmoth_clang = [
     *shlex.split(_pkg_cflags),
 ]
 # The wheel's libclang comes without its own system headers (stddef.h & co),
-# so take the include paths from the compiler the Makefile uses.
+# so take the include paths from the compiler meson.build uses.
 hawkmoth_compiler = 'gcc'
 
 # Doc comments are reStructuredText. `name` in a comment is a C expression

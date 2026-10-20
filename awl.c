@@ -1,3 +1,4 @@
+#include "version.h"
 #include "awl_server.h"
 #include "awl_alert.h"
 #include "awl_background.h"

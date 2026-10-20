@@ -1,9 +1,9 @@
-/** The configuration, built into libawlplugins.so, so `make` and
+/** The configuration, built into libawlplugins.so, so `ninja -C build` and
  * plugin_restart (MOD+Ctrl+r) apply it to the running awl -- keymap, input
  * devices, font, colors, borders, blur, layouts and the bar's widgets
  * included (monitor rules are applied to outputs appearing afterwards).
  * While no library is loaded, awl runs with its defaults; what only a
- * restart of awl applies are config.mk's compile-time switches.
+ * restart of awl applies are meson.options' compile-time switches.
  *
  * Only the part between the CUSTOM markers is yours to change: configure()
  * gets awl's defaults (awl_config_defaults.h,
@@ -37,7 +37,7 @@ static void AWL_ACTION( notifyconfig )( const Arg* arg ) {
 }
 
 static void AWL_ACTION( launcher )( const Arg* arg ) {
-    awl_launcher_toggle();
+    awl_launcher_toggle( arg->i );
 }
 
 static void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
@@ -141,7 +141,8 @@ static const char* locker[] = { "swaylock", "-c", "00000000", "-p", NULL };
 static const Key keys[] = {
     /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */
     /* modifier                  key                 function                    argument */
-    { MODKEY,                    XKB_KEY_p,          AWL_ACTION(launcher),         {0} },
+    { MODKEY,                    XKB_KEY_p,          AWL_ACTION(launcher),         {.i = AWL_LAUNCHER_APPS} },
+    { MODKEY,                    XKB_KEY_r,          AWL_ACTION(launcher),         {.i = AWL_LAUNCHER_RUN} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_P,          AWL_ACTION(notifyconfig),     {0} },
     { MODKEY,                    XKB_KEY_Return,     AWL_ACTION(spawn),            {.v = termcmd} },
     { MODKEY,                    XKB_KEY_y,          AWL_ACTION(backlighttoggle),  {0} },
@@ -394,6 +395,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // p->temperature.thermal_zone.min = 40;
     // p->temperature.thermal_zone.max = 90;
     // p->battery.dir = "/sys/class/power_supply/BAT0/";
+    // p->battery.ac_dir = "/sys/class/power_supply/AC/";
     p->battery.scale.bad     = 10;
     p->battery.scale.warning = 20;
     p->battery.scale.ok      = 30;
@@ -408,6 +410,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // p->launcher.icon_size   = 24;
     p->launcher.terminal     = launcher_terminal; /* { "xterm", "-e", NULL } */
     // p->launcher.prompt      = "> ";
+    // p->launcher.run_prompt  = "$ ";
     // p->launcher.at          = AWL_WINDOW_AT_TOP;
     // p->launcher.dy          = 0;
     // p->launcher.match       = molokai_orange;

@@ -7,8 +7,8 @@
 #define _GNU_SOURCE
 #include "icon.h"
 #include "../awl_log.h"
-#include "../wuffs/wuffs.h"
-#include "../plutosvg/svg.h"
+#include "../vendor/wuffs/wuffs.h"
+#include "../vendor/plutosvg/svg.h"
 
 #include <limits.h>
 #include <math.h>

@@ -17,8 +17,9 @@ Then, after every change::
    make -C doc
 
 and open ``doc/_build/html/index.html``. The sources are parsed with the
-Makefile's flags (pkg-config, scenefx, ``-DXWAYLAND``), so the generated
-protocol headers have to exist: run ``make`` first.
+flags meson.build uses (pkg-config, scenefx, ``-DXWAYLAND``) and the
+generated protocol headers in ``build/``, so build there first:
+``meson setup build && ninja -C build``.
 
 Doc comments
 ------------

@@ -3,9 +3,10 @@
 /**
  * Icons without GTK: freedesktop icon theme lookup (the Icon Theme
  * Specification, as GTK does it) and decoding into pixman images, PNG
- * through Wuffs (wuffs/), SVG through PlutoSVG (plutosvg/svg.h), right into
- * the image's pixels. PlutoSVG has no stylesheets, but the icon themes'
- * color scheme (KDE's, which Papirus and Breeze follow: <style> rules
+ * through Wuffs (vendor/wuffs/), SVG through PlutoSVG
+ * (vendor/plutosvg/svg.h), right into the image's pixels. PlutoSVG has no
+ * stylesheets, but the icon themes' color scheme (KDE's, which Papirus and
+ * Breeze follow: <style> rules
  * ".ColorScheme-Text { color: ... }" for the elements of that class) is
  * applied before; masks, patterns and filters (a few app icons, Adwaita's
  * full color ones now and then) are left out. Icons are untrusted input (a

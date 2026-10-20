@@ -1,5 +1,5 @@
 #!/bin/bash
-# Drive a test instance of ./awl from a shell, e.g. from an agent without a
+# Drive a test instance of build/awl from a shell, e.g. from an agent without a
 # screen: headless outputs, its own runtime dir and D-Bus session (so it can't
 # disturb the running session's tray, notifications or sockets) and a fake
 # $HOME whose Desktop is a fixture. It runs under gdb, which dumps every
@@ -45,12 +45,13 @@
 # $LIVE_DIR/home/Desktop, created on start if missing.
 #
 # LIVE_AWL=PATH runs another binary, relative to the source dir, e.g.
-# LIVE_AWL=dev/awl for make dev's unoptimized debug build, which picks up
-# dev/libawlplugins.so.
+# LIVE_AWL=build-dev/awl for the unoptimized debug build (meson.build's top),
+# which picks up build-dev/libawlplugins.so. click builds vptr in its build
+# directory.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 src=$(cd "$here/.." && pwd)
-awl=${LIVE_AWL:-awl}
+awl=${LIVE_AWL:-build/awl}
 case $awl in /*) ;; *) awl=$src/$awl ;; esac
 dir=${LIVE_DIR:-/tmp/awl-live-$UID}
 run=$dir/run
@@ -108,7 +109,7 @@ homelinks() {
 case ${1:-} in
 start)
 	pid >/dev/null && { echo "already running" >&2; exit 1; }
-	[ -x "$awl" ] || { echo "no $awl (make dev for dev/awl)" >&2; exit 1; }
+	[ -x "$awl" ] || { echo "no $awl (ninja -C $(dirname "$awl"))" >&2; exit 1; }
 	mkdir -p "$run" && chmod 700 "$run"
 	rm -f "$run"/wayland-* "$dir/socket" "$dir/ctl"
 	mkfifo "$dir/ctl"
@@ -170,8 +171,8 @@ key) envs; shift; wtype "$@" ;;
 click)
 	e=$(extent)
 	envs; shift
-	make -s -C "$here" vptr >&2 || exit 1
-	VPTR_EXTENT=$e "$here/vptr" "$@"
+	ninja -C "$(dirname "$awl")" test/vptr >/dev/null || exit 1
+	VPTR_EXTENT=$e "$(dirname "$awl")/test/vptr" "$@"
 	;;
 win)
 	shift

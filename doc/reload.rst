@@ -1,7 +1,7 @@
 Live reload
 ===========
 
-``make`` builds ``awl`` and ``libawlplugins.so``. With awl running,
+``ninja -C build`` builds ``awl`` and ``libawlplugins.so`` (see meson.build). With awl running,
 ``plugin_restart`` (MOD+Ctrl+r by default) swaps in the freshly
 built library: new widgets, new plugin code and plugins_config.c,
 without restarting awl or any client.
@@ -20,7 +20,7 @@ What a reload picks up
    * - plugins_config.c: keys, buttons, rules, layouts,
        colors, font, borders, blur, input devices, keymap, tray and
        wallpaper settings
-     - config.mk: compile-time switches
+     - meson.options: compile-time switches
    * -
      - any change to `awl_host_t`, `awl_plugin_api_t` or to a struct both
        sides read (`awl_config_t`, `awl_draw_t`, `widget_t`, `Arg`; all in
@@ -40,8 +40,8 @@ library that is about to be unloaded, so it only schedules the reload on the
 event loop's next idle round. Then `awl_plugins_reload()`:
 
 #. Copies the library file into a memfd and loads that with ``dlopen()``,
-   so every load gets the current file, and a ``make`` rewriting the file
-   can't change the copy in use. The Makefile links under a temporary name and
+   so every load gets the current file, and a build rewriting the file
+   can't change the copy in use. meson.build links under a temporary name and
    renames, so a reload during a build sees the old or the new library,
    never half of one.
 #. Looks up `AWL_PLUGIN_ENTRY` and calls it with awl's `awl_host_t`; the
@@ -153,7 +153,7 @@ freed.
 The config split
 ----------------
 
-config.mk's compile-time switches (``-DSCENEFX_HAS_SHATTER``) only a rebuild
+meson.options' compile-time switches (``scenefx_shatter``) only a rebuild
 and restart of awl apply. Everything else is two structs: `awl_config_t`
 (awl.h) holds what awl itself reads (the library may read it too),
 `awl_plugin_config_t` (plugins.h) what only the library reads: the bar's

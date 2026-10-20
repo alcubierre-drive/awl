@@ -24,12 +24,14 @@ static int uevent_open( void ) {
     return fd;
 }
 
-awl_battery_t* bat_init( const char* dir ) {
+awl_battery_t* bat_init( const char* dir, const char* ac_dir ) {
     awl_battery_t* b = calloc(1, sizeof(awl_battery_t));
     snprintf( b->dir, sizeof(b->dir), "%s", dir ? dir : "" );
+    snprintf( b->ac_dir, sizeof(b->ac_dir), "%s", ac_dir ? ac_dir : "" );
     atomic_init( &b->charge, 0 );
     atomic_init( &b->charging, -1 );
     atomic_init( &b->docked, -1 );
+    atomic_init( &b->ac, -1 );
     b->uevent_fd = uevent_open();
     return b;
 }
@@ -129,7 +131,16 @@ int bat_update( awl_battery_t* b ) {
     }
 
     if (set) charging = -1;
+
+    int ac = -1;
+    snprintf( bat_file, sizeof(bat_file), "%sonline", b->ac_dir );
+    if (*b->ac_dir && (f = fopen( bat_file, "r" ))) {
+        if (fscanf(f, "%d", &ac) != 1) ac = -1;
+        fclose(f);
+    }
+
     int changed = atomic_exchange( &b->charging, charging ) != charging;
     changed |= atomic_exchange( &b->charge, charge ) != charge;
+    changed |= atomic_exchange( &b->ac, ac ) != ac;
     return changed;
 }

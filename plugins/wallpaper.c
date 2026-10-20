@@ -4,7 +4,7 @@
 #include "persistent.h"
 #include "readdir.h"
 #include "thread.h"
-#include "../wuffs/wuffs.h"
+#include "../vendor/wuffs/wuffs.h"
 
 #include <errno.h>
 #include <fcntl.h>

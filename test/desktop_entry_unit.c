@@ -1,5 +1,5 @@
 /* Unit test of plugins/desktop_entry.c, the launcher's .desktop files and
- * Exec lines. Built and run by make check; prints ok/FAIL per check, the
+ * Exec lines. Built and run by meson test; prints ok/FAIL per check, the
  * exit status is the number of failures. */
 #include "plugins/desktop_entry.h"
 

@@ -52,7 +52,7 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     temp_init(p->temp);
     p->temp_color = &temp_color;
 
-    p->bat = bat_init( pc->battery.dir );
+    p->bat = bat_init( pc->battery.dir, pc->battery.ac_dir );
     p->date = date_init();
     // the tray on a loop of its own: its D-Bus traffic and icon lookups
     // never hold up the poller's tick (plugins/loop.h)
@@ -153,7 +153,7 @@ static void api_init( int paused ) {
     /* first: everything below reads it */
     awl_config_init();
     loaded_stamp();
-    /* this library's git revision, see plugins_git.h in the Makefile */
+    /* this library's git revision, see build-aux/plugins_git.sh */
     AWL_HOST_CFG_SET( awl_host, "plugins_git", AWL_DICT_STR( PLUGINS_GIT ) );
     plugin_data = calloc(1,sizeof(awl_plugin_data_t));
     plugin_data->paused = paused;

@@ -2,7 +2,7 @@
 
 /**
  * Picks and decodes the wallpaper: lists a folder's ``*.png`` files, picks one
- * and decodes it (Wuffs, wuffs/). A thread does that, the main thread only
+ * and decodes it (Wuffs, vendor/wuffs/). A thread does that, the main thread only
  * asks for it and takes the result (see plugins_desktop_panel.c on why the
  * main thread never touches the file system); awl_background.c shows it.
  */

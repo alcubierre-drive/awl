@@ -1,5 +1,5 @@
 /* Unit test of plugins/fuzzy.c, the launcher's matcher. Built and run by
- * make check; prints ok/FAIL per check, the exit status is the number of
+ * meson test; prints ok/FAIL per check, the exit status is the number of
  * failures. */
 #include "plugins/fuzzy.h"
 

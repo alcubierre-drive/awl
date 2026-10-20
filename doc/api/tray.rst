@@ -66,8 +66,8 @@ Icons
 -----
 
 Icon theme lookup and decoding without GTK (icons/icon.h), for the items'
-icons and their menus'. PNGs are decoded by Wuffs (wuffs/), SVGs by PlutoSVG
-(plutosvg/svg.h), both vendored. An item's files and data are untrusted, so
+icons and their menus'. PNGs are decoded by Wuffs (vendor/wuffs/), SVGs by
+PlutoSVG (vendor/plutosvg/svg.h). An item's files and data are untrusted, so
 anything unrealistically large is refused before it is decoded.
 
 icons/icon.h

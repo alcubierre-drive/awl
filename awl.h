@@ -418,9 +418,9 @@ typedef struct awl_wallpaper_config_t {
 /**
  * The configuration that can change while awl runs: awl's defaults
  * (awl_config_defaults.h, `awl_host_t.config_defaults`) with plugins_config.c's
- * changes, built into the plugin library, so `make` and plugin_restart
+ * changes, built into the plugin library, so `ninja -C build` and plugin_restart
  * apply them; while no library is loaded, the defaults alone. What only a
- * restart applies are config.mk's compile-time switches.
+ * restart applies are meson.options' compile-time switches.
  *
  * What awl itself reads is here (the library may read it too), each group
  * of settings whole even where awl reads only part of it; what only the

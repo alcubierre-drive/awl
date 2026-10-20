@@ -6,7 +6,8 @@
 # is gone or off, none after a plugin reload -- that awl is still alive, and
 # at the end that it exits cleanly, popups still open.
 #
-#   test/windows.sh     with dev/awl (make dev) if it is there, else awl
+#   test/windows.sh     with build-dev/awl (the debug build) if it is there,
+#                       else build/awl
 #
 # LIVE_AWL picks the binary, LIVE_NESTED=1 shows the outputs as windows (see
 # live.sh). The state goes to $LIVE_DIR, by default /tmp/awl-windows-$UID, so
@@ -16,7 +17,7 @@ set -u
 here=$(cd "$(dirname "$0")" && pwd)
 live=$here/live.sh
 export LIVE_DIR=${LIVE_DIR:-/tmp/awl-windows-$UID}
-[ -x "$here/../dev/awl" ] && export LIVE_AWL=${LIVE_AWL:-dev/awl}
+[ -x "$here/../build-dev/awl" ] && export LIVE_AWL=${LIVE_AWL:-build-dev/awl}
 fails=0
 state=
 

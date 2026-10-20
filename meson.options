@@ -1,0 +1,27 @@
+# awl's build switches: set with `meson setup -Dname=value` or later
+# `meson configure BUILDDIR -Dname=value`; `meson configure BUILDDIR` lists
+# them with their current values. A change rebuilds what it affects; for awl
+# itself that needs a restart, for libawlplugins.so a plugin_restart.
+
+# CUSTOM: where this machine's scenefx is installed (a prefix with
+# include/scenefx-0.5 and lib/); '' finds scenefx-0.5 through pkg-config
+option('awl_libs', type: 'string', value: '~/Desktop/awl-libs',
+       description: 'scenefx install prefix, or empty for pkg-config')
+
+option('xwayland', type: 'feature', value: 'enabled',
+       description: 'XWayland support (needs xcb and xcb-icccm)')
+# CUSTOM: the lock screen's shatter effect, if your scenefx has it
+option('scenefx_shatter', type: 'boolean', value: true,
+       description: 'the lock screen shatter effect (scenefx with shatter support)')
+
+# optimizations of the release build; auto: on unless --buildtype=debug
+option('native', type: 'feature', value: 'auto',
+       description: '-march=native -mtune=native')
+option('fast_math', type: 'feature', value: 'auto',
+       description: '-ffast-math (vendor/plutosvg is always built without it)')
+
+# libecal, for the calendar's events, is loaded at run time
+# (plugins/cal_eds.c): no build dependency. This checks cal_eds.c's prototypes
+# against its headers, which then have to be installed.
+option('ecal_check', type: 'boolean', value: false,
+       description: 'check plugins/cal_eds.c against the libecal-2.0 headers')

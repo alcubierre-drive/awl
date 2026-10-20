@@ -74,8 +74,10 @@ typedef struct awl_plugin_config_t {
         struct { float min, max; } coretemp, thermal_zone;
     } temperature;
     struct {
-        /** the battery's sysfs directory, with a trailing '/' */
+        /** the battery's and the AC adapter's sysfs directories, with a
+         * trailing '/' */
         const char* dir;
+        const char* ac_dir;
         /** its color scale, percent of the charge: colors.bad up to bad,
          * to colors.warning at warning, to colors.fg at ok and above
          * (linearly in between); colors.good while charging */
@@ -103,8 +105,9 @@ typedef struct awl_plugin_config_t {
         /** what applications with Terminal=true run in: an argv (NULL
          * terminated) the command is appended to, e.g. { "foot", NULL } */
         const char* const* terminal;
-        /** before the query */
+        /** before the query; the run mode's */
         const char* prompt;
+        const char* run_prompt;
         /** where it shows: an AWL_WINDOW_AT_* (awl.h), moved down by dy */
         int at, dy;
         /** the characters the query matched; the description (GenericName),
@@ -117,6 +120,9 @@ typedef struct awl_plugin_config_t {
 
 /** `awl_plugin_config_t.launcher`'s layout */
 enum { AWL_LAUNCHER_LIST, AWL_LAUNCHER_BAR };
+/** `awl_launcher_toggle()`'s modes: the applications, or $PATH and the
+ * command lines run before (plugins/launcher.h) */
+enum { AWL_LAUNCHER_APPS, AWL_LAUNCHER_RUN };
 
 /** The running plugins' state, see `awl_plugin_get()`. */
 typedef struct awl_plugin_data_t {
@@ -177,9 +183,10 @@ void awl_launcher_start( void );
 /** plugins/launcher.c: closes the launcher, stops its thread; returns
  * nonzero if it had to be left running */
 int awl_launcher_stop( void );
-/** plugins/launcher.c: opens the launcher on the selected monitor, or
- * closes it (the launcher action) */
-void awl_launcher_toggle( void );
+/** plugins/launcher.c: opens the launcher on the selected monitor in mode
+ * (AWL_LAUNCHER_APPS or AWL_LAUNCHER_RUN), switches it to mode if it is
+ * open in the other, or closes it (the launcher action, its .i the mode) */
+void awl_launcher_toggle( int mode );
 
 /** plugins_config.c: makes both configs, awl's defaults
  * (`awl_host_t.config_defaults`) and the plugins' with configure() (the

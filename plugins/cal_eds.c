@@ -10,7 +10,7 @@
 
 /* The types the functions below take, opaque but for GError and GList,
  * whose layout is GLib's stable public API: building needs neither EDS's
- * headers nor GLib's. CAL_ECAL_CHECK (make ECAL_CHECK=1) builds against the
+ * headers nor GLib's. CAL_ECAL_CHECK (meson's -Decal_check=true) builds against the
  * real headers instead and checks every prototype against them. */
 #ifdef CAL_ECAL_CHECK
 #include <libecal/libecal.h>

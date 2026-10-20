@@ -1,6 +1,6 @@
 /* Unit test of awl_window_draw.c, the part of awl's popups that needs no
  * compositor: layout, painting into memory and placement, with a real fcft
- * font. Built and run by make check; prints ok/FAIL per check, the exit
+ * font. Built and run by meson test; prints ok/FAIL per check, the exit
  * status is the number of failures. */
 #include "awl_window_draw.h"
 

@@ -49,6 +49,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     },
     .battery = {
         .dir = "/sys/class/power_supply/BAT0/",
+        .ac_dir = "/sys/class/power_supply/AC/",
         .scale = { .bad = 15, .warning = 25, .ok = 30, .full = 90 },
     },
     .launcher = {
@@ -57,7 +58,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .input_width = 120,
         .strip_at = AWL_WINDOW_AT_BAR,
         .terminal = default_terminal,
-        .prompt = "> ",
+        .prompt = "> ", .run_prompt = "$ ",
         .at = AWL_WINDOW_AT_TOP, .dy = 0,
         .match = molokai_orange, .dim = 0,
     },

@@ -27,23 +27,32 @@ Dependencies:
   fcft, libpulse, libsystemd, and xcb and xcb-icccm for XWayland
 - calendar events: evolution-data-server (libecal), at run time only: the
   plugins load it if it is there, without it the calendar has no events
-  (`make ECAL_CHECK=1` checks plugins/cal_eds.c against its headers)
+  (`-Decal_check=true` checks plugins/cal_eds.c against its headers)
 
-scenefx is looked up under `~/Desktop/awl-libs` (`AWL_LIBS` in config.mk).
+awl builds with meson and ninja. scenefx is looked up under
+`~/Desktop/awl-libs` (`awl_libs` in meson.options; empty uses pkg-config).
 Then:
 
-    make
+    meson setup build    # once
+    ninja -C build       # after every change
 
-This builds `awl`, `libawltray-env.so` (see `TRAY_ICONS` in awl.h)
-and `libawlplugins.so`.
+This builds `build/awl`, `build/libawltray-env.so` (see `TRAY_ICONS` in
+awl.h) and `build/libawlplugins.so`; awl finds both libraries next to itself.
+`meson test -C build` runs the unit tests.
+
+Switches (XWayland, the shatter effect, `-march=native`, `-ffast-math`,
+scenefx's place) are in meson.options: `meson configure build` lists them,
+`meson configure build -Dname=value` changes one. Flags of your own go into
+meson.build's `custom_c_args`/`custom_link_args` (its `CUSTOM` part), or
+`-Dc_args=...`/`-Dc_link_args=...` for one build directory.
 
 ## Configuration
 
 The configuration is in two files:
 
-- config.mk holds compile-time switches of the awl binary (its `CUSTOM`
+- meson.options holds compile-time switches of the awl binary (its `CUSTOM`
   parts), so a change there needs a rebuild and a restart
-- plugins_config.c is built into `libawlplugins.so`, so `make` followed by
+- plugins_config.c is built into `libawlplugins.so`, so `ninja -C build` followed by
   `plugin_restart` (MOD+Ctrl+r) applies it to the running awl. Only its
   part between the `CUSTOM` markers is configuration: there,
   `configure(c, p)` gets awl's defaults (awl_config_defaults.h) in `c` and the
@@ -78,11 +87,16 @@ manager, copy `awl.desktop` to `/usr/share/wayland-sessions/`.
 
 `test/live.sh` runs a headless instance for testing, see the comment at its
 top. It keeps the instance off the real system bus; `test/live-nm.sh` does the
-same but lets it read NetworkManager through `xdg-dbus-proxy`. `make dev`
-builds `dev/awl`, unoptimized with full debug info, for
-`LIVE_AWL=dev/awl test/live.sh start`; `test/windows.sh` runs the scenario
-test of awl's popups in such an instance, `make check` the unit test of their
-drawing, which needs no compositor.
+same but lets it read NetworkManager through `xdg-dbus-proxy`. A second
+build directory,
+
+    meson setup build-dev --buildtype=debug -Db_lto=false
+    ninja -C build-dev
+
+builds `build-dev/awl`, unoptimized with full debug info, for
+`LIVE_AWL=build-dev/awl test/live.sh start`; `test/windows.sh` runs the
+scenario test of awl's popups in such an instance, `meson test -C build` the
+unit test of their drawing, which needs no compositor.
 
 ## Documentation
 

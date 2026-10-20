@@ -28,7 +28,7 @@ starts with ``TRAY_ICONS``. Every type the library shares with awl is in
 awl.h; the headers that make up awl's side of the interface (awl.h,
 awl_host.h, awl_plugin_abi.h, awl_draw.h, awl_log.h, awl_dict_type.h) are
 included by the libraries too, awl's own types are in awl_core.h.
-config.mk's compile-time switches belong to ``awl``, plugins_config.c to the library, which
+meson.options' compile-time switches belong to ``awl``, plugins_config.c to the library, which
 changes awl's defaults (awl_config_defaults.h) and its own (plugins_config_defaults.h)
 with it.
 
@@ -63,7 +63,7 @@ with it.
      - scans ``desktop_dir``, lays out and draws the list, handles
        clicks on the bare desktop (plugins_desktop_panel.c)
    * - Config
-     - config.mk's switches, and `awl_config_t` with its defaults (awl_config_defaults.h)
+     - meson.options' switches, and `awl_config_t` with its defaults (awl_config_defaults.h)
      - `awl_plugin_config_t` with its defaults (plugins_config_defaults.h), and
        the configuration's changes to both (plugins_config.c, its ``CUSTOM``
        part)
@@ -127,7 +127,7 @@ Where to start reading
 * plugins/thread.h and awl_redraw.h: how every background thread starts,
   stops and reports.
 * awl_draw.h: `widget_t`, the unit the bar is made of.
-* config.mk (compile-time switches), awl.h's `awl_config_t` (defaults in awl_config_defaults.h)
+* meson.options (compile-time switches), awl.h's `awl_config_t` (defaults in awl_config_defaults.h)
   and plugins.h's `awl_plugin_config_t` (defaults in plugins_config_defaults.h),
   both changed by plugins_config.c's ``CUSTOM`` part: the configuration, read at startup and
   reloadable.

@@ -9,7 +9,7 @@
 #include "plugins/tray_menu.h"
 #include "plugins/tray_tooltip.h"
 #include "plugins/sni.h"
-#include "wuffs/wuffs.h"
+#include "vendor/wuffs/wuffs.h"
 #include "icons/eyes_closed.h"
 
 #include <arpa/inet.h>
