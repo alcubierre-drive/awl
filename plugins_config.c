@@ -20,7 +20,7 @@
 #include "awl_plugin_abi.h"
 #include "plugins.h"
 #include "plugins/colors.h"
-#include "plugin_config_defaults.h"
+#include "plugins_config_defaults.h"
 
 #define AWL_ACTION_REGISTER( name ) \
     void AWL_ACTION( name )( const Arg* arg ) { awl_host->actions->name( arg ); }
@@ -32,13 +32,20 @@ AWL_ACTIONS
 AWL_ARRANGES
 #undef AWL_LAYOUT_REGISTER
 
-void AWL_ACTION( notifyconfig )( const Arg* arg ) { awl_notify_config(); }
-void AWL_ACTION( launcher )( const Arg* arg ) { awl_launcher_toggle(); }
-void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
+static void AWL_ACTION( notifyconfig )( const Arg* arg ) {
+    awl_notify_config();
+}
+
+static void AWL_ACTION( launcher )( const Arg* arg ) {
+    awl_launcher_toggle();
+}
+
+static void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
     if (p) backlight_toggle( p->backlight );
 }
-void AWL_ACTION( tagmonf )( const Arg* arg ) {
+
+static void AWL_ACTION( tagmonf )( const Arg* arg ) {
     AWL_ACTION(tagmon)(arg);
     AWL_ACTION(focusmon)(arg);
 }
@@ -393,6 +400,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // p->battery.scale.full = 90;
 
     /* the launcher (plugins/launcher.h); colors 0: the popups' */
+    p->launcher.layout    = AWL_LAUNCHER_BAR; /* a strip over the bar */
+    // p->launcher.input_width = 120;  /* the query's, at least */
+    p->launcher.strip_at  = AWL_WINDOW_AT_STRIP_TOP; /* or _STRIP_TOP, _STRIP_BOTTOM */
     // p->launcher.rows      = 10;
     // p->launcher.width     = 560;
     // p->launcher.icon_size = 24;

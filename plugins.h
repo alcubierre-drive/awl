@@ -84,8 +84,22 @@ typedef struct awl_plugin_config_t {
     /** the launcher (plugins/launcher.h), a popup: styled as the others
      * (`awl_config_t.popup`, blurred with blur.launcher) */
     struct {
-        /** result rows; the window's width; the icons' size */
+        /** AWL_LAUNCHER_LIST: a box with the query above a list of results;
+         * AWL_LAUNCHER_BAR: a strip over the bar, the query left, the
+         * results beside it in a row (as awesome's menubar) */
+        int layout;
+        /** result rows; the window's width; the icons' size (the bar's
+         * height at most in AWL_LAUNCHER_BAR, which ignores rows, width, at
+         * and dy) */
         int rows, width, icon_size;
+        /** AWL_LAUNCHER_BAR: the query's width at least, logical pixels;
+         * the results follow right after it */
+        int input_width;
+        /** AWL_LAUNCHER_BAR: where the strip is, whatever the bar's place:
+         * AWL_WINDOW_AT_BAR over the bar, AWL_WINDOW_AT_STRIP_TOP or
+         * AWL_WINDOW_AT_STRIP_BOTTOM along the monitor's edge (awl.h); as
+         * high as the bar either way */
+        int strip_at;
         /** what applications with Terminal=true run in: an argv (NULL
          * terminated) the command is appended to, e.g. { "foot", NULL } */
         const char* const* terminal;
@@ -98,6 +112,9 @@ typedef struct awl_plugin_config_t {
         uint32_t match, dim;
     } launcher;
 } awl_plugin_config_t;
+
+/** `awl_plugin_config_t.launcher`'s layout */
+enum { AWL_LAUNCHER_LIST, AWL_LAUNCHER_BAR };
 
 /** The running plugins' state, see `awl_plugin_get()`. */
 typedef struct awl_plugin_data_t {

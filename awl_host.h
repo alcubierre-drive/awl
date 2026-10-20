@@ -160,8 +160,8 @@ typedef struct awl_host_t {
     void (*window_show_beside)( awl_window_t* win, Monitor* m, int x, int y, int w, int h, int left );
     /** `popupshowat()`: shows the window on m at a spot of its window
      * area, an AWL_WINDOW_AT_* (awl.h; the margin away from its edges),
-     * moved by dx, dy logical pixels; one that isn't a menu closes the
-     * menus open */
+     * moved by dx, dy logical pixels (the strips: over the bar, or along an edge);
+     * one that isn't a menu closes the menus open */
     void (*window_show_at)( awl_window_t* win, Monitor* m, int at, int dx, int dy );
     /** `popuphide()` */
     void (*window_hide)( awl_window_t* win );

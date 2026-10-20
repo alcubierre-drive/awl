@@ -19,8 +19,14 @@
  * touches the file system. The window and the matching are the main
  * thread's.
  *
+ * Two layouts (`awl_plugin_config_t.launcher`'s): a box with the query
+ * above a list of results, or a strip over the bar with the results in a
+ * row beside the query (like awesome's menubar), paged so that the chosen
+ * one is shown.
+ *
  * Keys: typing edits the query (BackSpace, Ctrl+W a word, Ctrl+U all of
- * it); Up/Down, Tab/Shift+Tab, Ctrl+P/Ctrl+N and Page Up/Down move;
+ * it); Up/Down, Tab/Shift+Tab, Ctrl+P/Ctrl+N and Page Up/Down move, so do
+ * Left/Right in the strip;
  * Return launches, Escape closes. Keys it doesn't take go to awl's
  * bindings, so the launcher's own closes it again. The pointer chooses,
  * clicks launch, the wheel scrolls; a press elsewhere closes it.

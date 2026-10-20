@@ -1,4 +1,5 @@
 #include "awl_window.h"
+#include "awl_config.h"
 #include "awl_draw.h"
 #include "awl_util.h"
 
@@ -156,10 +157,28 @@ static struct fcft_font* font_of( Monitor* m ) {
     return m->popupfont ? m->popupfont : m->drw.font;
 }
 
+/** an AWL_WINDOW_AT_* that is a strip, AWL_WINDOW_AT_BAR's and the edges' */
+static int is_strip( int at ) {
+    return at == AWL_WINDOW_AT_BAR || at == AWL_WINDOW_AT_STRIP_TOP || at == AWL_WINDOW_AT_STRIP_BOTTOM;
+}
+
+/** shown as a strip */
+static int as_strip( const awl_window_t* win ) {
+    return win->placement == PLACE_AT && is_strip( win->at );
+}
+
+/** the style its frame is drawn in: the bar's spot has none */
+static awl_window_style_t frame_style( const awl_window_t* win ) {
+    awl_window_style_t st = win->style;
+    if (as_strip( win )) st.border_width = st.radius = st.padding = 0;
+    return st;
+}
+
 /** a painted window's layout, its frame around what the painter measures */
 static int layout_painted( awl_window_t* win, awl_window_layout_t* L, struct fcft_font* font, float s,
                            int max_w, int max_h ) {
-    const int inset = awl_window_inset( &win->style, s );
+    const awl_window_style_t st = frame_style( win );
+    const int inset = awl_window_inset( &st, s );
     int cw = 0, ch = 0;
     if (max_w - 2 * inset <= 0 || max_h - 2 * inset <= 0) return 0;
     if (!win->painter.measure( win->painter_data, font, s, max_w - 2 * inset, max_h - 2 * inset, &cw, &ch ))
@@ -167,13 +186,14 @@ static int layout_painted( awl_window_t* win, awl_window_layout_t* L, struct fcf
     /* never more than allowed, whatever the painter says */
     if (cw > max_w - 2 * inset) cw = max_w - 2 * inset;
     if (ch > max_h - 2 * inset) ch = max_h - 2 * inset;
-    return awl_window_layout_frame( L, &win->style, s, cw, ch );
+    return awl_window_layout_frame( L, &st, s, cw, ch );
 }
 
 /** the painter's content into data, its frame first */
 static void paint_painted( awl_window_t* win, const awl_window_layout_t* L, struct fcft_font* font, float s,
                            uint32_t* data, int32_t stride ) {
-    awl_window_paint_frame( L, &win->style, data, stride );
+    const awl_window_style_t st = frame_style( win );
+    awl_window_paint_frame( L, &st, data, stride );
     pixman_image_t* pix = awl_draw_image( (unsigned)L->width, (unsigned)L->height, data, stride );
     if (!pix) return;
     win->painter.paint( win->painter_data, pix, font, s, L->x0, L->y0, win->click ? win->hover : -1 );
@@ -186,11 +206,16 @@ static int draw( awl_window_t* win ) {
     struct fcft_font* font = font_of( m );
     const float s = m->wlr_output->scale;
     awl_window_layout_t L;
-    /* room for awl_window_place()'s margins */
-    const int w = m->m.width - 2 * awl_window_margin( win->style.margin, m->m.width );
-    const int h = m->w.height - 2 * awl_window_margin( win->style.margin, m->w.height );
+    const awl_window_style_t st = frame_style( win );
+    /* room for awl_window_place()'s margins; the bar's size over it */
+    int w = m->m.width - 2 * awl_window_margin( win->style.margin, m->m.width );
+    int h = m->w.height - 2 * awl_window_margin( win->style.margin, m->w.height );
+    if (as_strip( win )) {
+        w = m->m.width;
+        h = m->b.real_height;
+    }
     if (win->painter.paint ? !layout_painted( win, &L, font, s, (int)(w * s), (int)(h * s) )
-                           : !awl_window_layout( &L, win->text, &win->style, font, s, (int)(w * s), (int)(h * s) ))
+                           : !awl_window_layout( &L, win->text, &st, font, s, (int)(w * s), (int)(h * s) ))
         return 0;
 
     int32_t stride = awl_draw_stride( L.width );
@@ -202,7 +227,7 @@ static int draw( awl_window_t* win ) {
     if (win->painter.paint)
         paint_painted( win, &L, font, s, b->data, stride );
     else
-        awl_window_paint( &L, win->text, &win->style, font, win->click ? win->hover : -1, b->data, stride );
+        awl_window_paint( &L, win->text, &st, font, win->click ? win->hover : -1, b->data, stride );
     win->layout = L;
 
     win->lw = (int)lroundf( L.width / s );
@@ -210,14 +235,21 @@ static int draw( awl_window_t* win ) {
     wlr_scene_buffer_set_buffer( win->buffer, &b->base );
     wlr_scene_buffer_set_dest_size( win->buffer, win->lw, win->lh );
     wlr_buffer_drop( &b->base ); /* the scene holds it now */
-    if (win->blur) wlr_scene_blur_set_size( win->blur, win->lw, win->lh );
+    if (win->blur) {
+        wlr_scene_blur_set_size( win->blur, win->lw, win->lh );
+        wlr_scene_blur_set_corner_radius( win->blur, st.radius );
+    }
     return 1;
 }
 
 static void place( awl_window_t* win ) {
     Monitor* m = win->m;
     int x, y;
-    if (win->placement == PLACE_AT)
+    if (as_strip( win )) {
+        const int top = win->at == AWL_WINDOW_AT_BAR ? cfg->bar.top : win->at == AWL_WINDOW_AT_STRIP_TOP;
+        x = m->m.x;
+        y = top ? m->m.y : m->m.y + m->m.height - win->lh;
+    } else if (win->placement == PLACE_AT)
         awl_window_place_at( m->m.x, m->m.width, m->w.y, m->w.height, win->lw, win->lh, win->at, win->dx,
                              win->dy, win->style.margin, &x, &y );
     else if (win->placement == PLACE_BESIDE)
@@ -252,7 +284,7 @@ void awl_window_update( awl_window_t* win, Monitor* m ) {
 }
 
 void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top ) {
-    if (win->m != m) win->drawn = 0;
+    if (win->m != m || as_strip( win )) win->drawn = 0;
     win->m = m;
     win->center_x = center_x;
     win->top = top;
@@ -261,7 +293,7 @@ void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top ) {
 }
 
 void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left ) {
-    if (win->m != m) win->drawn = 0;
+    if (win->m != m || as_strip( win )) win->drawn = 0;
     win->m = m;
     win->placement = PLACE_BESIDE;
     win->left = left;
@@ -270,7 +302,9 @@ void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box
 }
 
 void awl_window_show_at( awl_window_t* win, Monitor* m, int at, int dx, int dy ) {
-    if (win->m != m) win->drawn = 0;
+    /* to, from or between strips: its size, frame or place change */
+    if (win->m != m || ((as_strip( win ) || is_strip( at )) && (win->placement != PLACE_AT || win->at != at)))
+        win->drawn = 0;
     win->m = m;
     win->placement = PLACE_AT;
     win->at = at;

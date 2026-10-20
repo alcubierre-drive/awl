@@ -84,7 +84,10 @@ void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top );
 void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left );
 /** Shows the window on m, or moves it there, at a spot of m's window area,
  * an AWL_WINDOW_AT_* (awl.h), the margin away from its edges, moved by
- * dx, dy logical pixels (awl_window_place_at()). */
+ * dx, dy logical pixels (awl_window_place_at()); the strips
+ * (AWL_WINDOW_AT_BAR, AWL_WINDOW_AT_STRIP_TOP, _BOTTOM) instead cover m's
+ * bar, or the bar's height along its top or bottom edge, flush (dx, dy
+ * ignored). */
 void awl_window_show_at( awl_window_t* win, Monitor* m, int at, int dx, int dy );
 void awl_window_hide( awl_window_t* win );
 /** the monitor it is shown on, NULL while hidden */

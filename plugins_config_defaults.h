@@ -52,7 +52,10 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .scale = { .bad = 15, .warning = 25, .ok = 30, .full = 90 },
     },
     .launcher = {
+        .layout = AWL_LAUNCHER_LIST,
         .rows = 10, .width = 560, .icon_size = 24,
+        .input_width = 120,
+        .strip_at = AWL_WINDOW_AT_BAR,
         .terminal = default_terminal,
         .prompt = "> ",
         .at = AWL_WINDOW_AT_TOP, .dy = 0,

@@ -294,6 +294,13 @@ enum {
     AWL_WINDOW_AT_TOP_RIGHT,
     AWL_WINDOW_AT_BOTTOM_LEFT,
     AWL_WINDOW_AT_BOTTOM_RIGHT,
+    /** strips: as wide as the monitor, as high as its bar, flush, square
+     * and without a border or padding (the painter's measure() gets that
+     * size as max_w, max_h); over the bar (where it is, shown or not), or
+     * along the monitor's top or bottom edge, whichever the bar's is */
+    AWL_WINDOW_AT_BAR,
+    AWL_WINDOW_AT_STRIP_TOP,
+    AWL_WINDOW_AT_STRIP_BOTTOM,
 };
 
 /** `awl_config_t.popup`: how awl's own popups (awl_window.h) look, the bar

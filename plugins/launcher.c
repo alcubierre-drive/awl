@@ -42,6 +42,8 @@ enum {
     ICON_POLL_MS = 30,
     /** icons kept decoded, the oldest dropped beyond */
     MAX_ICONS = 256,
+    /** results shown at most in the bar layout */
+    MAX_SHOWN = 64,
 };
 
 /* ---- the index, made on the thread, read on the main thread ---- */
@@ -551,7 +553,15 @@ static struct {
     /* measure()'s layout, physical pixels */
     float scale;
     int w, pad, gap, input_h, sep_h, row_h, rows, icon_px;
+    /* the bar layout's: its height, the query's width, the results shown
+     * (from top on) and where each is */
+    int h, input_w, nshown;
+    int bx[MAX_SHOWN], bw[MAX_SHOWN];
 } L;
+
+static int bar( void ) {
+    return CFG->layout == AWL_LAUNCHER_BAR;
+}
 
 static void icons_clear( void ) {
     for (int i = 0; i < L.nicons; i++) {
@@ -701,17 +711,95 @@ static int px( float v ) {
     return (int)lroundf( v * L.scale );
 }
 
+/** the icons' size, physical pixels; the cache is for the size shown */
+static void icon_size( int ipx ) {
+    if (ipx == L.icon_px) return;
+    icons_clear();
+    L.icon_px = ipx;
+}
+
+/** whether en gets room for an icon in the bar layout: it names one that
+ * isn't known to be missing at the size shown (one still on its way keeps
+ * its room, so the row only moves if it turns out to be missing) */
+static int icon_slot( const entry_t* en ) {
+    if (!en->e.icon) return 0;
+    for (int i = 0; i < L.nicons; i++)
+        if (L.icons[i].px == L.icon_px && !strcmp( L.icons[i].name, en->e.icon ))
+            return !L.icons[i].done || L.icons[i].img;
+    return 1;
+}
+
+/** result r's width in the bar layout: its icon and name, padded; its name
+ * at most name_w */
+static int item_w( struct fcft_font* font, int r, int name_w ) {
+    const entry_t* en = &L.idx->v[L.res[r].entry];
+    int nw = (int)awl_host->text_width( font, en->e.name );
+    if (nw > name_w) nw = name_w;
+    return 2 * L.pad + (icon_slot( en ) ? L.icon_px + L.gap : 0) + nw;
+}
+
+/** lays out the results from top on beside the query, as many as fit;
+ * returns whether the chosen one is among them */
+static int lay_out_bar( struct fcft_font* font, int name_w, int spacing ) {
+    int x = L.input_w;
+    L.nshown = 0;
+    for (int r = L.top; r < L.nres && L.nshown < MAX_SHOWN; r++) {
+        int w = item_w( font, r, name_w );
+        if (x + w > L.w) {
+            if (L.nshown) break;
+            w = L.w - x; /* one alone, cut */
+        }
+        L.bx[L.nshown] = x;
+        L.bw[L.nshown++] = w;
+        x += w + spacing;
+    }
+    return L.sel >= L.top && L.sel < L.top + L.nshown;
+}
+
+/* the bar layout: the bar's spot (AWL_WINDOW_AT_BAR); the query, then the
+ * results in a row, a page of them: one that starts at the chosen one going
+ * right, one that ends with it going left */
+static int measure_bar( struct fcft_font* font, int max_w, int max_h, int* w, int* h ) {
+    L.w = max_w;
+    L.h = max_h;
+    L.pad = px( 6 );
+    L.gap = px( 6 );
+    const int ipx = px( (float)CFG->icon_size ), room = L.h - 2 * px( 2 );
+    icon_size( ipx < room ? ipx : room );
+    /* the query's width at least, more as it grows, the results right after */
+    const char* prompt = CFG->prompt ? CFG->prompt : "";
+    const int typed = 2 * L.pad + px( 3 ) + (int)awl_host->text_width( font, prompt ) +
+                      (int)awl_host->text_width( font, L.query );
+    L.input_w = px( (float)CFG->input_width );
+    if (L.input_w < typed) L.input_w = typed;
+    if (L.input_w > L.w / 3) L.input_w = L.w / 3;
+    if (L.w <= L.input_w || L.h < 1) return 0;
+    const int name_w = (L.w - L.input_w) / 3, spacing = px( 4 );
+    L.nshown = 0;
+    if (L.nres) {
+        if (L.sel < L.top) {
+            /* the page before: as much as fits that ends with the chosen one */
+            int x = L.input_w + item_w( font, L.sel, name_w );
+            L.top = L.sel;
+            while (L.top > 0 && (x += spacing + item_w( font, L.top - 1, name_w )) <= L.w) L.top--;
+        }
+        if (!lay_out_bar( font, name_w, spacing )) {
+            L.top = L.sel;
+            lay_out_bar( font, name_w, spacing );
+        }
+    }
+    *w = L.w;
+    *h = L.h;
+    return 1;
+}
+
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
     L.scale = scale;
+    if (bar()) return measure_bar( font, max_w, max_h, w, h );
     const int fh = font->height;
     L.pad = px( 6 );
     L.gap = px( 10 );
-    const int ipx = px( (float)CFG->icon_size );
-    if (ipx != L.icon_px) {
-        /* the cache is for the size shown */
-        icons_clear();
-        L.icon_px = ipx;
-    }
+    icon_size( px( (float)CFG->icon_size ) );
     L.input_h = fh + 2 * L.pad;
     L.sep_h = px( 7 );
     L.row_h = (fh > L.icon_px ? fh : L.icon_px) + 2 * px( 3 );
@@ -751,25 +839,78 @@ static int text_marked( pixman_image_t* pix, struct fcft_font* font, const char*
     return x;
 }
 
-static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
-    const awl_popup_config_t* pc = &awl_config()->popup;
-    const uint32_t fg = pc->fg, dim = CFG->dim ? CFG->dim : pc->dim, match = CFG->match ? CFG->match : fg;
-
-    /* the query, its tail if it is too long, and the cursor after it */
+/** the prompt and the query from x to right in a line h high at y, the
+ * query's tail if it is too long, and the cursor after it */
+static void paint_query( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg,
+                         uint32_t dim ) {
     const char* prompt = CFG->prompt ? CFG->prompt : "";
-    const int pw = (int)awl_host->text_width( font, prompt );
-    int x = x0 + L.pad, right = x0 + L.w - L.pad;
-    if (*prompt) awl_host->text_over( pix, font, x, y0, (unsigned)(right - x), (unsigned)L.input_h, prompt, dim );
-    x += pw;
+    if (*prompt) awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)h, prompt, dim );
+    x += (int)awl_host->text_width( font, prompt );
     const int cursor_w = px( 1.5f ) > 1 ? px( 1.5f ) : 1;
     const char* q = L.query;
     while (*q && x + (int)awl_host->text_width( font, q ) + cursor_w > right) {
         q++;
         while (((unsigned char)*q & 0xc0) == 0x80) q++;
     }
-    if (*q) awl_host->text_over( pix, font, x, y0, (unsigned)(right - x), (unsigned)L.input_h, q, fg );
+    if (*q) awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)h, q, fg );
     x += (int)awl_host->text_width( font, q );
-    awl_fill_shape( pix, (float)x + px( 1 ), (float)(y0 + L.pad), (float)cursor_w, (float)font->height, 0, 0, fg );
+    awl_fill_shape( pix, (float)x + px( 1 ), (float)(y + (h - font->height) / 2), (float)cursor_w,
+                    (float)font->height, 0, 0, fg );
+}
+
+/** en's icon, if it has one, centered in an icon's width at x and h at y */
+static void paint_icon( pixman_image_t* pix, const entry_t* en, int x, int y, int h ) {
+    pixman_image_t* img = en->e.icon ? icon( en->e.icon, L.icon_px ) : NULL;
+    if (!img) return;
+    const int iw = pixman_image_get_width( img ), ih = pixman_image_get_height( img );
+    pixman_image_composite32( PIXMAN_OP_OVER, img, NULL, pix, 0, 0, 0, 0, x + (L.icon_px - iw) / 2, y + (h - ih) / 2,
+                              iw, ih );
+}
+
+/** what the query matched in en's name, into pos; returns how many */
+static int marks( const awl_fuzzy_query_t* fq, const entry_t* en, int* pos ) {
+    return fq->n && awl_fuzzy_match( fq, en->e.name, NULL, NULL, pos ) ? fq->n : 0;
+}
+
+static void paint_bar( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, uint32_t fg, uint32_t dim,
+                       uint32_t match ) {
+    const awl_popup_config_t* pc = &awl_config()->popup;
+    paint_query( pix, font, x0 + L.pad, x0 + L.input_w - L.pad, y0, L.h, fg, dim );
+    if (!L.nres) {
+        awl_host->text_over( pix, font, x0 + L.input_w + L.pad, y0, (unsigned)(L.w - L.input_w - L.pad),
+                             (unsigned)L.h, L.idx ? "no match" : "reading the applications…", dim );
+        return;
+    }
+    awl_fuzzy_query_t fq;
+    awl_fuzzy_query( &fq, L.query );
+    const int inset = px( 2 );
+    for (int i = 0; i < L.nshown; i++) {
+        const int r = L.top + i, x = x0 + L.bx[i];
+        const entry_t* en = &L.idx->v[L.res[r].entry];
+        if (r == L.sel)
+            awl_fill_shape( pix, (float)x, (float)(y0 + inset), (float)L.bw[i], (float)(L.h - 2 * inset),
+                            (float)px( pc->radius < 6 ? (float)pc->radius : 6 ), 0, pc->hover );
+        int tx = x + L.pad;
+        if (icon_slot( en )) {
+            paint_icon( pix, en, tx, y0, L.h );
+            tx += L.icon_px + L.gap;
+        }
+        int pos[AWL_FUZZY_MAX_QUERY];
+        const int n = marks( &fq, en, pos );
+        text_marked( pix, font, en->e.name, pos, n, tx, y0, x + L.bw[i] - L.pad, L.h, fg, match );
+    }
+}
+
+static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
+    const awl_popup_config_t* pc = &awl_config()->popup;
+    const uint32_t fg = pc->fg, dim = CFG->dim ? CFG->dim : pc->dim, match = CFG->match ? CFG->match : fg;
+    if (bar()) {
+        paint_bar( pix, font, x0, y0, fg, dim, match );
+        return;
+    }
+
+    int x, right;
+    paint_query( pix, font, x0 + L.pad, x0 + L.w - L.pad, y0, L.input_h, fg, dim );
 
     const float t = fmaxf( 1, (float)px( 1 ) );
     awl_fill_shape( pix, (float)x0, (float)(y0 + L.input_h) + ((float)L.sep_h - t) / 2, (float)L.w, t, 0, 0, dim );
@@ -789,17 +930,12 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             awl_fill_shape( pix, (float)x0, (float)y, (float)L.w, (float)L.row_h,
                             (float)px( pc->radius < 6 ? (float)pc->radius : 6 ), 0, pc->hover );
         x = x0 + L.pad;
-        pixman_image_t* img = en->e.icon ? icon( en->e.icon, L.icon_px ) : NULL;
-        if (img) {
-            const int iw = pixman_image_get_width( img ), ih = pixman_image_get_height( img );
-            pixman_image_composite32( PIXMAN_OP_OVER, img, NULL, pix, 0, 0, 0, 0, x + (L.icon_px - iw) / 2,
-                                      y + (L.row_h - ih) / 2, iw, ih );
-        }
+        paint_icon( pix, en, x, y, L.row_h );
         x += L.icon_px + L.gap;
         right = x0 + L.w - L.pad;
         /* the name, what the query matched in it marked */
-        int pos[AWL_FUZZY_MAX_QUERY], n = 0;
-        if (fq.n && awl_fuzzy_match( &fq, en->e.name, NULL, NULL, pos )) n = fq.n;
+        int pos[AWL_FUZZY_MAX_QUERY];
+        const int n = marks( &fq, en, pos );
         x = text_marked( pix, font, en->e.name, pos, n, x, y, right, L.row_h, fg, match );
         if (en->e.generic && x + L.gap < right)
             awl_host->text_over( pix, font, x + L.gap, y, (unsigned)(right - x - L.gap), (unsigned)L.row_h,
@@ -807,8 +943,14 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     }
 }
 
-/** the result row at px, py; -1 the query, or none */
+/** the result row (the bar layout's: the result shown) at px, py; -1 the
+ * query, or none */
 static int hit( void* data, int x, int y ) {
+    if (bar()) {
+        for (int i = 0; i < L.nshown; i++)
+            if (x >= L.bx[i] && x < L.bx[i] + L.bw[i] && y >= 0 && y < L.h) return i;
+        return -1;
+    }
     const int ry0 = L.input_h + L.sep_h;
     if (x < 0 || x >= L.w || y < ry0) return -1;
     const int i = (y - ry0) / L.row_h;
@@ -816,6 +958,14 @@ static int hit( void* data, int x, int y ) {
 }
 
 static int box( void* data, int part, int* x, int* y, int* w, int* h ) {
+    if (bar()) {
+        if (part < 0 || part >= L.nshown) return 0;
+        *x = L.bx[part];
+        *y = 0;
+        *w = L.bw[part];
+        *h = L.h;
+        return 1;
+    }
     if (part < 0 || part >= L.rows) return 0;
     *x = 0;
     *y = L.input_h + L.sep_h + part * L.row_h;
@@ -828,12 +978,17 @@ static const awl_window_painter_t painter = { measure, paint, hit, box };
 
 /* ---- choosing and launching ---- */
 
-/** moves the choice to row r, scrolled into view */
+/** moves the choice to row r, scrolled into view (the bar layout's paged
+ * by measure_bar()) */
 static void choose( int r ) {
     if (!L.nres) return;
     if (r < 0) r = 0;
     if (r >= L.nres) r = L.nres - 1;
     L.sel = r;
+    if (bar()) {
+        awl_host->window_redraw( L.win );
+        return;
+    }
     if (L.sel < L.top) L.top = L.sel;
     if (L.rows > 0 && L.sel >= L.top + L.rows) L.top = L.sel - L.rows + 1;
     awl_host->window_redraw( L.win );
@@ -905,9 +1060,19 @@ static void query_back( int word ) {
     L.query[n] = '\0';
 }
 
+/** results a page up or down moves */
+static int page( void ) {
+    const int n = bar() ? L.nshown : L.rows;
+    return n > 0 ? n : 1;
+}
+
 static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods, void* data ) {
     const int ctrl = mods & WLR_MODIFIER_CTRL, other = mods & (WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO);
     if (other) return 0;
+    if (bar() && (sym == XKB_KEY_Left || sym == XKB_KEY_Right)) {
+        choose( L.sel + (sym == XKB_KEY_Left ? -1 : 1) );
+        return 1;
+    }
     switch (sym) {
     case XKB_KEY_Escape: close_launcher(); return 1;
     case XKB_KEY_Return:
@@ -916,8 +1081,8 @@ static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods
     case XKB_KEY_ISO_Left_Tab: choose( L.sel - 1 ); return 1;
     case XKB_KEY_Down:
     case XKB_KEY_Tab: choose( L.sel + 1 ); return 1;
-    case XKB_KEY_Page_Up: choose( L.sel - L.rows ); return 1;
-    case XKB_KEY_Page_Down: choose( L.sel + L.rows ); return 1;
+    case XKB_KEY_Page_Up: choose( L.sel - page() ); return 1;
+    case XKB_KEY_Page_Down: choose( L.sel + page() ); return 1;
     case XKB_KEY_BackSpace:
         query_back( ctrl );
         filter();
@@ -953,7 +1118,8 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
 static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, double delta, int32_t value120,
                     void* data ) {
     static double acc;
-    if (orientation != 0) return;
+    /* the bar layout's row goes sideways too */
+    if (orientation != 0 && !bar()) return;
     acc += value120 ? value120 / 120.0 : delta / 10.0;
     const int steps = (int)acc;
     if (!steps) return;
@@ -967,7 +1133,7 @@ static void hover( awl_window_t* win, int row, int inside, void* data ) {
 
 static void hidden( awl_window_t* win, void* data ) {
     L.query[0] = '\0';
-    L.nres = L.sel = L.top = 0;
+    L.nres = L.sel = L.top = L.nshown = 0;
 }
 
 void awl_launcher_toggle( void ) {
@@ -990,7 +1156,10 @@ void awl_launcher_toggle( void ) {
     index_take();
     L.query[0] = '\0';
     filter();
-    awl_host->window_show_at( L.win, m, CFG->at, 0, CFG->dy );
+    if (bar())
+        awl_host->window_show_at( L.win, m, CFG->strip_at, 0, 0 );
+    else
+        awl_host->window_show_at( L.win, m, CFG->at, 0, CFG->dy );
     /* no index yet: it comes while it is open */
     if (!L.idx) awl_host->timer_set( L.timer, ICON_POLL_MS );
 }

@@ -310,7 +310,9 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
 
         text += utf8charlen;
         x += glyph->advance.x;
-        w -= glyph->advance.x;
+        /* the kerning too, as text_width() counts it: else a negative one
+         * (e.g. "PA") leaves too little for the last glyph */
+        w = (unsigned int)((long)w - x_kern - glyph->advance.x);
     }
 
     pixman_image_unref(fg_pix);
