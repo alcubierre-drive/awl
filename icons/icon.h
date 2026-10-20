@@ -67,14 +67,16 @@ void awl_icons_free( awl_icons_t* icons );
  * without too. *flags (may be NULL): AWL_ICON_* of what was found. */
 char* awl_icons_lookup( awl_icons_t* icons, const char* name, int px, const char* const* extra, unsigned* flags );
 
-/** A file's contents, malloc()ed, *len its length; NULL if it can't be read
+/** A file's contents, malloc()ed, its length in ``*len``; NULL if it can't be read
  * or is larger than `AWL_ICON_MAX_BYTES`. */
 void* awl_icon_read( const char* path, size_t* len );
 
 /** A PNG, or an SVG if svg, fitted into max_w x max_h keeping its aspect
  * ratio (scaled up as well as down) as premultiplied PIXMAN_a8r8g8b8; NULL
- * if it can't be decoded or is too large. */
-pixman_image_t* awl_icon_decode( const void* data, size_t len, int svg, int max_w, int max_h );
+ * if it can't be decoded or is too large. source names the data in the
+ * verbose log line each decode writes (its path, or e.g. "tray item 'x'";
+ * NULL: "data"). */
+pixman_image_t* awl_icon_decode( const void* data, size_t len, int svg, int max_w, int max_h, const char* source );
 /** `awl_icon_read()` and `awl_icon_decode()` of path, SVG allowed */
 pixman_image_t* awl_icon_load( const char* path, int max_w, int max_h );
 

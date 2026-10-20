@@ -108,8 +108,8 @@ typedef struct awl_host_t {
 
     /* ---- awl's state and actions ---- */
 
-    /** `configdefaults()`: fills in c with awl's defaults (awl_defaults.c),
-     * which plugins_config.c changes; they point into awl, so they stay
+    /** `configdefaults()`: fills in c with awl's defaults
+     * (awl_config_defaults.h), which plugins_config.c changes; they point into awl, so they stay
      * valid */
     void (*config_defaults)( awl_config_t* c );
     /** what plugins_config.c binds keys and buttons to */

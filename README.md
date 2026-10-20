@@ -46,8 +46,8 @@ The configuration is in two files:
 - plugins_config.c is built into `libawlplugins.so`, so `make` followed by
   `plugin_restart` (MOD+Ctrl+r) applies it to the running awl. Only its
   part between the `CUSTOM` markers is configuration: there,
-  `configure(c, p)` gets awl's defaults (awl_defaults.c) in `c` and the
-  plugins' (plugins_defaults.c) in `p`, and changes only what it wants,
+  `configure(c, p)` gets awl's defaults (awl_config_defaults.h) in `c` and the
+  plugins' (plugin_config_defaults.h) in `p`, and changes only what it wants,
   e.g. `c->modkey = WLR_MODIFIER_LOGO;`, `SETLIST(c->keys, keys);` for
   bindings of its own, or `p->colors.bg = ...;` for the bar; `awl_config_t`
   in awl.h and `awl_plugin_config_t` in plugins.h list everything there

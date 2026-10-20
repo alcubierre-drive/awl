@@ -142,7 +142,11 @@ static pixman_image_t* icon( int i ) {
     if (!M.tried[i]) {
         M.tried[i] = 1;
         /* an SVG only from a file: icon-data is a PNG */
-        M.icons[i] = awl_icon_decode( n->icon, n->icon_len, !!(n->flags & AWL_TRAY_MENU_FILE), M.icon_px, M.icon_px );
+        char source[128];
+        snprintf( source, sizeof source, "tray menu entry '%s' (its %s)", n->label,
+                  n->flags & AWL_TRAY_MENU_FILE ? "icon-name's file" : "icon-data" );
+        M.icons[i] = awl_icon_decode( n->icon, n->icon_len, !!(n->flags & AWL_TRAY_MENU_FILE), M.icon_px, M.icon_px,
+                                      source );
         if (!M.icons[i]) awl_vrb_printf( "tray: menu entry '%s': can't decode its icon\n", n->label );
     }
     return M.icons[i];
@@ -227,9 +231,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     level_t* L = data;
     /* the blur is the window's (window_set_menu_style) */
     const struct awl_popup_menu_config_t c = awl_popup_menu_config( &awl_config()->popup, 0 );
-    const awl_plugin_config_t* pc = awl_plugin_config();
-    const uint32_t dim = pc->popup.menu.dim ? pc->popup.menu.dim : pc->popup.dim,
-                   highlight_fg = pc->popup.menu.highlight_fg ? pc->popup.menu.highlight_fg : c.fg;
+    const uint32_t dim = c.dim, highlight_fg = c.highlight_fg;
     const level_t* sub = child_of( L );
     L->x0 = x0;
     for (int i = L->top; i < L->top + L->shown; i++) {

@@ -187,6 +187,7 @@ static awl_image_t* decode( Changer* c, const char* path ) {
                                              wuffs_base__make_slice_u8( work, wlen ), NULL );
     while (s.repr == wuffs_base__suspension__short_read && feedmore( c, &src ));
     if (!wuffs_base__status__is_ok( &s )) err = wuffs_base__status__message( &s );
+    else awl_vrb_printf( "wallpaper: decoded PNG %s (%lld bytes): %ux%u\n", path, (long long)st.st_size, w, h );
 
 out:
     if (!dec) err = "out of memory";

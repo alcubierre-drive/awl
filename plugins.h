@@ -56,8 +56,9 @@ enum {
 
 /**
  * What only the plugin library reads of the configuration: its defaults
- * (plugins_defaults.c) with plugins_config.c's changes, next to
- * `awl_config_t` (awl.h), which awl reads. Colors are 0xRRGGBBAA, sizes
+ * (plugin_config_defaults.h) with plugins_config.c's changes, next to
+ * `awl_config_t` (awl.h), which awl reads (the tray's, the popups' and the
+ * desktop file list's look are there). Colors are 0xRRGGBBAA, sizes
  * logical pixels. Main thread.
  */
 typedef struct awl_plugin_config_t {
@@ -65,39 +66,6 @@ typedef struct awl_plugin_config_t {
      * edge in; set with SETLIST() */
     struct { const int* v; size_t n; } widgets;
     struct { AWL_BAR_COLORS( AWL_BAR_COLOR_U32 ) } colors;
-    /** the tray widget: its background, its icons' size and the gap
-     * between them */
-    struct {
-        uint32_t bg;
-        float icon_size, icon_gap;
-    } tray;
-    /** the plugins' popups, beyond `awl_config_t.popup` */
-    struct {
-        /** what matters less: the calendar's neighbouring months' days, the
-         * IP popup's missing routes */
-        uint32_t dim;
-        /** the clock's calendar: today's date, the selected day's
-         * background; list_min_height and list_max_height: the event list,
-         * which scrolls beyond the maximum (0: none) */
-        struct {
-            uint32_t today, selected;
-            int list_min_height, list_max_height;
-        } calendar;
-        /** the tray's menus: disabled entries, shortcuts and separators
-         * (0: dim), and the text of the entry under the pointer (0: the
-         * menu's fg) */
-        struct {
-            uint32_t dim, highlight_fg;
-        } menu;
-    } popup;
-    /** the desktop file list: its background, the names of files, folders
-     * and broken links, the alpha of hidden files' names, its distance
-     * from the usable area's corner */
-    struct {
-        uint32_t bg, file, dir, broken;
-        uint8_t hidden_alpha;
-        float margin;
-    } desktop;
     /** the temperature's color scale, °C: of the CPU package sensor
      * (coretemp), else of ACPI's thermal_zone0 */
     struct {
@@ -175,7 +143,5 @@ void awl_config_init( void );
 const awl_config_t* awl_config( void );
 /** plugins_config.c: the plugins' config `awl_config_init()` made */
 const awl_plugin_config_t* awl_plugin_config( void );
-/** plugins_defaults.c: fills in p with the plugins' defaults */
-void awl_plugin_config_defaults( awl_plugin_config_t* p );
 /** plugins_config.c: `awl_plugin_api_t.config`, a copy of `awl_config()` */
 void awl_config_fill( awl_config_t* c );

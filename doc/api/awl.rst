@@ -6,7 +6,7 @@ awl, the configuration `awl_config_t` among them; awl_core.h the types only
 awl's modules share; awl_server.h the core objects every part of awl uses
 (the display, the backend, the scene, the seat). awl.c starts awl, runs its
 main loop and takes it down again; everything else is a module of its own,
-each with a header: the configuration, its defaults (awl_defaults.c) and its
+each with a header: the configuration, its defaults (awl_config_defaults.h) and its
 reloads (awl_config.h), the
 outputs (awl_output.h), the clients (awl_client.h, awl_xwayland.h), layouts
 and tags (awl_layout.h), layer surfaces (awl_layer.h), the input devices and
@@ -40,10 +40,10 @@ awl_config.h
 
 .. c:autodoc:: awl_config.h
 
-awl_defaults.c
---------------
+awl_config_defaults.h
+---------------------
 
-.. c:autodoc:: awl_defaults.c
+.. c:autodoc:: awl_config_defaults.h
 
 awl_output.h
 ------------

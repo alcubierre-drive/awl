@@ -20,9 +20,9 @@
 #include <sys/inotify.h>
 #include <unistd.h>
 
-/** the look, `awl_plugin_config_t.desktop`; hidden entries, "(empty)" and
+/** the look, `awl_config_t.desktop`; hidden entries, "(empty)" and
  * "… N more" keep their color at its hidden_alpha */
-#define DESK (&awl_plugin_config()->desktop)
+#define DESK (&awl_config()->desktop)
 
 #define NFILES (sizeof(((DesktopFiles*)0)->files) / sizeof(Filename))
 

@@ -157,9 +157,9 @@ and restart of awl apply. Everything else is two structs: `awl_config_t`
 widgets and colors, the tray widget's look, the calendar's, the desktop
 file list's, the temperature scales, the battery.
 
-awl_defaults.c holds awl's defaults; awl runs with them while no library is
+awl_config_defaults.h holds awl's defaults; awl runs with them while no library is
 loaded, and hands them to the library as `awl_host_t.config_defaults`.
-plugins_defaults.c holds the library's. The ``CUSTOM`` part of
+plugin_config_defaults.h holds the library's. The ``CUSTOM`` part of
 plugins_config.c is the configuration: its ``configure(c, p)`` changes what it wants in both: a
 value (``c->borderpx = 2``), a part (``c->popup.font = "sans:size="``,
 ``p->colors.win_focused = ...``), or a list, pointed at its own array with
@@ -173,15 +173,18 @@ binding is pressed, so changing the modifier needs no new bindings. Monitor
 rules and ``setlayout`` take a layout's index, so awl's default bindings and
 rules work with the library's layouts too.
 
-The functions the configuration binds keys to are awl's; in the library, they
-are same-named wrappers that call awl through `awl_host_t.actions`, so its
-``CUSTOM`` part reads like a dwl config.h. A function it binds has to be listed in
-`AWL_ACTIONS` (or `AWL_ARRANGES` for layouts), or be one of the library's own
-actions, defined next to the wrappers (``notifyconfig``,
-``backlighttoggle``), or be defined in the ``CUSTOM`` part. The wrappers and
-those actions aren't static, so any of them may stay unbound without a
-warning, and the library exports none of them. awl's defaults can bind only
-`AWL_ACTIONS`.
+The functions the configuration binds keys to are awl's. A binding names
+one as ``AWL_ACTION(spawn)``, a layout its arrange function as
+``AWL_LAYOUT(tile)`` (`AWL_ACTION()`, awl.h): in the library that is a
+wrapper, ``awl_action_spawn``, that calls awl through `awl_host_t.actions`,
+in awl the function itself, so the arrays of awl_config_defaults.h can be
+copied into the ``CUSTOM`` part as they are. A function a binding names so
+has to be listed in `AWL_ACTIONS` (or `AWL_ARRANGES` for layouts), or be one
+of the library's own actions, defined next to the wrappers
+(``notifyconfig``, ``backlighttoggle``); a function defined in the
+``CUSTOM`` part is named as it is. The wrappers and those actions aren't
+static, so any of them may stay unbound without a warning, and the library
+exports none of them. awl's defaults can bind only `AWL_ACTIONS`.
 
 Adding to the ABI
 -----------------

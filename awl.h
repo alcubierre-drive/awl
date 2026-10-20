@@ -285,12 +285,14 @@ typedef struct awl_window_painter_t {
 
 /** `awl_config_t.popup`: how awl's own popups (awl_window.h) look, the bar
  * widgets' (the clock's calendar, the IP addresses) and awl's. Colors
- * 0xRRGGBBAA, sizes logical pixels. What only the plugins draw with is in
- * their own config (plugins.h, `awl_plugin_config_t.popup`). */
+ * 0xRRGGBBAA, sizes logical pixels. */
 typedef struct awl_popup_config_t {
     uint32_t bg, fg, border;
     /** the row under the pointer, the buttons' background */
     uint32_t hover;
+    /** what matters less: the calendar's neighbouring months' days, the
+     * IP popup's missing routes */
+    uint32_t dim;
     int border_width, radius, padding;
     /** the gap to the bar and to the monitor's sides, see awl_window_margin() */
     int margin;
@@ -300,14 +302,24 @@ typedef struct awl_popup_config_t {
      * font); NULL and 0 each take the bar's */
     const char *font;
     int fontsize;
+    /** the clock's calendar: today's date, the selected day's background;
+     * list_min_height and list_max_height: the event list, which scrolls
+     * beyond the maximum (0: none) */
+    struct {
+        uint32_t today, selected;
+        int list_min_height, list_max_height;
+    } calendar;
     /** the tray's menus, their own look; what is 0 (left out) is the
-     * popups': bg, fg, border, highlight (hover), border_width, radius and
-     * blur (blur.launcher). A negative border_width, radius or blur is
-     * none. */
+     * popups': bg, fg, border, highlight (hover), dim, border_width, radius
+     * and blur (blur.launcher), and highlight_fg is the menu's fg. A
+     * negative border_width, radius or blur is none. */
     struct awl_popup_menu_config_t {
         uint32_t bg, fg, border;
-        /** the entry under the pointer, the one whose submenu is open */
-        uint32_t highlight;
+        /** the entry under the pointer, the one whose submenu is open, and
+         * its text */
+        uint32_t highlight, highlight_fg;
+        /** disabled entries, shortcuts and separators */
+        uint32_t dim;
         int border_width, radius;
         /** blur what is behind them, as the launcher */
         int blur;
@@ -323,14 +335,15 @@ static inline struct awl_popup_menu_config_t awl_popup_menu_config( const awl_po
     if (!m.fg) m.fg = c->fg;
     if (!m.border) m.border = c->border;
     if (!m.highlight) m.highlight = c->hover;
+    if (!m.highlight_fg) m.highlight_fg = m.fg;
+    if (!m.dim) m.dim = c->dim;
     m.border_width = m.border_width < 0 ? 0 : m.border_width ? m.border_width : c->border_width;
     m.radius = m.radius < 0 ? 0 : m.radius ? m.radius : c->radius;
     m.blur = m.blur < 0 ? 0 : m.blur ? m.blur : blur_launcher;
     return m;
 }
 
-/** `awl_config_t.tray`; the tray widget's own look is the plugins'
- * (`awl_plugin_config_t.tray`). */
+/** `awl_config_t.tray`, the tray widget and its programs */
 typedef struct awl_tray_config_t {
     /** The icon theme of the tray's icons and their menus, e.g.
      * "Papirus-Dark" (NULL or "": the desktop's). An icon it lacks, or all
@@ -340,6 +353,9 @@ typedef struct awl_tray_config_t {
      * sends as images, or looks up in its own IconThemePath, stay as they
      * are. */
     const char *icon_theme;
+    /** the widget's background, its icons' size and the gap between them */
+    uint32_t bg;
+    float icon_size, icon_gap;
 } awl_tray_config_t;
 
 /** `awl_config_t.desktop`, the desktop file list (awl_desktop.h); it is
@@ -349,6 +365,12 @@ typedef struct awl_desktop_config_t {
      * font); NULL and 0 each take the bar's */
     const char *font;
     int fontsize;
+    /** its background, the names of files, folders and broken links, the
+     * alpha of hidden files' names, its distance from the usable area's
+     * corner */
+    uint32_t bg, file, dir, broken;
+    uint8_t hidden_alpha;
+    float margin;
 } awl_desktop_config_t;
 
 /** `awl_config_t.wallpaper`: the wallpaper action ({.i = WallpaperNext, ...,
@@ -375,14 +397,15 @@ typedef struct awl_wallpaper_config_t {
 
 /**
  * The configuration that can change while awl runs: awl's defaults
- * (awl_defaults.c, `awl_host_t.config_defaults`) with plugins_config.c's
+ * (awl_config_defaults.h, `awl_host_t.config_defaults`) with plugins_config.c's
  * changes, built into the plugin library, so `make` and plugin_restart
  * apply them; while no library is loaded, the defaults alone. What only a
  * restart applies are config.mk's compile-time switches.
  *
- * Only what awl itself reads is here (the library may read it too); what
- * only the plugins read is their own `awl_plugin_config_t` (plugins.h),
- * which plugins_config.c changes alike. Everything it points to is the
+ * What awl itself reads is here (the library may read it too), each group
+ * of settings whole even where awl reads only part of it; what only the
+ * plugins read is their own `awl_plugin_config_t` (plugins.h), which
+ * plugins_config.c changes alike. Everything it points to is the
  * library's or awl's, so awl copies what it keeps past a reload. Monitor
  * rules apply to outputs appearing afterwards.
  */
@@ -501,16 +524,32 @@ typedef struct awl_config_t {
  * sees to that). */
 #define TRAY_ICONS "awl:tray-icons"
 
+/** a binding's function (`Key.func`, `Button.func`): one of `AWL_ACTIONS`,
+ * or the library's own actions (plugins_config.c). In the library its
+ * wrapper around `awl_host_t.actions`, awl_action_<name>; in awl the
+ * function itself. */
+#ifdef AWL_HOSTED
+#define AWL_ACTION(name)        awl_action_##name
+#else
+#define AWL_ACTION(name)        name
+#endif
+/** a layout's arrange function (`Layout.arrange`), one of `AWL_ARRANGES`;
+ * awl_layout_<name> in the library, like `AWL_ACTION()` */
+#ifdef AWL_HOSTED
+#define AWL_LAYOUT(name)        awl_layout_##name
+#else
+#define AWL_LAYOUT(name)        name
+#endif
 /** sets the list l (`awl_config_t.keys` & co.) to the array a */
 #define SETLIST(l, a)           ((l).v = (a), (l).n = LENGTH(a))
 /** the four bindings of tag TAG: view, toggleview, tag, toggletag */
 #define TAGKEYS(KEY,SKEY,TAG) \
-    { MODKEY,                    KEY,            view,            {.ui = 1ul << TAG} }, \
-    { MODKEY|WLR_MODIFIER_CTRL,  KEY,            toggleview,      {.ui = 1ul << TAG} }, \
-    { MODKEY|WLR_MODIFIER_SHIFT, SKEY,           tag,             {.ui = 1ul << TAG} }, \
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,toggletag, {.ui = 1ul << TAG} }
+    { MODKEY,                    KEY,            AWL_ACTION(view),            {.ui = 1ul << TAG} }, \
+    { MODKEY|WLR_MODIFIER_CTRL,  KEY,            AWL_ACTION(toggleview),      {.ui = 1ul << TAG} }, \
+    { MODKEY|WLR_MODIFIER_SHIFT, SKEY,           AWL_ACTION(tag),             {.ui = 1ul << TAG} }, \
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,AWL_ACTION(toggletag), {.ui = 1ul << TAG} }
 /** Ctrl-Alt-Fn: to VT n */
-#define CHVT(n) { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_XF86Switch_VT_##n, chvt, {.ui = (n)} }
+#define CHVT(n) { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_XF86Switch_VT_##n, AWL_ACTION(chvt), {.ui = (n)} }
 /** spawn's argument for a shell command */
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 

@@ -407,8 +407,11 @@ static pixman_image_t* sniwidget_icon( sniwidget_t* u, const awl_sni_item_t* it,
             }
             break;
         }
-    if (it->file)
-        return awl_icon_decode( it->file->data, it->file->len, !!(it->file_flags & AWL_ICON_SVG), u->px, u->px );
+    if (it->file) {
+        char source[128];
+        snprintf( source, sizeof source, "tray item '%s' (its file)", it->name );
+        return awl_icon_decode( it->file->data, it->file->len, !!(it->file_flags & AWL_ICON_SVG), u->px, u->px, source );
+    }
     if (it->pixmaps)
         return awl_icon_from_pixmaps( (const awl_icon_pixmap_t*)it->pixmaps->data, it->npixmaps, u->px, u->px );
     return NULL;
@@ -421,10 +424,10 @@ static uint32_t sniwidget_measure( widget_t* w ) {
     sni_main_poll( P->sni );
     float scale = w->bar->m->wlr_output->scale;
     int h = (int)w->bar->m->b.height;
-    u->px = (int)lroundf( awl_plugin_config()->tray.icon_size * scale );
+    u->px = (int)lroundf( awl_config()->tray.icon_size * scale );
     if (u->px > h - 2) u->px = h - 2;
     if (u->px < 1) u->px = 1;
-    u->gap = (int)lroundf( awl_plugin_config()->tray.icon_gap * scale );
+    u->gap = (int)lroundf( awl_config()->tray.icon_gap * scale );
     /* the lookups go by the largest bar's of those there are */
     int largest = 0;
     for (const sniwidget_t* o = sniwidgets; o; o = o->next)
@@ -455,7 +458,7 @@ static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     if (!P || !u) return 0;
     u->x = x;
     int h = (int)w->bar->m->b.height;
-    pixman_color_t bg = color_8bit_to_16bit( awl_plugin_config()->tray.bg );
+    pixman_color_t bg = color_8bit_to_16bit( awl_config()->tray.bg );
     pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &bg, 1, &(pixman_box32_t){
         .x1 = x, .x2 = x + w->width, .y1 = 0, .y2 = h } );
     for (int i = 0; i < u->nicons; i++) {
@@ -813,7 +816,7 @@ static uint32_t ipwidget_measure( widget_t* w ) {
 
     // the popup: interface, address, default route metric; the routed one
     // in the bar's color for it, what is missing dimmed
-    const uint32_t fg = awl_config()->popup.fg, dim = awl_plugin_config()->popup.dim,
+    const uint32_t fg = awl_config()->popup.fg, dim = awl_config()->popup.dim,
                    hi = color_16bit_to_8bit( s->fg );
     ipwidget_table_t t;
     memset( &t, 0, sizeof t );
@@ -1215,6 +1218,8 @@ static int eyes_closed_decode( void ) {
             wuffs_base__make_slice_u8( work, wlen ), NULL );
     if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
     state = 1;
+    awl_vrb_printf( "backlight widget: decoded PNG icons/eyes_closed.png (embedded, %u bytes): %dx%d\n",
+                    (unsigned)icons_eyes_closed_png_len, eyes_closed_w, eyes_closed_h );
 
 out:
     if (err) awl_err_printf( "backlight widget: can't decode the closed eyes: %s\n", err );

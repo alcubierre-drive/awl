@@ -19,14 +19,14 @@ LDLIBS    = `$(PKG_CONFIG) --libs $(PKGS)` -lm $(LIBS)
 # libawlplugins.so: the plugin threads and the bar widgets, dlopen()ed by
 # awl_plugin_host.c and reloaded with plugin_restart (see awl_plugin_abi.h).
 PLUGINS_SRC := $(wildcard plugins/*.c)
-PLUGINS_OBJ := $(patsubst %.c,%.o,$(PLUGINS_SRC)) plugins.o plugins_widgets.o plugins_desktop_panel.o plugins_config.o plugins_defaults.o \
+PLUGINS_OBJ := $(patsubst %.c,%.o,$(PLUGINS_SRC)) plugins.o plugins_widgets.o plugins_desktop_panel.o plugins_config.o \
 	wuffs/wuffs.o plutosvg/svg.o icons/icon.o
 PLUGINS_PKGS = libpulse libsystemd pixman-1 fcft
 # --as-needed drops config.mk's -lscenefx, which only awl uses
 PLUGINS_LIBS = -Wl,--as-needed `$(PKG_CONFIG) --libs $(PLUGINS_PKGS)` -lm -pthread
 
 # awl.c starts and ends awl; each awl_*.c is a part of it, see its header
-AWL_OBJ := awl.o awl_config.o awl_defaults.o awl_output.o awl_bar.o awl_popup.o awl_client.o awl_xwayland.o \
+AWL_OBJ := awl.o awl_config.o awl_output.o awl_bar.o awl_popup.o awl_client.o awl_xwayland.o \
 	awl_layout.o awl_layer.o awl_input.o awl_cursor.o awl_lockscreen.o awl_spawn.o awl_wallpaper.o \
 	awl_test.o awl_log.o awl_dict.o awl_util.o awl_draw.o awl_plugin_host.o awl_desktop.o \
 	awl_background.o awl_redraw.o awl_sni.o awl_alert.o awl_window.o awl_window_draw.o \
@@ -159,7 +159,7 @@ dist: clean
 	mkdir -p awl-$(VERSION)/plugins awl-$(VERSION)/tray awl-$(VERSION)/wuffs awl-$(VERSION)/icons
 	cp -R LICENSE Makefile README.md config.mk protocols \
 		awl.c awl.h awl_*.c awl_*.h \
-		plugins.c plugins.h plugins_*.c \
+		plugins.c plugins.h plugins_*.c plugins_*.h plugin_config_defaults.h \
 		awl-$(VERSION)
 	cp plugins/*.c plugins/*.h awl-$(VERSION)/plugins
 	cp wuffs/*.c wuffs/*.h awl-$(VERSION)/wuffs

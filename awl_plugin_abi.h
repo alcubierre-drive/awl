@@ -27,39 +27,55 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 24
+#define AWL_PLUGIN_ABI 25
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
 /**
- * Every awl function the configuration (plugins_config.c) can bind to a key or button, as an X macro.
- * The library binds them through same-named wrappers around
- * `awl_host_t.actions` (plugins_config.c).
+ * Every awl function the configuration (plugins_config.c) can bind to a key
+ * or button, one ``AWL_ACTION_REGISTER( name )`` each: define
+ * AWL_ACTION_REGISTER before expanding the list, undefine it after.
+ * The library binds them through wrappers around `awl_host_t.actions`,
+ * awl_action_<name> (plugins_config.c), which bindings write as
+ * `AWL_ACTION()`.
  */
-#define AWL_ACTIONS( X ) \
-    X( changebw ) X( chvt ) X( cycle_layout ) X( cycle_view ) X( focusmon ) \
-    X( focusstack ) X( incnmaster ) X( killclient ) X( lockscreen ) X( maximize ) X( minimize ) \
-    X( moveresize ) X( movestack ) X( plugin_restart ) X( quit ) X( setlayout ) X( setmfact ) \
-    X( spawn ) X( tag ) X( tagmon ) X( togglebar ) X( togglebw ) X( togglefloating ) \
-    X( togglefullscreen ) X( toggleontop ) X( togglepertag ) X( toggletag ) X( toggleview ) \
-    X( transluce ) X( unminimize ) X( view ) X( wallpaper ) X( wallpapermode )
+#define AWL_ACTIONS \
+    AWL_ACTION_REGISTER( changebw ) AWL_ACTION_REGISTER( chvt ) \
+    AWL_ACTION_REGISTER( cycle_layout ) AWL_ACTION_REGISTER( cycle_view ) \
+    AWL_ACTION_REGISTER( focusmon ) AWL_ACTION_REGISTER( focusstack ) \
+    AWL_ACTION_REGISTER( incnmaster ) AWL_ACTION_REGISTER( killclient ) \
+    AWL_ACTION_REGISTER( lockscreen ) AWL_ACTION_REGISTER( maximize ) \
+    AWL_ACTION_REGISTER( minimize ) AWL_ACTION_REGISTER( moveresize ) \
+    AWL_ACTION_REGISTER( movestack ) AWL_ACTION_REGISTER( plugin_restart ) \
+    AWL_ACTION_REGISTER( quit ) AWL_ACTION_REGISTER( setlayout ) \
+    AWL_ACTION_REGISTER( setmfact ) AWL_ACTION_REGISTER( spawn ) AWL_ACTION_REGISTER( tag ) \
+    AWL_ACTION_REGISTER( tagmon ) AWL_ACTION_REGISTER( togglebar ) \
+    AWL_ACTION_REGISTER( togglebw ) AWL_ACTION_REGISTER( togglefloating ) \
+    AWL_ACTION_REGISTER( togglefullscreen ) AWL_ACTION_REGISTER( toggleontop ) \
+    AWL_ACTION_REGISTER( togglepertag ) AWL_ACTION_REGISTER( toggletag ) \
+    AWL_ACTION_REGISTER( toggleview ) AWL_ACTION_REGISTER( transluce ) \
+    AWL_ACTION_REGISTER( unminimize ) AWL_ACTION_REGISTER( view ) \
+    AWL_ACTION_REGISTER( wallpaper ) AWL_ACTION_REGISTER( wallpapermode )
 
-#define AWL_ACTION_FIELD( name ) void (*name)( const Arg* arg );
+#define AWL_ACTION_REGISTER( name ) void (*name)( const Arg* arg );
 /** awl's functions of `AWL_ACTIONS`, one ``void (*name)( const Arg* )`` each */
 typedef struct awl_actions_t {
-    AWL_ACTIONS( AWL_ACTION_FIELD )
+    AWL_ACTIONS
 } awl_actions_t;
-#undef AWL_ACTION_FIELD
+#undef AWL_ACTION_REGISTER
 
-/** awl's layouts' arrange functions, likewise */
-#define AWL_ARRANGES( X ) X( bstack ) X( gaplessgrid ) X( monocle ) X( tile )
+/** awl's layouts' arrange functions, one ``AWL_LAYOUT_REGISTER( name )``
+ * each, used like `AWL_ACTIONS`; layouts write them as `AWL_LAYOUT()` */
+#define AWL_ARRANGES \
+    AWL_LAYOUT_REGISTER( bstack ) AWL_LAYOUT_REGISTER( gaplessgrid ) \
+    AWL_LAYOUT_REGISTER( monocle ) AWL_LAYOUT_REGISTER( tile )
 
-#define AWL_ARRANGE_FIELD( name ) void (*name)( Monitor* m );
+#define AWL_LAYOUT_REGISTER( name ) void (*name)( Monitor* m );
 /** the functions of `AWL_ARRANGES`, one ``void (*name)( Monitor* )`` each */
 typedef struct awl_arranges_t {
-    AWL_ARRANGES( AWL_ARRANGE_FIELD )
+    AWL_ARRANGES
 } awl_arranges_t;
-#undef AWL_ARRANGE_FIELD
+#undef AWL_LAYOUT_REGISTER
 
 /** What the library provides. Main thread only. */
 typedef struct awl_plugin_api_t {

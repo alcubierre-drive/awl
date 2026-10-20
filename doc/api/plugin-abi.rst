@@ -39,7 +39,7 @@ plugins_config.c
 
 .. c:autodoc:: plugins_config.c
 
-plugins_defaults.c
-------------------
+plugin_config_defaults.h
+------------------------
 
-.. c:autodoc:: plugins_defaults.c
+.. c:autodoc:: plugin_config_defaults.h

@@ -1,4 +1,5 @@
 #include "awl_config.h"
+#include "awl_config_defaults.h"
 #include "awl_alert.h"
 #include "awl_bar.h"
 #include "awl_client.h"
@@ -21,10 +22,12 @@ static void pluginsattach(void);
 static void pluginrestart(void *data);
 static void cfgdictdefaults(void);
 
-#define AWL_ACTION_INIT(name) .name = name,
-const awl_actions_t awl_actions = { AWL_ACTIONS(AWL_ACTION_INIT) };
-const awl_arranges_t awl_arranges = { AWL_ARRANGES(AWL_ACTION_INIT) };
-#undef AWL_ACTION_INIT
+#define AWL_ACTION_REGISTER(name) .name = name,
+#define AWL_LAYOUT_REGISTER(name) .name = name,
+const awl_actions_t awl_actions = { AWL_ACTIONS };
+const awl_arranges_t awl_arranges = { AWL_ARRANGES };
+#undef AWL_ACTION_REGISTER
+#undef AWL_LAYOUT_REGISTER
 
 const awl_config_t *cfg;
 awl_dict_t *cfgdict;
@@ -232,4 +235,16 @@ plugin_restart(const Arg* arg)
      * library's code the reload unloads */
     if (!plugin_restart_source)
         plugin_restart_source = wl_event_loop_add_idle(event_loop, pluginrestart, NULL);
+}
+
+void
+configdefaults(awl_config_t *c)
+{
+    *c = awl_config_defaults;
+}
+
+const awl_config_t *
+builtinconfig(void)
+{
+    return &awl_config_defaults;
 }

@@ -697,7 +697,9 @@ static char* apply_scheme( const char* data, size_t* len ) {
 }
 
 /** drawn at the size it is fitted to: an SVG has no pixels of its own */
-static pixman_image_t* svg( const uint8_t* data, size_t len, int max_w, int max_h ) {
+static pixman_image_t* svg( const uint8_t* data, size_t len, int max_w, int max_h, const char* source ) {
+    /* the file's own length for the log: the color scheme changes len */
+    size_t in_len = len;
     char* themed = apply_scheme( (const char*)data, &len );
     const char* text = themed ? themed : (const char*)data;
     pixman_image_t* img = NULL;
@@ -732,6 +734,9 @@ static pixman_image_t* svg( const uint8_t* data, size_t len, int max_w, int max_
         awl_vrb_printf( "icon: SVG: can't draw it\n" );
         pixman_image_unref( img );
         img = NULL;
+    } else {
+        awl_vrb_printf( "icon: decoded SVG %s (%zu bytes): %gx%g, drawn at %dx%d (scale %.3g) into %dx%d\n",
+                        source, in_len, (double)w, (double)h, tw, th, (double)tw / w, max_w, max_h );
     }
 out:
     if (doc) plutosvg_document_destroy( doc );
@@ -743,24 +748,31 @@ static int sane( int max_w, int max_h ) {
     return max_w > 0 && max_h > 0 && max_w <= AWL_ICON_MAX_DIM && max_h <= AWL_ICON_MAX_DIM;
 }
 
-pixman_image_t* awl_icon_decode( const void* data, size_t len, int allow_svg, int max_w, int max_h ) {
+pixman_image_t* awl_icon_decode( const void* data, size_t len, int allow_svg, int max_w, int max_h, const char* source ) {
     static const uint8_t magic[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
     if (!data || !len || !sane( max_w, max_h )) return NULL;
+    if (!source) source = "data";
     if (len > AWL_ICON_MAX_BYTES) {
-        awl_vrb_printf( "icon: too large (%zu bytes)\n", len );
+        awl_vrb_printf( "icon: %s: too large (%zu bytes)\n", source, len );
         return NULL;
     }
     if (len >= sizeof magic && !memcmp( data, magic, sizeof magic )) {
         pixman_image_t* img = png( data, len );
-        return img ? scaled( img, max_w, max_h ) : NULL;
+        if (!img) return NULL;
+        int w = pixman_image_get_width( img ), h = pixman_image_get_height( img );
+        img = scaled( img, max_w, max_h );
+        if (img)
+            awl_vrb_printf( "icon: decoded PNG %s (%zu bytes): %dx%d, fitted to %dx%d into %dx%d\n", source, len, w, h,
+                            pixman_image_get_width( img ), pixman_image_get_height( img ), max_w, max_h );
+        return img;
     }
-    return allow_svg ? svg( data, len, max_w, max_h ) : NULL;
+    return allow_svg ? svg( data, len, max_w, max_h, source ) : NULL;
 }
 
 pixman_image_t* awl_icon_load( const char* path, int max_w, int max_h ) {
     size_t len;
     void* data = awl_icon_read( path, &len );
-    pixman_image_t* img = data ? awl_icon_decode( data, len, 1, max_w, max_h ) : NULL;
+    pixman_image_t* img = data ? awl_icon_decode( data, len, 1, max_w, max_h, path ) : NULL;
     if (data && !img) awl_vrb_printf( "icon: can't decode %s\n", path );
     free( data );
     return img;
