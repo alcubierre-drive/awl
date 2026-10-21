@@ -54,6 +54,9 @@ enum {
     AWL_NOTIF_TRANSIENT = 1,
     /** ``resident``: an action doesn't close it */
     AWL_NOTIF_RESIDENT = 2,
+    /** awl's own (`awl_host_t.notif_send`): no D-Bus client replaces or
+     * closes it */
+    AWL_NOTIF_AWL = 4,
 };
 
 /** why a notification closed, NotificationClosed's reasons */
@@ -63,6 +66,20 @@ typedef enum awl_notif_reason {
     AWL_NOTIF_CLOSED = 3,
     AWL_NOTIF_UNDEFINED = 4,
 } awl_notif_reason_t;
+
+/**
+ * How a notification looks beyond `awl_plugin_config_t.notify`, for awl's
+ * own (`awl_notif_send_t`); D-Bus has no say in it, a D-Bus one's is all 0.
+ * 0 is the config's everywhere.
+ */
+typedef struct awl_notif_look_t {
+    /** the body's lines shown at most, < 0 any */
+    int max_lines;
+    /** logical pixels: the window's content width, the image's side */
+    int width, image_size;
+    /** 0xRRGGBBAA: text, background, frame, the progress bar's fill */
+    uint32_t fg, bg, frame, progress;
+} awl_notif_look_t;
 
 /**
  * An open notification as awl's server (awl_notifications.h) keeps it,
@@ -99,7 +116,32 @@ typedef struct awl_notif_t {
     unsigned flags;
     /** ms it stays from its last change, 0 until it is dismissed */
     int timeout;
+    /** awl's own look for it, all 0 for a D-Bus one */
+    awl_notif_look_t look;
 } awl_notif_t;
+
+/**
+ * A notification awl sends itself (`awl_host_t.notif_send`): its app is
+ * "awl", it gets the AWL_NOTIF_AWL flag. Start from AWL_NOTIF_SEND_INIT.
+ */
+typedef struct awl_notif_send_t {
+    /** NULL for ""; the body with markup (plugins/markup.h) */
+    const char *summary, *body;
+    /** an absolute path, a file:// URL or an icon name; NULL none */
+    const char* image;
+    awl_notif_urgency_t urgency;
+    /** 0 to 100 (a progress bar); -1 none */
+    int value;
+    /** ms; 0 until it is dismissed; < 0 the config's for its urgency, as a
+     * D-Bus one's (critical: until dismissed) */
+    int timeout;
+    /** replaces the open one of awl's own with the same tag in place (its
+     * id, place and timer's hold stay); NULL none */
+    const char* tag;
+    awl_notif_look_t look;
+} awl_notif_send_t;
+
+#define AWL_NOTIF_SEND_INIT { .urgency = AWL_NOTIF_NORMAL, .value = -1, .timeout = -1 }
 
 /**
  * What awl provides to libawlplugins.so, by topic. All functions are
@@ -206,6 +248,24 @@ typedef struct awl_host_t {
     /** `popupsetmenustyle()`: the window looks like a menu,
      * `awl_config_t.popup`'s menu (awl_popup_menu_config()), from now on */
     void (*window_set_menu_style)( awl_window_t* win );
+    /** `popupsetpersistent()`: the window stays until it is hidden (a
+     * notification): a press elsewhere and other popups shown leave it,
+     * showing it closes no menu, and it is above the other popups, over
+     * fullscreen clients too if `awl_config_t.popup`'s persistent_overlay;
+     * out of sight while the screen is locked, back after. 0: an ordinary
+     * popup again. */
+    void (*window_set_persistent)( awl_window_t* win, int persistent );
+    /** `popupsetcolors()`: the window's own background, text and border
+     * colors (0xRRGGBBAA; a painter's content is its own), 0 for the
+     * popups' (`awl_config_t.popup`) */
+    void (*window_set_colors)( awl_window_t* win, uint32_t bg, uint32_t fg, uint32_t border );
+    /** `popuproom()`: the room the window has on m at a spot
+     * (window_show_at): m's window area less the window's margins, layout
+     * coordinates */
+    void (*window_room)( awl_window_t* win, Monitor* m, int* x, int* y, int* w, int* h );
+    /** `popupbox()`: where the window was last placed, layout coordinates
+     * and logical size, its frame included; returns whether it is visible */
+    int (*window_box)( awl_window_t* win, int* x, int* y, int* w, int* h );
     /** `awl_window_set_text()`: rows separated by '\n', columns by '\t';
      * a shown window follows at once */
     void (*window_set_text)( awl_window_t* win, const char* text );
@@ -232,7 +292,8 @@ typedef struct awl_host_t {
     /** `popuphide()` */
     void (*window_hide)( awl_window_t* win );
     /** `awl_window_monitor()`: where the window is shown, NULL while hidden
-     * (awl also hides it, on a press elsewhere or with its monitor) */
+     * (awl also hides it, on a press elsewhere unless it is persistent, or
+     * with its monitor) */
     Monitor* (*window_monitor)( const awl_window_t* win );
     /** `popuppartbox()`: where part of the window's painter is, layout
      * coordinates and logical size; 0 if it is not shown */
@@ -257,7 +318,8 @@ typedef struct awl_host_t {
             void (*hover)( awl_window_t* win, int row, int inside, void* data ), void* data );
     /** `awl_window_set_hidden()`: hidden( win, data ) whenever the window
      * is hidden, by window_hide or by awl (a press elsewhere, its monitor
-     * going away); NULL: no more */
+     * going away; not a persistent one out of sight while the screen is
+     * locked); NULL: no more */
     void (*window_set_hidden)( awl_window_t* win, void (*hidden)( awl_window_t* win, void* data ), void* data );
     /** `popupsetkey()`: while shown, the window has the keyboard (the
      * newest such one): every key pressed, and repeated while held, goes to
@@ -286,6 +348,10 @@ typedef struct awl_host_t {
     /** held: id doesn't expire (the pointer is over it); released, its
      * timeout starts over */
     void (*notif_hold)( uint32_t id, int held );
+    /** sends n (copied) as awl's own notification, past D-Bus: it comes
+     * whether or not a client could reach the server; returns its id, 0 if
+     * it couldn't (out of memory, the server not started) */
+    uint32_t (*notif_send)( const awl_notif_send_t* n );
 
     /* ---- timers on awl's main loop ---- */
 

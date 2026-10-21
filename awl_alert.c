@@ -2,6 +2,7 @@
 #include "awl_bar.h"
 #include "awl_config.h"
 #include "awl_log.h"
+#include "awl_notifications.h"
 #include "awl_output.h"
 #include "awl_redraw.h"
 #include <stdarg.h>
@@ -54,10 +55,14 @@ const char* awl_alert_text( void ) {
     return NULL;
 }
 
-/** a critical desktop notification of text */
+/** a critical notification of text, awl's own (no bus needed) */
 static void notify( const char* text ) {
-    spawn( &(Arg){ .v = (const char*[]){ "notify-send", "-a", "awl", "-u", "critical",
-            "awl alert", text, NULL } } );
+    awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
+    n.summary = "awl alert";
+    n.body = text;
+    n.urgency = AWL_NOTIF_CRITICAL;
+    if (!awl_notifications_send( &n ))
+        awl_wrn_printf( "alert: no notification (the server isn't running)\n" );
 }
 
 /* ---- drawing ---- */

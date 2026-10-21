@@ -341,6 +341,9 @@ typedef struct awl_popup_config_t {
         /** blur what is behind them, as the launcher */
         int blur;
     } menu;
+    /** the persistent popups (the notifications) over fullscreen clients
+     * too, in the overlay layer; 0: under them, as the other popups */
+    int persistent_overlay;
 } awl_popup_config_t;
 
 /** c's menu look with what is left out filled in from the popups' (see

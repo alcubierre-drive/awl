@@ -13,6 +13,7 @@
 #include "plugins/calpopup.h"
 #include "plugins/tray_menu.h"
 #include "plugins/tray_tooltip.h"
+#include "plugins/notify.h"
 #include "plugins_git.h"
 
 #include <stddef.h>
@@ -169,10 +170,12 @@ static void api_init( int paused ) {
     awl_launcher_start();
     awl_wallpaper_start();
     awl_calpopup_start();
+    awl_notify_start();
 }
 
 static int api_fini( void ) {
     if (!plugin_data) return 0;
+    awl_notify_stop();
     int stuck = awl_calpopup_stop();
     stuck |= awl_desktop_stop();
     stuck |= awl_launcher_stop();
@@ -202,8 +205,16 @@ static void api_wallpaper( WallpaperMode mode ) {
 }
 
 void awl_notify( const char* title, const char* body ) {
-    awl_host->actions->spawn( &(Arg){ .v = (const char*[]){
-            "notify-send", "-a", "awl", title, body, NULL } } );
+    awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
+    n.summary = title;
+    n.body = body;
+    awl_notify_send( &n );
+}
+
+uint32_t awl_notify_send( const awl_notif_send_t* n ) {
+    uint32_t id = awl_host->notif_send( n );
+    if (!id) awl_wrn_printf( "notify: '%s' not sent\n", n->summary ? n->summary : "" );
+    return id;
 }
 
 /** `awl_notify_config()`'s lines so far */
@@ -212,7 +223,8 @@ typedef struct {
     size_t n, cap;
 } ConfigLines;
 
-/** what notify-send's body markup would take for a tag or an entity */
+/** what the body's markup (plugins/markup.h) would take for a tag or an
+ * entity */
 static void escape( FILE* f, const char* s ) {
     for (; *s; s++) {
         switch (*s) {
@@ -332,13 +344,6 @@ static void api_wallpaper_mode( WallpaperMode mode ) {
     awl_notify( "Wallpaper timer", body );
 }
 
-/** the open notifications changed; nothing shows them yet but the log */
-static void api_notifications_changed( void ) {
-    const awl_notif_t* open[1];
-    int n = awl_host->notif_list( open, 1 );
-    awl_vrb_printf( "notifications: %d open%s%s\n", n, n ? ", the newest: " : "", n ? open[0]->summary : "" );
-}
-
 static const awl_plugin_api_t api = {
     .abi = AWL_PLUGIN_ABI,
     .init = api_init,
@@ -354,7 +359,7 @@ static const awl_plugin_api_t api = {
     .wallpaper_mode = api_wallpaper_mode,
     .session_covered = awl_logind_covered,
     .config = awl_config_fill,
-    .notifications_changed = api_notifications_changed,
+    .notifications_changed = awl_notify_changed,
 };
 
 __attribute__((visibility("default")))

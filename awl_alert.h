@@ -6,8 +6,8 @@
  * never by the plugin library (which may be the very thing that is missing).
  * While one is up, every output shows it in its bottom left corner,
  * above everything (`awl_alert_draw()`, with `awl_alert_text()`), and
- * raising it logs an error and sends a critical desktop notification
- * (``notify-send``). Main thread only.
+ * raising it logs an error and sends a critical notification, awl's own
+ * (`awl_notifications_send()`). Main thread only.
  */
 
 #include "awl_server.h"

@@ -120,6 +120,10 @@ void awl_window_destroy( awl_window_t* win ) {
     free( win );
 }
 
+void awl_window_reparent( awl_window_t* win, struct wlr_scene_tree* parent ) {
+    wlr_scene_node_reparent( &win->tree->node, parent );
+}
+
 void awl_window_set_style( awl_window_t* win, const awl_window_style_t* style ) {
     win->style = *style;
     configure( win );
@@ -332,6 +336,12 @@ Monitor* awl_window_monitor( const awl_window_t* win ) {
 int awl_window_box( const awl_window_t* win, struct wlr_box* box ) {
     *box = (struct wlr_box){ win->tree->node.x, win->tree->node.y, win->lw, win->lh };
     return win->tree->node.enabled;
+}
+
+struct wlr_box awl_window_room( const awl_window_t* win, Monitor* m ) {
+    const int mx = awl_window_margin( win->style.margin, m->m.width ),
+              my = awl_window_margin( win->style.margin, m->w.height );
+    return (struct wlr_box){ m->m.x + mx, m->w.y + my, m->m.width - 2 * mx, m->w.height - 2 * my };
 }
 
 void awl_window_removemon( awl_window_t* win, Monitor* m ) {

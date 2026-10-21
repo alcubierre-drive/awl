@@ -205,6 +205,148 @@ check "256 open at most" grep -qx "notifs 256" <<<"$state"
 check "critical ones stay" open_ "$c"
 "$live" log | grep -q "notifications: .* closed (4)" || echo "      (no eviction logged)"
 
+echo "-- windows (plugins/notify.c)"
+# the visible notification windows (the plugins' persistent ones), top to
+# bottom: "I X Y W H"; the "+k more" one among them
+nwins() { awk '$1 == "pwin" && $8 == 1 && $9 == 1 { print $2, $4, $5, $6, $7 }' <<<"$state" | sort -k3 -n; }
+nwincount() { nwins | wc -l; }
+# the center of part P of the K-th window from the top: "X Y"
+partat() {
+	local i
+	i=$(nwins | sed -n "$1p" | cut -d' ' -f1)
+	[ -n "$i" ] && awk -v i="$i" -v p="$2" '$1 == "pcell" && $2 == i && $3 == p { print $4, $5 }' <<<"$state"
+}
+# the K-th window from the top: "X Y W H"
+boxof() { nwins | sed -n "$1p" | cut -d' ' -f2-; }
+press() { "$live" click "$1" "$2" "$3" >/dev/null || die "click"; sleep 0.3; }
+notifs() { awk '$1 == "notifs" { print $2 }' <<<"$state"; }
+read -r px py < <(partat 1 0)
+[ -n "${px:-}" ] || die "no notification window"
+press "$px" "$py" middle
+look
+check "a middle click dismisses all" eq "$(notifs) $(nwincount)" "0 0"
+check "signal: dismissed, the critical one too" sawclosed "$c" 2
+w1=$(notify app 0 plain '[]' '{}' 0)
+w2=$(notify app 0 act '["default", "Open", "reply", "Reply"]' '{}' 0)
+look
+check "a window each" eq "$(nwincount)" 2
+check "newest on top: the one with a button" eval '[ -n "$(partat 1 1)" ] && [ -z "$(partat 2 1)" ]'
+read -r x1 y1 w1_ h1 < <(boxof 1)
+read -r x2 y2 w2_ h2 < <(boxof 2)
+check "stacked, right edges aligned, not overlapping" eval '[ $((x1 + w1_)) = $((x2 + w2_)) ] && [ "$y2" -gt $((y1 + h1)) ]'
+read -r px py < <(partat 1 1)
+press "$px" "$py" left
+look
+check "a button invokes its action" sawaction "$w2" reply
+check "and closes it" closed "$w2"
+w3=$(notify app 0 def '["default", "Open"]' '{}' 0)
+look
+read -r px py < <(partat 1 0)
+press "$px" "$py" left
+look
+check "a click on it: the default action" sawaction "$w3" default
+read -r px py < <(partat 1 0)
+press "$px" "$py" right
+look
+check "a right click dismisses" eval 'closed "$w1" && sawclosed "$w1" 2'
+h=$(notify app 0 hold '[]' '{}' 1000)
+look
+read -r px py < <(partat 1 0)
+"$live" click "$px" "$py" >/dev/null
+sleep 1.5
+look
+check "the pointer on it holds it" open_ "$h"
+"$live" click 300 300 >/dev/null
+sleep 1.5
+look
+check "off it, it expires" closed "$h"
+v=$(notify vol 0 vol '[]' '{"value": <byte 10>}' 0)
+look
+b1=$(boxof 1)
+notify vol "$v" vol '[]' '{"value": <byte 90>}' 0 >/dev/null
+look
+check "a new value: redrawn in place" eq "$(boxof 1)" "$b1"
+# the bottom of the room the windows have: the window area less the margin
+read -r wy wh < <(awk '$1 == "mon" { print $8, $10; exit }' <<<"$state")
+mg=$(awk '$1 == "margin" { print $2 }' <<<"$state")
+[ "$mg" -gt $((wh / 4)) ] && mg=$((wh / 4))
+bottom=$((wy + wh - mg))
+# all visible windows inside it, none overlapping the one above
+inside() {
+	nwins | awk -v b="$bottom" '{ if ($3 + $5 > b || (NR > 1 && $3 < last)) bad = 1; last = $3 + $5 } END { exit bad }'
+}
+for k in $(seq 15); do notify app 0 "m$k" '[]' '{}' 0 >/dev/null; done
+look
+shown=$(nwincount)
+check "not all shown, \"+k more\" under them, all inside" eval 'inside && [ "$shown" -lt "$(notifs)" ] && [ "$shown" -gt 2 ]'
+look restart
+sleep 1
+look
+check "after a reload: the windows are back" eq "$(nwincount)" "$shown"
+read -r px py < <(partat 1 0)
+press "$px" "$py" middle
+look
+check "and work" eq "$(notifs) $(nwincount)" "0 0"
+
+echo "-- awl's own (awl_notifications_send())"
+# nsend URGENCY TIMEOUT LINES WIDTH TAG SUMMARY BODY: awl's own, then a
+# loop round for the library's windows
+nsend() {
+	look "nsend $1 $2 $3 $4 $5 $6"$'\\t'"$7"
+	look
+}
+newest() { grep '^notif ' <<<"$state" | head -1 | cut -d' ' -f2; }
+nsend 1 0 0 0 - own body
+o=$(newest)
+check "it comes, flagged AWL_NOTIF_AWL" eval '[ "$(field "$o" 13)" = own ] && [ $(($(field "$o" 7) & 4)) = 4 ]'
+check "a window for it" eq "$(nwincount)" 1
+call CloseNotification "uint32 $o" >/dev/null
+look
+check "CloseNotification doesn't close it" open_ "$o"
+g=$(field "$o" 3)
+r=$(notify app "$o" taken '[]' '{}' 0)
+look
+check "replaces_id doesn't replace it" eval '[ "$r" != "$o" ] && [ "$(field "$o" 3)" = "$g" ]'
+nsend 1 0 0 0 tag tagged one
+t1=$(newest)
+nsend 1 0 0 0 tag tagged two
+t2=$(newest)
+check "a tag replaces awl's own in place" eval '[ "$t1" = "$t2" ] && [ "$(count)" = 3 ]'
+look "nclose $o 2"
+look
+check "the library closes it" closed "$o"
+read -r px py < <(partat 1 0)
+press "$px" "$py" middle
+look
+check "all dismissed" eq "$(notifs) $(nwincount)" "0 0"
+long=$(printf 'line %d\\n' $(seq 40))
+nsend 1 0 6 0 - six "$long"
+nsend 1 0 2 0 - two "$long"
+nsend 1 0 2 200 - narrow "$long"
+read -r _ _ wn hn < <(boxof 1)
+read -r _ _ w2_ h2 < <(boxof 2)
+read -r _ _ w6 h6 < <(boxof 3)
+check "its own max_lines: lower" eval '[ "$h2" -lt "$h6" ] && [ "$hn" = "$h2" ]'
+check "its own width: narrower" eval '[ "$wn" -lt "$w2_" ] && [ "$w2_" = "$w6" ]'
+read -r px py < <(partat 1 0)
+press "$px" "$py" middle
+
+echo "-- the room (plugins/notify.c)"
+nsend 1 0 -1 0 - huge "$long"
+check "one higher than the room: cut to it" eval 'inside && [ "$(nwincount)" = 1 ]'
+read -r _ yc _ hc < <(boxof 1)
+check "to what is left of it" eval '[ $((bottom - yc - hc)) -lt 30 ]'
+for k in 1 2 3; do nsend 1 0 -1 0 - "huge$k" "$long"; done
+check "four of them: the newest cut, \"+3 more\" under it" eval 'inside && [ "$(notifs) $(nwincount)" = "4 2" ]'
+read -r px py < <(partat 1 0)
+press "$px" "$py" middle
+for k in $(seq 4); do nsend 1 0 6 0 - "short$k" "$long"; done
+check "what fits is whole" eval 'inside && [ "$(boxof 1 | cut -d" " -f4) $(boxof 2 | cut -d" " -f4)" = "$h6 $h6" ]'
+read -r px py < <(partat 1 0)
+press "$px" "$py" middle
+look
+check "awl's own: no signal" eval '! grep -q "NotificationClosed (uint32 $o," "$signals"'
+
 sleep 0.3
 kill "$monitor" 2>/dev/null
 check "signal: CloseNotification, reason 3" sawclosed "$b" 3

@@ -204,7 +204,7 @@ plugins_sources = files(
   'plugins/backlight.c', 'plugins/bat.c', 'plugins/calendar.c', 'plugins/calpopup.c',
   'plugins/colors.c', 'plugins/date.c', 'plugins/desktop_entry.c', 'plugins/fuzzy.c', 'plugins/markup.c',
   'plugins/ipaddr.c', 'plugins/launcher.c', 'plugins/logind.c', 'plugins/loop.c',
-  'plugins/nm.c', 'plugins/persistent.c', 'plugins/poller.c', 'plugins/pulsetest.c',
+  'plugins/nm.c', 'plugins/notify.c', 'plugins/persistent.c', 'plugins/poller.c', 'plugins/pulsetest.c',
   'plugins/readdir.c', 'plugins/sni.c', 'plugins/sni_menu.c', 'plugins/stats.c',
   'plugins/temp.c', 'plugins/thread.c', 'plugins/tray_menu_window.c',
   'plugins/tray_tooltip.c', 'plugins/wallpaper.c',

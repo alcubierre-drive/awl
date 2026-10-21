@@ -67,4 +67,17 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         /* .prompt_color: 0, the launcher's dim; .query_color: 0, the
          * popups' fg (the cursor's too) */
     },
+    .notify = {
+        .at = AWL_WINDOW_AT_TOP_RIGHT, .dx = 0, .dy = 0, .gap = 6,
+        .width = 360, .image_size = 48,
+        .max_lines = 14, .max_shown = 8,
+        /* low and normal: the popups' colors */
+        .urgency = {
+            [AWL_NOTIF_LOW]      = { .frame = molokai_dark_gray },
+            [AWL_NOTIF_CRITICAL] = { .frame = molokai_red },
+        },
+        .progress_color = 0, /* the frame's */
+        .progress_height = 6,
+        .show_app = 1,
+    },
 };

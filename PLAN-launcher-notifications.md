@@ -1,10 +1,12 @@
 # Plan: notification daemon in awl
 
-Status (2026-10-21): the launcher, the keyboard grab, placement, bold and
+Status (2026-10-22): the launcher, the keyboard grab, placement, bold and
 italic fonts, the markup parser and layout, JPEG (Wuffs v0.4),
-`awl_icon_from_rgba()` and the core's D-Bus server are done. Open: 0c
-(persistent windows), the library's notification windows, the actions
-and the widget, the launcher's leftovers. Replaces fnott (autostart,
+`awl_icon_from_rgba()`, the core's D-Bus server, persistent windows (0c)
+the library's notification windows (without image files and icon
+names), awl's own notifications past D-Bus and the stack fitted to the
+window area are done. Open: images from files and names, the actions and the
+widget, the launcher's leftovers. Replaces fnott (autostart,
 `fnottctl actions`); fuzzel (`menucmd`) is replaced already.
 
 ## Done, for reference
@@ -44,38 +46,64 @@ and the widget, the launcher's leftovers. Replaces fnott (autostart,
   - Bold and italic come from `awl_font_style()` (awl_draw.c, host call
     `font_style`).
   - Painting, underline included, is the notification painter's job.
+- Persistent windows (0c): host call `window_set_persistent` (ABI 33),
+  awl_popup.c.
+  - A press elsewhere, `popupshideall()` and other popups shown leave
+    them; showing one closes no menu.
+  - Their own scene tree above the other popups; right above LyrOverlay
+    (over fullscreen clients) with `awl_config_t.popup.persistent_overlay`
+    (default 1).
+  - Out of sight while the screen is locked (the tree is disabled), back
+    after; they don't take keys while locked. The library needn't hide
+    them itself.
+  - Any popup now takes the pointer only where nothing above it does
+    (`popupcovered()`): an ordinary popup under a fullscreen client lets
+    the click through to it.
+  - Tested in test/windows.sh (`persist`, `lock` FIFO commands; the
+    dump's `persistent` line). Checked by hand over a fullscreen kitty.
+- The library's windows: plugins/notify.{c,h}, `awl_plugin_config_t.notify`.
+  - Diffing by id and generation on `notifications_changed` and in
+    `init`; everything copied out of the record (summary, parsed body,
+    actions); image-data converted at the image's size and scale in
+    `measure()`, from a fresh `notif_list`.
+  - The summary bold, the body's markup (styles, colors, underline)
+    wrapped to `max_lines`, the value's bar (track in the popups' dim),
+    the actions as buttons in rows (not "default": the click).
+  - Stacked from `at` on the selected monitor, newest nearest the corner,
+    `max_shown` and a "+k more" text window. A replacement redraws in
+    place; every change restacks (cheap when nothing moved).
+  - Colors per urgency through the new host call `window_set_colors`
+    (frame, background, text over the popups'); `window_box` for the
+    stacking. Critical: a red frame by default.
+  - Left click: the button's action, else "default", else dismiss. Right:
+    dismiss. Middle: dismiss all. Hover holds the timeout; a window freed
+    while held releases it.
+  - Tested in test/notifications.sh ("-- windows"): stacking, buttons,
+    clicks, hold, a redraw in place, `max_shown`, a reload. The dump has
+    `pcell` lines (a plugin window's parts) and the persistent flag.
+- awl's own notifications: `awl_notifications_send()`, the host call
+  `notif_send` (ABI 34), `awl_notify_send()` in plugins.c, which
+  `awl_notify()` and the alerts (awl_alert.c, from the core) use; no
+  notify-send any more. `awl_notif_send_t` carries what D-Bus has no say
+  in: `awl_notif_look_t` (max_lines, width, image_size, colors) and a
+  timeout for critical ones; a tag replaces in place. Flagged
+  `AWL_NOTIF_AWL`: no client replaces or closes it, no signal tells of it.
+  Every send uses `AWL_NOTIF_SEND_INIT` so far: their looks are to be
+  configured later. Tested with the `nsend` FIFO command.
+- The stack fits the window area (`window_room`, the margins off): the
+  last window that fits is cut to the room left (the body's lines, the
+  last ending in "…"); "+k more" always fits under it. Each restack starts
+  whole again. Tested in "-- the room".
 - Launcher (phase 1), keyboard grab (0a), placement (0b).
   - Still open for the launcher: desktop Actions, the xdg-activation
     token, a live.sh-driven launcher test.
 
-## 0c. Persistent windows (core)
+## The library's notification windows: what is left
 
-- A per-window flag: the window isn't hidden by a press elsewhere, and
-  showing it doesn't close open menus.
-- In the overlay layer, so notifications show above fullscreen clients (a
-  config switch).
+### Images from files and names
 
-## The library's notification windows
-
-### Diffing
-
-- On `notifications_changed` and in `init`, read `notif_list()`. Diff by id
-  and generation:
-  - a new id gets a window;
-  - a new generation means a redraw;
-  - a missing id hides and frees its window.
-- Pointers from the list stay valid only until the library returns to awl's
-  loop or calls `notif_close`/`notif_invoke`. Copy what outlives that (the
-  parsed markup, the decoded image).
-- Do-not-disturb: a cfgdict key the library reads (it survives reloads).
-  Non-critical notifications aren't shown while it's on; the core still
-  stores, answers and expires them.
-
-### Images
-
-- The order of `awl_notif_t`: image_data (`awl_icon_from_rgba()`, on the
-  main thread), image_path, app_icon, then desktop_entry's Icon through the
-  launcher's index.
+- The order of `awl_notif_t`: image_data (done), image_path, app_icon,
+  then desktop_entry's Icon through the launcher's index.
 - A path or a `file://` URL (percent-decoded) is decoded with
   `awl_icon_decode()`. Anything else is an icon name for
   `awl_icons_lookup()` with the desktop's themes.
@@ -87,48 +115,28 @@ and the widget, the launcher's leftovers. Replaces fnott (autostart,
   refuse screenshots and photos, and Wuffs can't decode scaled down. That
   needs a separate, larger cap for notification image files (and the work
   buffer with it), on the worker.
-- Decoded at the monitor's scale, so moving to another output stays sharp.
-  Drawn left of the text at `image_size` (default 48 logical px), aspect
-  kept, centered in that square; symbolic icons in the text color, as in the
-  tray. Without an image the text starts at the padding.
+- Decoded at the monitor's scale, so moving to another output stays sharp;
+  symbolic icons in the text color, as in the tray.
 
-### Text
+### Loose ends
 
-- The summary is plain and drawn bold. The body goes through
-  `awl_markup_parse()` and `awl_markup_layout()` with the painter's font in
-  four styles (`font_style`), `max_lines` from the config.
-- Each run is drawn with `text_over` at `baseline - font->ascent`, in its
-  color or the urgency's fg. Underline is a pixman fill at the font's
-  `underline` position and thickness.
-- The layout is cached per notification and font, and redone when the
-  scale or the generation changes.
-
-### Progress bar
-
-- Shown when `value` >= 0: a bar under the body, the full width of the text
-  column, `progress_height` high, rounded. The track is in the dim color;
-  the filled part is in `progress_color` (0: the urgency's frame color).
-- Volume and brightness OSDs replace their notification several times a
-  second. A new generation with the same size only redraws: no re-stacking,
-  no move.
-
-### Interface
-
-- One persistent window (0c) per notification, stacked from a corner
-  (default top right, under the bar) with `window_show_at`. At most N are
-  shown, plus a "+k more" row.
-- Image, bold summary, wrapped body, the progress bar, and the actions as
-  clickable parts (not "default", which is the click on the notification).
-- Config, `awl_plugin_config_t.notify`: at, dx/dy, gap, width,
-  image_size, max_lines, max_shown, colors per urgency (fg, bg, frame),
-  progress_color, progress_height; colors 0 = the popup's. Blur through a
-  new `blur.notify`. The timeouts are `awl_config_t.notifications`
-  (core).
-- Left click: the default action (`notif_invoke`), else dismiss
-  (`notif_close`, reason 2). Right click: dismiss. Middle click: dismiss
-  all.
-- Hover: `notif_hold`.
-- Hidden while the screen is locked, shown again after.
+- A scale or font change on the monitor redraws the windows in awl, but
+  doesn't restack them: they may overlap until the next change. A host
+  hook (or `window_set_hidden`-like "resized" callback) would fix it.
+- The stack stays on the monitor it was placed on until the next change,
+  even when the selection moves.
+- Fitting: a window that would fit whole as the last is cut anyway when
+  more come after it (room is kept for "+k more"). Critical ones can end
+  up behind "+k more" like any other.
+- awl's own looks: which of awl's notifications get which
+  `awl_notif_look_t` (config, wallpaper, alerts), and from where (the
+  plugin config).
+- Blur: the windows blur as the popups (`blur.launcher`); maybe their own
+  `blur.notifications` (already in `awl_config_t`, for fnott's layer
+  surfaces) once fnott is gone.
+- Do-not-disturb: a cfgdict key the library reads (it survives reloads).
+  Non-critical notifications aren't shown while it's on; the core still
+  stores, answers and expires them.
 
 ### Actions and widget
 
@@ -141,18 +149,14 @@ and the widget, the launcher's leftovers. Replaces fnott (autostart,
 
 ## Tests still to write
 
-- test/notifications.sh, once the windows exist: windows shown and stacked
-  in the dump's `pwin` lines, clicks through `live.sh click`, behavior
-  across a reload; markup, images (PNG, JPEG, image-data, an icon name)
-  and a `value` bar by screenshot.
+- test/notifications.sh: images from files and names once they exist;
+  markup and the bar only by eye so far (a screenshot check).
 - The launcher: `live.sh key` (wtype) against a fake `$XDG_DATA_DIRS`.
 
 ## Order
 
-1. 0c.
-2. The windows: diffing, text and the progress bar first; images from
-   image-data, then files and names on the worker.
-3. Actions, do-not-disturb, the widget; the config changes below.
+1. Images from files and names, on the worker.
+2. Actions, do-not-disturb, the widget; the config changes below.
 
 ## The user's config afterwards
 

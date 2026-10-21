@@ -2,12 +2,19 @@
 
 /**
  * awl's own popups (awl_window.h), part of awl: the plugins' (the bar
- * widgets' hover popups, the tray's menus) and AWL_TEST_WINDOWS'
- * (awl_test.h), styled by cfg->popup, in a tree of
+ * widgets' hover popups, the tray's menus, the notifications) and
+ * AWL_TEST_WINDOWS' (awl_test.h), styled by cfg->popup, in a tree of
  * their own right above LyrTop; made with the first one, so until a plugin
  * asks for a popup none of this runs (awl_popup.c). A popup that takes the
- * pointer gets its motion, presses and wheel before anything below it.
- * Main thread only.
+ * pointer gets its motion, presses and wheel before anything below it,
+ * unless something above it takes the pointer there (a fullscreen client).
+ *
+ * Persistent popups (popupsetpersistent(), the notifications) stay until
+ * they are hidden: a press elsewhere, another popup shown and locking the
+ * screen leave them (they are only out of sight while it is locked). They
+ * are in a tree of their own above the others: right above LyrOverlay if
+ * cfg->popup.persistent_overlay (over fullscreen clients), else right above
+ * the others' tree. Main thread only.
  */
 
 #include "awl_server.h"
@@ -21,6 +28,10 @@ typedef struct {
     int menu;
     /** the plugins' (popupcreate()), not AWL_TEST_WINDOWS' */
     int plugin;
+    /** popupsetpersistent() */
+    int persistent;
+    /** popupsetcolors(), 0: the style's */
+    uint32_t bg, fg, border;
 } Popup;
 /** every popup, Popup.link, the newest last (on top) */
 extern struct wl_list popups;
@@ -60,6 +71,26 @@ void popupsgrabupdate(void);
 void popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
 /** makes win look like a menu, cfg->popup.menu, from now on */
 void popupsetmenustyle(awl_window_t *win);
+/** makes win persistent, or not (see above), from now on */
+void popupsetpersistent(awl_window_t *win, int persistent);
+/** win's own background, text and border colors (0xRRGGBBAA) over the
+ * style's, 0 keeps the style's */
+void popupsetcolors(awl_window_t *win, uint32_t bg, uint32_t fg, uint32_t border);
+/** win's last placement (`awl_window_box()`) into x, y, w, h; returns
+ * whether it is visible */
+int popupbox(awl_window_t *win, int *x, int *y, int *w, int *h);
+/** the room win has on m at a spot (`awl_window_room()`) into x, y, w, h;
+ * all 0 for no popup or monitor */
+void popuproom(awl_window_t *win, Monitor *m, int *x, int *y, int *w, int *h);
+/** whether win is a persistent popup */
+int popuppersistent(awl_window_t *win);
+/** the layer the persistent popups' tree is above (LyrOverlay, or LyrTop
+ * with the others' between), -1 before there is one; *visible whether they
+ * are in sight */
+int popuppersistentlayer(int *visible);
+/** the screen was locked or unlocked (`locked`): the persistent popups go
+ * out of sight while it is, and come back after */
+void popupslocked(void);
 /** where part of win's painter is, 0 if it is not shown
  * (`awl_window_part_box()`) */
 int popuppartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h);
@@ -77,10 +108,12 @@ awl_window_t *popuppointer(void);
 int popupmotion(void);
 /** m was arranged, or its font or scale changed */
 void popupsupdate(Monitor *m);
+/** hides every popup but the persistent ones */
 void popupshideall(void);
 /** m is going */
 void popupsremovemon(Monitor *m);
-/** after plugins_config.c changed: every popup's look */
+/** after plugins_config.c changed: every popup's look, and where the
+ * persistent ones are */
 void popupsrestyle(void);
 /** destroys every popup (a reload, see pluginsreap()); returns how many were
  * the plugins' */

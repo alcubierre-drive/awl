@@ -125,7 +125,8 @@ static void arm( notif_t* n ) {
 static void close_at( int i, awl_notif_reason_t reason ) {
     notif_t* n = N.open[i];
     awl_vrb_printf( "notifications: %u closed (%d)\n", n->pub.id, reason );
-    if (N.bus) sd_bus_emit_signal( N.bus, PATH, IFACE, "NotificationClosed", "uu", n->pub.id, (uint32_t)reason );
+    /* awl's own have no client to tell */
+    if (N.bus && !(n->pub.flags & AWL_NOTIF_AWL)) sd_bus_emit_signal( N.bus, PATH, IFACE, "NotificationClosed", "uu", n->pub.id, (uint32_t)reason );
     N.image_bytes -= n->npixels;
     memmove( &N.open[i], &N.open[i + 1], (size_t)(N.nopen - i - 1) * sizeof(*N.open) );
     N.nopen--;
@@ -334,50 +335,42 @@ static int strings_set( notif_t* n ) {
     return 0;
 }
 
+/** whether open[i] is of n's kind: both awl's own or both a client's */
+static int same_kind( int i, const notif_t* n ) {
+    return !((N.open[i]->pub.flags ^ n->pub.flags) & AWL_NOTIF_AWL);
+}
+
 /** the open one that n replaces: replaces_id's, else the one with n's tag
- * from n's app */
+ * from n's app; only one of n's kind (no client replaces awl's own) */
 static int replaced( const notif_t* n, uint32_t replaces_id ) {
-    if (replaces_id) return find( replaces_id );
+    if (replaces_id) {
+        int i = find( replaces_id );
+        return i >= 0 && same_kind( i, n ) ? i : -1;
+    }
     for (int i = 0; *n->tag && i < N.nopen; i++)
-        if (!strcmp( N.open[i]->tag, n->tag ) && !strcmp( N.open[i]->pub.app, n->pub.app )) return i;
+        if (same_kind( i, n ) && !strcmp( N.open[i]->tag, n->tag ) && !strcmp( N.open[i]->pub.app, n->pub.app ))
+            return i;
     return -1;
 }
 
-/** an id for a new one: replaces_id if awl gave it out (it is closed), else
- * the next, never 0 or an open one's */
+/** an id for a new one: replaces_id if awl gave it out and it is closed,
+ * else the next, never 0 or an open one's */
 static uint32_t new_id( uint32_t replaces_id ) {
-    if (replaces_id && replaces_id < N.next_id) return replaces_id;
+    if (replaces_id && replaces_id < N.next_id && find( replaces_id ) < 0) return replaces_id;
     while (!N.next_id || find( N.next_id ) >= 0) N.next_id++;
     return N.next_id++;
 }
 
-/** Notify(s app_name, u replaces_id, s app_icon, s summary, s body,
- * as actions, a{sv} hints, i expire_timeout) -> u id */
-static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)userdata; (void)ret_error;
-    const char *app, *icon, *summary, *body;
-    uint32_t replaces_id;
-    int32_t expire_timeout;
-    int r;
-    notif_t* n = calloc( 1, sizeof(*n) );
-    if (!n) return -ENOMEM;
-    n->pub.urgency = AWL_NOTIF_NORMAL;
-    n->pub.value = -1;
-    if ((r = sd_bus_message_read( m, "susss", &app, &replaces_id, &icon, &summary, &body )) < 0 ||
-        (r = read_actions( m, n )) < 0 || (r = read_hints( m, n )) < 0 ||
-        (r = sd_bus_message_read( m, "i", &expire_timeout )) < 0)
-        goto fail;
-    r = -ENOMEM;
-    if (!(n->pub.app = copy( app, MAX_SHORT )) || !(n->pub.app_icon = copy( icon, MAX_PATH )) ||
-        !(n->pub.summary = copy( summary, MAX_SUMMARY )) || !(n->pub.body = copy( body, MAX_BODY )) ||
-        strings_set( n ) < 0)
-        goto fail;
-    n->pub.timeout = n->pub.urgency == AWL_NOTIF_CRITICAL ? 0
-                   : expire_timeout >= 0 ? expire_timeout
-                   : n->pub.urgency == AWL_NOTIF_LOW ? cfg->notifications.timeout_low
-                   : cfg->notifications.timeout_normal;
-    n->pub.generation = ++N.generation;
+/** the timeout for urgency when the sender leaves it to the server */
+static int default_timeout( awl_notif_urgency_t urgency ) {
+    return urgency == AWL_NOTIF_CRITICAL ? 0
+         : urgency == AWL_NOTIF_LOW ? cfg->notifications.timeout_low
+         : cfg->notifications.timeout_normal;
+}
 
+/** opens n (complete, with its generation), or replaces the open one it
+ * replaces with it; returns its id. n is the store's now. */
+static uint32_t post( notif_t* n, uint32_t replaces_id ) {
     int i = replaced( n, replaces_id );
     if (i >= 0) {
         /* in place: its id, place, timer (its data is old) and hold stay */
@@ -407,19 +400,49 @@ static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_e
     }
     arm( n );
     changed();
-    return sd_bus_reply_method_return( m, "u", n->pub.id );
+    return n->pub.id;
+}
+
+/** Notify(s app_name, u replaces_id, s app_icon, s summary, s body,
+ * as actions, a{sv} hints, i expire_timeout) -> u id */
+static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
+    (void)userdata; (void)ret_error;
+    const char *app, *icon, *summary, *body;
+    uint32_t replaces_id;
+    int32_t expire_timeout;
+    int r;
+    notif_t* n = calloc( 1, sizeof(*n) );
+    if (!n) return -ENOMEM;
+    n->pub.urgency = AWL_NOTIF_NORMAL;
+    n->pub.value = -1;
+    if ((r = sd_bus_message_read( m, "susss", &app, &replaces_id, &icon, &summary, &body )) < 0 ||
+        (r = read_actions( m, n )) < 0 || (r = read_hints( m, n )) < 0 ||
+        (r = sd_bus_message_read( m, "i", &expire_timeout )) < 0)
+        goto fail;
+    r = -ENOMEM;
+    if (!(n->pub.app = copy( app, MAX_SHORT )) || !(n->pub.app_icon = copy( icon, MAX_PATH )) ||
+        !(n->pub.summary = copy( summary, MAX_SUMMARY )) || !(n->pub.body = copy( body, MAX_BODY )) ||
+        strings_set( n ) < 0)
+        goto fail;
+    n->pub.timeout = n->pub.urgency == AWL_NOTIF_CRITICAL ? 0
+                   : expire_timeout >= 0 ? expire_timeout
+                   : default_timeout( n->pub.urgency );
+    n->pub.generation = ++N.generation;
+    return sd_bus_reply_method_return( m, "u", post( n, replaces_id ) );
 fail:
     notif_free( n );
     return r;
 }
 
-/** CloseNotification(u id): reason 3; nothing if it isn't open */
+/** CloseNotification(u id): reason 3; nothing if it isn't open or is awl's
+ * own */
 static int method_close( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)userdata; (void)ret_error;
     uint32_t id;
     int r = sd_bus_message_read( m, "u", &id );
     if (r < 0) return r;
-    awl_notifications_close( id, AWL_NOTIF_CLOSED );
+    int i = find( id );
+    if (i >= 0 && !(N.open[i]->pub.flags & AWL_NOTIF_AWL)) close_at( i, AWL_NOTIF_CLOSED );
     return sd_bus_reply_method_return( m, NULL );
 }
 
@@ -450,6 +473,53 @@ static const sd_bus_vtable vtable[] = {
     SD_BUS_SIGNAL( "ActivationToken", "us", 0 ),
     SD_BUS_VTABLE_END
 };
+
+/* ---- awl's own ---- */
+
+/** s, as copy() does, with what isn't UTF-8 replaced by '?' (D-Bus checks a
+ * client's; awl's own may come from anywhere, the config's values) */
+static char* copy_utf8( const char* s, size_t max ) {
+    char* c = copy( s ? s : "", max );
+    if (!c) return NULL;
+    for (unsigned char* p = (unsigned char*)c; *p;) {
+        int len = *p < 0x80 ? 1 : (*p & 0xe0) == 0xc0 ? 2 : (*p & 0xf0) == 0xe0 ? 3 : (*p & 0xf8) == 0xf0 ? 4 : 0;
+        int ok = len > 0;
+        for (int k = 1; ok && k < len; k++) ok = (p[k] & 0xc0) == 0x80;
+        if (ok && len > 1) {
+            /* overlong, surrogates, beyond U+10FFFF */
+            uint32_t cp = *p & (0x7f >> len);
+            for (int k = 1; k < len; k++) cp = cp << 6 | (p[k] & 0x3f);
+            ok = cp >= (len == 2 ? 0x80u : len == 3 ? 0x800u : 0x10000u) && cp <= 0x10ffff &&
+                 (cp < 0xd800 || cp > 0xdfff);
+        }
+        if (!ok) {
+            *p++ = '?';
+            continue;
+        }
+        p += len;
+    }
+    return c;
+}
+
+uint32_t awl_notifications_send( const awl_notif_send_t* s ) {
+    if (!N.loop || !s) return 0;
+    notif_t* n = calloc( 1, sizeof(*n) );
+    if (!n) return 0;
+    n->pub.urgency = s->urgency <= AWL_NOTIF_LOW ? AWL_NOTIF_LOW
+                   : s->urgency >= AWL_NOTIF_CRITICAL ? AWL_NOTIF_CRITICAL : AWL_NOTIF_NORMAL;
+    n->pub.value = s->value < 0 ? -1 : s->value > 100 ? 100 : s->value;
+    n->pub.flags = AWL_NOTIF_AWL;
+    n->pub.look = s->look;
+    n->pub.timeout = s->timeout >= 0 ? s->timeout : default_timeout( n->pub.urgency );
+    if (!(n->pub.app = strdup( "awl" )) || !(n->pub.summary = copy_utf8( s->summary, MAX_SUMMARY )) ||
+        !(n->pub.body = copy_utf8( s->body, MAX_BODY )) || !(n->pub.image_path = copy_utf8( s->image, MAX_PATH )) ||
+        !(n->tag = copy_utf8( s->tag, MAX_SHORT )) || strings_set( n ) < 0) {
+        notif_free( n );
+        return 0;
+    }
+    n->pub.generation = ++N.generation;
+    return post( n, 0 );
+}
 
 /* ---- the bus ---- */
 

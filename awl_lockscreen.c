@@ -133,6 +133,7 @@ destroylock(SessionLock *lock, int unlock)
     awl_plugins_set_covered(0);
     if ((locked = !unlock))
         goto destroy;
+    popupslocked();
     locked_keystrokes = 0;
     updatepluginpause();
 
@@ -337,6 +338,7 @@ locksession(struct wl_listener *listener, void *data)
     lock->scene = wlr_scene_tree_create(layers[LyrBlock]);
     cur_lock = lock->lock = session_lock;
     locked = 1;
+    popupslocked();
     updatepluginpause();
     if (locker_pid > 0)
         locker_locked = 1;

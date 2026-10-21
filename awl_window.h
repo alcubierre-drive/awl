@@ -55,6 +55,9 @@ typedef int (*awl_window_key_t)( awl_window_t* win, uint32_t sym, const char* ut
 awl_window_t* awl_window_create( struct wlr_scene_tree* parent, const awl_window_style_t* style );
 void awl_window_destroy( awl_window_t* win );
 
+/** moves win's scene tree into parent, at the top of its stacking order */
+void awl_window_reparent( awl_window_t* win, struct wlr_scene_tree* parent );
+
 /** plugins_config.c was reloaded */
 void awl_window_set_style( awl_window_t* win, const awl_window_style_t* style );
 
@@ -95,6 +98,9 @@ Monitor* awl_window_monitor( const awl_window_t* win );
 /** its last placement, layout coordinates and logical size; returns
  * whether it is visible (shown, drawn and its monitor enabled) */
 int awl_window_box( const awl_window_t* win, struct wlr_box* box );
+/** the room it has on m at a spot (`awl_window_show_at()`): m's window
+ * area less its margins, layout coordinates */
+struct wlr_box awl_window_room( const awl_window_t* win, Monitor* m );
 
 /** m was arranged, or its font or scale changed: places and redraws the
  * window if it is shown there (cheap if nothing changed), hides it if m is

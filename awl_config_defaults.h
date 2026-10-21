@@ -206,6 +206,8 @@ static const awl_config_t awl_config_defaults = {
          * .highlight (hover), .dim, .border_width, .radius; .highlight_fg the
          * menu's fg; .blur blur.launcher */
         .menu = { 0 },
+        /* the notifications over fullscreen clients too */
+        .persistent_overlay = 1,
     },
     .desktop = {
         .font = NULL,  /* the bar's */

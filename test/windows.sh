@@ -54,7 +54,7 @@ shown() {
 	awk -v n="$1" -v mon="$2" -v kind="${3:-win}" -v m="$(awk '$1 == "margin" { print $2 }' <<<"$state")" '
 	function gap(m, e) { m = m < 0 ? 0 : m; return m < int(e / 4) ? m : int(e / 4) }
 	$1 == "mon" { x[$2] = $3; y[$2] = $4; w[$2] = $5; h[$2] = $6; wy[$2] = $8; wh[$2] = $10 }
-	$1 == kind && ($2 == n || n == "any" && $3 == mon) && !ok {
+	$1 == kind && ($2 == n || n == "any" && $3 == mon && $9 == 0) && !ok {
 		found = 1
 		mx = gap(m, w[mon]); if (mx > int((w[mon] - $6) / 2)) mx = $6 < w[mon] ? int((w[mon] - $6) / 2) : 0
 		my = gap(m, wh[mon]); if (my > wh[mon] - $7) my = $7 < wh[mon] ? wh[mon] - $7 : 0
@@ -75,10 +75,12 @@ nowindows() { ! grep -q '^win ' <<<"$state"; }
 noerrors() { grep -qx 'errors 0' <<<"$state"; }
 # column C (1-based, as in the dump) of window N
 field() { awk -v n="$1" -v c="$2" '$1 == "win" && $2 == n { print $c }' <<<"$state"; }
+# the plugins' windows here are their ordinary ones: the persistent ones
+# (column 9) are the notifications', which awl's alerts may open any time
 # none of the plugins' windows is shown on MON
-pnoneon() { ! awk -v mon="$1" '$1 == "pwin" && $3 == mon { v = 1 } END { exit !v }' <<<"$state"; }
+pnoneon() { ! awk -v mon="$1" '$1 == "pwin" && $3 == mon && $9 == 0 { v = 1 } END { exit !v }' <<<"$state"; }
 # none of the plugins' windows is visible
-pnone() { ! awk '$1 == "pwin" && $8 == 1 { v = 1 } END { exit !v }' <<<"$state"; }
+pnone() { ! awk '$1 == "pwin" && $8 == 1 && $9 == 0 { v = 1 } END { exit !v }' <<<"$state"; }
 # where to point at MON's first bar widget with a hover popup: "X Y"
 hoverat() { awk -v mon="$1" '$1 == "hover" && $2 == mon { print $3, $4; exit }' <<<"$state"; }
 # the middle of the gap between the plugins' first visible window on MON
@@ -86,14 +88,14 @@ hoverat() { awk -v mon="$1" '$1 == "hover" && $2 == mon { print $3, $4; exit }' 
 pgap() {
 	awk -v mon="$1" '
 	$1 == "mon" && $2 == mon { wy = $8; wh = $10 }
-	$1 == "pwin" && $3 == mon && $8 == 1 {
+	$1 == "pwin" && $3 == mon && $8 == 1 && $9 == 0 {
 		x = int($4 + $6 / 2)
 		print x, $5 - wy < wy + wh - ($5 + $7) ? int((wy + $5) / 2) : int(($5 + $7 + wy + wh) / 2)
 		exit
 	}' <<<"$state"
 }
 # the center of the plugins' first visible window on MON: "X Y"
-pcenter() { awk -v mon="$1" '$1 == "pwin" && $3 == mon && $8 == 1 { print int($4 + $6 / 2), int($5 + $7 / 2); exit }' <<<"$state"; }
+pcenter() { awk -v mon="$1" '$1 == "pwin" && $3 == mon && $8 == 1 && $9 == 0 { print int($4 + $6 / 2), int($5 + $7 / 2); exit }' <<<"$state"; }
 # move the pointer to X Y (no button) and wait out hover_delay_ms
 point() { "$live" click "$1" "$2" >/dev/null || die "pointer"; sleep 0.4; }
 # the center of window N's cell ROW COL: "X Y"
@@ -400,6 +402,49 @@ else
 	check "hover after a plugin reload" shown any $M1 pwin
 	point 300 300
 fi
+
+echo "-- persistent"
+# window N is persistent (1) or not (0)
+persistent() { test "$(field "$1" 10)" = "$2"; }
+# where the persistent popups' tree is and whether it is in sight
+ptree() { grep -qx "persistent $1 $2" <<<"$state"; }
+win show 0 $M1 640 "$table"
+win show 1 $M1 100 "stays"
+win persist 1 on
+check "persist on" persistent 1 1
+check "in the overlay layer, in sight" ptree overlay 1
+check "still shown" shown 1 $M1
+"$live" click 640 300 left >/dev/null || die "click"
+sleep 0.2
+win
+check "a click outside hides the others" hidden 0
+check "but not the persistent one" shown 1 $M1
+win show 0 $M1 640 "$table"
+check "showing another leaves it" shown 1 $M1
+win hideall
+check "hideall leaves it" eval 'hidden 0 && shown 1 $M1'
+win input 1 on
+read -r cx cy < <(cellat 1 0 0)
+[ -n "${cx:-}" ] || die "no cell 1 0 0 in the dump"
+"$live" click "$cx" "$cy" left >/dev/null
+win
+check "a click on it reaches it" clicked "1 0 0 272"
+check "and leaves it" shown 1 $M1
+win lock 1
+check "locked: out of sight" ptree overlay 0
+check "but still shown" shown 1 $M1
+"$live" click "$cx" "$cy" left >/dev/null
+win
+check "locked: no clicks reach it" noclicks
+win lock 0
+check "unlocked: in sight again" ptree overlay 1
+win input 1 off
+win persist 1 off
+check "persist off" persistent 1 0
+"$live" click 640 300 left >/dev/null
+sleep 0.2
+win
+check "an ordinary popup again: a click outside hides it" hidden 1
 
 echo "-- lifetime"
 win destroy 1

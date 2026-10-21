@@ -119,6 +119,30 @@ typedef struct awl_plugin_config_t {
         /** the prompt, 0: dim; the query and the cursor, 0: the popups' fg */
         uint32_t prompt_color, query_color;
     } launcher;
+    /** the notifications' windows (plugins/notify.h), persistent popups
+     * styled as the others; how long they stay is awl's
+     * (`awl_config_t.notifications`) */
+    struct {
+        /** where they stack from, an AWL_WINDOW_AT_* (awl.h; the top ones
+         * stack down, the others up), moved by dx, dy; gap between them */
+        int at, dx, dy, gap;
+        /** the content's width (the frame's padding around it); the
+         * image's square left of the text */
+        int width, image_size;
+        /** the body's lines at most (<= 0: any); the windows shown at
+         * most, a "+k more" under them for the rest */
+        int max_lines, max_shown;
+        /** per urgency (AWL_NOTIF_LOW, _NORMAL, _CRITICAL): the text, the
+         * background and the frame; 0: the popups' */
+        struct { uint32_t fg, bg, frame; } urgency[3];
+        /** the bar of a notification with a value: its filled part, 0:
+         * its frame's color; its height */
+        uint32_t progress_color;
+        int progress_height;
+        /** the app's name after the summary, in italic and braces:
+         * "summary {app}" */
+        int show_app;
+    } notify;
 } awl_plugin_config_t;
 
 /** `awl_plugin_config_t.launcher`'s layout */
@@ -152,8 +176,13 @@ typedef struct awl_plugin_data_t {
 /** The running plugins' state; NULL while the plugins aren't running. */
 awl_plugin_data_t* awl_plugin_get( void );
 
-/** plugins.c: a desktop notification (``notify-send``, spawned); main thread */
+/** plugins.c: awl's own notification (`awl_notify_send()`) of title and
+ * body (with markup) as AWL_NOTIF_SEND_INIT has it; main thread */
 void awl_notify( const char* title, const char* body );
+/** plugins.c: n as awl's own notification (`awl_host_t.notif_send`), what
+ * D-Bus has no say in included; logs a failure; returns its id, 0 if none.
+ * awl's notifications all go through here. Main thread. */
+uint32_t awl_notify_send( const awl_notif_send_t* n );
 /** plugins.c: a notification "AWL config" listing the config dictionary,
  * one ``key=value`` line per entry, sorted by key; an owned value (one the
  * dictionary frees) as ``key=pointer(free function)``. Main thread. */

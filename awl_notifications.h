@@ -25,6 +25,11 @@
  * - Capped: 256 open (a new one closes the oldest that isn't critical,
  *   else the oldest, reason 4), 64 MiB of image data (beyond, the image
  *   is dropped), the strings' lengths.
+ * - awl's own (`awl_notifications_send()`, `awl_host_t.notif_send`) skip
+ *   D-Bus: they come even without a bus or the name, with what a client has
+ *   no say in (`awl_notif_look_t`, a timeout for critical ones), flagged
+ *   AWL_NOTIF_AWL. No client replaces (by id or tag) or closes them, no
+ *   signal tells of them; they replace each other by tag.
  * - The name is requested with SD_BUS_NAME_QUEUE: another server that has
  *   it keeps it (logged), awl's waits behind it. A lost bus is connected to
  *   again; the notifications stay.
@@ -51,5 +56,8 @@ int awl_notifications_list( const awl_notif_t** out, int max );
 void awl_notifications_close( uint32_t id, awl_notif_reason_t reason );
 /** `awl_host_t.notif_invoke` */
 void awl_notifications_invoke( uint32_t id, const char* key, const char* token );
+/** `awl_host_t.notif_send`: awl's own notifications, the library's and
+ * the core's (awl_alert.c) */
+uint32_t awl_notifications_send( const awl_notif_send_t* send );
 /** `awl_host_t.notif_hold` */
 void awl_notifications_hold( uint32_t id, int held );

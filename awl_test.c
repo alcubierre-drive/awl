@@ -1,5 +1,6 @@
 #include "awl_test.h"
 #include "awl_config.h"
+#include "awl_lockscreen.h"
 #include "awl_log.h"
 #include "awl_notifications.h"
 #include "awl_output.h"
@@ -95,21 +96,30 @@ testunescape(char *s)
  *   hide N | destroy N | hideall
  *   input N on|off         N takes the pointer, its presses are recorded
  *   scroll N on|off        N takes the pointer, its scrolling is recorded
+ *   persist N on|off       N is persistent (popupsetpersistent())
+ *   lock 1|0               what locking the screen does to the popups (sets
+ *                          `locked` without a locker: test only)
  *   restart                the plugin_restart action (pluginsreap()
  *                          destroys them all)
  *   nclose ID REASON       the notification server's host calls, as the
  *   ninvoke ID KEY [TOKEN]   library makes them (awl_notifications.h)
  *   nhold ID 0|1
+ *   nsend URGENCY TIMEOUT LINES WIDTH TAG|- SUMMARY\tBODY
+ *                          awl's own (awl_notifications_send()), its look's
+ *                          max_lines and width
  *   dump PATH              writes PATH.tmp, then renames it to PATH:
  *                            mon NAME X Y W H WX WY WW WH SCALE ENABLED
- *                            win N MON|- X Y W H VISIBLE HOVERROW
+ *                            win N MON|- X Y W H VISIBLE HOVERROW PERSISTENT
  *                            cell N ROW COL X Y (a cell's center, visible
  *                              windows' first 8 rows)
  *                            click N ROW COL BUTTON (pressed since the last
  *                              dump, if it takes the pointer)
  *                            scroll N ROW COL ORIENTATION VALUE120 SIGN
  *                              (likewise; SIGN the delta's, -1, 0 or 1)
- *                            pwin I MON|- X Y W H VISIBLE (the plugins')
+ *                            pwin I MON|- X Y W H VISIBLE PERSISTENT (the
+ *                              plugins')
+ *                            pcell I ROW X Y (the center of row ROW of
+ *                              visible pwin I, a painter's part; first 8)
  *                            hover MON X Y (the center of a bar widget
  *                              with callback_hover)
  *                            notif ID GENERATION URGENCY TIMEOUT VALUE
@@ -119,6 +129,8 @@ testunescape(char *s)
  *                              WxHxCHANNELS, an empty string -; the
  *                              first 256, all the server keeps)
  *                            notifs COUNT (how many are open)
+ *                            persistent LAYER VISIBLE (popuppersistentlayer():
+ *                              overlay, top or -; whether in sight)
  *                            margin PX (cfg->popup.margin)
  *                            errors COUNT (lines rejected so far)
  */
@@ -152,7 +164,7 @@ testwincmd(char *line)
     } else if (!strcmp(cmd, "update") || !strcmp(cmd, "hide") || !strcmp(cmd, "destroy")) {
         if (sscanf(line, "%d%n", &n, &args) != 1)
             goto bad;
-    } else if (!strcmp(cmd, "input") || !strcmp(cmd, "scroll")) {
+    } else if (!strcmp(cmd, "input") || !strcmp(cmd, "scroll") || !strcmp(cmd, "persist")) {
         if (sscanf(line, "%d %3s%n", &n, onoff, &args) != 2
                 || (strcmp(onoff, "on") && strcmp(onoff, "off")))
             goto bad;
@@ -193,6 +205,18 @@ testwincmd(char *line)
         if (!testwins[n])
             goto bad;
         awl_window_set_scroll(testwins[n], strcmp(onoff, "on") ? NULL : testwinscroll, (void *)(intptr_t)n);
+    } else if (!strcmp(cmd, "persist")) {
+        if (!testwins[n])
+            goto bad;
+        popupsetpersistent(testwins[n], !strcmp(onoff, "on"));
+    } else if (!strcmp(cmd, "lock")) {
+        /* as awl_lockscreen.c does, without a locker */
+        if (sscanf(line, "%d", &x) != 1)
+            goto bad;
+        if (x)
+            popupshideall();
+        locked = !!x;
+        popupslocked();
     } else if (!strcmp(cmd, "hideall")) {
         popupshideall();
     } else if (!strcmp(cmd, "restart")) {
@@ -204,6 +228,21 @@ testwincmd(char *line)
             awl_notifications_close(id, x);
         else
             awl_notifications_hold(id, x);
+    } else if (!strcmp(cmd, "nsend")) {
+        awl_notif_send_t s = AWL_NOTIF_SEND_INIT;
+        char *body;
+        if (sscanf(line, "%d %d %d %d %63s%n", &x, &s.timeout, &s.look.max_lines, &s.look.width, key,
+                    &args) != 5)
+            goto bad;
+        s.urgency = x;
+        s.tag = strcmp(key, "-") ? key : NULL;
+        s.summary = line + args + (line[args] == ' ');
+        if ((body = strchr(s.summary, '\t'))) {
+            *body++ = 0;
+            s.body = body;
+        }
+        if (!awl_notifications_send(&s))
+            goto bad;
     } else if (!strcmp(cmd, "ninvoke")) {
         if (sscanf(line, "%u %63s %63s", &id, key, token) < 2)
             goto bad;
@@ -222,8 +261,9 @@ testwincmd(char *line)
                 continue;
             x = awl_window_box(testwins[n], &box);
             m = awl_window_monitor(testwins[n]);
-            fprintf(f, "win %d %s %d %d %d %d %d %d\n", n, m ? m->wlr_output->name : "-",
-                    box.x, box.y, box.width, box.height, x, awl_window_hover_row(testwins[n]));
+            fprintf(f, "win %d %s %d %d %d %d %d %d %d\n", n, m ? m->wlr_output->name : "-",
+                    box.x, box.y, box.width, box.height, x, awl_window_hover_row(testwins[n]),
+                    popuppersistent(testwins[n]));
             for (int r = 0; x && r < 8 && awl_window_cell_center(testwins[n], r, 0, &cx, &cy); r++)
                 for (int c = 0; awl_window_cell_center(testwins[n], r, c, &cx, &cy); c++)
                     fprintf(f, "cell %d %d %d %.0f %.0f\n", n, r, c, cx, cy);
@@ -237,8 +277,11 @@ testwincmd(char *line)
                 continue;
             x = awl_window_box(p->win, &box);
             m = awl_window_monitor(p->win);
-            fprintf(f, "pwin %d %s %d %d %d %d %d\n", n++, m ? m->wlr_output->name : "-",
-                    box.x, box.y, box.width, box.height, x);
+            fprintf(f, "pwin %d %s %d %d %d %d %d %d\n", n, m ? m->wlr_output->name : "-",
+                    box.x, box.y, box.width, box.height, x, p->persistent);
+            for (int r = 0; x && r < 8 && awl_window_cell_center(p->win, r, 0, &cx, &cy); r++)
+                fprintf(f, "pcell %d %d %.0f %.0f\n", n, r, cx, cy);
+            n++;
         }
         /* barwidgetat()'s layout of the right-hand widgets */
         wl_list_for_each(it, &mons, link) {
@@ -268,6 +311,8 @@ testwincmd(char *line)
                     *o->app_icon ? o->app_icon : "-", *o->category ? o->category : "-", o->summary);
         }
         fprintf(f, "notifs %d\n", nn);
+        i = popuppersistentlayer(&x);
+        fprintf(f, "persistent %s %d\n", i == LyrOverlay ? "overlay" : i == LyrTop ? "top" : "-", x);
         fprintf(f, "margin %d\n", cfg->popup.margin);
         fprintf(f, "errors %d\n", errors);
         fclose(f);
