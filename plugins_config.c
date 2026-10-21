@@ -8,9 +8,9 @@
  * Only the part between the CUSTOM markers is yours to change: configure()
  * gets awl's defaults (awl_config_defaults.h,
  * `awl_host_t.config_defaults`) in c and the plugins'
- * (plugin_config_defaults.h) in p, and changes what it wants;
- * awl_config_t in awl.h and awl_plugin_config_t in plugins.h list
- * everything there is. The rest of this file is the library's: the
+ * (plugins_config_defaults.h) in p, and changes what it wants; those two
+ * list every setting with its default, awl_config_t in awl.h and
+ * awl_plugin_config_t in plugins.h what each means. The rest of this file is the library's: the
  * functions the config binds to keys and layouts are awl's, here
  * wrappers calling them through the host table (awl_action_<name>,
  * awl_layout_<name>: `AWL_ACTION()`, `AWL_LAYOUT()`), next to the
@@ -55,7 +55,7 @@ static void AWL_ACTION( tagmonf )( const Arg* arg ) {
  *
  * The bindings, rules, layouts, monitor rules, autostarts and the bar's
  * widgets are lists: to change one, copy its array from
- * awl_config_defaults.h (or plugin_config_defaults.h) here, change it, and
+ * awl_config_defaults.h (or plugins_config_defaults.h) here, change it, and
  * point the list at it in configure(), e.g. SETLIST(c->keys, keys) or
  * SETLIST(p->widgets, widgets).
  * In bindings, MODKEY is c->modkey. They can call AWL_ACTION(name) of
@@ -98,9 +98,6 @@ static const Layout layouts[] = {
 /* monitors */
 static const MonitorRule monrules[] = {
     /* name       mfact  nmaster scale layout       rotate/reflect                x    y  pertag*/
-    /* example of a HiDPI laptop monitor:
-    */
-    /* defaults */
     { "eDP-1",    0.5f,  1,    1.5,    0,           WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1, 0 },
     /* { "HDMI-A-1", 0.5f,  1,      1,    0,           WL_OUTPUT_TRANSFORM_90,       -1,  -1, 0 }, */
     { NULL,       0.5f,  1,      1,    0,           WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1, 0 },
@@ -225,203 +222,79 @@ static const Key keys[] = {
     CHVT(7), CHVT(8), CHVT(9), CHVT(10), CHVT(11), CHVT(12),
 };
 
-/* configure() lists every setting: commented out with its default
- * (awl_config_defaults.h, plugin_config_defaults.h) where it is left as
- * it is. */
+/* configure() changes what differs from the defaults; awl_config_defaults.h
+ * and plugins_config_defaults.h list every setting with its default. */
 static void
 configure(awl_config_t *c, awl_plugin_config_t *p)
 {
-    /* bindings and lists; the default arrays are awl_config_defaults.h's and
-     * plugin_config_defaults.h's */
-    // c->modkey = WLR_MODIFIER_ALT;
+    /* bindings and lists */
     c->modkey = WLR_MODIFIER_LOGO;
     SETLIST(c->keys, keys);
-    // SETLIST(c->buttons, buttons);
-    SETLIST(c->rules, rules); /* default: none */
+    SETLIST(c->rules, rules);
     SETLIST(c->layouts, layouts);
     SETLIST(c->monrules, monrules);
-    SETLIST(c->autostart, autostart); /* default: none */
-    // SETLIST(p->widgets, default_widgets);
+    SETLIST(c->autostart, autostart);
 
-    /* the bar, tags, focus, logging */
-    // c->bar.show = 1;
+    /* the bar */
     c->bar.top = 0; /* the bar at the bottom */
-    /* logical pixels more (or, negative, less) either side of every
-     * widget's cells than its own padding (plugins_widgets.c) */
-    // p->widgets_bar_padding = 0;
-    // c->ntags = 9;
-    // c->sloppyfocus = 1;
-    // c->bypass_surface_visibility = 0;
-    // c->wlr_log_level = WLR_ERROR;
 
-    /* the screen lock; awl_config_defaults.h's locker is
-     * { "swaylock", "-c", "00000000", NULL } */
+    /* the screen lock */
     c->lock.locker = locker;
     c->lock.at_start = 1;
-    // c->lock.on_suspend = 1;
-    // c->lock.blur = 1;
 
     /* appearance */
     c->borderpx = 2;
-    c->bordercolors[BorderNorm] = molokai_gray;   /* 0x444444ff */
-    c->bordercolors[BorderSel]  = molokai_blue;   /* 0x005577ff */
-    c->bordercolors[BorderUrg]  = molokai_orange; /* 0x770000ff */
-    // c->font = "monospace:size=";
-    // c->fontsize = 10;
-    // c->emoji_font = "emoji"; /* NULL: text instead of emoji */
-    // c->rootcolor = 0x000000ff;
-    // c->fullscreen_bg = 0x1a1a1aff;
+    c->bordercolors[BorderNorm] = molokai_gray;
+    c->bordercolors[BorderSel]  = molokai_blue;
+    c->bordercolors[BorderUrg]  = molokai_orange;
 
     /* blur */
-    // c->blur.strength = 1.0f;
-    // c->blur.alpha = 1.0f;
-    // c->blur.notifications = 1;
-    // c->blur.notifications_radius = 15;
-    // c->blur.launcher = 1;
-    // c->blur.launcher_radius = 15;
     c->blur.windowlist = 0;
 
-    /* the bar's colors */
-    // p->colors.bg            = molokai_light_gray;
-    // p->colors.fg            = 0xf5efffff;
-    // p->colors.tag_bg        = molokai_dark_gray;
-    // p->colors.tag_occupied  = 0xfd971faa; /* molokai_orange, two thirds */
-    // p->colors.tag_urgent    = 0xf92672aa; /* molokai_red */
-    // p->colors.tag_selected  = 0xae81ffaa; /* molokai_purple */
-    // p->colors.selmon        = molokai_blue;
-    // p->colors.pertag        = molokai_red;
-    // p->colors.win_bg        = 0x42375aff;
-    // p->colors.win_focused   = 0x7359a5ff;
-    // p->colors.win_urgent    = molokai_red;
-    // p->colors.win_minimized = molokai_dark_gray;
-    // p->colors.win_fg        = 0xf5efffff;
-    // p->colors.clock_meter   = molokai_green;
-    // p->colors.stats_bg      = molokai_dark_gray;
-    // p->colors.cpu           = molokai_blue;
-    // p->colors.io            = 0x336c77ff; /* the CPU's, half as bright */
-    // p->colors.mem           = molokai_orange;
-    // p->colors.swap          = molokai_green;
-    // p->colors.good          = molokai_green;
-    // p->colors.warning       = molokai_orange;
-    // p->colors.bad           = molokai_red;
-    // p->colors.full          = molokai_blue;
-
-    /* the tray; what the icon theme lacks comes from the desktop's (NULL:
-     * the desktop's) */
-    c->tray.icon_theme = "Papirus-Dark"; /* NULL */
-    // c->tray.bg = molokai_light_gray;
-    c->tray.bg         = 0x657374ff;     /* 0x859394ff */
-    // c->tray.icon_size  = 16;
-    // c->tray.icon_gap   = 4;
+    /* the tray */
+    c->tray.icon_theme = "Papirus-Dark";
+    c->tray.bg = molokai_light_gray;
 
     /* the popups */
-    // c->popup.bg             = 0x3c3c3c4d; /* awl blurs what is behind it */
-    // c->popup.fg             = 0xf8f8f2ff;
     // c->popup.border = molokai_blue;
     // c->popup.border = molokai_light_gray;
-    c->popup.border         = 0x657374ff;  /* 0xa6e22eff */
-    // c->popup.hover          = 0xffffff26;
-    // c->popup.dim            = 0xf8f8f259;
-    c->popup.border_width   = c->borderpx; /* 1 */
-    // c->popup.radius         = 15;
-    // c->popup.padding        = 8;
-    // c->popup.margin         = 6;
-    // c->popup.column_spacing = AWL_WINDOW_COLUMN_SPACING;
-    // c->popup.row_spacing    = AWL_WINDOW_ROW_SPACING;
-    c->popup.font           = "sans:size="; /* NULL: the bar's */
-    c->popup.fontsize       = 10;           /* 0: the bar's */
-    // c->popup.calendar.today    = 0xb6ec52ff;
-    // c->popup.calendar.selected = 0xffffff33;
-    // c->popup.calendar.list_min_height = 120;
-    // c->popup.calendar.list_max_height = 200;
+    c->popup.border         = 0x657374ff;
+    c->popup.border_width   = c->borderpx;
+    c->popup.font           = "sans:size=";
+    c->popup.fontsize       = 10;
 
-    /* the tray's menus; 0 is the popups' */
-    c->popup.menu.bg           = 0x3c3c3c4d; /* the popups' (bg, fg, hover) */
+    /* the tray's menus */
+    c->popup.menu.bg           = 0x3c3c3c4d;
     c->popup.menu.fg           = 0xf8f8f2ff;
     c->popup.menu.border       = 0x859394ff;
     c->popup.menu.highlight    = 0xffffff26;
-    // c->popup.menu.highlight_fg = 0; /* the menu's fg */
-    c->popup.menu.dim          = 0xf8f8f259; /* disabled entries, shortcuts, separators */
+    c->popup.menu.dim          = 0xf8f8f259;
     c->popup.menu.border_width = 2;
     c->popup.menu.radius       = 4;
-    c->popup.menu.blur         = 1;          /* 0: blur.launcher */
+    c->popup.menu.blur         = 1;
 
     /* the desktop file list */
-    c->desktop.font         = "sans:size="; /* NULL: the bar's */
-    c->desktop.fontsize     = 10;           /* 0: the bar's */
-    // c->desktop.bg           = 0x3c3c3c4c;
-    // c->desktop.file         = 0xf8f8f2ff;
-    // c->desktop.dir          = molokai_blue;
-    // c->desktop.broken       = molokai_red;
-    // c->desktop.hidden_alpha = 0xa0;
+    c->desktop.font         = "sans:size=";
+    c->desktop.fontsize     = 10;
     c->desktop.margin       = 20;
     c->desktop.columns      = 2;
 
-    /* the wallpaper */
-    // c->wallpaper.dir      = "Wallpapers";
-    // c->wallpaper.fade_ms  = 500;
-    // c->wallpaper.interval = 7200;
-    // c->wallpaper.mode     = WallpaperRand;
-
-    /* the alert */
-    // c->alert.fg         = 0xffffffff;
-    // c->alert.bg         = 0xc00000ff;
-    // c->alert.opacity    = 0.9f;
-    // c->alert.font_scale = 1.5f;
-    // c->alert.margin     = 12;
-
-    /* keyboard; NULL: the default */
-    // c->keyboard.xkb.rules   = NULL;
+    /* keyboard */
     c->keyboard.xkb.model   = "pc105";
     c->keyboard.xkb.layout  = "de";
     c->keyboard.xkb.variant = "nodeadkeys";
-    // c->keyboard.xkb.options = NULL;
-    // c->keyboard.repeat_rate  = 25;
-    // c->keyboard.repeat_delay = 600;
 
-    /* pointer devices */
-    // c->pointer.tap_to_click = 1;
-    // c->pointer.tap_and_drag = 1;
-    // c->pointer.drag_lock = 1;
-    // c->pointer.natural_scrolling = 0;
-    // c->pointer.disable_while_typing = 1;
-    // c->pointer.left_handed = 0;
-    // c->pointer.middle_button_emulation = 0;
-    // c->pointer.scroll_method = LIBINPUT_CONFIG_SCROLL_2FG;
-    // c->pointer.click_method = LIBINPUT_CONFIG_CLICK_METHOD_BUTTON_AREAS;
-    // c->pointer.send_events_mode = LIBINPUT_CONFIG_SEND_EVENTS_ENABLED;
-    // c->pointer.accel_profile = LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
-    // c->pointer.accel_speed = 0.0;
-    // c->pointer.button_map = LIBINPUT_CONFIG_TAP_MAP_LRM;
-
-    /* the temperature's color scale (°C) and the battery */
-    // p->temperature.coretemp.min     = 50;
-    // p->temperature.coretemp.max     = 100;
-    // p->temperature.thermal_zone.min = 40;
-    // p->temperature.thermal_zone.max = 90;
-    // p->battery.dir = "/sys/class/power_supply/BAT0/";
-    // p->battery.ac_dir = "/sys/class/power_supply/AC/";
+    /* the battery's color scale */
     p->battery.scale.bad     = 10;
     p->battery.scale.warning = 20;
     p->battery.scale.ok      = 30;
-    // p->battery.scale.full = 90;
 
-    /* the launcher (plugins/launcher.h); colors 0: the popups' */
+    /* the launcher (plugins/launcher.h) */
     p->launcher.layout       = AWL_LAUNCHER_BAR; /* a strip over the bar */
-    // p->launcher.input_width  = 120;  /* the query's, at least */
-    p->launcher.strip_at     = AWL_WINDOW_AT_STRIP_TOP; /* or _STRIP_TOP, _STRIP_BOTTOM */
-    // p->launcher.rows        = 10;
-    // p->launcher.width       = 560;
-    // p->launcher.icon_size   = 24;
-    p->launcher.terminal     = launcher_terminal; /* { "xterm", "-e", NULL } */
-    // p->launcher.prompt      = "> ";
-    // p->launcher.run_prompt  = "$ ";
-    // p->launcher.at          = AWL_WINDOW_AT_TOP;
-    // p->launcher.dy          = 0;
-    // p->launcher.match       = molokai_orange;
-    // p->launcher.dim         = 0;
-    p->launcher.prompt_color = molokai_red; /* 0: dim */
-    p->launcher.query_color  = molokai_orange; /* 0: the popups' fg, as the cursor */
+    p->launcher.strip_at     = AWL_WINDOW_AT_STRIP_TOP; /* or _AT_BAR, _AT_STRIP_BOTTOM */
+    p->launcher.terminal     = launcher_terminal;
+    p->launcher.prompt_color = molokai_red;
+    p->launcher.query_color  = molokai_orange;
 }
 
 /* ======================================================================

@@ -42,9 +42,8 @@ const char* awl_alert_text( void );
 void awl_alert_init( void );
 /** m's alert, hidden until `awl_alert_draw()` */
 void awl_alert_addmon( Monitor* m );
-/** The alert on m, as cfg->alert says (by default white on red at 0.9
- * opacity, in the bar's font at 1.5 times its size): in the bottom left
- * corner, cfg->alert.margin logical pixels from the edges, above everything, the lock screen
+/** The alert on m, as cfg->alert says, in the bar's font: in the bottom
+ * left corner, cfg->alert.margin logical pixels from the edges, above everything, the lock screen
  * included. Redrawn only when the alert, m's area or its scale changed;
  * called on every redraw request and whenever m is arranged. */
 void awl_alert_draw( Monitor* m );

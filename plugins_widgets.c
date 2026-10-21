@@ -81,7 +81,7 @@ static const widget_t right_widgets[] = {
         .free = free,
     },
     [AwlWidgetTray] = {
-        PAD_FONT,
+        .pad_left = 0, .pad_right = 0,
         .measure = &sniwidget_measure,
         .draw = &sniwidget_draw,
         .callback_click = &sniwidget_click,
@@ -98,7 +98,6 @@ static const widget_t right_widgets[] = {
         .free = free,
     },
     [AwlWidgetStats] = {
-        PAD_FONT,
         .measure = &statuswidget_measure,
         .draw = &statuswidget_draw,
         .free = free,
@@ -111,13 +110,13 @@ static const widget_t right_widgets[] = {
     },
     [AwlWidgetDock] = {
         /* right against the battery's percent */
-        .pad_left = 0, .pad_right = AWL_PADDING_FONT,
+        .pad_left = 0, .pad_right = -2,
         .measure = &dockwidget_measure,
         .draw = &dockwidget_draw,
         .free = free,
     },
     [AwlWidgetBattery] = {
-        PAD_FONT,
+        .pad_left = 0, .pad_right = AWL_PADDING_FONT,
         .measure = &batwidget_measure,
         .draw = &textsnap_draw,
         .free = free,
@@ -133,7 +132,7 @@ static const widget_t right_widgets[] = {
         .free = &ipwidget_free,
     },
     [AwlWidgetBacklight] = {
-        PAD_FONT,
+        .pad_left = AWL_PADDING_FONT, .pad_right = 0,
         .measure = &backlightwidget_measure,
         .draw = &backlightwidget_draw,
         .callback_click = &backlightwidget_click,

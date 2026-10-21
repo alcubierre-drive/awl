@@ -5,7 +5,7 @@
  * painter (awl_window_draw.h) draws, like the plugins' calendar, next to
  * the bar, styled by ``cfg->popup`` (colors, border,
  * corner radius, padding; blurred behind like the launcher), in its
- * ``font`` (by default the bar's), its ``margin`` away from the bar and the
+ * ``font`` (NULL: the bar's), its ``margin`` away from the bar and the
  * monitor's sides. Not a client: no Wayland
  * surface; no keyboard focus, but with a key callback it takes the keys
  * while shown (awl_window_set_key()). Without a click or scroll callback it takes no

@@ -3,9 +3,10 @@
  * awl's defaults for awl_config_t (awl.h): what awl runs with while no
  * plugin library is loaded, and what plugins_config.c starts from and
  * changes (`awl_host_t.config_defaults`). Only awl_config.c includes it:
- * every file that did would get its own copy. Copy from here what to change;
- * plugins_config.c's configure() lists them, commented out. The
- * plugins' own defaults are in plugin_config_defaults.h.
+ * every file that did would get its own copy. Every setting is here with its
+ * default; one left zero is a comment saying what zero means. Copy from here
+ * what to change into plugins_config.c's configure(). The plugins' own
+ * defaults are in plugins_config_defaults.h.
  */
 #include "awl_config.h"
 
@@ -111,6 +112,7 @@ static const awl_config_t awl_config_defaults = {
     .buttons = { buttons, LENGTH(buttons) },
     .layouts = { layouts, LENGTH(layouts) },
     .monrules = { monrules, LENGTH(monrules) },
+    /* .rules: none, see the examples above */
 
     .bar = { .show = 1, .top = 1 },
     .ntags = 9,
@@ -124,7 +126,7 @@ static const awl_config_t awl_config_defaults = {
     },
     .font = "monospace:size=",
     .fontsize = 10,
-    .emoji_font = "emoji",
+    .emoji_font = "emoji", /* NULL: text instead of emoji */
     .rootcolor = 0x000000ff,
     .fullscreen_bg = 0x1a1a1aff,
     .blur = {
@@ -134,7 +136,8 @@ static const awl_config_t awl_config_defaults = {
         .windowlist = 1,
     },
     .keyboard = {
-        .xkb = { .options = NULL },
+        /* .xkb: .rules, .model, .layout, .variant, .options all NULL,
+         * xkbcommon's defaults */
         .repeat_rate = 25,
         .repeat_delay = 600,
     },
@@ -172,7 +175,7 @@ static const awl_config_t awl_config_defaults = {
     },
 
     .tray = {
-        .icon_theme = NULL,
+        .icon_theme = NULL, /* the desktop's */
         .bg = 0x859394ff,
         .icon_size = 16,
         .icon_gap = 4,
@@ -191,20 +194,22 @@ static const awl_config_t awl_config_defaults = {
         .margin       = 6,
         .column_spacing = AWL_WINDOW_COLUMN_SPACING,
         .row_spacing  = AWL_WINDOW_ROW_SPACING,
-        .font         = NULL,
-        .fontsize     = 0,
+        .font         = NULL, /* the bar's */
+        .fontsize     = 0,    /* the bar's */
         .calendar = {
             .today    = 0xb6ec52ff,
             .selected = 0xffffff33,
             .list_min_height = 120,
             .list_max_height = 200,
         },
-        /* the tray's menus: all left out, so the popups' */
+        /* the tray's menus: all 0, so the popups': .bg, .fg, .border,
+         * .highlight (hover), .dim, .border_width, .radius; .highlight_fg the
+         * menu's fg; .blur blur.launcher */
         .menu = { 0 },
     },
     .desktop = {
-        .font = NULL,
-        .fontsize = 0,
+        .font = NULL,  /* the bar's */
+        .fontsize = 0, /* the bar's */
         .bg     = 0x3c3c3c4c,
         .file   = 0xf8f8f2ff,
         .dir    = 0x66d9efff, /* molokai_blue */

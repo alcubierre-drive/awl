@@ -58,7 +58,7 @@ enum {
 
 /**
  * What only the plugin library reads of the configuration: its defaults
- * (plugin_config_defaults.h) with plugins_config.c's changes, next to
+ * (plugins_config_defaults.h) with plugins_config.c's changes, next to
  * `awl_config_t` (awl.h), which awl reads (the tray's, the popups' and the
  * desktop file list's look are there). Colors are 0xRRGGBBAA, sizes
  * logical pixels. Main thread.

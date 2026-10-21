@@ -2,8 +2,9 @@
 /** The plugins' defaults for awl_plugin_config_t (plugins.h), which
  * plugins_config.c's configure() changes, next to awl's for awl_config_t
  * (awl_config_defaults.h). Only plugins_config.c includes it: every file
- * that did would get its own copy. Copy from here what to change; plugins_config.c's
- * configure() lists them, commented out. */
+ * that did would get its own copy. Every setting is here with its default;
+ * one left zero is a comment saying what zero means. Copy from here what to
+ * change into plugins_config.c's configure(). */
 #include "plugins.h"
 #include "plugins/colors.h"
 
@@ -17,7 +18,7 @@ static const char* const default_terminal[] = { "xterm", "-e", NULL };
 
 static const awl_plugin_config_t awl_plugin_config_defaults = {
     .widgets = { default_widgets, LENGTH( default_widgets ) },
-    .widgets_bar_padding = 0,
+    .widgets_bar_padding = 0, /* each widget's own (plugins_widgets.c) */
     .colors = {
         .bg            = molokai_light_gray,
         .fg            = 0xf5efffff,
@@ -61,6 +62,9 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .terminal = default_terminal,
         .prompt = "> ", .run_prompt = "$ ",
         .at = AWL_WINDOW_AT_TOP, .dy = 0,
-        .match = molokai_orange, .dim = 0,
+        .match = molokai_orange,
+        .dim = 0, /* the popups' dim */
+        /* .prompt_color: 0, the launcher's dim; .query_color: 0, the
+         * popups' fg (the cursor's too) */
     },
 };

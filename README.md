@@ -56,11 +56,12 @@ The configuration is in two files:
   `plugin_restart` (MOD+Ctrl+r) applies it to the running awl. Only its
   part between the `CUSTOM` markers is configuration: there,
   `configure(c, p)` gets awl's defaults (awl_config_defaults.h) in `c` and the
-  plugins' (plugin_config_defaults.h) in `p`, and changes only what it wants,
+  plugins' (plugins_config_defaults.h) in `p`, and changes only what it wants,
   e.g. `c->modkey = WLR_MODIFIER_LOGO;`, `SETLIST(c->keys, keys);` for
-  bindings of its own, or `p->colors.bg = ...;` for the bar; `awl_config_t`
-  in awl.h and `awl_plugin_config_t` in plugins.h list everything there
-  is.
+  bindings of its own, or `p->colors.bg = ...;` for the bar. The two
+  defaults files list every setting with its default (what zero means where
+  one is left zero), `awl_config_t` in awl.h and `awl_plugin_config_t` in
+  plugins.h what each one does.
 
 The config's `lock` has the screen locker: `locker`, the ext-session-lock
 client to run, `at_start`, and `on_suspend`, which makes suspend wait until
