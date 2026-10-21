@@ -187,25 +187,6 @@ void awl_font_retry(void) {
         SLOT(i)->failed = 0;
 }
 
-void awl_draw_setup(awl_draw_t *bar, Monitor *m) {
-    *bar = (awl_draw_t){ .m = m };
-    /* the widgets come from libawlplugins.so, see awl_plugin_host.h */
-}
-
-struct fcft_font *awl_draw_set_font(awl_draw_t *bar, const char *name, float size, float scale,
-        int fallback) {
-    struct fcft_font *font = fallback ? awl_font_get(name, size, scale)
-                                      : awl_font_get_exact(name, size, scale);
-    if (!bar || !font) {
-        awl_font_release(font);
-        return NULL;
-    }
-    /* the new one first: if it is the same, the old reference keeps it */
-    awl_font_release(bar->font);
-    bar->font = font;
-    return font;
-}
-
 pixman_image_t *awl_draw_image(unsigned int w, unsigned int h, uint32_t *bits, int stride) {
     pixman_region32_t clip;
     pixman_image_t *pix = pixman_image_create_bits_no_clear(PIXMAN_a8r8g8b8, w, h, bits, stride);
@@ -216,13 +197,6 @@ pixman_image_t *awl_draw_image(unsigned int w, unsigned int h, uint32_t *bits, i
     pixman_image_set_clip_region32(pix, &clip);
     pixman_region32_fini(&clip);
     return pix;
-}
-
-void awl_draw_prepare_drawing(awl_draw_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride) {
-    if (!bar)
-        return;
-    awl_draw_finish_drawing(bar);
-    bar->pix = awl_draw_image(w, h, bits, stride);
 }
 
 static void rect_color(pixman_image_t *pix, int x, int y, unsigned int w, unsigned int h, uint32_t color) {
@@ -364,42 +338,6 @@ unsigned int awl_draw_text_width(struct fcft_font *font, const char *text) {
     if (!font || !text)
         return 0;
     return text_width(font, text);
-}
-
-void awl_draw_finish_drawing(awl_draw_t *bar) {
-    if (bar && bar->pix) {
-        pixman_image_unref(bar->pix);
-        /* awl_draw_teardown() and the next awl_draw_prepare_drawing() unref
-         * a bar->pix that is left; a dangling one would be a double unref */
-        bar->pix = NULL;
-    }
-}
-
-void awl_draw_teardown(awl_draw_t *bar) {
-    if (!bar)
-        return;
-    awl_draw_finish_drawing(bar);
-    awl_font_release(bar->font);
-    awl_font_release(bar->emojifont);
-    awl_draw_widgets_clear(bar);
-    *bar = (awl_draw_t){ 0 };
-}
-
-void awl_draw_widgets_clear(awl_draw_t *bar) {
-    for (int l=0; l<bar->n_widgets_left; ++l)
-        if (bar->widgets_left[l].free)
-            bar->widgets_left[l].free( bar->widgets_left[l].userdata );
-    for (int r=0; r<bar->n_widgets_right; ++r)
-        if (bar->widgets_right[r].free)
-            bar->widgets_right[r].free( bar->widgets_right[r].userdata );
-
-    if (bar->has_center_widget)
-        if (bar->center_widget.free)
-            bar->center_widget.free( bar->center_widget.userdata );
-
-    bar->n_widgets_left = bar->n_widgets_right = 0;
-    bar->has_center_widget = 0;
-    bar->center_widget = (widget_t){0};
 }
 
 void awl_draw_fini(void) {

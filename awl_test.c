@@ -121,7 +121,7 @@ testwincmd(char *line)
     Monitor *m = NULL, *it;
     struct wlr_box box;
     Popup *p;
-    awl_draw_t *d;
+    awl_bar_t *d;
     unsigned int xpos;
     int bx, by, i;
     FILE *f;
@@ -217,7 +217,7 @@ testwincmd(char *line)
         }
         /* barwidgetat()'s layout of the right-hand widgets */
         wl_list_for_each(it, &mons, link) {
-            d = &it->drw;
+            d = &it->bar;
             if (!d->m || !it->scene_buffer || !it->wlr_output->enabled)
                 continue;
             wlr_scene_node_coords(&it->scene_buffer->node, &bx, &by);
@@ -226,7 +226,7 @@ testwincmd(char *line)
                 if (d->widgets_right[i].callback_hover && d->widgets_right[i].width)
                     fprintf(f, "hover %s %d %d\n", it->wlr_output->name,
                             it->m.x + (int)((xpos + d->widgets_right[i].width / 2) / it->wlr_output->scale),
-                            by + it->b.real_height / 2);
+                            by + it->bar_area.real_height / 2);
                 xpos += d->widgets_right[i].width;
             }
         }

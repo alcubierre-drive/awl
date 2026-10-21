@@ -14,7 +14,7 @@
  * that). No keyboard: a press outside closes it.
  */
 
-#include "awl_draw.h"
+#include "awl_bar_type.h"
 
 /** starts fetching events, this month's first; returns 0 */
 int awl_calpopup_start( void );

@@ -117,7 +117,7 @@ static const struct wlr_buffer_impl buffer_impl = {
 
 /** what m's panel draws in: Monitor.desktopfont, else the bar's; NULL if none */
 static struct fcft_font* font_of( Monitor* m ) {
-    return m->desktopfont ? m->desktopfont : m->drw.font;
+    return m->desktopfont ? m->desktopfont : m->bar.font;
 }
 
 /** returns whether there is anything to show */

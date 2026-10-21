@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * The bars, part of awl: each monitor's `awl_draw_t` (``Monitor.drw``) and
+ * The bars, part of awl: each monitor's `awl_bar_t` (``Monitor.bar``) and
  * the scene buffer that shows it (awl_bar.c). awl lays the widgets out,
  * draws them into a ring of two buffers, hands the scene only the pixels
  * that changed, and routes the pointer to them: presses, the wheel, hovering
@@ -59,3 +59,22 @@ int baraxis(double delta);
  * widget there opened, or keeps it from opening. Returns 1 if the widget's
  * callback_click took the press; else ``*click`` becomes ClkBar. */
 int barbutton(uint32_t button, unsigned int *click);
+
+/* m's awl_bar_t (awl_bar_type.h) */
+/** makes bar m's (m->bar, unused), without font or widgets */
+void awl_bar_setup(awl_bar_t *bar, Monitor *m);
+/** Makes the registry's font (awl_font_get(), or awl_font_get_exact() if
+ * !fallback) bar's, giving back its old one. Returns it; NULL (bar keeps
+ * its font) if none loads. */
+struct fcft_font *awl_bar_set_font(awl_bar_t *bar, const char *name, float size, float scale,
+        int fallback);
+/** makes bar->pix an image of bits, see awl_draw_image() */
+void awl_bar_prepare_drawing(awl_bar_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride);
+/** lets go of what `awl_bar_prepare_drawing()` pointed at */
+void awl_bar_finish_drawing(awl_bar_t *bar);
+/** gives back bar's font and image, frees its widgets and empties it: its
+ * monitor has no bar anymore (bar->m is NULL) */
+void awl_bar_teardown(awl_bar_t *bar);
+/** Frees every widget's userdata and empties the widget lists, so nothing in
+ * the bar points into ``libawlplugins.so`` anymore. */
+void awl_bar_widgets_clear(awl_bar_t *bar);

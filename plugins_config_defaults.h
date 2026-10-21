@@ -17,6 +17,7 @@ static const char* const default_terminal[] = { "xterm", "-e", NULL };
 
 static const awl_plugin_config_t awl_plugin_config_defaults = {
     .widgets = { default_widgets, LENGTH( default_widgets ) },
+    .widgets_bar_padding = 0,
     .colors = {
         .bg            = molokai_light_gray,
         .fg            = 0xf5efffff,

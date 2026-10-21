@@ -52,7 +52,7 @@ typedef struct awl_host_t {
     /** sizeof_host, sizeof_draw, sizeof_widget and sizeof_config: the
      * layouts the library compiles against. `Monitor` and `Client` aren't
      * among them: the library only passes them back to awl, it never reads
-     * them (what a bar's widgets need of its monitor is in `awl_draw_t`). */
+     * them (what a bar's widgets need of its monitor is in `awl_bar_t`). */
     size_t sizeof_host, sizeof_draw, sizeof_widget, sizeof_config;
 
     /* ---- any thread ---- */

@@ -15,9 +15,6 @@
 #include <arpa/inet.h>
 #include <stdatomic.h>
 
-/* awl.h's TEXTW calls into awl directly */
-#undef TEXTW
-#define TEXTW(bar, text) (awl_host->text_width((bar)->font, text) + (bar)->lrpad)
 
 static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void tagwidget_scroll( widget_t* w, uint32_t x, int amount );
@@ -67,9 +64,13 @@ static uint32_t backlightwidget_measure( widget_t* w );
 static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void backlightwidget_click( widget_t* w, uint32_t x, int button );
 
+/** the usual padding, half the font's height either side */
+#define PAD_FONT .pad_left = AWL_PADDING_FONT, .pad_right = AWL_PADDING_FONT
+
 /** the widgets right of the task bar, by `awl_plugin_config_t.widgets`' kind */
 static const widget_t right_widgets[] = {
     [AwlWidgetClock] = {
+        PAD_FONT,
         .measure = &clockwidget_measure,
         .draw = &clockwidget_draw,
         .callback_hover = &clockwidget_hover,
@@ -80,6 +81,7 @@ static const widget_t right_widgets[] = {
         .free = free,
     },
     [AwlWidgetTray] = {
+        PAD_FONT,
         .measure = &sniwidget_measure,
         .draw = &sniwidget_draw,
         .callback_click = &sniwidget_click,
@@ -88,6 +90,7 @@ static const widget_t right_widgets[] = {
         .free = &sniwidget_free,
     },
     [AwlWidgetVolume] = {
+        PAD_FONT,
         .measure = &pulsewidget_measure,
         .draw = &textsnap_draw,
         .callback_click = &pulsewidget_click,
@@ -95,26 +98,32 @@ static const widget_t right_widgets[] = {
         .free = free,
     },
     [AwlWidgetStats] = {
+        PAD_FONT,
         .measure = &statuswidget_measure,
         .draw = &statuswidget_draw,
         .free = free,
     },
     [AwlWidgetTemperature] = {
+        PAD_FONT,
         .measure = &tempwidget_measure,
         .draw = &tempwidget_draw,
         .free = free,
     },
     [AwlWidgetDock] = {
+        /* right against the battery's percent */
+        .pad_left = 0, .pad_right = AWL_PADDING_FONT,
         .measure = &dockwidget_measure,
         .draw = &dockwidget_draw,
         .free = free,
     },
     [AwlWidgetBattery] = {
+        PAD_FONT,
         .measure = &batwidget_measure,
         .draw = &textsnap_draw,
         .free = free,
     },
     [AwlWidgetNetwork] = {
+        PAD_FONT,
         .measure = &ipwidget_measure,
         .draw = &ipwidget_draw,
         .callback_hover = &ipwidget_hover,
@@ -124,6 +133,7 @@ static const widget_t right_widgets[] = {
         .free = &ipwidget_free,
     },
     [AwlWidgetBacklight] = {
+        PAD_FONT,
         .measure = &backlightwidget_measure,
         .draw = &backlightwidget_draw,
         .callback_click = &backlightwidget_click,
@@ -131,43 +141,104 @@ static const widget_t right_widgets[] = {
     },
 };
 
-void awl_widgets_create( awl_draw_t* drw ) {
-    drw->widgets_left[drw->n_widgets_left++] = (widget_t){
-        .bar = drw,
+void awl_widgets_create( awl_bar_t* bar ) {
+    bar->widgets_left[bar->n_widgets_left++] = (widget_t){
+        .bar = bar,
+        PAD_FONT,
         .draw = &tagwidget_draw,
         .callback_click = &tagwidget_click,
         .callback_scroll = &tagwidget_scroll,
     };
-    drw->widgets_left[drw->n_widgets_left++] = (widget_t){
-        .bar = drw,
+    bar->widgets_left[bar->n_widgets_left++] = (widget_t){
+        .bar = bar,
+        PAD_FONT,
         .draw = &layoutwidget_draw,
         .callback_click = &layoutwidget_click,
         .callback_scroll = &layoutwidget_scroll,
     };
 
-    drw->center_widget = (widget_t){
-        .bar = drw,
+    bar->center_widget = (widget_t){
+        .bar = bar,
+        PAD_FONT,
         .draw = &taskbarwidget_draw,
         .callback_click = &taskbarwidget_click,
         .callback_scroll = &taskbarwidget_scroll,
     };
-    drw->has_center_widget = 1;
+    bar->has_center_widget = 1;
 
     const awl_plugin_config_t* pc = awl_plugin_config();
     for (size_t i = 0; i < pc->widgets.n; i++) {
         int k = pc->widgets.v[i];
         if (k < 0 || (size_t)k >= LENGTH( right_widgets ) ||
-            drw->n_widgets_right >= (int)LENGTH( drw->widgets_right ))
+            bar->n_widgets_right >= (int)LENGTH( bar->widgets_right ))
             continue;
-        widget_t* w = &drw->widgets_right[drw->n_widgets_right++];
+        widget_t* w = &bar->widgets_right[bar->n_widgets_right++];
         *w = right_widgets[k];
-        w->bar = drw;
+        w->bar = bar;
     }
 }
 
-#define TEXT( width, string, fg, bg ) \
-    awl_host->text( pix, w->bar->font, x, -2, width, w->bar->height, w->bar->lrpad/2, string, \
-            fg, bg )
+/* Every widget is made of cells with its padding on either side
+ * (`widget_t.pad_left`, `pad_right`, plus `awl_plugin_config_t.widgets_bar_padding`):
+ * cell_width() says how wide one is, cell_text() draws a text one,
+ * cell_pads() a picture's padding. */
+
+/** one side's padding, pad (a widget_t's) plus the configuration's, in the
+ * bar's pixels */
+static int pad_px( const widget_t* w, int pad ) {
+    float scale = w->bar->scale;
+    return (pad == AWL_PADDING_FONT ? w->bar->lrpad / 2 : (int)lroundf( (float)pad * scale ))
+        + (int)lroundf( (float)awl_plugin_config()->widgets_bar_padding * scale );
+}
+
+/** w's padding, left and right, in the bar's pixels */
+static void widget_padding( const widget_t* w, int* l, int* r ) {
+    *l = pad_px( w, w->pad_left );
+    *r = pad_px( w, w->pad_right );
+}
+
+/** a cell of w around content pixels, 0 if the padding leaves nothing */
+static uint32_t cell_width( const widget_t* w, uint32_t content ) {
+    int l, r;
+    widget_padding( w, &l, &r );
+    long cw = (long)content + l + r;
+    return cw > 0 ? (uint32_t)cw : 0;
+}
+
+/** a cell of w around text in font */
+static uint32_t text_cell_width( const widget_t* w, struct fcft_font* font, const char* text ) {
+    return cell_width( w, awl_host->text_width( font, text ) );
+}
+
+/** Draws a cell of w at x, cw wide: bg, then text in font between the
+ * paddings, cut off with an ellipsis if it doesn't fit. Negative padding
+ * puts the text over the neighbours. */
+static void cell_text( widget_t* w, pixman_image_t* pix, int x, uint32_t cw,
+        struct fcft_font* font, const char* text, pixman_color_t fg, pixman_color_t bg ) {
+    int l, r, h = (int)w->bar->height;
+    widget_padding( w, &l, &r );
+    long room = (long)cw - l - r;
+    awl_host->text( pix, font, x, -2, cw, h, 0, "", fg, bg );
+    if (room <= 0 || !*text) return;
+    if (l >= 0 && r >= 0)
+        awl_host->text( pix, font, x + l, -2, (unsigned)room, h, 0, text, fg, bg );
+    else // over what is there, also outside the cell
+        awl_host->text_over( pix, font, x + l, -2, (unsigned)room, h, text,
+                             color_16bit_to_8bit( fg ) );
+}
+
+/** fills the padding of w's picture cell at x, cw wide, with bg */
+static void cell_pads( widget_t* w, pixman_image_t* pix, int x, uint32_t cw, pixman_color_t bg ) {
+    int l, r;
+    widget_padding( w, &l, &r );
+    if (l > (int)cw) l = (int)cw;
+    if (r > (int)cw) r = (int)cw;
+    pixman_box32_t pads[2];
+    int n = 0;
+    if (l > 0) pads[n++] = (pixman_box32_t){ x, 0, x + l, (int)w->bar->height };
+    if (r > 0) pads[n++] = (pixman_box32_t){ x + (int)cw - r, 0, x + (int)cw, (int)w->bar->height };
+    if (n) pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &bg, n, pads );
+}
 
 static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     awl_plugin_data_t* P = awl_plugin_get();
@@ -175,7 +246,7 @@ static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     int width = 0;
     for (int t=0; t<w->bar->ntags; ++t) {
         char num[16] = ""; snprintf( num, sizeof(num)-1, "%i", t+1 );
-        int ww = TEXTW(w->bar, "0");
+        int ww = text_cell_width( w, w->bar->font, "0" );
         pixman_color_t bg_color = P->colors.tag_bg,
                        fg_color = P->colors.fg;
         if (w->bar->occ & (1 << t))
@@ -184,8 +255,8 @@ static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
             bg_color = alpha_blend_16( bg_color, P->colors.tag_urgent );
         if (w->bar->sel & (1 << t))
             bg_color = alpha_blend_16( bg_color, P->colors.tag_selected );
-        TEXT( ww, num, fg_color, bg_color );
-        /* the selected monitor: a bar under the "1", where TEXT() put it */
+        cell_text( w, pix, x, ww, w->bar->font, num, fg_color, bg_color );
+        /* the selected monitor: a mark in the "1"'s corner */
         if (t == 0 && w->bar->selmon && w->bar->selmon != -1) {
             int hh = w->bar->height;
             int h = hh / 8;
@@ -214,7 +285,7 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
 
     int n_windows = w->bar->n_tagwindows;
     if (n_windows <= 0) {
-        TEXT( space, "", P->colors.win_fg, (pixman_color_t){0} );
+        cell_text( w, pix, x, space, w->bar->font, "", P->colors.win_fg, (pixman_color_t){0} );
         return 0;
     }
 
@@ -228,10 +299,12 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
         if (spaces[wi] <= 20)
             nospace = 1;
 
-    if (nospace)
-        return TEXT( space, "+++", P->colors.win_fg, P->colors.win_urgent );
+    if (nospace) {
+        cell_text( w, pix, x, space, w->bar->font, "+++", P->colors.win_fg, P->colors.win_urgent );
+        return space;
+    }
 
-    awl_draw_window_t* windows = w->bar->tagwindows;
+    awl_bar_window_t* windows = w->bar->tagwindows;
 
     // max, float, top
     for (int wi=0; wi<n_windows; ++wi) {
@@ -253,7 +326,7 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
         /* frosted: awl blurs what is behind the window list (drawbar()) */
         if (awl_config()->blur.windowlist && !windows[wi].focused && !windows[wi].urgent)
             bg.alpha = 0x8888;
-        TEXT( spaces[wi], txt, P->colors.win_fg, bg );
+        cell_text( w, pix, x, spaces[wi], w->bar->font, txt, P->colors.win_fg, bg );
         x += spaces[wi];
     }
     return w->bar->center_widget_space;
@@ -262,8 +335,8 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
 static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P) return 0;
-    int ww = TEXTW(w->bar, "XXX");
-    TEXT( ww, w->bar->ltsymbol, P->colors.fg, P->colors.bg );
+    int ww = text_cell_width( w, w->bar->font, "XXX" );
+    cell_text( w, pix, x, ww, w->bar->font, w->bar->ltsymbol, P->colors.fg, P->colors.bg );
     /* each tag has its own layout: a red frame around the symbol */
     if (w->bar->pertag) {
         int hh = w->bar->height;
@@ -295,13 +368,13 @@ static textsnap_t* textsnap( widget_t* w ) {
 
 static uint32_t textsnap_width( widget_t* w ) {
     textsnap_t* s = w->userdata;
-    return s && *s->text ? TEXTW( w->bar, s->text ) : 0;
+    return s && *s->text ? text_cell_width( w, w->bar->font, s->text ) : 0;
 }
 
 static uint32_t textsnap_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     textsnap_t* s = w->userdata;
     if (!s) return 0;
-    TEXT( w->width, s->text, s->fg, s->bg );
+    cell_text( w, pix, x, w->width, w->bar->font, s->text, s->fg, s->bg );
     return w->width;
 }
 
@@ -311,9 +384,6 @@ typedef struct {
     /** where draw() put the widget, in bar pixels */
     uint32_t x;
 } clockwidget_userdata_t;
-
-/** how far the seconds meter moves left into the time's right padding */
-static const float clock_meter_pad = 2.5f;
 
 static uint32_t clockwidget_measure( widget_t* w ) {
     if (!w->userdata) w->userdata = calloc(1, sizeof(clockwidget_userdata_t));
@@ -329,10 +399,10 @@ static uint32_t clockwidget_measure( widget_t* w ) {
         snprintf(u->timestr, sizeof(u->timestr), "%02d:%02d", secs / 3600, secs / 60 % 60);
         u->sec = secs % 60;
     }
-    // time text plus the seconds meter, which eats into the text's padding
+    // the time's cell, then the seconds meter
     int mw = 3 * w->bar->scale + 0.5f;
     if (mw < 2) mw = 2;
-    return TEXTW( w->bar, "--:--" ) + mw - (int)(clock_meter_pad * w->bar->scale + 0.5f);
+    return text_cell_width( w, w->bar->font, "--:--" ) + mw;
 }
 
 static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
@@ -344,7 +414,7 @@ static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
     int mw = 3 * w->bar->scale + 0.5f;
     if (mw < 2) mw = 2;
     int ww = w->width - mw;
-    TEXT( ww, u->timestr, P->colors.fg, P->colors.bg );
+    cell_text( w, pix, x, ww, w->bar->font, u->timestr, P->colors.fg, P->colors.bg );
 
     // seconds meter right of the time: empty at :00, full at :59
     int sec = u->sec;
@@ -373,8 +443,9 @@ typedef struct sniwidget_t {
     awl_sni_snap_t* snap;
     sni_icon_t* icons;
     int nicons;
-    /** physical pixels; x: where draw() put the widget */
-    int px, gap;
+    /** physical pixels: the icons' size, the gap between them, the left
+     * padding; x: where draw() put the widget */
+    int px, gap, lpad;
     uint32_t x;
     /** the icon under the pointer, -1 none; whether it is on the widget */
     int hovered, inside;
@@ -448,7 +519,9 @@ static uint32_t sniwidget_measure( widget_t* w ) {
     u->snap = snap;
     if (u->hovered >= u->nicons) u->hovered = -1;
     if (!u->nicons) return 0;
-    return (uint32_t)(u->nicons * u->px + (u->nicons + 1) * u->gap);
+    int r;
+    widget_padding( w, &u->lpad, &r );
+    return cell_width( w, (uint32_t)(u->nicons * u->px + (u->nicons - 1) * u->gap) );
 }
 
 static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
@@ -464,7 +537,7 @@ static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
         pixman_image_t* img = u->icons[i].img;
         if (!img) continue;
         int iw = pixman_image_get_width( img ), ih = pixman_image_get_height( img );
-        int ix = (int)x + u->gap + i * (u->px + u->gap) + (u->px - iw) / 2;
+        int ix = (int)x + u->lpad + i * (u->px + u->gap) + (u->px - iw) / 2;
         int iy = (h - ih) / 2;
         if (u->snap->items[i].file && (u->snap->items[i].file_flags & AWL_ICON_SYMBOLIC)) {
             /* its shape in the text's color */
@@ -478,16 +551,18 @@ static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     return w->width;
 }
 
-/** the icon at x (from the widget's left edge), -1 none */
+/** the icon at x (from the widget's left edge; the gaps split between
+ * their icons), -1 none */
 static int sniwidget_at( const sniwidget_t* u, int32_t x ) {
-    if (!u || x < u->gap / 2 || u->px + u->gap <= 0) return -1;
-    int i = (x - u->gap / 2) / (u->px + u->gap);
+    x -= u ? u->lpad - u->gap / 2 : 0;
+    if (!u || x < 0 || u->px + u->gap <= 0) return -1;
+    int i = x / (u->px + u->gap);
     return i < u->nicons ? i : -1;
 }
 
 /** icon i's center, logical pixels from the monitor's left edge */
 static int sniwidget_center( widget_t* w, const sniwidget_t* u, int i ) {
-    return (int)lround( (u->x + u->gap + i * (u->px + u->gap) + u->px / 2.0) / w->bar->scale );
+    return (int)lround( ((int)u->x + u->lpad + i * (u->px + u->gap) + u->px / 2.0) / w->bar->scale );
 }
 
 /** Right: the menu. Left: what the item does when activated, unless it says
@@ -502,7 +577,7 @@ static void sniwidget_click( widget_t* w, uint32_t x, int button ) {
     const awl_sni_item_t* it = &u->snap->items[i];
     awl_tray_tooltip_drop( u->tip );
     u->tip = 0;
-    const awl_draw_t* bar = w->bar;
+    const awl_bar_t* bar = w->bar;
     const char* mon = bar->output;
     int cx = sniwidget_center( w, u, i );
     if (awl_tray_menu_window_shows( it->menu )) {
@@ -577,7 +652,7 @@ static uint32_t pulsewidget_measure( widget_t* w ) {
                                       P->colors.fg;
     s->bg = P->colors.bg;
     // fixed width so the bar doesn't jitter while the volume changes
-    return TEXTW( w->bar, "V___%" );
+    return text_cell_width( w, w->bar->font, "V___%" );
 }
 
 typedef struct {
@@ -599,7 +674,7 @@ static uint32_t statuswidget_measure( widget_t* w ) {
     float xx = 0;
     int n = st->ncpu + st->nmem + u->nswp;
     for (int i=0; i<n; ++i) xx += w->bar->scale;
-    return xx;
+    return cell_width( w, xx );
 }
 
 static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
@@ -615,8 +690,15 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
 
     unsigned samples = atomic_load( &st->samples );
     int bar_height = w->bar->height;
+    cell_pads( w, pix, x, w->width, P->colors.bg );
+    // the graphs between the paddings; with a negative one, the columns
+    // outside the bar are left out (pixman doesn't clip fills)
+    int l, r, x0, pix_w = pixman_image_get_width( pix );
+    widget_padding( w, &l, &r );
+    x0 = (int)x + l;
     float xx = 0;
     for (int g=0; g<3; ++g) {
+        int m = 0;
         // newest sample first
         for (int i=0; i<n[g]; ++i) {
             float val = stats_sample( graph[g], n[g], samples, i );
@@ -625,15 +707,18 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
             float io = g == 0 ? stats_sample( st->io, n[g], samples, i ) : 0;
             int yio = bar_height - (val + io < 1 ? val + io : 1) * bar_height;
             float next_x = xx + w->bar->scale;
-            u->bg[i] = (pixman_box32_t){.x1=x+(int32_t)xx,.x2=x+(int32_t)next_x,.y1=0, .y2=yio};
-            u->io[i] = (pixman_box32_t){.x1=x+(int32_t)xx,.x2=x+(int32_t)next_x,.y1=yio,.y2=ydiv};
-            u->fg[i] = (pixman_box32_t){.x1=x+(int32_t)xx,.x2=x+(int32_t)next_x,.y1=ydiv,.y2=bar_height};
+            int x1 = x0 + (int32_t)xx, x2 = x0 + (int32_t)next_x;
             xx = next_x;
+            if (x1 < 0 || x2 > pix_w) continue;
+            u->bg[m] = (pixman_box32_t){.x1=x1,.x2=x2,.y1=0, .y2=yio};
+            u->io[m] = (pixman_box32_t){.x1=x1,.x2=x2,.y1=yio,.y2=ydiv};
+            u->fg[m] = (pixman_box32_t){.x1=x1,.x2=x2,.y1=ydiv,.y2=bar_height};
+            m++;
         }
-        pixman_image_fill_boxes(PIXMAN_OP_SRC, pix, &P->colors.stats_bg, n[g], u->bg);
+        pixman_image_fill_boxes(PIXMAN_OP_SRC, pix, &P->colors.stats_bg, m, u->bg);
         if (g == 0)
-            pixman_image_fill_boxes(PIXMAN_OP_SRC, pix, &P->colors.io, n[g], u->io);
-        pixman_image_fill_boxes(PIXMAN_OP_SRC, pix, fg[g], n[g], u->fg);
+            pixman_image_fill_boxes(PIXMAN_OP_SRC, pix, &P->colors.io, m, u->io);
+        pixman_image_fill_boxes(PIXMAN_OP_SRC, pix, fg[g], m, u->fg);
     }
 
     return w->width;
@@ -667,7 +752,7 @@ static uint32_t tempwidget_measure( widget_t* w ) {
         if (u->temps[i] == AWL_TEMP_NONE) continue; // unreadable
         char text[128];
         tempwidget_text( P->temp, i, u->temps[i], text, sizeof(text) );
-        u->widths[i] = TEXTW(w->bar, text);
+        u->widths[i] = text_cell_width( w, w->bar->font, text );
         width += u->widths[i];
     }
     return width;
@@ -685,7 +770,7 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
         tempwidget_text( T, i, u->temps[i], text, sizeof(text) );
         pixman_color_t fgcolor = color_8bit_to_16bit(
                 P->temp_color( u->temps[i], T->f_t_min[i], T->f_t_max[i] ) );
-        TEXT( u->widths[i], text, fgcolor, P->colors.bg );
+        cell_text( w, pix, x, u->widths[i], w->bar->font, text, fgcolor, P->colors.bg );
         x += u->widths[i];
     }
     return w->width;
@@ -729,18 +814,8 @@ static uint32_t batwidget_measure( widget_t* w ) {
     return textsnap_width( w );
 }
 
-/* Emoji are drawn in the bar's emoji font (awl_draw_t.emojifont, color
+/* Emoji are drawn in the bar's emoji font (awl_bar_t.emojifont, color
  * emoji); without one, the widgets show text instead. */
-
-/** how much of the right padding (half of lrpad) emoji leave out, in pixels
- * at scale 1: they fill the whole line height and need less air */
-static const float emoji_rpad = 5.0f;
-
-/** emoji_rpad at w's scale, at most the right padding */
-static int emoji_rpad_px( widget_t* w ) {
-    int rpad = (int)(emoji_rpad * w->bar->scale + 0.5f);
-    return rpad < w->bar->lrpad/2 ? rpad : w->bar->lrpad/2;
-}
 
 /** the dock widget's snapshot: its text and the font it is in */
 typedef struct {
@@ -752,7 +827,7 @@ typedef struct {
  * Thunderbolt dock is attached, 💻 otherwise (neither without a Thunderbolt
  * bus); ⚡ on AC (by the adapter, else by whether the battery charges), 🔋 on
  * the battery, 🪫 below its scale's ok. "DOCK" and "AC" without the emoji
- * font. No left padding: it sits right against the battery's percent. */
+ * font. */
 static uint32_t dockwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->bat) return 0;
@@ -776,15 +851,13 @@ static uint32_t dockwidget_measure( widget_t* w ) {
         snprintf( s->text.text, sizeof(s->text.text), "%s%s%s", dock, *dock && *power ? " " : "", power );
     }
     if (!*s->text.text) return 0;
-    return awl_host->text_width( s->font, s->text.text ) + w->bar->lrpad/2
-        - (s->font == w->bar->emojifont ? emoji_rpad_px( w ) : 0);
+    return text_cell_width( w, s->font, s->text.text );
 }
 
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     docksnap_t* s = w->userdata;
     if (!s) return 0;
-    awl_host->text( pix, s->font, x, -2, w->width, w->bar->height, 0, s->text.text,
-                    s->text.fg, s->text.bg );
+    cell_text( w, pix, x, w->width, s->font, s->text.text, s->text.fg, s->text.bg );
     return w->width;
 }
 
@@ -1020,7 +1093,7 @@ static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount ) {
 }
 static void taskbarwidget_click( widget_t* w, uint32_t x, int button ) {
     if (w->bar->n_tagwindows <= 0) return;
-    awl_draw_window_t* windows = w->bar->tagwindows;
+    awl_bar_window_t* windows = w->bar->tagwindows;
     int win_idx = (double)x / (double)w->width * (double)w->bar->n_tagwindows;
     if (win_idx >= w->bar->n_tagwindows || win_idx < 0) return;
 
@@ -1134,7 +1207,7 @@ typedef struct {
     backlight_moons_t moons;
     const char* mode;
     int closed;
-    int gap, rpad;
+    int gap;
 } backlightsnap_t;
 
 static uint32_t backlightwidget_measure( widget_t* w ) {
@@ -1169,13 +1242,12 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     s->mode = "👀";
     s->closed = !enabled;
     s->gap = *s->moons.m1 ? (int)(backlight_emoji_gap * scale + 0.5f) : 0;
-    s->rpad = emoji_rpad_px( w );
     uint32_t w1 = awl_host->text_width( ef, s->moons.m1 ), w2 = awl_host->text_width( ef, s->moons.m2 );
-    return (w1 > w2 ? w1 : w2) + s->gap + awl_host->text_width( ef, s->mode ) + w->bar->lrpad - s->rpad;
+    return cell_width( w, (w1 > w2 ? w1 : w2) + s->gap + awl_host->text_width( ef, s->mode ) );
 }
 
 /** Composites the one-glyph string `text` into dst at alpha (0..1), placed
- * as awl_draw_text_color() would place it with x being the pen position;
+ * as awl_draw_text() would place it with x being the pen position;
  * ADD, so two calls with alphas adding up to one crossfade two glyphs. */
 static void backlight_glyph( pixman_image_t* dst, struct fcft_font* font,
         const char* text, int x, int ty, double alpha ) {
@@ -1305,41 +1377,36 @@ static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* p
     if (!s) return 0;
     struct fcft_font* font = w->bar->emojifont;
     if (!s->mode || !font) return textsnap_draw( w, x, pix );
-    // the moon with the left padding and the gap, then the mode filling the
-    // rest
-    int h = w->bar->height, y = -2, lpad = w->bar->lrpad/2;
+    // the cell's background, the moon after the left padding, the gap, then
+    // the mode; over the background, so a negative padding overlaps
+    int h = w->bar->height, y = -2, l, r;
+    widget_padding( w, &l, &r );
+    int ty = y + (h - font->height) / 2 + font->ascent;
+    uint32_t fg = color_16bit_to_8bit( s->text.fg );
     uint32_t w1 = awl_host->text_width( font, s->moons.m1 ),
-             w2 = awl_host->text_width( font, s->moons.m2 );
-    uint32_t mw = lpad + (w1 > w2 ? w1 : w2) + s->gap;
-    if (mw > w->width) mw = w->width;
+             w2 = awl_host->text_width( font, s->moons.m2 ),
+             mw = w1 > w2 ? w1 : w2, ew = awl_host->text_width( font, s->mode );
+    int mx = (int)x + l, ex = mx + (int)mw + s->gap;
+    awl_host->text( pix, font, x, y, w->width, h, 0, "", s->text.fg, s->text.bg );
     double a2 = s->moons.alpha_m2;
     if (a2 <= 0.0 || a2 >= 1.0 || !strcmp( s->moons.m1, s->moons.m2 )) {
-        awl_host->text( pix, font, x, y, mw, h, lpad, a2 >= 1.0 ? s->moons.m2 : s->moons.m1,
-                        s->text.fg, s->text.bg );
+        awl_host->text_over( pix, font, mx, y, mw, h, a2 >= 1.0 ? s->moons.m2 : s->moons.m1, fg );
     } else {
-        // between two phases: the background, then both moons crossfaded in
-        // a scratch image (m1 at 1-a, m2 at a, added up) laid over it, so
-        // each pixel is the exact mix even where only one of them covers it
-        awl_host->text( pix, font, x, y, mw, h, lpad, "", s->text.fg, s->text.bg );
-        int ty = y + (h - font->height) / 2 + font->ascent;
+        // between two phases: both moons crossfaded in a scratch image (m1
+        // at 1-a, m2 at a, added up) laid over the background, so each
+        // pixel is the exact mix even where only one of them covers it
         pixman_image_t* tmp = mw ? pixman_image_create_bits( PIXMAN_a8r8g8b8, mw, h, NULL, 0 ) : NULL;
         if (tmp) {
-            backlight_glyph( tmp, font, s->moons.m1, lpad, ty, 1.0 - a2 );
-            backlight_glyph( tmp, font, s->moons.m2, lpad, ty, a2 );
+            backlight_glyph( tmp, font, s->moons.m1, 0, ty, 1.0 - a2 );
+            backlight_glyph( tmp, font, s->moons.m2, 0, ty, a2 );
             pixman_image_composite32( PIXMAN_OP_OVER, tmp, NULL, pix, 0, 0, 0, 0,
-                    x, 0, mw, h );
+                    mx, 0, mw, h );
             pixman_image_unref( tmp );
         }
     }
-    // the closed eyes: the background, then the image where 👀 would be
-    awl_host->text( pix, font, x + mw, y, w->width - mw, h, 0, s->closed ? "" : s->mode,
-                    s->text.fg, s->text.bg );
-    if (s->closed) {
-        int ty = y + (h - font->height) / 2 + font->ascent;
-        if (!backlight_eyes_closed( pix, font, (int)(x + mw), ty ))
-            awl_host->text( pix, font, x + mw, y, w->width - mw, h, 0, s->mode,
-                            s->text.fg, s->text.bg );
-    }
+    // the closed eyes: the image where 👀 would be
+    if (!s->closed || !backlight_eyes_closed( pix, font, ex, ty ))
+        awl_host->text_over( pix, font, ex, y, ew, h, s->mode, fg );
     return w->width;
 }
 

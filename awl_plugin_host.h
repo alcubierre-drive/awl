@@ -10,7 +10,7 @@
  * handle.
  */
 
-#include "awl_draw.h"
+#include "awl_bar_type.h"
 #include "awl_dict_type.h"
 
 /** Loads the library and starts the plugins. cfg becomes `awl_host_t.cfg`'s
@@ -42,7 +42,7 @@ void awl_plugins_set_paused( int paused );
 void awl_plugins_set_covered( int covered );
 
 /** Fills an empty bar's widget lists; no-op without a loaded library. */
-void awl_plugins_bar_widgets( awl_draw_t* bar );
+void awl_plugins_bar_widgets( awl_bar_t* bar );
 
 typedef struct awl_actions_t awl_actions_t;
 /** awl's functions plugins_config.c binds keys to, for the library */

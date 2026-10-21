@@ -246,6 +246,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the bar, tags, focus, logging */
     // c->bar.show = 1;
     c->bar.top = 0; /* the bar at the bottom */
+    /* logical pixels more (or, negative, less) either side of every
+     * widget's cells than its own padding (plugins_widgets.c) */
+    // p->widgets_bar_padding = 0;
     // c->ntags = 9;
     // c->sloppyfocus = 1;
     // c->bypass_surface_visibility = 0;

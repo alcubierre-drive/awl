@@ -154,7 +154,7 @@ void awl_window_redraw( awl_window_t* win ) {
 
 /** what m's popups draw with: the popup font, else the bar's */
 static struct fcft_font* font_of( Monitor* m ) {
-    return m->popupfont ? m->popupfont : m->drw.font;
+    return m->popupfont ? m->popupfont : m->bar.font;
 }
 
 /** an AWL_WINDOW_AT_* that is a strip, AWL_WINDOW_AT_BAR's and the edges' */
@@ -212,7 +212,7 @@ static int draw( awl_window_t* win ) {
     int h = m->w.height - 2 * awl_window_margin( win->style.margin, m->w.height );
     if (as_strip( win )) {
         w = m->m.width;
-        h = m->b.real_height;
+        h = m->bar_area.real_height;
     }
     if (win->painter.paint ? !layout_painted( win, &L, font, s, (int)(w * s), (int)(h * s) )
                            : !awl_window_layout( &L, win->text, &st, font, s, (int)(w * s), (int)(h * s) ))
@@ -265,7 +265,7 @@ static void place( awl_window_t* win ) {
 
 void awl_window_update( awl_window_t* win, Monitor* m ) {
     if (!win || win->m != m || !m) return;
-    if (!m->wlr_output->enabled || !m->drw.m || !font_of( m )) {
+    if (!m->wlr_output->enabled || !m->bar.m || !font_of( m )) {
         wlr_scene_node_set_enabled( &win->tree->node, 0 );
         return;
     }

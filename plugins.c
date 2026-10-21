@@ -353,7 +353,7 @@ __attribute__((visibility("default")))
 const awl_plugin_api_t* awl_plugin_entry( const awl_host_t* host ) {
     if (!host || host->abi != AWL_PLUGIN_ABI ||
         host->sizeof_host != sizeof(awl_host_t) ||
-        host->sizeof_draw != sizeof(awl_draw_t) ||
+        host->sizeof_draw != sizeof(awl_bar_t) ||
         host->sizeof_widget != sizeof(widget_t) ||
         host->sizeof_config != sizeof(awl_config_t))
         return NULL;

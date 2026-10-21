@@ -33,7 +33,7 @@ void desktop_init( struct wlr_scene_tree* tree, const desktop_style_t* cfg );
 /** plugins_config.c was reloaded */
 void desktop_configure( const desktop_style_t* cfg );
 
-/** m's bar must have its font loaded (m->drw.font); the panel draws in
+/** m's bar must have its font loaded (m->bar.font); the panel draws in
  * m->desktopfont, else in that */
 void desktop_addmon( Monitor* m );
 /** drops m's panel */
@@ -41,7 +41,7 @@ void desktop_removemon( Monitor* m );
 /** redraws m's panel if anything it shows changed (the library's content,
  * usable area, scale), hides it if m is disabled; cheap otherwise */
 void desktop_update( Monitor* m );
-/** m's bar font (m->drw.font) or m->desktopfont was reloaded (scale or
+/** m's bar font (m->bar.font) or m->desktopfont was reloaded (scale or
  * config change). Not part of
  * `desktop_update()`'s check: a new font can land at the old one's address,
  * and on a scale change the layout is arranged before ``updatebar()``

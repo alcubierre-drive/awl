@@ -31,7 +31,7 @@
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
 
-#include "awl_draw.h"
+#include "awl_bar_type.h"
 
 /* macros */
 #ifndef MAX
@@ -42,7 +42,6 @@
 #endif
 /** the number of elements of array X */
 #define LENGTH(X)               (sizeof X / sizeof X[0])
-#define TEXTW(mon, text)        (awl_draw_text_width((mon)->drw.font, text) + (mon)->lrpad)
 
 /* enums */
 /** `awl_config_t.bordercolors` */
@@ -166,7 +165,7 @@ struct Monitor {
         int width, height;
         int real_width, real_height; /* non-scaled */
         float scale;
-    } b; /* bar area */
+    } bar_area; /* the bar's size; scale: the one its font was loaded for */
     struct wlr_box w; /* window area, layout-relative */
     struct wl_list layers[4]; /* LayerSurface.link */
     unsigned int seltags;
@@ -191,9 +190,9 @@ struct Monitor {
         int nmaster;
     } ptlt[32];
     int asleep;
-    /** the bar: its font, its widgets and what they show; drw.m is NULL
+    /** the bar: its font, its widgets and what they show; bar.m is NULL
      * before createmon() sets it up and after cleanupmon() */
-    awl_draw_t drw;
+    awl_bar_t bar;
     /** the popups' font at this monitor's scale (awl_window.h,
      * cfg->popup.font and .fontsize), from the font registry; NULL while
      * they use the bar's */
@@ -201,8 +200,6 @@ struct Monitor {
     /** the desktop file list's (awl_desktop.h, cfg->desktop.font and
      * .fontsize), the same way; NULL while it uses the bar's */
     struct fcft_font *desktopfont;
-    /** the bar's text padding, left and right together */
-    int lrpad;
 };
 
 /** A rule for outputs whose name contains name (NULL: any),

@@ -13,7 +13,7 @@
  * (awl_host.h) and `awl_plugin_api_t` below, so the library has no unresolved
  * references into awl (no ``-rdynamic``).
  *
- * The library still reads awl's structs directly (`awl_draw_t`, `widget_t`,
+ * The library still reads awl's structs directly (`awl_bar_t`, `widget_t`,
  * `awl_config_t`, `Arg`; all in awl.h), so it has to be built from the same
  * headers as the running awl. `Monitor` and `Client` are opaque to it: it
  * only hands them back to awl. The entry point refuses a
@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 29
+#define AWL_PLUGIN_ABI 30
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -93,7 +93,7 @@ typedef struct awl_plugin_api_t {
     /** stops/resumes the 1 s polling while no bar is visible */
     void (*set_paused)( int paused );
     /** fills the bar's (empty) widget lists */
-    void (*bar_widgets)( awl_draw_t* bar );
+    void (*bar_widgets)( awl_bar_t* bar );
 
     /**
      * The desktop panel (this and the next three; all sizes in device

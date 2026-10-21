@@ -21,7 +21,7 @@ extern struct wl_event_loop *event_loop;
 extern struct wlr_backend *backend;
 /** NULL without a session (nested, headless) */
 extern struct wlr_session *session;
-extern struct wlr_renderer *drw;
+extern struct wlr_renderer *renderer;
 extern struct wlr_allocator *alloc;
 extern struct wlr_compositor *compositor;
 

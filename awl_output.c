@@ -37,7 +37,7 @@ cleanupmon(struct wl_listener *listener, void *data)
         wl_list_for_each_safe(l, tmp, &m->layers[i], link)
             wlr_layer_surface_v1_destroy(l->layer_surface);
     }
-    /* closemon() below checks m->drw.m to decide whether to touch the bar */
+    /* closemon() below checks m->bar.m to decide whether to touch the bar */
     barremovemon(m);
 
     wl_list_remove(&m->destroy.link);
@@ -68,7 +68,7 @@ cleanupmon(struct wl_listener *listener, void *data)
 void
 closemon(Monitor *m)
 {
-    if (m && m->drw.m && m->showbar) { togglebar_mon(m); m->closedbar=1; }
+    if (m && m->bar.m && m->showbar) { togglebar_mon(m); m->closedbar=1; }
     /* update selmon if needed and
      * move closed monitor's clients to the focused one */
     Client *c;
@@ -106,7 +106,7 @@ createmon(struct wl_listener *listener, void *data)
     struct wlr_output_state state;
     Monitor *m;
 
-    if (!wlr_output_init_render(wlr_output, alloc, drw))
+    if (!wlr_output_init_render(wlr_output, alloc, renderer))
         return;
 
     m = wlr_output->data = ecalloc(1, sizeof(*m));
@@ -231,7 +231,7 @@ nextmon(int add) {
 void
 setselmon(Monitor *m)
 {
-    /* the bars mark the selected monitor (awl_draw_t.selmon) */
+    /* the bars mark the selected monitor (awl_bar_t.selmon) */
     if (m == selmon)
         return;
     selmon = m;

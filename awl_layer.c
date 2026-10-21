@@ -52,8 +52,8 @@ arrangelayers(Monitor *m)
         return;
 
     if (m->showbar) {
-        usable_area.height -= m->b.real_height;
-        usable_area.y += cfg->bar.top ? m->b.real_height : 0;
+        usable_area.height -= m->bar_area.real_height;
+        usable_area.y += cfg->bar.top ? m->bar_area.real_height : 0;
     }
 
     /* Arrange exclusive surfaces from top->bottom */

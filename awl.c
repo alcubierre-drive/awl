@@ -38,7 +38,7 @@ struct wl_display *dpy;
 struct wl_event_loop *event_loop;
 struct wlr_backend *backend;
 struct wlr_session *session;
-struct wlr_renderer *drw;
+struct wlr_renderer *renderer;
 struct wlr_allocator *alloc;
 struct wlr_compositor *compositor;
 struct wlr_scene *scene;
@@ -197,31 +197,31 @@ cleanuplisteners(void)
 void
 gpureset(struct wl_listener *listener, void *data)
 {
-    struct wlr_renderer *old_drw = drw;
+    struct wlr_renderer *old_renderer = renderer;
     struct wlr_allocator *old_alloc = alloc;
     struct Monitor *m;
     /* must match setup(): the scene holds scenefx-only nodes (blur,
      * per-node opacity) that a plain wlroots renderer cannot render */
-    if (!(drw = fx_renderer_create(backend)))
+    if (!(renderer = fx_renderer_create(backend)))
         die("couldn't recreate renderer");
 
-    if (!(alloc = wlr_allocator_autocreate(backend, drw)))
+    if (!(alloc = wlr_allocator_autocreate(backend, renderer)))
         die("couldn't recreate allocator");
 
     wl_list_remove(&gpu_reset.link);
-    wl_signal_add(&drw->events.lost, &gpu_reset);
+    wl_signal_add(&renderer->events.lost, &gpu_reset);
 
-    wlr_compositor_set_renderer(compositor, drw);
+    wlr_compositor_set_renderer(compositor, renderer);
 
     wl_list_for_each(m, &mons, link) {
-        wlr_output_init_render(m->wlr_output, alloc, drw);
+        wlr_output_init_render(m->wlr_output, alloc, renderer);
         /* the bar's texture dies with the old renderer, and the scene
          * no longer has the buffer to re-upload it from */
         m->bar_shown = NULL;
     }
 
     wlr_allocator_destroy(old_alloc);
-    wlr_renderer_destroy(old_drw);
+    wlr_renderer_destroy(old_renderer);
     awl_redraw_request();
 }
 
@@ -381,25 +381,25 @@ setup(void)
      * supports for shared memory, this configures that for clients. */
 
     // TODO this is for scenefx
-    // if (!(drw = wlr_renderer_autocreate(backend)))
-    if (!(drw = fx_renderer_create(backend)))
+    // if (!(renderer = wlr_renderer_autocreate(backend)))
+    if (!(renderer = fx_renderer_create(backend)))
         die("couldn't create renderer");
-    wl_signal_add(&drw->events.lost, &gpu_reset);
+    wl_signal_add(&renderer->events.lost, &gpu_reset);
 
     /* Create shm, drm and linux_dmabuf interfaces by ourselves.
      * The simplest way is to call:
-     *      wlr_renderer_init_wl_display(drw);
+     *      wlr_renderer_init_wl_display(renderer);
      * but we need to create the linux_dmabuf interface manually to integrate it
      * with wlr_scene. */
-    wlr_renderer_init_wl_shm(drw, dpy);
+    wlr_renderer_init_wl_shm(renderer, dpy);
 
-    if (wlr_renderer_get_texture_formats(drw, WLR_BUFFER_CAP_DMABUF)) {
-        wlr_drm_create(dpy, drw);
+    if (wlr_renderer_get_texture_formats(renderer, WLR_BUFFER_CAP_DMABUF)) {
+        wlr_drm_create(dpy, renderer);
         wlr_scene_set_linux_dmabuf_v1(scene,
-                wlr_linux_dmabuf_v1_create_with_renderer(dpy, 5, drw));
+                wlr_linux_dmabuf_v1_create_with_renderer(dpy, 5, renderer));
     }
 
-    if ((drm_fd = wlr_renderer_get_drm_fd(drw)) >= 0 && drw->features.timeline
+    if ((drm_fd = wlr_renderer_get_drm_fd(renderer)) >= 0 && renderer->features.timeline
             && backend->features.timeline)
         wlr_linux_drm_syncobj_manager_v1_create(dpy, 1, drm_fd);
 
@@ -407,7 +407,7 @@ setup(void)
      * The allocator is the bridge between the renderer and the backend. It
      * handles the buffer creation, allowing wlroots to render onto the
      * screen */
-    if (!(alloc = wlr_allocator_autocreate(backend, drw)))
+    if (!(alloc = wlr_allocator_autocreate(backend, renderer)))
         die("couldn't create allocator");
 
     /* This creates some hands-off wlroots interfaces. The compositor is
@@ -416,7 +416,7 @@ setup(void)
      * to dig your fingers in and play with their behavior if you want. Note that
      * the clients cannot set the selection directly without compositor approval,
      * see the setsel() function. */
-    compositor = wlr_compositor_create(dpy, 6, drw);
+    compositor = wlr_compositor_create(dpy, 6, renderer);
     wlr_subcompositor_create(dpy);
     wlr_data_device_manager_create(dpy);
     wlr_export_dmabuf_manager_v1_create(dpy);

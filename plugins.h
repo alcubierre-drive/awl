@@ -67,6 +67,9 @@ typedef struct awl_plugin_config_t {
     /** the bar's widgets right of the task bar, AwlWidget*, from the right
      * edge in; set with SETLIST() */
     struct { const int* v; size_t n; } widgets;
+    /** logical pixels added to every widget's own padding on either side
+     * (`widget_t.pad_left`, `pad_right`), may be negative */
+    int widgets_bar_padding;
     struct { AWL_BAR_COLORS( AWL_BAR_COLOR_U32 ) } colors;
     /** the temperature's color scale, °C: of the CPU package sensor
      * (coretemp), else of ACPI's thermal_zone0 */
@@ -160,7 +163,7 @@ void awl_notify_config( void );
 void awl_notify_wallpaper_shown( const char* title );
 
 /** plugins_widgets.c: `awl_plugin_api_t.bar_widgets` */
-void awl_widgets_create( awl_draw_t* bar );
+void awl_widgets_create( awl_bar_t* bar );
 
 /** plugins_desktop_panel.c: starts the scanner thread */
 void awl_desktop_start( void );

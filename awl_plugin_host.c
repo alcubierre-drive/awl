@@ -79,7 +79,7 @@ static void pluginsreap( void ) {
 static awl_host_t host = {
     .abi = AWL_PLUGIN_ABI,
     .sizeof_host = sizeof(awl_host_t),
-    .sizeof_draw = sizeof(awl_draw_t),
+    .sizeof_draw = sizeof(awl_bar_t),
     .sizeof_widget = sizeof(widget_t),
     .sizeof_config = sizeof(awl_config_t),
 
@@ -300,7 +300,7 @@ void awl_plugins_set_covered( int c ) {
     if (api) api->session_covered( covered );
 }
 
-void awl_plugins_bar_widgets( awl_draw_t* bar ) {
+void awl_plugins_bar_widgets( awl_bar_t* bar ) {
     if (api) api->bar_widgets( bar );
 }
 
