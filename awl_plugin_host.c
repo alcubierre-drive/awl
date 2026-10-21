@@ -103,6 +103,8 @@ static awl_host_t host = {
     .text = awl_draw_text,
     .text_over = awl_draw_text_over,
     .text_width = awl_draw_text_width,
+    .font_style = awl_font_style,
+    .font_release = awl_font_release,
 
     .config_defaults = configdefaults,
     .actions = &awl_actions,

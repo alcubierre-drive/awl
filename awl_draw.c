@@ -15,9 +15,12 @@
  * stays as a failed entry (logged once) until awl_font_retry(). */
 typedef struct {
     char spec[AWL_FONT_SPEC_MAX];
-    char attrs[24];
+    /** "dpi=...", then the style's ":weight=bold:slant=italic" */
+    char attrs[48];
     /** made for emoji: emoji presentation (see awl_font_get_emoji()) */
     int emoji;
+    /** AWL_FONT_BOLD, AWL_FONT_ITALIC (see awl_font_style()) */
+    int style;
     /** NULL: it didn't load (failed), or awl_font_retry() asked to try again */
     struct fcft_font *font;
     int failed;
@@ -74,21 +77,17 @@ static font_entry_t *slot_take(void) {
     return NULL;
 }
 
-/** spec at dpi from the registry, loading it if new or to be retried; NULL
- * if it doesn't load (now or before). emoji: in emoji presentation. Takes a
- * reference on success. */
-static struct fcft_font *font_lookup(const char *name, float size, float scale, int emoji) {
-    char spec[AWL_FONT_SPEC_MAX], attrs[24];
+/** spec with dpi (attrs' "dpi=..." up to its first ':') in style from the
+ * registry, loading it if new or to be retried; NULL if it doesn't load (now
+ * or before). emoji: in emoji presentation. Takes a reference on success. */
+static struct fcft_font *entry_lookup(const char *spec, const char *dpi, int emoji, int style) {
+    char attrs[sizeof(((font_entry_t *)0)->attrs)];
     font_entry_t *e = NULL;
     const char *names[1];
 
-    if (!name || !*name)
-        return NULL;
-    if (!font_spec(spec, name, size * scale)) {
-        awl_wrn_printf("font name %.40s... is too long\n", name);
-        return NULL;
-    }
-    snprintf(attrs, sizeof(attrs), "dpi=%.2f", 96. * 2. * scale);
+    snprintf(attrs, sizeof(attrs), "%.*s%s%s", (int)strcspn(dpi, ":"), dpi,
+            style & AWL_FONT_BOLD ? ":weight=bold" : "",
+            style & AWL_FONT_ITALIC ? ":slant=italic" : "");
     for (unsigned i = 0; i < count && !e; i++)
         if (!strcmp(SLOT(i)->spec, spec) && !strcmp(SLOT(i)->attrs, attrs)
                 && SLOT(i)->emoji == emoji)
@@ -96,9 +95,10 @@ static struct fcft_font *font_lookup(const char *name, float size, float scale, 
     if (!e) {
         if (!(e = slot_take()))
             return NULL;
-        memcpy(e->spec, spec, sizeof(spec));
+        snprintf(e->spec, sizeof(e->spec), "%s", spec);
         memcpy(e->attrs, attrs, sizeof(attrs));
         e->emoji = emoji;
+        e->style = style;
     }
     if (!e->font && !e->failed) {
         names[0] = e->spec;
@@ -119,6 +119,28 @@ static struct fcft_font *font_lookup(const char *name, float size, float scale, 
         return NULL;
     e->refs++;
     return e->font;
+}
+
+/** name at size and scale from the registry, as entry_lookup() */
+static struct fcft_font *font_lookup(const char *name, float size, float scale, int emoji) {
+    char spec[AWL_FONT_SPEC_MAX], dpi[16];
+
+    if (!name || !*name)
+        return NULL;
+    if (!font_spec(spec, name, size * scale)) {
+        awl_wrn_printf("font name %.40s... is too long\n", name);
+        return NULL;
+    }
+    snprintf(dpi, sizeof(dpi), "dpi=%.2f", 96. * 2. * scale);
+    return entry_lookup(spec, dpi, emoji, 0);
+}
+
+/** font's entry in the registry, NULL if it isn't the registry's */
+static font_entry_t *font_entry(const struct fcft_font *font) {
+    for (unsigned i = 0; font && i < count; i++)
+        if (SLOT(i)->font == font)
+            return SLOT(i);
+    return NULL;
 }
 
 /** a size or scale fcft can take: finite, positive, not absurd */
@@ -166,20 +188,42 @@ struct fcft_font *awl_font_get(const char *name, float size, float scale) {
     return NULL;
 }
 
+struct fcft_font *awl_font_style(struct fcft_font *font, int style) {
+    font_entry_t *e = font_entry(font);
+    struct fcft_font *styled;
+    char spec[AWL_FONT_SPEC_MAX], dpi[sizeof(e->attrs)];
+
+    if (!e)
+        return NULL;
+    style = (style & (AWL_FONT_BOLD | AWL_FONT_ITALIC)) | e->style;
+    if (e->emoji || style == e->style) {
+        e->refs++;
+        return font;
+    }
+    /* copies: the lookup may take e's slot, if it isn't held */
+    memcpy(spec, e->spec, sizeof(spec));
+    memcpy(dpi, e->attrs, sizeof(dpi));
+    if ((styled = entry_lookup(spec, dpi, 0, style)))
+        return styled;
+    /* the caller holds font, so the lookup didn't evict it; looked up again
+     * anyway, in case one didn't */
+    if (!(e = font_entry(font)))
+        return NULL;
+    e->refs++;
+    return font;
+}
+
 void awl_font_release(struct fcft_font *font) {
+    font_entry_t *e = font_entry(font);
+
     if (!font)
         return;
-    for (unsigned i = 0; i < count; i++) {
-        font_entry_t *e = SLOT(i);
-        if (e->font != font)
-            continue;
-        if (e->refs > 0)
-            e->refs--;
-        else
-            awl_wrn_printf("font %s released once too often\n", e->spec);
-        return;
-    }
-    awl_wrn_printf("font %p is not awl's, not releasing it\n", (void *)font);
+    if (!e)
+        awl_wrn_printf("font %p is not awl's, not releasing it\n", (void *)font);
+    else if (e->refs > 0)
+        e->refs--;
+    else
+        awl_wrn_printf("font %s released once too often\n", e->spec);
 }
 
 void awl_font_retry(void) {

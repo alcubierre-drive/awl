@@ -168,6 +168,23 @@ struct fcft_font *awl_font_get_exact(const char *name, float size, float scale);
  * default, like 🖥, in color too), and NULL if the font draws emoji in black
  * and white (then a text font's would come out too), not in color */
 struct fcft_font *awl_font_get_emoji(const char *name, float size, float scale);
+/** awl_font_style()'s styles, a mask */
+#define AWL_FONT_BOLD 1
+#define AWL_FONT_ITALIC 2
+/**
+ * font (from the registry) in style besides its own: the same name, size
+ * and scale with fontconfig's ":weight=bold", ":slant=italic". Fontconfig
+ * picks the family's Bold or Italic face, else synthesizes one (embolden, an
+ * oblique matrix) by its usual config; fcft applies both. A weight or slant
+ * in the font's own name comes first in the pattern and wins.
+ *
+ * Takes a reference like awl_font_get(): give it back with
+ * awl_font_release(). If the styled font doesn't load, for style 0, a style
+ * font already has, and for emoji fonts, font itself comes back (with a new
+ * reference), so callers needn't fall back. NULL only for a font that isn't
+ * the registry's (or NULL). Main thread.
+ */
+struct fcft_font *awl_font_style(struct fcft_font *font, int style);
 /** gives back a font from awl_font_get(); NULL, or a font that isn't the
  * registry's (logged), does nothing */
 void awl_font_release(struct fcft_font *font);

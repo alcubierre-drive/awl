@@ -151,7 +151,7 @@ static awl_image_t* decode( Changer* c, const char* path ) {
             WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
     if (!wuffs_base__status__is_ok( &s )) { err = wuffs_base__status__message( &s ); goto out; }
     /* the file is ours, a broken one shows as such */
-    wuffs_png__decoder__set_quirk_enabled( dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, true );
+    wuffs_png__decoder__set_quirk( dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, 1 );
 
     wuffs_base__io_buffer src = wuffs_base__ptr_u8__reader( map, (size_t)st.st_size, false );
     src.meta.wi = 0;

@@ -202,7 +202,7 @@ plugins_git_h = custom_target('plugins_git.h',
 plugins_sources = files(
   'plugins.c', 'plugins_widgets.c', 'plugins_desktop_panel.c', 'plugins_config.c',
   'plugins/backlight.c', 'plugins/bat.c', 'plugins/calendar.c', 'plugins/calpopup.c',
-  'plugins/colors.c', 'plugins/date.c', 'plugins/desktop_entry.c', 'plugins/fuzzy.c',
+  'plugins/colors.c', 'plugins/date.c', 'plugins/desktop_entry.c', 'plugins/fuzzy.c', 'plugins/markup.c',
   'plugins/ipaddr.c', 'plugins/launcher.c', 'plugins/logind.c', 'plugins/loop.c',
   'plugins/nm.c', 'plugins/persistent.c', 'plugins/poller.c', 'plugins/pulsetest.c',
   'plugins/readdir.c', 'plugins/sni.c', 'plugins/sni_menu.c', 'plugins/stats.c',

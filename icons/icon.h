@@ -3,7 +3,7 @@
 /**
  * Icons without GTK: freedesktop icon theme lookup (the Icon Theme
  * Specification, as GTK does it) and decoding into pixman images, PNG
- * through Wuffs (vendor/wuffs/), SVG through PlutoSVG
+ * and JPEG through Wuffs (vendor/wuffs/), SVG through PlutoSVG
  * (vendor/plutosvg/svg.h), right into the image's pixels. PlutoSVG has no
  * stylesheets, but the icon themes' color scheme (KDE's, which Papirus and
  * Breeze follow: <style> rules
@@ -28,9 +28,15 @@ extern "C" {
 enum {
     /** files and data larger than this aren't read or decoded */
     AWL_ICON_MAX_BYTES = 2 << 20,
-    /** nor PNGs and pixmaps wider or higher than this, nor any icon asked
-     * for at more */
+    /** nor PNGs, JPEGs and pixmaps wider or higher than this, nor any icon
+     * asked for at more */
     AWL_ICON_MAX_DIM = 1024,
+    /** nor PNGs and JPEGs whose decoder needs more memory than this besides
+     * the pixels: Wuffs' JPEG decoder takes up to 3 bytes a sample (a
+     * progressive one's coefficients and the samples), so this is a CMYK
+     * one of AWL_ICON_MAX_DIM² (12 MiB; YCbCr 4:4:4 is 9, 4:2:0 4.5,
+     * baseline 4:2:0 1.5) */
+    AWL_ICON_MAX_WORK = AWL_ICON_MAX_DIM * AWL_ICON_MAX_DIM * 4 * 3,
 };
 
 /** what `awl_icons_lookup()` found */
@@ -72,7 +78,7 @@ char* awl_icons_lookup( awl_icons_t* icons, const char* name, int px, const char
  * or is larger than `AWL_ICON_MAX_BYTES`. */
 void* awl_icon_read( const char* path, size_t* len );
 
-/** A PNG, or an SVG if svg, fitted into max_w x max_h keeping its aspect
+/** A PNG or JPEG (by their magic bytes), or an SVG if svg, fitted into max_w x max_h keeping its aspect
  * ratio (scaled up as well as down) as premultiplied PIXMAN_a8r8g8b8; NULL
  * if it can't be decoded or is too large. source names the data in the
  * verbose log line each decode writes (its path, or e.g. "tray item 'x'";

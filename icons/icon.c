@@ -529,24 +529,28 @@ static pixman_image_t* scaled( pixman_image_t* img, int max_w, int max_h ) {
     return out;
 }
 
-static pixman_image_t* png( const uint8_t* data, size_t len ) {
+/** a PNG's or JPEG's pixels through dec, a Wuffs decoder made for it; kind
+ * names it in the log */
+static pixman_image_t* wuffs_image( wuffs_base__image_decoder* dec, const uint8_t* data, size_t len, const char* kind ) {
     const char* err = NULL;
     void* work = NULL;
     pixman_image_t* img = NULL;
-    wuffs_png__decoder* dec = malloc( sizeof__wuffs_png__decoder() );
-    if (!dec) return NULL;
-    wuffs_base__status st = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(), WUFFS_VERSION,
-                                                            WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
-    if (!wuffs_base__status__is_ok( &st )) goto out;
-    wuffs_png__decoder__set_quirk_enabled( dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, true );
     /* the reader doesn't write */
     wuffs_base__io_buffer src = wuffs_base__ptr_u8__reader( (uint8_t*)data, len, true );
     wuffs_base__image_config ic;
-    st = wuffs_png__decoder__decode_image_config( dec, &ic, &src );
+    wuffs_base__status st = wuffs_base__image_decoder__decode_image_config( dec, &ic, &src );
     if (!wuffs_base__status__is_ok( &st )) goto out;
     uint32_t w = wuffs_base__pixel_config__width( &ic.pixcfg ), h = wuffs_base__pixel_config__height( &ic.pixcfg );
     if (!w || !h || w > AWL_ICON_MAX_DIM || h > AWL_ICON_MAX_DIM) {
         err = "too large";
+        goto out;
+    }
+    /* what the decoder needs besides the pixels: little for a PNG, a
+     * progressive JPEG's coefficients (2 bytes a sample) for a JPEG; known
+     * before anything is allocated */
+    uint64_t wlen = wuffs_base__image_decoder__workbuf_len( dec ).max_incl;
+    if (wlen > AWL_ICON_MAX_WORK) {
+        err = "needs too much memory";
         goto out;
     }
     wuffs_base__pixel_config__set( &ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL,
@@ -558,19 +562,46 @@ static pixman_image_t* png( const uint8_t* data, size_t len ) {
     st = wuffs_base__pixel_buffer__set_from_slice(
         &pb, &ic.pixcfg, wuffs_base__make_slice_u8( (uint8_t*)pixman_image_get_data( img ), (size_t)w * h * 4 ) );
     if (!wuffs_base__status__is_ok( &st )) goto out;
-    uint64_t wlen = wuffs_png__decoder__workbuf_len( dec ).max_incl;
     work = malloc( wlen ? wlen : 1 );
     if (!work) goto out;
-    st = wuffs_png__decoder__decode_frame( dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC,
-                                           wuffs_base__make_slice_u8( work, wlen ), NULL );
+    st = wuffs_base__image_decoder__decode_frame( dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC,
+                                                  wuffs_base__make_slice_u8( work, wlen ), NULL );
 out:
     if (!err && !wuffs_base__status__is_ok( &st )) err = wuffs_base__status__message( &st );
     if (err) {
-        awl_vrb_printf( "icon: PNG: %s\n", err );
+        awl_vrb_printf( "icon: %s: %s\n", kind, err );
         if (img) pixman_image_unref( img );
         img = NULL;
     }
     free( work );
+    return img;
+}
+
+static pixman_image_t* png( const uint8_t* data, size_t len ) {
+    pixman_image_t* img = NULL;
+    wuffs_png__decoder* dec = malloc( sizeof__wuffs_png__decoder() );
+    if (!dec) return NULL;
+    wuffs_base__status st = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(), WUFFS_VERSION,
+                                                            WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
+    if (wuffs_base__status__is_ok( &st )) {
+        wuffs_png__decoder__set_quirk( dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, 1 );
+        img = wuffs_image( wuffs_png__decoder__upcast_as__wuffs_base__image_decoder( dec ), data, len, "PNG" );
+    }
+    free( dec );
+    return img;
+}
+
+/** baseline and progressive, CMYK too; not arithmetic coded, lossless or
+ * 12 bits (Wuffs has no decoder for those). The EXIF orientation isn't
+ * applied. */
+static pixman_image_t* jpeg( const uint8_t* data, size_t len ) {
+    pixman_image_t* img = NULL;
+    wuffs_jpeg__decoder* dec = malloc( sizeof__wuffs_jpeg__decoder() );
+    if (!dec) return NULL;
+    wuffs_base__status st = wuffs_jpeg__decoder__initialize( dec, sizeof__wuffs_jpeg__decoder(), WUFFS_VERSION,
+                                                             WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
+    if (wuffs_base__status__is_ok( &st ))
+        img = wuffs_image( wuffs_jpeg__decoder__upcast_as__wuffs_base__image_decoder( dec ), data, len, "JPEG" );
     free( dec );
     return img;
 }
@@ -756,14 +787,18 @@ pixman_image_t* awl_icon_decode( const void* data, size_t len, int allow_svg, in
         awl_vrb_printf( "icon: %s: too large (%zu bytes)\n", source, len );
         return NULL;
     }
-    if (len >= sizeof magic && !memcmp( data, magic, sizeof magic )) {
-        pixman_image_t* img = png( data, len );
+    int is_png = len >= sizeof magic && !memcmp( data, magic, sizeof magic );
+    /* SOI, then a marker */
+    int is_jpeg = len >= 3 && !memcmp( data, "\xff\xd8\xff", 3 );
+    if (is_png || is_jpeg) {
+        pixman_image_t* img = is_png ? png( data, len ) : jpeg( data, len );
         if (!img) return NULL;
         int w = pixman_image_get_width( img ), h = pixman_image_get_height( img );
         img = scaled( img, max_w, max_h );
         if (img)
-            awl_vrb_printf( "icon: decoded PNG %s (%zu bytes): %dx%d, fitted to %dx%d into %dx%d\n", source, len, w, h,
-                            pixman_image_get_width( img ), pixman_image_get_height( img ), max_w, max_h );
+            awl_vrb_printf( "icon: decoded %s %s (%zu bytes): %dx%d, fitted to %dx%d into %dx%d\n",
+                            is_png ? "PNG" : "JPEG", source, len, w, h, pixman_image_get_width( img ),
+                            pixman_image_get_height( img ), max_w, max_h );
         return img;
     }
     return allow_svg ? svg( data, len, max_w, max_h, source ) : NULL;

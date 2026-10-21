@@ -106,6 +106,12 @@ typedef struct awl_host_t {
                       unsigned int h, const char* text, uint32_t fg );
     /** `awl_draw_text_width()` */
     unsigned int (*text_width)( struct fcft_font* font, const char* text );
+    /** `awl_font_style()`: font (e.g. a painter's) in bold and/or italic,
+     * `AWL_FONT_BOLD`, `AWL_FONT_ITALIC`; font itself if that doesn't load.
+     * Give it back with font_release(). */
+    struct fcft_font* (*font_style)( struct fcft_font* font, int style );
+    /** `awl_font_release()` */
+    void (*font_release)( struct fcft_font* font );
 
     /* ---- awl's state and actions ---- */
 
