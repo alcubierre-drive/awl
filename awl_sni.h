@@ -15,7 +15,7 @@
  * and path, ":1.42/StatusNotifierItem", in the order they registered,
  * until that name goes away. If
  * another watcher has the name, awl's waits in the queue for it. A lost
- * bus is reconnected to after a few seconds. Main thread only.
+ * bus is reconnected to after a few seconds (awl_bus.h). Main thread only.
  */
 
 struct wl_event_loop;

@@ -845,3 +845,36 @@ pixman_image_t* awl_icon_from_pixmaps( const awl_icon_pixmap_t* p, int n, int ma
         }
     return scaled( img, max_w, max_h );
 }
+
+pixman_image_t* awl_icon_from_rgba( const uint8_t* data, size_t len, int w, int h, int rowstride, int has_alpha,
+                                    int bits, int channels, int max_w, int max_h ) {
+    if (!data || !sane( max_w, max_h )) return NULL;
+    if (bits != 8 || channels != (has_alpha ? 4 : 3)) {
+        awl_vrb_printf( "icon: image data of %d bits, %d channels, alpha %d: not taken\n", bits, channels, !!has_alpha );
+        return NULL;
+    }
+    if (w <= 0 || h <= 0 || w > AWL_ICON_MAX_DIM || h > AWL_ICON_MAX_DIM) {
+        awl_vrb_printf( "icon: image data of %dx%d: not taken\n", w, h );
+        return NULL;
+    }
+    /* w * channels <= 4 * AWL_ICON_MAX_DIM; the rows before the last are
+     * whole, the last needn't be padded */
+    size_t row = (size_t)w * (size_t)channels;
+    if (rowstride <= 0 || (size_t)rowstride < row || (size_t)rowstride > (SIZE_MAX - row) / (size_t)h ||
+        len < (size_t)(h - 1) * (size_t)rowstride + row) {
+        awl_vrb_printf( "icon: image data of %dx%d, rowstride %d: %zu bytes don't match\n", w, h, rowstride, len );
+        return NULL;
+    }
+    pixman_image_t* img = pixman_image_create_bits( PIXMAN_a8r8g8b8, w, h, NULL, 0 );
+    if (!img) return NULL;
+    uint32_t* dst = pixman_image_get_data( img );
+    int ds = pixman_image_get_stride( img ) / 4;
+    for (int y = 0; y < h; y++) {
+        const uint8_t* src = data + (size_t)y * (size_t)rowstride;
+        for (int x = 0; x < w; x++, src += channels) {
+            uint32_t a = has_alpha ? src[3] : 255;
+            dst[y * ds + x] = a << 24 | (src[0] * a / 255) << 16 | (src[1] * a / 255) << 8 | (src[2] * a / 255);
+        }
+    }
+    return scaled( img, max_w, max_h );
+}

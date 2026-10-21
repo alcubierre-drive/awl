@@ -26,7 +26,8 @@
 #   live.sh win [CMD]       a command for awl's text popups (AWL_TEST_WINDOWS,
 #                           see testwincmd() in awl_test.c), e.g. win show 0
 #                           HEADLESS-1 640 'a\tb\nc'; then prints their state
-#   live.sh run CMD...      any client, with WAYLAND_DISPLAY etc. set
+#   live.sh run CMD...      any client, with WAYLAND_DISPLAY etc. set, on
+#                           the test session's bus
 #   live.sh log             the log so far
 #
 # LIVE_OUTPUTS=N starts with N outputs (1). LIVE_NESTED=1 makes them windows
@@ -60,6 +61,8 @@ log=$dir/awl.log
 envs() {
 	export XDG_RUNTIME_DIR=$run HOME=$dir/home
 	export WAYLAND_DISPLAY=$(cat "$dir/socket" 2>/dev/null)
+	# the test session's bus, for gdbus, notify-send and the like
+	export DBUS_SESSION_BUS_ADDRESS=$(cat "$dir/bus" 2>/dev/null)
 	unset DISPLAY
 }
 
@@ -111,7 +114,7 @@ start)
 	pid >/dev/null && { echo "already running" >&2; exit 1; }
 	[ -x "$awl" ] || { echo "no $awl (ninja -C $(dirname "$awl"))" >&2; exit 1; }
 	mkdir -p "$run" && chmod 700 "$run"
-	rm -f "$run"/wayland-* "$dir/socket" "$dir/ctl"
+	rm -f "$run"/wayland-* "$dir/socket" "$dir/ctl" "$dir/bus"
 	mkfifo "$dir/ctl"
 	fixture
 	homelinks
@@ -138,6 +141,7 @@ start)
 		export AWL_TEST_WINDOWS=$dir/ctl
 		cd "$dir"
 		exec setsid timeout -s TERM "${LIVE_TIMEOUT:-600}" dbus-run-session -- \
+			sh -c 'echo "$DBUS_SESSION_BUS_ADDRESS" >"$0" && exec "$@"' "$dir/bus" \
 			gdb -q -batch \
 			-ex "handle SIGUSR1 SIGUSR2 SIGTERM SIGPIPE nostop noprint pass" \
 			-ex run -ex "bt full" -ex "thread apply all bt" \

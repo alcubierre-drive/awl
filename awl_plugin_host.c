@@ -7,6 +7,7 @@
 #include "awl_dict.h"
 #include "awl_layout.h"
 #include "awl_lockscreen.h"
+#include "awl_notifications.h"
 #include "awl_output.h"
 #include "awl_popup.h"
 #include "awl_redraw.h"
@@ -132,6 +133,11 @@ static awl_host_t host = {
     .window_set_hover = awl_window_set_hover,
     .window_set_hidden = awl_window_set_hidden,
     .window_set_key = popupsetkey,
+
+    .notif_list = awl_notifications_list,
+    .notif_close = awl_notifications_close,
+    .notif_invoke = awl_notifications_invoke,
+    .notif_hold = awl_notifications_hold,
 
     .timer_add = timer_add,
     .timer_set = timer_set,
@@ -300,6 +306,10 @@ void awl_plugins_set_paused( int p ) {
 void awl_plugins_set_covered( int c ) {
     covered = c;
     if (api) api->session_covered( covered );
+}
+
+void awl_plugins_notifications_changed( void ) {
+    if (api) api->notifications_changed();
 }
 
 void awl_plugins_bar_widgets( awl_bar_t* bar ) {

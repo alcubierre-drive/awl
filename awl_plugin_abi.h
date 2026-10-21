@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 31
+#define AWL_PLUGIN_ABI 32
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -134,6 +134,12 @@ typedef struct awl_plugin_api_t {
      * plugins_config.c's changes; what it points to stays valid until the
      * library is unloaded */
     void (*config)( awl_config_t* c );
+
+    /** the open notifications (`awl_host_t.notif_list`) changed: one
+     * came, was replaced or closed. Called once per round of awl's loop
+     * however many changed, not while the library sets up: it lists
+     * them itself in `init`. */
+    void (*notifications_changed)( void );
 } awl_plugin_api_t;
 
 /**

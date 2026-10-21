@@ -16,7 +16,8 @@ What a reload picks up
    * - Reloads with the library
      - Needs a restart of awl
    * - plugins_widgets.c, plugins_desktop_panel.c, plugins.c, plugins/
-     - awl.c and its parts, awl_*.c (awl_sni.c is the tray's watcher), tray/
+     - awl.c and its parts, awl_*.c (awl_sni.c is the tray's watcher,
+       awl_notifications.c the notification server), tray/
    * - plugins_config.c: keys, buttons, rules, layouts,
        colors, font, borders, blur, input devices, keymap, tray and
        wallpaper settings

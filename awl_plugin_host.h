@@ -41,6 +41,9 @@ void awl_plugins_set_paused( int paused );
  * to every library started later */
 void awl_plugins_set_covered( int covered );
 
+/** `awl_plugin_api_t.notifications_changed`, if a library is loaded */
+void awl_plugins_notifications_changed( void );
+
 /** Fills an empty bar's widget lists; no-op without a loaded library. */
 void awl_plugins_bar_widgets( awl_bar_t* bar );
 

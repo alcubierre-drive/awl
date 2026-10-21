@@ -1,6 +1,7 @@
 #include "awl_test.h"
 #include "awl_config.h"
 #include "awl_log.h"
+#include "awl_notifications.h"
 #include "awl_output.h"
 #include "awl_popup.h"
 #include <fcntl.h>
@@ -96,6 +97,9 @@ testunescape(char *s)
  *   scroll N on|off        N takes the pointer, its scrolling is recorded
  *   restart                the plugin_restart action (pluginsreap()
  *                          destroys them all)
+ *   nclose ID REASON       the notification server's host calls, as the
+ *   ninvoke ID KEY [TOKEN]   library makes them (awl_notifications.h)
+ *   nhold ID 0|1
  *   dump PATH              writes PATH.tmp, then renames it to PATH:
  *                            mon NAME X Y W H WX WY WW WH SCALE ENABLED
  *                            win N MON|- X Y W H VISIBLE HOVERROW
@@ -108,6 +112,13 @@ testunescape(char *s)
  *                            pwin I MON|- X Y W H VISIBLE (the plugins')
  *                            hover MON X Y (the center of a bar widget
  *                              with callback_hover)
+ *                            notif ID GENERATION URGENCY TIMEOUT VALUE
+ *                              FLAGS NACTIONS IMAGE IMAGE_PATH APP_ICON
+ *                              CATEGORY SUMMARY (the open notifications,
+ *                              newest first; IMAGE the image data's
+ *                              WxHxCHANNELS, an empty string -; the
+ *                              first 256, all the server keeps)
+ *                            notifs COUNT (how many are open)
  *                            margin PX (cfg->popup.margin)
  *                            errors COUNT (lines rejected so far)
  */
@@ -123,7 +134,10 @@ testwincmd(char *line)
     Popup *p;
     awl_bar_t *d;
     unsigned int xpos;
-    int bx, by, i;
+    int bx, by, i, nn;
+    unsigned int id;
+    char key[64] = "", token[64] = "", img[48];
+    static const awl_notif_t *notifs[256];
     FILE *f;
 
     if (sscanf(line, "%15s%n", cmd, &off) != 1)
@@ -183,6 +197,17 @@ testwincmd(char *line)
         popupshideall();
     } else if (!strcmp(cmd, "restart")) {
         plugin_restart(NULL);
+    } else if (!strcmp(cmd, "nclose") || !strcmp(cmd, "nhold")) {
+        if (sscanf(line, "%u %d", &id, &x) != 2)
+            goto bad;
+        if (!strcmp(cmd, "nclose"))
+            awl_notifications_close(id, x);
+        else
+            awl_notifications_hold(id, x);
+    } else if (!strcmp(cmd, "ninvoke")) {
+        if (sscanf(line, "%u %63s %63s", &id, key, token) < 2)
+            goto bad;
+        awl_notifications_invoke(id, key, *token ? token : NULL);
     } else if (!strcmp(cmd, "dump") && *line) {
         snprintf(tmp, sizeof(tmp), "%s.tmp", line);
         if (!(f = fopen(tmp, "w")))
@@ -230,6 +255,19 @@ testwincmd(char *line)
                 xpos += d->widgets_right[i].width;
             }
         }
+        nn = awl_notifications_list(notifs, LENGTH(notifs));
+        for (i = 0; i < nn && i < (int)LENGTH(notifs); i++) {
+            const awl_notif_t *o = notifs[i];
+            if (o->image_data.data)
+                snprintf(img, sizeof(img), "%dx%dx%d", o->image_data.w, o->image_data.h, o->image_data.channels);
+            else
+                snprintf(img, sizeof(img), "-");
+            fprintf(f, "notif %u %llu %d %d %d %u %d %s %s %s %s %s\n", o->id,
+                    (unsigned long long)o->generation, o->urgency, o->timeout, o->value, o->flags,
+                    o->nactions, img, *o->image_path ? o->image_path : "-",
+                    *o->app_icon ? o->app_icon : "-", *o->category ? o->category : "-", o->summary);
+        }
+        fprintf(f, "notifs %d\n", nn);
         fprintf(f, "margin %d\n", cfg->popup.margin);
         fprintf(f, "errors %d\n", errors);
         fclose(f);

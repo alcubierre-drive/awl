@@ -16,6 +16,7 @@
 #include "awl_popup.h"
 #include "awl_redraw.h"
 #include "awl_sni.h"
+#include "awl_notifications.h"
 #include "awl_spawn.h"
 #include "awl_test.h"
 #include "awl_wallpaper.h"
@@ -121,6 +122,7 @@ cleanup(void)
     background_fini();
 
     awl_sni_watcher_stop();
+    awl_notifications_stop();
     awl_tray_app_cleanup();
 
     /* The event loop doesn't run any more, so nothing reads the signalfd:
@@ -563,6 +565,7 @@ setup(void)
     lockinit();
     /* before the plugins: their tray widget asks it for the items */
     awl_sni_watcher_start(event_loop);
+    awl_notifications_start(event_loop, awl_plugins_notifications_changed);
     awl_plugins_load(0, cfgdict);
     configuse();
     awl_draw_init();

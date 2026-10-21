@@ -29,6 +29,7 @@ started out as `drwl <https://codeberg.org/sewn/drwl>`_.
    api/wallpaper
    api/desktop
    api/tray
+   api/notifications
    api/launcher
    api/awl
 

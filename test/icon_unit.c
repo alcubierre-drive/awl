@@ -1,12 +1,14 @@
 /* Unit test of icons/icon.c's decoding: PNG and JPEG through Wuffs, from
  * the files in test/data (the first argument): their pixels, what is
  * refused, and truncated and mutated copies, which must fail or decode but
- * never crash (best run under ASan). Built and run by meson test; prints
+ * never crash (best run under ASan); and notifications' raw RGB(A) image
+ * data, awl_icon_from_rgba(). Built and run by meson test; prints
  * ok/FAIL per check, the exit status is the number of failures. */
 #include "icons/icon.h"
 #include "awl_host.h"
 
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,12 +156,94 @@ static void test_mutated( void ) {
     CHECK( runs == 5 * 2000 );
 }
 
+/* awl_icon_from_rgba(): the image-data hint's pixels, and what is refused */
+static int rgba_refused( const uint8_t* data, size_t len, int w, int h, int stride, int alpha, int bits, int ch ) {
+    pixman_image_t* img = awl_icon_from_rgba( data, len, w, h, stride, alpha, bits, ch, 64, 64 );
+    if (img) pixman_image_unref( img );
+    return !img;
+}
+
+static void test_rgba( void ) {
+    pixman_image_t* img;
+    printf( "-- rgba\n" );
+    /* 2 x 2 RGBA: opaque red, half-alpha white, transparent green, half-alpha blue */
+    static const uint8_t rgba[] = {
+        0xff, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x80,
+        0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0x80,
+    };
+    img = awl_icon_from_rgba( rgba, sizeof rgba, 2, 2, 8, 1, 8, 4, 2, 2 );
+    CHECK( img && pixman_image_get_width( img ) == 2 && pixman_image_get_height( img ) == 2 );
+    CHECK( img && pixel( img, 0, 0 ) == 0xffff0000 && pixel( img, 1, 0 ) == 0x80808080 && pixel( img, 0, 1 ) == 0 &&
+           pixel( img, 1, 1 ) == 0x80000080 );
+    if (img) pixman_image_unref( img );
+    /* RGB: opaque; rows padded to 8 bytes */
+    static const uint8_t rgb[] = {
+        0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0xee, 0xee,
+        0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xee, 0xee,
+    };
+    img = awl_icon_from_rgba( rgb, sizeof rgb, 2, 2, 8, 0, 8, 3, 2, 2 );
+    CHECK( img && pixel( img, 0, 0 ) == 0xff102030 && pixel( img, 1, 0 ) == 0xff405060 &&
+           pixel( img, 0, 1 ) == 0xff708090 && pixel( img, 1, 1 ) == 0xffa0b0c0 );
+    if (img) pixman_image_unref( img );
+    /* exactly the minimum: the last row without its padding; a byte less is refused */
+    size_t min = 8 + 6;
+    img = awl_icon_from_rgba( rgb, min, 2, 2, 8, 0, 8, 3, 2, 2 );
+    CHECK( img && pixel( img, 1, 1 ) == 0xffa0b0c0 );
+    if (img) pixman_image_unref( img );
+    CHECK( rgba_refused( rgb, min - 1, 2, 2, 8, 0, 8, 3 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba - 1, 2, 2, 8, 1, 8, 4 ) );
+    /* fitted: 40 x 20 of opaque red into 16 x 16 is 16 x 8 */
+    uint8_t* big = malloc( 40 * 20 * 4 );
+    for (int i = 0; i < 40 * 20; i++) memcpy( big + i * 4, "\xff\x00\x00\xff", 4 );
+    img = awl_icon_from_rgba( big, 40 * 20 * 4, 40, 20, 40 * 4, 1, 8, 4, 16, 16 );
+    CHECK( img && pixman_image_get_width( img ) == 16 && pixman_image_get_height( img ) == 8 &&
+           near( pixel( img, 8, 4 ), 0xffff0000, 2 ) );
+    if (img) pixman_image_unref( img );
+    free( big );
+
+    /* refused */
+    static uint8_t zero[4 * 1025];
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, 8, 1, 16, 4 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, 8, 1, 8, 2 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, 8, 0, 8, 2 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, 8, 1, 8, 5 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, 8, 1, 8, 3 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, 8, 0, 8, 4 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, 7, 1, 8, 4 ) );
+    CHECK( rgba_refused( rgb, sizeof rgb, 2, 2, 5, 0, 8, 3 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 0, 2, 8, 1, 8, 4 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 0, 8, 1, 8, 4 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, -2, 2, 8, 1, 8, 4 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, -2, 8, 1, 8, 4 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, 0, 1, 8, 4 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, -8, 1, 8, 4 ) );
+    CHECK( rgba_refused( rgba, sizeof rgba, 2, 2, INT32_MIN, 1, 8, 4 ) );
+    CHECK( rgba_refused( NULL, 0, 2, 2, 8, 1, 8, 4 ) );
+    /* one row past AWL_ICON_MAX_DIM wide, one column high: the data is there */
+    CHECK( rgba_refused( zero, sizeof zero, AWL_ICON_MAX_DIM + 1, 1, 4 * (AWL_ICON_MAX_DIM + 1), 1, 8, 4 ) );
+    CHECK( rgba_refused( zero, sizeof zero, 1, AWL_ICON_MAX_DIM + 1, 4, 1, 8, 4 ) );
+    CHECK( rgba_refused( zero, sizeof zero, INT32_MAX, 1, INT32_MAX, 1, 8, 4 ) );
+    /* AWL_ICON_MAX_DIM itself is fine */
+    img = awl_icon_from_rgba( zero, sizeof zero, AWL_ICON_MAX_DIM, 1, 4 * AWL_ICON_MAX_DIM, 1, 8, 4, 64, 64 );
+    CHECK( img != NULL );
+    if (img) pixman_image_unref( img );
+    /* overflowing: (h - 1) * rowstride far past len (past SIZE_MAX on 32 bits) */
+    CHECK( rgba_refused( zero, sizeof zero, 1, AWL_ICON_MAX_DIM, INT32_MAX, 1, 8, 4 ) );
+    CHECK( rgba_refused( zero, sizeof zero, AWL_ICON_MAX_DIM, AWL_ICON_MAX_DIM, INT32_MAX, 0, 8, 3 ) );
+    /* the fitted size asked for is checked too */
+    img = awl_icon_from_rgba( rgba, sizeof rgba, 2, 2, 8, 1, 8, 4, 0, 64 );
+    CHECK( img == NULL );
+    img = awl_icon_from_rgba( rgba, sizeof rgba, 2, 2, 8, 1, 8, 4, 64, AWL_ICON_MAX_DIM + 1 );
+    CHECK( img == NULL );
+}
+
 int main( int argc, char** argv ) {
     dir = argc > 1 ? argv[1] : "test/data";
     verbose = getenv( "VERBOSE" ) != NULL;
     test_decode();
     test_refused();
     test_mutated();
+    test_rgba();
     printf( "%d failed\n", fails );
     return fails;
 }

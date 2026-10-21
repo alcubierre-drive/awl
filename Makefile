@@ -1,4 +1,4 @@
-.PHONY: all
+.PHONY: all clean
 
 all: build
 	ninja -C build
@@ -7,3 +7,6 @@ all: build
 build:
 	mkdir -p build
 	meson setup --reconfigure --prefix=$(HOME)/software . build
+
+clean:
+	rm -rf build

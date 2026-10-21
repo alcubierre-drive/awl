@@ -539,6 +539,14 @@ typedef struct awl_config_t {
     awl_popup_config_t popup;
     awl_desktop_config_t desktop;
     awl_wallpaper_config_t wallpaper;
+
+    /** the notification server (awl_notifications.h): how long a
+     * notification stays, in ms, by urgency (low, normal), when its client
+     * leaves that to the server; 0: until dismissed. Critical ones always
+     * stay. */
+    struct {
+        int timeout_low, timeout_normal;
+    } notifications;
 } awl_config_t;
 
 /** an argv's first word (an autostart's, a spawn binding's) that starts

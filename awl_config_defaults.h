@@ -218,6 +218,10 @@ static const awl_config_t awl_config_defaults = {
         .margin = 10,
         .columns = 3,
     },
+    .notifications = {
+        .timeout_low = 5000,
+        .timeout_normal = 10000,
+    },
     .wallpaper = {
         .dir = "Wallpapers", .fade_ms = 500, .interval = 7200, .mode = WallpaperRand,
     },

@@ -41,6 +41,66 @@ typedef enum awl_logind_flags {
     AWL_LOGIND_SLEEP = 2,
 } awl_logind_flags_t;
 
+/** a notification's urgency, its hint's values */
+typedef enum awl_notif_urgency {
+    AWL_NOTIF_LOW = 0,
+    AWL_NOTIF_NORMAL = 1,
+    AWL_NOTIF_CRITICAL = 2,
+} awl_notif_urgency_t;
+
+/** `awl_notif_t.flags`, from its hints */
+enum {
+    /** ``transient``: not for a history */
+    AWL_NOTIF_TRANSIENT = 1,
+    /** ``resident``: an action doesn't close it */
+    AWL_NOTIF_RESIDENT = 2,
+};
+
+/** why a notification closed, NotificationClosed's reasons */
+typedef enum awl_notif_reason {
+    AWL_NOTIF_EXPIRED = 1,
+    AWL_NOTIF_DISMISSED = 2,
+    AWL_NOTIF_CLOSED = 3,
+    AWL_NOTIF_UNDEFINED = 4,
+} awl_notif_reason_t;
+
+/**
+ * An open notification as awl's server (awl_notifications.h) keeps it,
+ * read only. Every string is set, "" for none, and valid UTF-8 (D-Bus
+ * checks), capped in length: the body at 16 KiB, the rest shorter.
+ */
+typedef struct awl_notif_t {
+    /** its id, unique among the open ones; a replacement keeps it */
+    uint32_t id;
+    /** grows with every change to it, so new != replaced != unchanged */
+    uint64_t generation;
+    const char *app, *summary;
+    /** raw, with the client's markup (plugins/markup.h parses it) */
+    const char* body;
+    /** the image, the first of these that yields one (the spec's order):
+     * image_data if its data isn't NULL, image_path, app_icon (each an
+     * absolute path, a file:// URL or an icon name), desktop_entry's Icon */
+    struct {
+        /** checked: 8 bits, channels 4 if has_alpha else 3, 1 to 1024
+         * pixels on each side, rows packed (stride w * channels) */
+        const uint8_t* data;
+        int w, h, stride, has_alpha, channels;
+    } image_data;
+    const char *image_path, *app_icon, *desktop_entry;
+    const char* category;
+    /** actions[2 * i] the key, actions[2 * i + 1] the label, i < nactions;
+     * the key "default" is the click on the notification */
+    const char* const* actions;
+    int nactions;
+    awl_notif_urgency_t urgency;
+    /** the ``value`` hint, 0 to 100 (a progress bar); -1 none */
+    int value;
+    /** AWL_NOTIF_TRANSIENT, AWL_NOTIF_RESIDENT */
+    unsigned flags;
+    /** ms it stays from its last change, 0 until it is dismissed */
+    int timeout;
+} awl_notif_t;
+
 /**
  * What awl provides to libawlplugins.so, by topic. All functions are
  * main-thread only, except the first group's (`redraw_request`, `log`,
@@ -209,6 +269,23 @@ typedef struct awl_host_t {
     void (*window_set_key)( awl_window_t* win,
             int (*key)( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods, void* data ),
             void* data );
+
+    /* ---- notifications (awl_notifications.h) ---- */
+
+    /** the open notifications into out, newest first, at most max; returns
+     * how many there are. They stay valid until the library returns to
+     * awl's loop or calls notif_close or notif_invoke. */
+    int (*notif_list)( const awl_notif_t** out, int max );
+    /** closes notification id, if it is open, for reason (the user's
+     * dismissal: AWL_NOTIF_DISMISSED) */
+    void (*notif_close)( uint32_t id, awl_notif_reason_t reason );
+    /** the user chose action key of notification id: ActionInvoked, after
+     * ActivationToken if token (an xdg-activation token) isn't NULL; then
+     * it closes, unless it is resident */
+    void (*notif_invoke)( uint32_t id, const char* key, const char* token );
+    /** held: id doesn't expire (the pointer is over it); released, its
+     * timeout starts over */
+    void (*notif_hold)( uint32_t id, int held );
 
     /* ---- timers on awl's main loop ---- */
 

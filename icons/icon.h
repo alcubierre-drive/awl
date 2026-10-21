@@ -100,6 +100,15 @@ typedef struct awl_icon_pixmap_t {
  * match their size, or larger than `AWL_ICON_MAX_DIM`, don't count. NULL if
  * none does. */
 pixman_image_t* awl_icon_from_pixmaps( const awl_icon_pixmap_t* pixmaps, int n, int max_w, int max_h );
+/** A notification's image-data, (iiibiiay): w x h pixels of non-premultiplied
+ * RGB (has_alpha 0, channels 3) or RGBA (has_alpha, channels 4), a byte each
+ * (bits 8), R first, rows rowstride bytes apart (at least w * channels; the
+ * last row needn't be padded), fitted into max_w x max_h as
+ * `awl_icon_decode()` does. NULL for anything else: other bits or channels,
+ * no pixels, larger than `AWL_ICON_MAX_DIM`, or len short of
+ * (h - 1) * rowstride + w * channels. */
+pixman_image_t* awl_icon_from_rgba( const uint8_t* data, size_t len, int w, int h, int rowstride, int has_alpha,
+                                    int bits, int channels, int max_w, int max_h );
 
 #ifdef __cplusplus
 }

@@ -481,9 +481,11 @@ static void scan_path( index_t* idx, const counts_t* ran, int ifd ) {
     }
     if (names) qsort( names, (size_t)n, sizeof(*names), name_cmp );
     idx->run = calloc( (size_t)(n + ran->n + 1), sizeof(*idx->run) );
+    /* against the last one kept: the one before may be a duplicate, freed */
+    char* last = NULL;
     for (int i = 0; i < n; i++) {
-        if (idx->run && (!i || strcmp( names[i], names[i - 1] )))
-            idx->run[idx->nrun++] = (run_t){ names[i], 0 };
+        if (idx->run && (!last || strcmp( names[i], last )))
+            idx->run[idx->nrun++] = (run_t){ last = names[i], 0 };
         else
             free( names[i] );
     }
