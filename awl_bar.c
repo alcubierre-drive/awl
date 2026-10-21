@@ -44,6 +44,7 @@ static const struct wlr_buffer_impl buffer_impl = {
 static struct {
     char *font;
     int fontsize;
+    char *emojifont;
     char *popupfont; /* cfg->popup's */
     int popupfontsize;
     char *desktopfont; /* cfg->desktop's */
@@ -535,10 +536,26 @@ updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const c
         awl_wrn_printf("%s font %s not found, using the bar's\n", what, name);
 }
 
-/** (re)loads m's popup and desktop fonts (Monitor.popupfont, .desktopfont) */
+/** (re)loads m's bar's emoji font (awl_draw_t.emojifont), at the bar's size */
+static void
+updateemojifont(Monitor *m)
+{
+    awl_font_release(m->drw.emojifont);
+    m->drw.emojifont = NULL;
+    if (!cfg->emoji_font)
+        return;
+    if (!(m->drw.emojifont = awl_font_get_emoji(cfg->emoji_font, (float)cfg->fontsize,
+                m->wlr_output->scale)))
+        awl_wrn_printf("emoji font %s not found or not in color, the bar shows text instead\n",
+                cfg->emoji_font);
+}
+
+/** (re)loads m's emoji, popup and desktop fonts (awl_draw_t.emojifont,
+ * Monitor.popupfont, .desktopfont) */
 static void
 updatefonts(Monitor *m)
 {
+    updateemojifont(m);
     updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize, "popup");
     updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize, "desktop");
 }
@@ -709,6 +726,15 @@ barconfigure(void)
                 togglebar_mon(m);
     applied.show = !!cfg->bar.show;
 
+    /* the bars' emoji (updatebar() above reloaded them too, no harm) */
+    if (!streqnull(cfg->emoji_font, applied.emojifont)) {
+        free(applied.emojifont);
+        applied.emojifont = strdupnull(cfg->emoji_font);
+        wl_list_for_each(m, &mons, link)
+            if (m->drw.m)
+                updateemojifont(m);
+        barsdirty();
+    }
     /* the popups' (updatebar() above reloaded it too, no harm) */
     if (!streqnull(cfg->popup.font, applied.popupfont)
             || cfg->popup.fontsize != applied.popupfontsize) {

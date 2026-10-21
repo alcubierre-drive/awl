@@ -265,6 +265,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     c->bordercolors[BorderUrg]  = molokai_orange; /* 0x770000ff */
     // c->font = "monospace:size=";
     // c->fontsize = 10;
+    // c->emoji_font = "emoji"; /* NULL: text instead of emoji */
     // c->rootcolor = 0x000000ff;
     // c->fullscreen_bg = 0x1a1a1aff;
 
@@ -350,7 +351,8 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // c->desktop.dir          = molokai_blue;
     // c->desktop.broken       = molokai_red;
     // c->desktop.hidden_alpha = 0xa0;
-    // c->desktop.margin       = 10;
+    c->desktop.margin       = 20;
+    c->desktop.columns      = 2;
 
     /* the wallpaper */
     // c->wallpaper.dir      = "Wallpapers";
@@ -415,7 +417,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // p->launcher.dy          = 0;
     // p->launcher.match       = molokai_orange;
     // p->launcher.dim         = 0;
-    p->launcher.prompt_color = molokai_orange; /* 0: dim */
+    p->launcher.prompt_color = molokai_red; /* 0: dim */
     p->launcher.query_color  = molokai_orange; /* 0: the popups' fg, as the cursor */
 }
 

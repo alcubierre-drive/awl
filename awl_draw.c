@@ -16,6 +16,8 @@
 typedef struct {
     char spec[AWL_FONT_SPEC_MAX];
     char attrs[24];
+    /** made for emoji: emoji presentation (see awl_font_get_emoji()) */
+    int emoji;
     /** NULL: it didn't load (failed), or awl_font_retry() asked to try again */
     struct fcft_font *font;
     int failed;
@@ -73,8 +75,9 @@ static font_entry_t *slot_take(void) {
 }
 
 /** spec at dpi from the registry, loading it if new or to be retried; NULL
- * if it doesn't load (now or before). Takes a reference on success. */
-static struct fcft_font *font_lookup(const char *name, float size, float scale) {
+ * if it doesn't load (now or before). emoji: in emoji presentation. Takes a
+ * reference on success. */
+static struct fcft_font *font_lookup(const char *name, float size, float scale, int emoji) {
     char spec[AWL_FONT_SPEC_MAX], attrs[24];
     font_entry_t *e = NULL;
     const char *names[1];
@@ -87,18 +90,28 @@ static struct fcft_font *font_lookup(const char *name, float size, float scale) 
     }
     snprintf(attrs, sizeof(attrs), "dpi=%.2f", 96. * 2. * scale);
     for (unsigned i = 0; i < count && !e; i++)
-        if (!strcmp(SLOT(i)->spec, spec) && !strcmp(SLOT(i)->attrs, attrs))
+        if (!strcmp(SLOT(i)->spec, spec) && !strcmp(SLOT(i)->attrs, attrs)
+                && SLOT(i)->emoji == emoji)
             e = SLOT(i);
     if (!e) {
         if (!(e = slot_take()))
             return NULL;
         memcpy(e->spec, spec, sizeof(spec));
         memcpy(e->attrs, attrs, sizeof(attrs));
+        e->emoji = emoji;
     }
     if (!e->font && !e->failed) {
         names[0] = e->spec;
-        if (awl_draw_init())
-            e->font = fcft_from_name(1, names, e->attrs);
+        if (awl_draw_init()) {
+            struct fcft_font_options *o = e->emoji ? fcft_font_options_create() : NULL;
+            if (o) {
+                o->emoji_presentation = FCFT_EMOJI_PRESENTATION_EMOJI;
+                e->font = fcft_from_name2(1, names, e->attrs, o);
+                fcft_font_options_destroy(o);
+            } else {
+                e->font = fcft_from_name(1, names, e->attrs);
+            }
+        }
         if ((e->failed = !e->font))
             awl_wrn_printf("font %s (%s) didn't load\n", e->spec, e->attrs);
     }
@@ -115,7 +128,22 @@ static float font_sane(float v, float dflt, float max) {
 
 struct fcft_font *awl_font_get_exact(const char *name, float size, float scale) {
     return font_lookup(name, font_sane(size, AWL_FONT_FALLBACK_SIZE, 200),
-            font_sane(scale, 1, 16));
+            font_sane(scale, 1, 16), 0);
+}
+
+struct fcft_font *awl_font_get_emoji(const char *name, float size, float scale) {
+    /* emoji presentation: text-default emoji like U+1F5A5 🖥 are drawn per
+     * code point, without their U+FE0F, so by default fcft would go for a
+     * monochrome fallback font that has them */
+    struct fcft_font *font = font_lookup(name, font_sane(size, AWL_FONT_FALLBACK_SIZE, 200),
+            font_sane(scale, 1, 16), 1);
+    /* U+1F600 😀, which every emoji font has */
+    const struct fcft_glyph *g = font ? fcft_rasterize_char_utf32(font, 0x1F600, FCFT_SUBPIXEL_NONE) : NULL;
+
+    if (!font || (g && pixman_image_get_format(g->pix) == PIXMAN_a8r8g8b8))
+        return font;
+    awl_font_release(font);
+    return NULL;
 }
 
 struct fcft_font *awl_font_get(const char *name, float size, float scale) {
@@ -124,11 +152,11 @@ struct fcft_font *awl_font_get(const char *name, float size, float scale) {
 
     size = font_sane(size, AWL_FONT_FALLBACK_SIZE, 200);
     scale = font_sane(scale, 1, 16);
-    if ((font = font_lookup(name, size, scale)))
+    if ((font = font_lookup(name, size, scale, 0)))
         return font;
-    if ((font = font_lookup(AWL_FONT_FALLBACK, size, scale))
-            || (font = font_lookup(AWL_FONT_FALLBACK, AWL_FONT_FALLBACK_SIZE, scale))
-            || (font = font_lookup(AWL_FONT_FALLBACK, AWL_FONT_FALLBACK_SIZE, 1))) {
+    if ((font = font_lookup(AWL_FONT_FALLBACK, size, scale, 0))
+            || (font = font_lookup(AWL_FONT_FALLBACK, AWL_FONT_FALLBACK_SIZE, scale, 0))
+            || (font = font_lookup(AWL_FONT_FALLBACK, AWL_FONT_FALLBACK_SIZE, 1, 0))) {
         awl_wrn_printf("font %s: using " AWL_FONT_FALLBACK "\n", name ? name : "(none)");
         return font;
     }
@@ -352,6 +380,7 @@ void awl_draw_teardown(awl_draw_t *bar) {
         return;
     awl_draw_finish_drawing(bar);
     awl_font_release(bar->font);
+    awl_font_release(bar->emojifont);
     awl_draw_widgets_clear(bar);
     *bar = (awl_draw_t){ 0 };
 }

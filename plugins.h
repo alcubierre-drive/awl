@@ -26,7 +26,7 @@ enum {
     AwlWidgetVolume,      /* the default sink's volume (PulseAudio) */
     AwlWidgetStats,       /* graphs of CPU, I/O, memory and swap */
     AwlWidgetTemperature,
-    AwlWidgetDock,        /* a Thunderbolt dock */
+    AwlWidgetDock,        /* a Thunderbolt dock, AC or battery */
     AwlWidgetBattery,
     AwlWidgetNetwork,     /* the address; hover: all of them */
     AwlWidgetBacklight,   /* the backlight daemon's state */

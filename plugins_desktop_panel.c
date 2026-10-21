@@ -26,12 +26,18 @@
 
 #define NFILES (sizeof(((DesktopFiles*)0)->files) / sizeof(Filename))
 
-/** the layout of the last measure, for drawing */
+/** the layout of the last measure, for drawing: the files, then the folders,
+ * each spread evenly over `awl_desktop_config_t.columns` columns, the
+ * folders from the first column on again below the files */
 typedef struct {
-    int idx[NFILES];   /* the visible entries, in order */
+    int idx[NFILES];   /* the entries shown, in order */
+    int col[NFILES], row[NFILES];
     int n, shown;      /* visible ones, and how many of those fit */
-    int col_w[NFILES], ncols, rows, row_h, pad, gap;
-    char more[32];     /* "… N more" in place of the last that fits */
+    int col_x[NFILES], col_w[NFILES], ncols, row_h, pad, gap;
+    /* per section, the one shown that is "… N more" in place of those that
+     * don't fit (-1: all do) */
+    int more_at[2];
+    char more[2][32];
 } PanelLayout;
 
 /** Main thread state. The main thread never touches the file system: on a
@@ -245,58 +251,84 @@ static uint32_t color( const Filename* f ) {
     return f->ishidden ? fade( c, DESK->hidden_alpha ) : c;
 }
 
+/** "… N more" if the i-th shown stands for those that don't fit, else NULL */
+static const char* more_of( const PanelLayout* l, int i ) {
+    return i == l->more_at[0] ? l->more[0] : i == l->more_at[1] ? l->more[1] : NULL;
+}
+
 void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int radius, float s,
                           int* x, int* y, int* w, int* h ) {
     PanelLayout* l = &desk.lay;
     const int fh = font->height,
-              margin = (int)lroundf( DESK->margin * s );
+              margin = (int)lroundf( DESK->margin * s ),
+              cols = MAX( 1, MIN( DESK->columns, (int)NFILES ) );
     l->row_h = fh + (int)lroundf( 4 * s );
     l->pad = MAX( fh / 2, radius / 2 );
     l->gap = fh;
     avail_w -= 2 * margin;
     avail_h -= 2 * margin;
-    l->rows = MAX( 1, (avail_h - 2 * l->pad) / l->row_h );
-    const int max_col_w = MAX( 1, avail_w / 5 );
+    const int max_rows = MAX( 1, (avail_h - 2 * l->pad) / l->row_h ),
+              max_col_w = MAX( 1, (avail_w - 2 * l->pad - (cols - 1) * l->gap) / cols );
 
+    /* the visible ones: the files, then the folders (findfiles()' order) */
+    int vis[NFILES], k[2] = { 0, 0 };
     l->n = 0;
     for (int i = 0; i < desk.n_files; i++)
-        if (visible( &desk.files[i] )) l->idx[l->n++] = i;
+        if (visible( &desk.files[i] )) {
+            vis[l->n++] = i;
+            k[desk.files[i].isdir]++;
+        }
 
-    /* columns of `rows` entries, as many as fit */
+    /* each section's rows; if both don't fit, the folders keep at least
+     * half of them, the files the rest */
+    int rows[2] = { (k[0] + cols - 1) / cols, (k[1] + cols - 1) / cols };
+    if (rows[0] + rows[1] > max_rows) {
+        rows[1] = MIN( rows[1], MAX( max_rows / 2, max_rows - rows[0] ) );
+        rows[0] = max_rows - rows[1];
+    }
+
+    /* each section's first ones that fit, spread over the columns evenly:
+     * the first columns one longer than the others */
+    l->shown = l->ncols = 0;
+    for (int sec = 0, first = 0, row0 = 0; sec < 2; first += k[sec++]) {
+        const int m = MIN( k[sec], rows[sec] * cols ), base = m / cols, longer = m % cols;
+        /* the last that fits stands for the ones that don't */
+        l->more_at[sec] = m && m < k[sec] ? l->shown + m - 1 : -1;
+        snprintf( l->more[sec], sizeof(l->more[sec]), "… %d more", k[sec] - m + 1 );
+        for (int c = 0, j = 0; j < m; c++)
+            for (int r = 0; r < base + (c < longer); r++, j++) {
+                l->idx[l->shown] = vis[first + j];
+                l->col[l->shown] = c;
+                l->row[l->shown++] = row0 + r;
+                l->ncols = MAX( l->ncols, c + 1 );
+            }
+        row0 += base + (longer > 0);
+    }
+
     char buf[sizeof(desk.files[0].name) + 2];
-    int width = 2 * l->pad;
-    l->ncols = l->shown = 0;
+    int nrows = 1;
     if (l->n == 0) {
-        l->col_w[l->ncols++] = (int)awl_host->text_width( font, "(empty)" );
-        width += l->col_w[0];
-    }
-    while (l->shown < l->n) {
-        int cw = 0, end = MIN( l->n, l->shown + l->rows );
-        for (int i = l->shown; i < end; i++) {
+        l->ncols = 1;
+        l->col_w[0] = (int)awl_host->text_width( font, "(empty)" );
+    } else {
+        for (int c = 0; c < l->ncols; c++) l->col_w[c] = 0;
+        for (int i = 0; i < l->shown; i++) {
+            const char* t = more_of( l, i );
             label( &desk.files[l->idx[i]], buf, sizeof(buf) );
-            cw = MAX( cw, (int)awl_host->text_width( font, buf ) );
+            if (!t) t = buf;
+            l->col_w[l->col[i]] = MAX( l->col_w[l->col[i]], MIN( (int)awl_host->text_width( font, t ), max_col_w ) );
+            nrows = MAX( nrows, l->row[i] + 1 );
         }
-        cw = MIN( cw, max_col_w );
-        if (l->ncols && width + l->gap + cw > avail_w) break;
-        width += (l->ncols ? l->gap : 0) + cw;
-        l->col_w[l->ncols++] = cw;
-        l->shown = end;
     }
-    /* the last entry that fits stands for the ones that don't */
-    l->more[0] = 0;
-    if (l->shown < l->n) {
-        snprintf( l->more, sizeof(l->more), "… %d more", l->n - l->shown + 1 );
-        int extra = (int)awl_host->text_width( font, l->more ) - l->col_w[l->ncols - 1];
-        extra = MIN( extra, avail_w - width );
-        if (extra > 0) {
-            l->col_w[l->ncols - 1] += extra;
-            width += extra;
-        }
+    int width = l->pad;
+    for (int c = 0; c < l->ncols; c++) {
+        l->col_x[c] = width;
+        width += l->col_w[c] + (c + 1 < l->ncols ? l->gap : 0);
     }
 
     *x = *y = margin;
-    *w = width;
-    *h = 2 * l->pad + MIN( MAX( l->n, 1 ), l->rows ) * l->row_h;
+    *w = width + l->pad;
+    *h = 2 * l->pad + nrows * l->row_h;
 }
 
 static inline float clampf( float x ) {
@@ -344,14 +376,12 @@ void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* da
 
     if (l->n == 0)
         text( pix, font, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( DESK->file, DESK->hidden_alpha ) );
-    for (int c = 0, i = 0, x = l->pad; c < l->ncols && i < l->shown; x += l->col_w[c++] + l->gap) {
-        for (int r = 0; r < l->rows && i < l->shown; r++, i++) {
-            const Filename* f = &desk.files[l->idx[i]];
-            int is_more = l->more[0] && i == l->shown - 1;
-            label( f, buf, sizeof(buf) );
-            text( pix, font, x, l->pad + r * l->row_h, l->col_w[c], l->row_h,
-                  is_more ? l->more : buf, is_more ? fade( DESK->file, DESK->hidden_alpha ) : color( f ) );
-        }
+    for (int i = 0; i < l->shown; i++) {
+        const Filename* f = &desk.files[l->idx[i]];
+        const char* more = more_of( l, i );
+        label( f, buf, sizeof(buf) );
+        text( pix, font, l->col_x[l->col[i]], l->pad + l->row[i] * l->row_h, l->col_w[l->col[i]], l->row_h,
+              more ? more : buf, more ? fade( DESK->file, DESK->hidden_alpha ) : color( f ) );
     }
     panel_under( data, stride, w, h, radius, DESK->bg );
 }

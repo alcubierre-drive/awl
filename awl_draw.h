@@ -105,6 +105,10 @@ struct awl_draw_t {
     pixman_image_t *pix;
     /** the bar's font, at its monitor's scale; NULL if none loads */
     struct fcft_font *font;
+    /** its emoji font (`awl_config_t.emoji_font`) at the same size and
+     * scale, color emoji (awl_font_get_emoji()); NULL if there is none or
+     * it doesn't load: then the widgets show text instead of emoji */
+    struct fcft_font *emojifont;
 
     widget_t widgets_left[32];
     int n_widgets_left;
@@ -288,6 +292,10 @@ int awl_draw_init(void);
 struct fcft_font *awl_font_get(const char *name, float size, float scale);
 /** like awl_font_get(), but NULL instead of a fallback */
 struct fcft_font *awl_font_get_exact(const char *name, float size, float scale);
+/** like awl_font_get_exact(), but in emoji presentation (emoji with a text
+ * default, like 🖥, in color too), and NULL if the font draws emoji in black
+ * and white (then a text font's would come out too), not in color */
+struct fcft_font *awl_font_get_emoji(const char *name, float size, float scale);
 /** gives back a font from awl_font_get(); NULL, or a font that isn't the
  * registry's (logged), does nothing */
 void awl_font_release(struct fcft_font *font);

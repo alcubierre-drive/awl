@@ -126,10 +126,14 @@ version_h = vcs_tag(input: 'version.h.in', output: 'version.h',
 # tray/env_shim.c), found next to awl; libc only
 shared_library('awltray-env', 'tray/env_shim.c',
   dependencies: cc.find_library('dl', required: false),
+  install: true,
 )
 
-# awl.c starts and ends awl; each awl_*.c is a part of it, see its header
-awl_deps = [wlroots, wayland, xkbcommon, libinput, pixman, fcft, libsystemd, scenefx, libm]
+# awl.c starts and ends awl; each awl_*.c is a part of it, see its header.
+# scenefx first: it defines wlr_scene_* too, with its own struct layouts, and
+# the dynamic linker binds each symbol to the first library that has it, so
+# with wlroots ahead awl's scene would be wlroots' (no blur, no effects)
+awl_deps = [scenefx, wlroots, wayland, xkbcommon, libinput, pixman, fcft, libsystemd, libm]
 if xwayland
   awl_deps += [xcb, xcb_icccm]
 endif
@@ -143,6 +147,7 @@ awl = executable('awl',
   protocol_headers, version_h,
   c_args: awl_c_args,
   dependencies: awl_deps,
+  install: true,
 )
 
 # libawlplugins.so: the plugin threads and the bar widgets, dlopen()ed by
@@ -222,6 +227,8 @@ custom_target('libawlplugins.so',
   command: [find_program('sh'), '-c', 'cp -f "$1" "$2.tmp" && mv -f "$2.tmp" "$2"',
             'sh', '@INPUT@', '@OUTPUT@'],
   build_by_default: true,
+  install: true,
+  install_dir: 'lib/',
 )
 
 subdir('test')

@@ -124,6 +124,7 @@ static const awl_config_t awl_config_defaults = {
     },
     .font = "monospace:size=",
     .fontsize = 10,
+    .emoji_font = "emoji",
     .rootcolor = 0x000000ff,
     .fullscreen_bg = 0x1a1a1aff,
     .blur = {
@@ -210,6 +211,7 @@ static const awl_config_t awl_config_defaults = {
         .broken = 0xf92672ff, /* molokai_red */
         .hidden_alpha = 0xa0,
         .margin = 10,
+        .columns = 3,
     },
     .wallpaper = {
         .dir = "Wallpapers", .fade_ms = 500, .interval = 7200, .mode = WallpaperRand,

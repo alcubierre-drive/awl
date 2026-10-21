@@ -193,6 +193,7 @@ static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
         awl_err_printf( "plugins: can't determine the library path\n" );
         return NULL;
     }
+    awl_log_printf( "plugins: found the library: %s\n", path );
     int fd = memfd_copy( path );
     if (fd < 0) {
         awl_err_printf( "plugins: can't read %s: %s\n", path, strerror( errno ) );
@@ -218,6 +219,7 @@ static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
         close( fd );
         return NULL;
     }
+    awl_log_printf( "plugins: loaded %s (ABI %d)\n", path, a->abi );
     *out = h;
     *out_fd = fd;
     return a;
@@ -228,8 +230,10 @@ int awl_plugins_load( int p, awl_dict_t* cfg ) {
     host.cfg.s = cfg;
     if (!(api = libopen( &handle, &handle_fd )))
         return -1;
+    awl_log_printf( "plugins: setting up\n" );
     api->init( paused );
     api->session_covered( covered );
+    awl_log_printf( "plugins: set up\n" );
     return 0;
 }
 
@@ -237,6 +241,7 @@ int awl_plugins_load( int p, awl_dict_t* cfg ) {
  * the library unless a thread of it is still running, which would then
  * crash */
 static void stop( void* h, int fd ) {
+    awl_log_printf( "plugins: tearing down\n" );
     int stuck = api && api->fini();
     pluginsreap();
     if (stuck) {
@@ -245,9 +250,11 @@ static void stop( void* h, int fd ) {
     }
     if (h) dlclose( h );
     if (fd >= 0) close( fd );
+    awl_log_printf( "plugins: torn down, the library is unloaded\n" );
 }
 
 int awl_plugins_reload( void (*detach)( void ), void (*attach)( void ) ) {
+    awl_log_printf( "plugins: reloading\n" );
     void* h = NULL;
     int fd = -1;
     const awl_plugin_api_t* next = libopen( &h, &fd );
@@ -260,14 +267,18 @@ int awl_plugins_reload( void (*detach)( void ), void (*attach)( void ) ) {
         handle_fd = fd;
         api = next;
     } else if (api) {
+        awl_wrn_printf( "plugins: no new library, restarting the old one in place\n" );
         api->fini(); // restart in place; a stuck thread stays stuck either way
         pluginsreap();
+        awl_log_printf( "plugins: torn down, the library stays loaded\n" );
     }
     if (api) {
+        awl_log_printf( "plugins: setting up\n" );
         api->init( paused );
         api->session_covered( covered );
     }
     attach();
+    awl_log_printf( "plugins: reload done%s\n", next ? "" : " (the old library)" );
     return next ? 0 : -1;
 }
 

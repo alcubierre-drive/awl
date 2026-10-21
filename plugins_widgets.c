@@ -729,43 +729,62 @@ static uint32_t batwidget_measure( widget_t* w ) {
     return textsnap_width( w );
 }
 
-/** Whether the bar font of w's monitor draws all n code points cps in color
- * (a monochrome fallback doesn't count). */
-static int color_emoji( widget_t* w, const uint32_t* cps, size_t n ) {
-    struct fcft_font* font = w->bar->font;
-    if (!font) return 0;
-    for (size_t i = 0; i < n; ++i) {
-        const struct fcft_glyph* g = fcft_rasterize_char_utf32( font, cps[i], FCFT_SUBPIXEL_DEFAULT );
-        if (!g || pixman_image_get_format( g->pix ) != PIXMAN_a8r8g8b8) return 0;
-    }
-    return 1;
+/* Emoji are drawn in the bar's emoji font (awl_draw_t.emojifont, color
+ * emoji); without one, the widgets show text instead. */
+
+/** how much of the right padding (half of lrpad) emoji leave out, in pixels
+ * at scale 1: they fill the whole line height and need less air */
+static const float emoji_rpad = 5.0f;
+
+/** emoji_rpad at w's scale, at most the right padding */
+static int emoji_rpad_px( widget_t* w ) {
+    int rpad = (int)(emoji_rpad * w->bar->scale + 0.5f);
+    return rpad < w->bar->lrpad/2 ? rpad : w->bar->lrpad/2;
 }
 
-/** 🔌 when a Thunderbolt dock is attached, 💻 otherwise; "DOCK" or nothing
- * without color emoji, nothing at all without a Thunderbolt bus. No left
- * padding: it sits right against the battery. */
+/** the dock widget's snapshot: its text and the font it is in */
+typedef struct {
+    textsnap_t text;
+    struct fcft_font* font;
+} docksnap_t;
+
+/** Two emoji, what the machine sits on and what it runs on: 🖥️ when a
+ * Thunderbolt dock is attached, 💻 otherwise (neither without a Thunderbolt
+ * bus); ⚡ on AC (by the adapter, else by whether the battery charges), 🔋 on
+ * the battery, 🪫 below its scale's ok. "DOCK" and "AC" without the emoji
+ * font. No left padding: it sits right against the battery's percent. */
 static uint32_t dockwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->bat) return 0;
     int docked = atomic_load( &P->bat->docked );
-    if (docked < 0) return 0;
+    int ac = atomic_load( &P->bat->ac );
+    if (ac < 0) ac = atomic_load( &P->bat->charging );
+    float percent = atomic_load( &P->bat->charge ) * 100.0f;
 
-    static const uint32_t cps[] = { 0x1F50C, 0x1F4BB };
-    textsnap_t* s = textsnap( w );
-    if (color_emoji( w, cps, sizeof(cps) / sizeof(*cps) ))
-        strcpy( s->text, docked ? "🔌" : "💻" );
-    else
-        strcpy( s->text, docked ? "DOCK" : "" );
-    s->fg = P->colors.fg;
-    s->bg = P->colors.bg;
-    if (!*s->text) return 0;
-    return TEXTW( w->bar, s->text ) - w->bar->lrpad/2;
+    if (!w->userdata) w->userdata = calloc(1, sizeof(docksnap_t));
+    docksnap_t* s = w->userdata;
+    if (!s) return 0;
+    s->text.fg = P->colors.fg;
+    s->text.bg = P->colors.bg;
+    if ((s->font = w->bar->emojifont)) {
+        const char* power = percent < awl_plugin_config()->battery.scale.ok ? "🪫" : "🔋";
+        snprintf( s->text.text, sizeof(s->text.text), "%s%s", docked < 0 ? "" : docked ? "🖥️" : "💻",
+                  ac < 0 ? "" : ac ? "⚡" : power );
+    } else {
+        s->font = w->bar->font;
+        const char* dock = docked > 0 ? "DOCK" : "", * power = ac > 0 ? "AC" : "";
+        snprintf( s->text.text, sizeof(s->text.text), "%s%s%s", dock, *dock && *power ? " " : "", power );
+    }
+    if (!*s->text.text) return 0;
+    return awl_host->text_width( s->font, s->text.text ) + w->bar->lrpad/2
+        - (s->font == w->bar->emojifont ? emoji_rpad_px( w ) : 0);
 }
 
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
-    textsnap_t* s = w->userdata;
+    docksnap_t* s = w->userdata;
     if (!s) return 0;
-    awl_host->text( pix, w->bar->font, x, -2, w->width, w->bar->height, 0, s->text, s->fg, s->bg );
+    awl_host->text( pix, s->font, x, -2, w->width, w->bar->height, 0, s->text.text,
+                    s->text.fg, s->text.bg );
     return w->width;
 }
 
@@ -1103,23 +1122,11 @@ static backlight_moons_t backlight_moons( int permille ) {
     };
 }
 
-/** Whether the bar font of w's monitor draws all of the backlight widget's
- * emoji in color. A monochrome fallback doesn't count: Adwaita Mono has the
- * moons, but gets two of them wrong, and draws them inverted on a dark bar. */
-static int backlight_emoji( widget_t* w ) {
-    static const uint32_t cps[] = { 0x1F311, 0x1F312, 0x1F313, 0x1F314, 0x1F315,
-                                    0x1F316, 0x1F317, 0x1F318, 0x1F440, 0x1F6D1 };
-    return color_emoji( w, cps, sizeof(cps) / sizeof(*cps) );
-}
-
 /** the gap between the moon and the eyes, in pixels at scale 1 */
 static const float backlight_emoji_gap = 4.0f;
-/** how much of the right padding (half of lrpad) the emoji leave out, in
- * pixels at scale 1: they fill the whole line height and need less air */
-static const float backlight_emoji_rpad = 5.0f;
 
-/** the backlight widget's snapshot: `text` is "BR"/"DK" without color
- * emoji; with them, moon (empty if the brightness is unknown, a stop sign if
+/** the backlight widget's snapshot: `text` is "BR"/"DK" without the emoji
+ * font; with it, moon (empty if the brightness is unknown, a stop sign if
  * it makes no sense) and mode, which `closed` draws as closed eyes in its
  * place */
 typedef struct {
@@ -1141,7 +1148,8 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     const int screen = atomic_load( &P->backlight->screen );
     s->text.fg = enabled ? P->colors.fg : P->colors.warning;
     s->text.bg = P->colors.bg;
-    if (!backlight_emoji( w )) {
+    struct fcft_font* ef = w->bar->emojifont;
+    if (!ef) {
         s->mode = NULL;
         strcpy( s->text.text, enabled ? "BR" : "DK" );
         return textsnap_width( w );
@@ -1161,10 +1169,9 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     s->mode = "👀";
     s->closed = !enabled;
     s->gap = *s->moons.m1 ? (int)(backlight_emoji_gap * scale + 0.5f) : 0;
-    s->rpad = (int)(backlight_emoji_rpad * scale + 0.5f);
-    if (s->rpad > w->bar->lrpad/2) s->rpad = w->bar->lrpad/2;
-    uint32_t w1 = TEXTW( w->bar, s->moons.m1 ), w2 = TEXTW( w->bar, s->moons.m2 );
-    return (w1 > w2 ? w1 : w2) + s->gap + TEXTW( w->bar, s->mode ) - w->bar->lrpad - s->rpad;
+    s->rpad = emoji_rpad_px( w );
+    uint32_t w1 = awl_host->text_width( ef, s->moons.m1 ), w2 = awl_host->text_width( ef, s->moons.m2 );
+    return (w1 > w2 ? w1 : w2) + s->gap + awl_host->text_width( ef, s->mode ) + w->bar->lrpad - s->rpad;
 }
 
 /** Composites the one-glyph string `text` into dst at alpha (0..1), placed
@@ -1296,44 +1303,42 @@ static int backlight_eyes_closed( pixman_image_t* dst, struct fcft_font* font, i
 static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     backlightsnap_t* s = w->userdata;
     if (!s) return 0;
-    if (!s->mode) return textsnap_draw( w, x, pix );
+    struct fcft_font* font = w->bar->emojifont;
+    if (!s->mode || !font) return textsnap_draw( w, x, pix );
     // the moon with the left padding and the gap, then the mode filling the
-    // rest; TEXT() pads by lrpad/2 on the left
-    uint32_t w1 = awl_host->text_width( w->bar->font, s->moons.m1 ),
-             w2 = awl_host->text_width( w->bar->font, s->moons.m2 );
-    uint32_t mw = w->bar->lrpad/2 + (w1 > w2 ? w1 : w2) + s->gap;
+    // rest
+    int h = w->bar->height, y = -2, lpad = w->bar->lrpad/2;
+    uint32_t w1 = awl_host->text_width( font, s->moons.m1 ),
+             w2 = awl_host->text_width( font, s->moons.m2 );
+    uint32_t mw = lpad + (w1 > w2 ? w1 : w2) + s->gap;
     if (mw > w->width) mw = w->width;
-    struct fcft_font* font = w->bar->font;
     double a2 = s->moons.alpha_m2;
-    if (!font || a2 <= 0.0 || a2 >= 1.0 || !strcmp( s->moons.m1, s->moons.m2 )) {
-        TEXT( mw, a2 >= 1.0 ? s->moons.m2 : s->moons.m1, s->text.fg, s->text.bg );
+    if (a2 <= 0.0 || a2 >= 1.0 || !strcmp( s->moons.m1, s->moons.m2 )) {
+        awl_host->text( pix, font, x, y, mw, h, lpad, a2 >= 1.0 ? s->moons.m2 : s->moons.m1,
+                        s->text.fg, s->text.bg );
     } else {
         // between two phases: the background, then both moons crossfaded in
         // a scratch image (m1 at 1-a, m2 at a, added up) laid over it, so
         // each pixel is the exact mix even where only one of them covers it
-        TEXT( mw, "", s->text.fg, s->text.bg );
-        int h = w->bar->height, y = -2;
+        awl_host->text( pix, font, x, y, mw, h, lpad, "", s->text.fg, s->text.bg );
         int ty = y + (h - font->height) / 2 + font->ascent;
         pixman_image_t* tmp = mw ? pixman_image_create_bits( PIXMAN_a8r8g8b8, mw, h, NULL, 0 ) : NULL;
         if (tmp) {
-            int px = w->bar->lrpad/2;
-            backlight_glyph( tmp, font, s->moons.m1, px, ty, 1.0 - a2 );
-            backlight_glyph( tmp, font, s->moons.m2, px, ty, a2 );
+            backlight_glyph( tmp, font, s->moons.m1, lpad, ty, 1.0 - a2 );
+            backlight_glyph( tmp, font, s->moons.m2, lpad, ty, a2 );
             pixman_image_composite32( PIXMAN_OP_OVER, tmp, NULL, pix, 0, 0, 0, 0,
                     x, 0, mw, h );
             pixman_image_unref( tmp );
         }
     }
     // the closed eyes: the background, then the image where 👀 would be
-    int closed = s->closed && font;
-    awl_host->text( pix, w->bar->font, x + mw, -2, w->width - mw, w->bar->height, 0,
-            closed ? "" : s->mode, s->text.fg, s->text.bg );
-    if (closed) {
-        int h = w->bar->height, y = -2;
+    awl_host->text( pix, font, x + mw, y, w->width - mw, h, 0, s->closed ? "" : s->mode,
+                    s->text.fg, s->text.bg );
+    if (s->closed) {
         int ty = y + (h - font->height) / 2 + font->ascent;
         if (!backlight_eyes_closed( pix, font, (int)(x + mw), ty ))
-            awl_host->text( pix, w->bar->font, x + mw, -2, w->width - mw, w->bar->height, 0, s->mode,
-                    s->text.fg, s->text.bg );
+            awl_host->text( pix, font, x + mw, y, w->width - mw, h, 0, s->mode,
+                            s->text.fg, s->text.bg );
     }
     return w->width;
 }

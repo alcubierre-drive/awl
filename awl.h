@@ -391,6 +391,9 @@ typedef struct awl_desktop_config_t {
     uint32_t bg, file, dir, broken;
     uint8_t hidden_alpha;
     float margin;
+    /** how many columns the entries are spread over, evenly; the files
+     * first, then the folders from the first column on again */
+    int columns;
 } awl_desktop_config_t;
 
 /** `awl_config_t.wallpaper`: the wallpaper action ({.i = WallpaperNext, ...,
@@ -461,6 +464,11 @@ typedef struct awl_config_t {
     /** the bar's font, its size appended to it */
     const char *font;
     int fontsize;
+    /** the bar's emoji, at fontsize: a color font, so the widgets' emoji
+     * don't come from whatever text font has them in black and white
+     * (fontconfig's generic "emoji" is Noto Color Emoji or the like); NULL,
+     * or one that isn't in color: text instead of emoji */
+    const char *emoji_font;
     /** behind everything, and behind fullscreen windows (0xRRGGBBAA; an
      * alpha of 0 shows what is below) */
     uint32_t rootcolor, fullscreen_bg;
