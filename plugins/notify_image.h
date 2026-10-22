@@ -15,8 +15,9 @@
  * changes (its inode, size or modification time): an app sends the same
  * icon with each notification.
  *
- * The bar's bell (`awl_plugin_config_t.notify`'s bell_icon) comes from
- * here too, so no file system is touched on the main thread for it.
+ * The bar's icons (the bell, the dock widget's; `awl_notify_bar_icon()`)
+ * come from here too, so no file system is touched on the main thread for
+ * them.
  *
  * Everything a client names is untrusted: a path that is no regular file
  * (a FIFO, a device) is refused without being read, a desktop entry id is

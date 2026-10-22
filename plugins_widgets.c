@@ -54,8 +54,10 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
 static uint32_t tempwidget_measure( widget_t* w );
 static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t batwidget_measure( widget_t* w );
+static uint32_t pulsewidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t dockwidget_measure( widget_t* w );
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
+static void dockwidget_free( void* userdata );
 static uint32_t ipwidget_measure( widget_t* w );
 static uint32_t ipwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void ipwidget_hover( widget_t* w );
@@ -102,7 +104,7 @@ static const widget_t right_widgets[] = {
     [AwlWidgetVolume] = {
         PAD_DEFAULT,
         .measure = &pulsewidget_measure,
-        .draw = &textsnap_draw,
+        .draw = &pulsewidget_draw,
         .callback_click = &pulsewidget_click,
         .callback_scroll = &pulsewidget_scroll,
         .free = free,
@@ -124,7 +126,7 @@ static const widget_t right_widgets[] = {
         .pad_left = -2, .pad_right = AWL_PADDING_DEFAULT,
         .measure = &dockwidget_measure,
         .draw = &dockwidget_draw,
-        .free = free,
+        .free = &dockwidget_free,
     },
     [AwlWidgetBattery] = {
         PAD_DEFAULT,
@@ -150,7 +152,7 @@ static const widget_t right_widgets[] = {
         .free = free,
     },
     [AwlWidgetNotifications] = {
-        .pad_left = 0, .pad_right = AWL_PADDING_DEFAULT,
+        .pad_left = 0, .pad_right = 0,
         .measure = &notifywidget_measure,
         .draw = &notifywidget_draw,
         .callback_click = &notifywidget_click,
@@ -663,19 +665,87 @@ static void sniwidget_free( void* userdata ) {
     free( u );
 }
 
+/* the volume: a speaker filled from below as far as the volume goes (all
+ * of it above 100 %), the rest dim, then the percentage; in the warning
+ * color while muted, in the bad one above 100 % */
+typedef struct {
+    textsnap_t text;
+    float level;
+    /** the speaker's size, its top and its gap to the text, in the bar's
+     * pixels */
+    int sw, sh, sy, gap;
+} pulsesnap_t;
+
 static uint32_t pulsewidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->pulse) return 0;
-    textsnap_t* s = textsnap( w );
+    if (!w->userdata) w->userdata = calloc( 1, sizeof(pulsesnap_t) );
+    pulsesnap_t* s = w->userdata;
+    if (!s) return 0;
     float val = atomic_load( &P->pulse->value );
     int muted = atomic_load( &P->pulse->muted );
-    snprintf( s->text, sizeof(s->text), "♫%3.0f%%", val * 100.0f );
-    s->fg = muted ? P->colors.warning :
-            lround(val*100.0) > 100 ? P->colors.bad :
-                                      P->colors.fg;
-    s->bg = P->colors.bg;
+    snprintf( s->text.text, sizeof(s->text.text), "%3.0f%%", val * 100.0f );
+    s->text.fg = muted ? P->colors.warning :
+                 lround(val*100.0) > 100 ? P->colors.bad :
+                                           P->colors.fg;
+    s->text.bg = P->colors.bg;
+    s->level = val < 0 ? 0 : val > 1 ? 1 : val;
+    /* as tall as the digits, on their line as text() places them */
+    struct fcft_font* font = w->bar->font;
+    const int baseline = ((int)w->bar->height - font->height) / 2 - 2 + font->ascent;
+    const struct fcft_glyph* g = fcft_rasterize_char_utf32( font, U'0', FCFT_SUBPIXEL_NONE );
+    s->sh = g && g->height > 0 ? g->height : font->ascent;
+    s->sy = baseline - (g && g->height > 0 ? g->y : font->ascent);
+    s->sw = (int)lroundf( (float)s->sh * 0.8f );
+    s->gap = (int)lroundf( 2.0f * w->bar->scale );
     // fixed width so the bar doesn't jitter while the volume changes
-    return text_cell_width( w, w->bar->font, "V___%" );
+    return cell_width( w, (uint32_t)(s->sw + s->gap) + awl_host->text_width( w->bar->font, "___%" ) );
+}
+
+/** the speaker's shape, sw x sh, into an a8 mask: the box at the back, the
+ * cone flaring to the right */
+static pixman_image_t* speaker_mask( int sw, int sh ) {
+    pixman_image_t* mask = pixman_image_create_bits( PIXMAN_a8, sw, sh, NULL, 0 );
+    if (!mask) return NULL;
+    const double w = sw, h = sh, bx = 0.3 * w, by0 = 0.3 * h, by1 = 0.7 * h;
+#define PT( x, y ) { pixman_double_to_fixed( x ), pixman_double_to_fixed( y ) }
+    const pixman_triangle_t tris[] = {
+        { PT( 0, by0 ), PT( bx, by0 ), PT( bx, by1 ) },
+        { PT( 0, by0 ), PT( bx, by1 ), PT( 0, by1 ) },
+        { PT( bx, by0 ), PT( w, 0 ), PT( w, h ) },
+        { PT( bx, by0 ), PT( w, h ), PT( bx, by1 ) },
+    };
+#undef PT
+    pixman_add_triangles( mask, 0, 0, LENGTH( tris ), tris );
+    return mask;
+}
+
+static uint32_t pulsewidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
+    pulsesnap_t* s = w->userdata;
+    if (!s) return 0;
+    int l, r, h = (int)w->bar->height;
+    widget_padding( w, &l, &r );
+    awl_host->text( pix, w->bar->font, x, -2, w->width, h, 0, "", s->text.fg, s->text.bg );
+    const int sx = (int)x + l, sy = s->sy;
+    pixman_image_t* mask = s->sw > 0 && s->sh > 0 ? speaker_mask( s->sw, s->sh ) : NULL;
+    if (mask) {
+        pixman_color_t dim = s->text.fg;
+        dim.red /= 3, dim.green /= 3, dim.blue /= 3, dim.alpha /= 3;
+        const int filled = (int)lroundf( s->level * (float)s->sh );
+        pixman_image_t* solid = pixman_image_create_solid_fill( &dim );
+        pixman_image_composite32( PIXMAN_OP_OVER, solid, mask, pix, 0, 0, 0, 0, sx, sy, s->sw, s->sh - filled );
+        pixman_image_unref( solid );
+        solid = pixman_image_create_solid_fill( &s->text.fg );
+        pixman_image_composite32( PIXMAN_OP_OVER, solid, mask, pix, 0, 0, 0, s->sh - filled, sx, sy + s->sh - filled,
+                                  s->sw, filled );
+        pixman_image_unref( solid );
+        pixman_image_unref( mask );
+    }
+    const long room = (long)w->width - l - r - s->sw - s->gap;
+    if (room > 0)
+        awl_host->text( pix, w->bar->font, sx + s->sw + s->gap, -2, (unsigned)room, h, 0, s->text.text, s->text.fg,
+                        s->text.bg );
+    return w->width;
 }
 
 typedef struct {
@@ -838,19 +908,99 @@ static uint32_t batwidget_measure( widget_t* w ) {
 }
 
 /* Emoji are drawn in the bar's emoji font (awl_bar_t.emojifont, color
- * emoji); without one, the widgets show text instead. */
+ * emoji); without one, the widgets show text instead. Icons from the icon
+ * theme (`awl_notify_bar_icon()`) replace either where configured. */
 
-/** the dock widget's snapshot: its text and the font it is in */
+/** the bar's icons' size: the tray's, inside the bar */
+static int bar_icon_px( const widget_t* w ) {
+    const int h = (int)w->bar->height;
+    int px = (int)lroundf( awl_config()->tray.icon_size * w->bar->scale );
+    return px > h - 2 ? h - 2 : px;
+}
+
+/** *slot holding a reference of its own to icon (NULL: none), the cache's
+ * being valid only until its next call */
+static void bar_icon_keep( pixman_image_t** slot, pixman_image_t* icon ) {
+    if (icon == *slot) return;
+    if (*slot) pixman_image_unref( *slot );
+    *slot = icon ? pixman_image_ref( icon ) : NULL;
+}
+
+/** draws icon at x, centered in the bar's height: a symbolic one's shape
+ * in fg; returns its top */
+static int bar_icon_draw( const widget_t* w, pixman_image_t* pix, pixman_image_t* icon, int symbolic, int x,
+                          pixman_color_t fg ) {
+    const int iw = pixman_image_get_width( icon ), ih = pixman_image_get_height( icon );
+    const int iy = ((int)w->bar->height - ih) / 2;
+    if (symbolic) {
+        pixman_image_t* solid = pixman_image_create_solid_fill( &fg );
+        pixman_image_composite32( PIXMAN_OP_OVER, solid, icon, pix, 0, 0, 0, 0, x, iy, iw, ih );
+        pixman_image_unref( solid );
+    } else {
+        pixman_image_composite32( PIXMAN_OP_OVER, icon, NULL, pix, 0, 0, 0, 0, x, iy, iw, ih );
+    }
+    return iy;
+}
+
+/** one of the dock widget's two parts: an icon, else a text; w wide */
 typedef struct {
-    textsnap_t text;
+    pixman_image_t* icon;
+    int symbolic;
+    const char* text;
+    uint32_t w;
+} dockpart_t;
+
+/** the dock widget's snapshot: its parts and the font their texts are in;
+ * lead: what an icon first is moved right, out of the neighbour a
+ * negative padding reaches into (it draws over it then) */
+typedef struct {
+    dockpart_t part[2];
+    int lead;
     struct fcft_font* font;
+    pixman_color_t fg, bg;
 } docksnap_t;
 
-/** Two emoji, what the machine sits on and what it runs on: 🖥️ when a
+/** part as the config's icon names at px, else glyph (in the emoji font),
+ * else text; nothing at all without any */
+static void dockpart_set( widget_t* w, dockpart_t* part, const char* names, int px, const char* glyph,
+                          const char* text ) {
+    docksnap_t* s = w->userdata;
+    int symbolic;
+    pixman_image_t* icon = names ? awl_notify_bar_icon( names, px, &symbolic ) : NULL;
+    bar_icon_keep( &part->icon, icon );
+    part->symbolic = icon ? symbolic : 0;
+    part->text = icon ? "" : w->bar->emojifont ? glyph : text;
+    part->w = icon ? (uint32_t)pixman_image_get_width( icon ) : awl_host->text_width( s->font, part->text );
+}
+
+/** names with each "%d" the charge at percent down to its ten, 0 to 100
+ * (as GNOME picks Adwaita's battery-level-N icons), in buf; NULL if it
+ * doesn't fit */
+static const char* dock_level_names( const char* names, float percent, char* buf, size_t n ) {
+    if (!names) return NULL;
+    int level = (int)(percent / 10.0f) * 10;
+    level = level < 0 ? 0 : level > 100 ? 100 : level;
+    size_t k = 0;
+    for (const char* c = names; *c; c++) {
+        int len = 1;
+        if (c[0] == '%' && c[1] == 'd') {
+            len = snprintf( buf + k, n - k, "%d", level );
+            c++;
+        } else if (k < n) {
+            buf[k] = *c;
+        }
+        if (len < 0 || (k += (size_t)len) >= n) return NULL;
+    }
+    buf[k] = 0;
+    return buf;
+}
+
+/** Two parts, what the machine sits on and what it runs on: 🖥️ when a
  * Thunderbolt dock is attached, 💻 otherwise (neither without a Thunderbolt
  * bus); ⚡ on AC (by the adapter, else by whether the battery charges), 🔋 on
  * the battery, 🪫 below its scale's ok. "DOCK" and "AC" without the emoji
- * font. */
+ * font; each the config's icon instead (`awl_plugin_config_t.battery`'s
+ * icons) if it has one, the power's following the charge. */
 static uint32_t dockwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->bat) return 0;
@@ -862,26 +1012,59 @@ static uint32_t dockwidget_measure( widget_t* w ) {
     if (!w->userdata) w->userdata = calloc(1, sizeof(docksnap_t));
     docksnap_t* s = w->userdata;
     if (!s) return 0;
-    s->text.fg = P->colors.fg;
-    s->text.bg = P->colors.bg;
-    if ((s->font = w->bar->emojifont)) {
-        const char* power = percent < awl_plugin_config()->battery.scale.ok ? "🪫" : "🔋";
-        snprintf( s->text.text, sizeof(s->text.text), "%s%s", docked < 0 ? "" : docked ? "🖥️" : "💻",
-                  ac < 0 ? "" : ac ? "⚡" : power );
-    } else {
-        s->font = w->bar->font;
-        const char* dock = docked > 0 ? "DOCK" : "", * power = ac > 0 ? "AC" : "";
-        snprintf( s->text.text, sizeof(s->text.text), "%s%s%s", dock, *dock && *power ? " " : "", power );
-    }
-    if (!*s->text.text) return 0;
-    return text_cell_width( w, s->font, s->text.text );
+    const awl_plugin_config_t* pc = awl_plugin_config();
+    s->fg = P->colors.fg;
+    s->bg = P->colors.bg;
+    s->font = w->bar->emojifont ? w->bar->emojifont : w->bar->font;
+    const int px = bar_icon_px( w );
+    if (docked < 0) dockpart_set( w, &s->part[0], NULL, px, "", "" );
+    else if (docked) dockpart_set( w, &s->part[0], pc->battery.icons.docked, px, "🖥️", "DOCK" );
+    else dockpart_set( w, &s->part[0], pc->battery.icons.laptop, px, "💻", "" );
+    /* the texts apart */
+    const char* ac_text = *s->part[0].text && !s->part[0].icon ? " AC" : "AC";
+    char names[256];
+    if (ac < 0) dockpart_set( w, &s->part[1], NULL, px, "", "" );
+    else if (ac)
+        dockpart_set( w, &s->part[1], dock_level_names( pc->battery.icons.ac, percent, names, sizeof names ), px,
+                      "⚡", ac_text );
+    else if (percent < pc->battery.scale.ok)
+        dockpart_set( w, &s->part[1], dock_level_names( pc->battery.icons.battery_low, percent, names, sizeof names ),
+                      px, "🪫", "" );
+    else
+        dockpart_set( w, &s->part[1], dock_level_names( pc->battery.icons.battery, percent, names, sizeof names ),
+                      px, "🔋", "" );
+    const dockpart_t* first = s->part[0].w ? &s->part[0] : &s->part[1];
+    int l, r;
+    widget_padding( w, &l, &r );
+    s->lead = first->icon && l < 0 ? -l : 0;
+    const uint32_t content = s->part[0].w + s->part[1].w;
+    return content ? cell_width( w, content + (uint32_t)s->lead ) : 0;
 }
 
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     docksnap_t* s = w->userdata;
     if (!s) return 0;
-    cell_text( w, pix, x, w->width, s->font, s->text.text, s->text.fg, s->text.bg );
+    int l, r, h = (int)w->bar->height;
+    widget_padding( w, &l, &r );
+    awl_host->text( pix, s->font, x, -2, w->width, h, 0, "", s->fg, s->bg );
+    /* with a negative padding over the neighbour, but for an icon */
+    int px = (int)x + l + s->lead;
+    for (int i = 0; i < 2; i++) {
+        const dockpart_t* part = &s->part[i];
+        if (part->icon) bar_icon_draw( w, pix, part->icon, part->symbolic, px, s->fg );
+        else if (*part->text)
+            awl_host->text_over( pix, s->font, px, -2, part->w, h, part->text, color_16bit_to_8bit( s->fg ) );
+        px += (int)part->w;
+    }
     return w->width;
+}
+
+static void dockwidget_free( void* userdata ) {
+    docksnap_t* s = userdata;
+    if (!s) return;
+    for (int i = 0; i < 2; i++)
+        if (s->part[i].icon) pixman_image_unref( s->part[i].icon );
+    free( s );
 }
 
 /** the IP widget: the bar shows the primary address (`awl_ipaddr_t.best`:
@@ -1477,15 +1660,7 @@ static uint32_t notifywidget_measure( widget_t* w ) {
     /* a shown popup follows the count */
     int bx, by, bw, bh;
     if (s->tip && awl_host->window_box( s->tip, &bx, &by, &bw, &bh )) notifywidget_tiptext( s );
-    /* as large as the tray's icons */
-    const int h = (int)w->bar->height;
-    int px = (int)lroundf( awl_config()->tray.icon_size * w->bar->scale );
-    if (px > h - 2) px = h - 2;
-    pixman_image_t* icon = awl_notify_bell( px, dnd, &s->symbolic );
-    if (icon != s->icon) {
-        if (s->icon) pixman_image_unref( s->icon );
-        s->icon = icon ? pixman_image_ref( icon ) : NULL;
-    }
+    bar_icon_keep( &s->icon, awl_notify_bell( bar_icon_px( w ), dnd, &s->symbolic ) );
     s->bell_font = w->bar->emojifont ? w->bar->emojifont : w->bar->font;
     s->bell = w->bar->emojifont ? (dnd ? "🔕" : "🔔") : (dnd ? "Z" : "N");
     s->bell_w = s->icon ? (uint32_t)pixman_image_get_width( s->icon ) : awl_host->text_width( s->bell_font, s->bell );
@@ -1507,17 +1682,7 @@ static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
      * as text() centers it */
     float top;
     if (s->icon) {
-        const int ix = (int)x + l, iw = pixman_image_get_width( s->icon ), ih = pixman_image_get_height( s->icon );
-        const int iy = (h - ih) / 2;
-        if (s->symbolic) {
-            /* its shape in the text's color */
-            pixman_image_t* solid = pixman_image_create_solid_fill( &P->colors.fg );
-            pixman_image_composite32( PIXMAN_OP_OVER, solid, s->icon, pix, 0, 0, 0, 0, ix, iy, iw, ih );
-            pixman_image_unref( solid );
-        } else {
-            pixman_image_composite32( PIXMAN_OP_OVER, s->icon, NULL, pix, 0, 0, 0, 0, ix, iy, iw, ih );
-        }
-        top = (float)iy;
+        top = (float)bar_icon_draw( w, pix, s->icon, s->symbolic, (int)x + l, P->colors.fg );
     } else {
         awl_host->text_over( pix, s->bell_font, (int)x + l, -2, s->bell_w, h, s->bell,
                              color_16bit_to_8bit( P->colors.fg ) );

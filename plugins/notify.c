@@ -27,17 +27,20 @@ enum { MAX_ACTIONS = 16 };
  * icon name, so it doesn't grow right after it shows; the thread is looked
  * at this often meanwhile */
 enum { IMAGE_WAIT_MS = 100, IMAGE_POLL_MS = 10 };
-/** the bar's bells kept, by size and do-not-disturb (two per monitor's
- * scale), the oldest go */
-enum { MAX_BELLS = 8 };
+/** the bar's icons kept, by names and size (the bell's two and the dock
+ * widget's five per monitor's scale), the oldest go */
+enum { MAX_BAR_ICONS = 16 };
 
-/** a bell from the icon theme at px, asked of the image thread once; img
- * NULL while it is on the way, or if none of the names was found */
+/** icon names (a copy of our own) at px, asked of the image thread once
+ * as serial; img NULL while it is on the way, or if none of the names was
+ * found */
 typedef struct {
-    int px, dnd, done;
+    char* names;
+    int px, done;
+    uint64_t serial;
     pixman_image_t* img;
     int symbolic;
-} bell_t;
+} bar_icon_t;
 
 typedef struct { int x, y, w, h; } box_t;
 
@@ -109,9 +112,10 @@ static struct {
     /** looks for what the image thread did while anything waits for it */
     awl_timer_t* img_timer;
     uint64_t img_serial;
-    /** `awl_notify_bell()`'s, oldest first */
-    bell_t bells[MAX_BELLS];
-    int nbells;
+    /** `awl_notify_bar_icon()`'s, oldest first; the last one's serial */
+    bar_icon_t icons[MAX_BAR_ICONS];
+    int nicons;
+    uint64_t icon_serial;
 } N;
 
 static long long now_ms( void ) {
@@ -865,54 +869,59 @@ void awl_notify_reveal( uint32_t id ) {
     awl_host->redraw_request();
 }
 
-/** the bells the image thread is done with into N.bells */
-static void bells_take( void ) {
+/** the icons the image thread is done with into N.icons */
+static void bar_icons_take( void ) {
     awl_notify_image_t* done = awl_notify_image_icon_take();
-    for (awl_notify_image_t* r = done; r; r = r->next) {
-        const int dnd = (int)(r->serial & 1);
-        for (int i = 0; i < N.nbells; i++) {
-            bell_t* b = &N.bells[i];
-            if (b->px != r->px || b->dnd != dnd || b->done) continue;
+    for (awl_notify_image_t* r = done; r; r = r->next)
+        for (int i = 0; i < N.nicons; i++) {
+            bar_icon_t* b = &N.icons[i];
+            if (b->serial != r->serial || b->done) continue;
             b->done = 1;
             b->img = r->img;
             b->symbolic = r->symbolic;
             r->img = NULL;
-            if (!b->img)
-                awl_wrn_printf( "notify: none of the bell icons '%s' found at %d px\n",
-                                dnd ? CFG->bell_icon_dnd : CFG->bell_icon, b->px );
+            if (!b->img) awl_wrn_printf( "notify: none of the icons '%s' found at %d px\n", b->names, b->px );
             break;
         }
-    }
     awl_notify_image_free( done );
 }
 
-static void bells_free( void ) {
-    for (int i = 0; i < N.nbells; i++)
-        if (N.bells[i].img) pixman_image_unref( N.bells[i].img );
-    N.nbells = 0;
+static void bar_icon_free( bar_icon_t* b ) {
+    if (b->img) pixman_image_unref( b->img );
+    free( b->names );
 }
 
-pixman_image_t* awl_notify_bell( int px, int dnd, int* symbolic ) {
-    const char* names = dnd ? CFG->bell_icon_dnd : CFG->bell_icon;
+static void bar_icons_free( void ) {
+    for (int i = 0; i < N.nicons; i++) bar_icon_free( &N.icons[i] );
+    N.nicons = 0;
+}
+
+pixman_image_t* awl_notify_bar_icon( const char* names, int px, int* symbolic ) {
     *symbolic = 0;
     if (!N.started || !names || !*names || px < 1) return NULL;
-    bells_take();
-    dnd = !!dnd;
-    for (int i = 0; i < N.nbells; i++) {
-        const bell_t* b = &N.bells[i];
-        if (b->px != px || b->dnd != dnd) continue;
+    bar_icons_take();
+    for (int i = 0; i < N.nicons; i++) {
+        const bar_icon_t* b = &N.icons[i];
+        if (b->px != px || strcmp( b->names, names )) continue;
         *symbolic = b->symbolic;
         return b->img;
     }
-    if (N.nbells == MAX_BELLS) {
-        if (N.bells[0].img) pixman_image_unref( N.bells[0].img );
-        memmove( N.bells, N.bells + 1, (MAX_BELLS - 1) * sizeof *N.bells );
-        N.nbells--;
+    if (N.nicons == MAX_BAR_ICONS) {
+        bar_icon_free( &N.icons[0] );
+        memmove( N.icons, N.icons + 1, (MAX_BAR_ICONS - 1) * sizeof *N.icons );
+        N.nicons--;
     }
     /* none if it can't be asked for: not asked again */
-    const int asked = awl_notify_image_icon_want( (uint64_t)px << 1 | (uint64_t)dnd, px, names );
-    N.bells[N.nbells++] = (bell_t){ .px = px, .dnd = dnd, .done = !asked };
+    char* copy = strdup( names );
+    if (!copy) return NULL;
+    const uint64_t serial = ++N.icon_serial;
+    const int asked = awl_notify_image_icon_want( serial, px, names );
+    N.icons[N.nicons++] = (bar_icon_t){ .names = copy, .px = px, .serial = serial, .done = !asked };
     return NULL;
+}
+
+pixman_image_t* awl_notify_bell( int px, int dnd, int* symbolic ) {
+    return awl_notify_bar_icon( dnd ? CFG->bell_icon_dnd : CFG->bell_icon, px, symbolic );
 }
 
 void awl_notify_start( void ) {
@@ -930,7 +939,7 @@ int awl_notify_stop( void ) {
     awl_host->window_destroy( N.more );
     awl_host->timer_remove( N.timer );
     awl_host->timer_remove( N.img_timer );
-    bells_free();
+    bar_icons_free();
     memset( &N, 0, sizeof N );
     return awl_notify_image_stop();
 }

@@ -88,6 +88,14 @@ typedef struct awl_plugin_config_t {
          * to colors.warning at warning, to colors.fg at ok and above
          * (linearly in between); colors.good while charging */
         struct { float bad, warning, ok, full; } scale;
+        /** the dock widget's icons from the icon theme, as
+         * `awl_plugin_config_t.notify`'s bell_icon: what the machine sits
+         * on (laptop, docked) and what it runs on (ac, battery, and
+         * battery_low below the scale's ok). In ac's, battery's and
+         * battery_low's, "%d" is the charge down to its ten, 0 to 100
+         * (Adwaita's battery-level-N icons). NULL, "" or none found: the
+         * glyph (💻, 🖥️, ⚡, 🔋, 🪫). */
+        struct { const char* laptop, * docked, * ac, * battery, * battery_low; } icons;
     } battery;
     /** the launcher (plugins/launcher.h), a popup: styled as the others
      * (`awl_config_t.popup`, blurred with blur.launcher) */

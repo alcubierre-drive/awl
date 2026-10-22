@@ -42,6 +42,9 @@
  * none is configured: the glyph then. The image is kept here, valid until
  * the next call: take a reference to keep it. */
 pixman_image_t* awl_notify_bell( int px, int dnd, int* symbolic );
+/** `awl_notify_bell()` for any of the config's icons: names (icon names or
+ * paths, ";" between them, the first found wins) at px pixels, alike */
+pixman_image_t* awl_notify_bar_icon( const char* names, int px, int* symbolic );
 
 /** makes the windows for what is open already (a reload) */
 void awl_notify_start( void );

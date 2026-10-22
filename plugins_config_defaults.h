@@ -53,6 +53,16 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .dir = "/sys/class/power_supply/BAT0/",
         .ac_dir = "/sys/class/power_supply/AC/",
         .scale = { .bad = 15, .warning = 25, .ok = 30, .full = 90 },
+        /* NULL or none found: the glyphs */
+        .icons = {
+            /* Papirus: laptop, Breeze: computer-laptop, Adwaita has neither */
+            .laptop = "laptop-symbolic;computer-laptop-symbolic;computer-symbolic",
+            .docked = "video-display-symbolic;computer-symbolic",
+            /* level 100 has no charging icon, but a charged one */
+            .ac = "battery-level-%d-charging-symbolic;battery-level-100-charged-symbolic;ac-adapter-symbolic",
+            .battery = "battery-level-%d-symbolic;battery-good-symbolic",
+            .battery_low = "battery-level-%d-symbolic;battery-low-symbolic;battery-caution-symbolic",
+        },
     },
     .launcher = {
         .layout = AWL_LAUNCHER_LIST,
@@ -80,8 +90,8 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .progress_color = 0, /* the frame's */
         .progress_height = 6,
         .show_app = 1,
-        /* .bell_icon, .bell_icon_dnd: NULL, the glyphs; e.g.
-         * "notifications-symbolic;preferences-system-notifications-symbolic"
-         * and "notifications-disabled-symbolic" (Adwaita, Breeze, Papirus) */
+        /* NULL or none found: the glyphs (Adwaita, Breeze, Papirus have these) */
+        .bell_icon = "notifications-symbolic;preferences-system-notifications-symbolic",
+        .bell_icon_dnd = "notifications-disabled-symbolic",
     },
 };
