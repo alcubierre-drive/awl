@@ -5,6 +5,8 @@
 #include "plugins.h"
 #include "plugins/date.h"
 #include "plugins/calpopup.h"
+#include "plugins/notify.h"
+#include "plugins/notify_menu.h"
 #include "plugins/colors.h"
 #include "plugins/tray_menu.h"
 #include "plugins/tray_tooltip.h"
@@ -63,6 +65,10 @@ static void ipwidget_free( void* userdata );
 static uint32_t backlightwidget_measure( widget_t* w );
 static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void backlightwidget_click( widget_t* w, uint32_t x, int button );
+
+static uint32_t notifywidget_measure( widget_t* w );
+static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
+static void notifywidget_click( widget_t* w, uint32_t x, int button );
 
 /** the usual padding, half the font's height either side */
 #define PAD_FONT .pad_left = AWL_PADDING_FONT, .pad_right = AWL_PADDING_FONT
@@ -136,6 +142,13 @@ static const widget_t right_widgets[] = {
         .measure = &backlightwidget_measure,
         .draw = &backlightwidget_draw,
         .callback_click = &backlightwidget_click,
+        .free = free,
+    },
+    [AwlWidgetNotifications] = {
+        PAD_FONT,
+        .measure = &notifywidget_measure,
+        .draw = &notifywidget_draw,
+        .callback_click = &notifywidget_click,
         .free = free,
     },
 };
@@ -1418,4 +1431,65 @@ static void backlightwidget_click( widget_t* w, uint32_t x, int button ) {
         backlight_update( P->backlight );
     else
         backlight_toggle( P->backlight );
+}
+
+/* the notifications: a bell (in the emoji font, else a letter), crossed
+ * out while do-not-disturb, then the count of open ones, in the bad color
+ * while a critical one is among them */
+typedef struct {
+    const char* bell;
+    struct fcft_font* bell_font;
+    char count[16];
+    pixman_color_t fg;
+    uint32_t bell_w, gap, x;
+} notifysnap_t;
+
+static uint32_t notifywidget_measure( widget_t* w ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    if (!P) return 0;
+    if (!w->userdata) w->userdata = calloc( 1, sizeof(notifysnap_t) );
+    notifysnap_t* s = w->userdata;
+    if (!s) return 0;
+    int critical = 0, n = awl_notify_count( &critical ), dnd = awl_notify_dnd();
+    s->bell_font = w->bar->emojifont ? w->bar->emojifont : w->bar->font;
+    s->bell = w->bar->emojifont ? (dnd ? "🔕" : "🔔") : (dnd ? "Z" : "N");
+    if (n > 0) snprintf( s->count, sizeof s->count, "%d", n );
+    else s->count[0] = 0;
+    s->fg = critical ? P->colors.bad : P->colors.fg;
+    s->bell_w = awl_host->text_width( s->bell_font, s->bell );
+    s->gap = n > 0 ? (uint32_t)lroundf( 2.0f * w->bar->scale ) : 0;
+    return cell_width( w, s->bell_w + s->gap + (n > 0 ? awl_host->text_width( w->bar->font, s->count ) : 0) );
+}
+
+static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    notifysnap_t* s = w->userdata;
+    if (!P || !s) return 0;
+    int h = (int)w->bar->height, l, r;
+    widget_padding( w, &l, &r );
+    s->x = x;
+    awl_host->text( pix, w->bar->font, x, -2, w->width, h, 0, "", P->colors.fg, P->colors.bg );
+    awl_host->text_over( pix, s->bell_font, (int)x + l, -2, s->bell_w, h, s->bell,
+                         color_16bit_to_8bit( P->colors.fg ) );
+    if (*s->count) {
+        int cx = (int)x + l + (int)s->bell_w + (int)s->gap;
+        long room = (long)x + w->width - r - cx;
+        if (room > 0)
+            awl_host->text_over( pix, w->bar->font, cx, -2, (unsigned)room, h, s->count,
+                                 color_16bit_to_8bit( s->fg ) );
+    }
+    return w->width;
+}
+
+static void notifywidget_click( widget_t* w, uint32_t x, int button ) {
+    (void)x;
+    notifysnap_t* s = w->userdata;
+    if (button == BTN_LEFT && s) {
+        float center = (float)s->x + (float)w->width / 2.0f;
+        awl_notify_menu_toggle( w->bar->m, (int)(center / w->bar->scale + 0.5f) );
+    } else if (button == BTN_RIGHT) {
+        awl_notify_set_dnd( !awl_notify_dnd() );
+    } else if (button == BTN_MIDDLE) {
+        awl_notify_dismiss_all();
+    }
 }

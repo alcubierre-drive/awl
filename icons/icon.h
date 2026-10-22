@@ -79,13 +79,40 @@ char* awl_icons_lookup( awl_icons_t* icons, const char* name, int px, const char
 void* awl_icon_read( const char* path, size_t* len );
 
 /** A PNG or JPEG (by their magic bytes), or an SVG if svg, fitted into max_w x max_h keeping its aspect
- * ratio (scaled up as well as down) as premultiplied PIXMAN_a8r8g8b8; NULL
+ * ratio (scaled up as well as down) as premultiplied PIXMAN_a8r8g8b8,
+ * turned and mirrored as its EXIF orientation says (a JPEG's APP1, a PNG's
+ * eXIf; fitted as shown); NULL
  * if it can't be decoded or is too large. source names the data in the
  * verbose log line each decode writes (its path, or e.g. "tray item 'x'";
  * NULL: "data"). */
 pixman_image_t* awl_icon_decode( const void* data, size_t len, int svg, int max_w, int max_h, const char* source );
 /** `awl_icon_read()` and `awl_icon_decode()` of path, SVG allowed */
 pixman_image_t* awl_icon_load( const char* path, int max_w, int max_h );
+
+/** What a decode refuses beyond, for larger images than icons (a
+ * notification's photo or screenshot): the pixels and the decoder's memory
+ * come on top of the file's bytes, so a caller allowing more decodes off
+ * the main thread. */
+typedef struct awl_icon_limits_t {
+    /** the file's or data's bytes; an SVG's are AWL_ICON_MAX_BYTES at most
+     * regardless (its parsing and rendering grow with them) */
+    size_t bytes;
+    /** a PNG's or JPEG's width and height each, and both multiplied */
+    int dim;
+    uint64_t pixels;
+    /** the decoder's memory besides the pixels (see AWL_ICON_MAX_WORK) */
+    uint64_t work;
+} awl_icon_limits_t;
+
+/** `awl_icon_decode()`'s: AWL_ICON_MAX_BYTES, _DIM (and its square), _WORK */
+extern const awl_icon_limits_t awl_icon_limits;
+
+/** `awl_icon_decode()` within lim (NULL: `awl_icon_limits`); what it is
+ * fitted into is AWL_ICON_MAX_DIM at most still */
+pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int svg, int max_w, int max_h,
+                                         const char* source, const awl_icon_limits_t* lim );
+/** `awl_icon_load()` within lim (NULL: `awl_icon_limits`) */
+pixman_image_t* awl_icon_load_limited( const char* path, int max_w, int max_h, const awl_icon_limits_t* lim );
 
 /** one of an item's pixmaps (StatusNotifierItem's IconPixmap, a(iiay)): w x h
  * pixels of non-premultiplied ARGB, 4 bytes each in network byte order */

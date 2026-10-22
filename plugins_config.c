@@ -120,13 +120,10 @@ static const char *wdisplays[] = { "wdisplays", NULL };
 static const char *docked_r[] = { "docked", "reset", NULL };
 static const char *docked_d[] = { "docked", "dock", NULL };
 static const char *docked_z[] = { "docked", "zoom", NULL };
-static const char *notification_action[] = { "fnottctl", "actions", NULL };
-// static const char *garfield[] = { "garfield", NULL };
 
 /* started with awl (only at its start), terminated when it exits;
  * TRAY_ICONS first: in the tray's icon theme */
 static const char* autostart[][8] = {
-    { "fnott", NULL },
     { TRAY_ICONS, "nm-applet", NULL },
     { "blueman-applet", NULL },
     { "system-config-printer-applet", NULL },
@@ -166,8 +163,7 @@ static const Key keys[] = {
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_r,          AWL_ACTION(plugin_restart),   {0} },
     { MODKEY,                    XKB_KEY_w,          AWL_ACTION(wallpaper),        {.i = WallpaperTimerNext} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_W,          AWL_ACTION(wallpaper),        {.i = WallpaperTimerBack} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_N,          AWL_ACTION(spawn),            {.v = notification_action} },
-    // { MODKEY,                    XKB_KEY_g,          AWL_ACTION(spawn),            {.v = garfield} },
+    // { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_N,          AWL_ACTION(spawn),            {.v = notification_action} }, // TODO this is not working
     { MODKEY,                    XKB_KEY_b,          AWL_ACTION(togglebw),         {0} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_B,          AWL_ACTION(changebw),         {.i=+1} },
     { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_B, AWL_ACTION(changebw), {.i=-1} },

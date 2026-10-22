@@ -236,6 +236,8 @@ typedef struct awl_host_t {
     Monitor* (*monitor_named)( const char* name );
     /** the selected monitor (``selmon``), NULL if there is none */
     Monitor* (*monitor_selected)( void );
+    /** m's output scale (what its popups are drawn at), 1 for NULL */
+    float (*monitor_scale)( Monitor* m );
 
     /* ---- popups (awl_window.h), NULL windows are fine everywhere ---- */
 

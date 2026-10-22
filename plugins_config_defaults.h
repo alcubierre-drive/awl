@@ -10,7 +10,7 @@
 
 /** from the right edge in */
 static const int default_widgets[] = {
-    AwlWidgetClock, AwlWidgetTray, AwlWidgetVolume, AwlWidgetStats, AwlWidgetTemperature,
+    AwlWidgetClock, AwlWidgetNotifications, AwlWidgetTray, AwlWidgetVolume, AwlWidgetStats, AwlWidgetTemperature,
     AwlWidgetDock, AwlWidgetBattery, AwlWidgetNetwork, AwlWidgetBacklight,
 };
 

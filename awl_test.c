@@ -122,6 +122,9 @@ testunescape(char *s)
  *                              visible pwin I, a painter's part; first 8)
  *                            hover MON X Y (the center of a bar widget
  *                              with callback_hover)
+ *                            widget MON I X Y (the center of right-hand
+ *                              widget I, the config's widgets' order, if
+ *                              it has a width)
  *                            notif ID GENERATION URGENCY TIMEOUT VALUE
  *                              FLAGS NACTIONS IMAGE IMAGE_PATH APP_ICON
  *                              CATEGORY SUMMARY (the open notifications,
@@ -291,9 +294,12 @@ testwincmd(char *line)
             wlr_scene_node_coords(&it->scene_buffer->node, &bx, &by);
             xpos = d->center_widget_start + d->center_widget_space;
             for (i = d->n_widgets_right - 1; i >= 0; --i) {
+                x = it->m.x + (int)((xpos + d->widgets_right[i].width / 2) / it->wlr_output->scale);
                 if (d->widgets_right[i].callback_hover && d->widgets_right[i].width)
-                    fprintf(f, "hover %s %d %d\n", it->wlr_output->name,
-                            it->m.x + (int)((xpos + d->widgets_right[i].width / 2) / it->wlr_output->scale),
+                    fprintf(f, "hover %s %d %d\n", it->wlr_output->name, x,
+                            by + it->bar_area.real_height / 2);
+                if (d->widgets_right[i].width)
+                    fprintf(f, "widget %s %d %d %d\n", it->wlr_output->name, i, x,
                             by + it->bar_area.real_height / 2);
                 xpos += d->widgets_right[i].width;
             }

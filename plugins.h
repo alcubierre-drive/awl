@@ -30,6 +30,8 @@ enum {
     AwlWidgetBattery,
     AwlWidgetNetwork,     /* the address; hover: all of them */
     AwlWidgetBacklight,   /* the backlight daemon's state */
+    AwlWidgetNotifications, /* a bell and the count; left: the menu, right:
+                             * do-not-disturb, middle: dismiss all */
 };
 
 /**

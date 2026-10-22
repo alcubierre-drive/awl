@@ -1,0 +1,31 @@
+#pragma once
+
+/**
+ * The notifications' menu: a popup with a row each for do-not-disturb
+ * (`awl_notify_dnd()`), "Dismiss all", and every notification the server
+ * keeps open, newest first, its title followed by its actions, indented.
+ * On a title, left click: its default action, else dismiss; right click:
+ * dismiss. On an action: that action, which closes the menu; the rest leave
+ * it open, and it follows what changes. Rows that don't fit the window area
+ * end in one that says how many more there are.
+ *
+ * Opened by the bar's notification widget and by the "+k more" window
+ * (notify.h); the notifications' windows hide while it is open, as it
+ * shows them all. Everything is copied out of the server's records, as
+ * the windows do. Main thread only.
+ */
+
+#include "../awl_plugin_abi.h"
+
+/** opens the menu on m for a bar widget centered on center_x (logical
+ * pixels from m's left edge), or closes it if it is open */
+void awl_notify_menu_toggle( Monitor* m, int center_x );
+/** opens the menu on m at a spot, an AWL_WINDOW_AT_* moved by dx, dy (the
+ * notifications' corner), or closes it if it is open */
+void awl_notify_menu_at( Monitor* m, int at, int dx, int dy );
+/** whether it is open */
+int awl_notify_menu_is_open( void );
+/** the notifications or do-not-disturb changed: an open menu follows */
+void awl_notify_menu_changed( void );
+/** destroys the menu */
+void awl_notify_menu_stop( void );

@@ -10,6 +10,8 @@
 #include "../vendor/wuffs/wuffs.h"
 #include "../vendor/plutosvg/svg.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <math.h>
 #include <pthread.h>
@@ -461,27 +463,51 @@ char* awl_icons_lookup( awl_icons_t* ic, const char* name, int px, const char* c
 
 /* ---- decoding ---- */
 
-void* awl_icon_read( const char* path, size_t* len ) {
+const awl_icon_limits_t awl_icon_limits = {
+    .bytes = AWL_ICON_MAX_BYTES, .dim = AWL_ICON_MAX_DIM,
+    .pixels = (uint64_t)AWL_ICON_MAX_DIM * AWL_ICON_MAX_DIM, .work = AWL_ICON_MAX_WORK,
+};
+
+static const awl_icon_limits_t* limits_or_default( const awl_icon_limits_t* lim ) {
+    return lim ? lim : &awl_icon_limits;
+}
+
+/** path's contents if it is a regular file of at most max bytes; opened
+ * without blocking first, so a FIFO (a notification's image_path can be
+ * anything) doesn't hang the reader */
+static void* read_max( const char* path, size_t* len, size_t max ) {
     *len = 0;
-    FILE* f = fopen( path, "re" );
-    if (!f) return NULL;
+    int fd = open( path, O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOCTTY );
+    if (fd < 0) return NULL;
     struct stat st;
     void* data = NULL;
-    if (fstat( fileno( f ), &st ) || !S_ISREG( st.st_mode )) goto out;
-    if (st.st_size > AWL_ICON_MAX_BYTES) {
+    if (fstat( fd, &st ) || !S_ISREG( st.st_mode )) goto out;
+    if ((uint64_t)st.st_size > max) {
         awl_vrb_printf( "icon: %s: too large (%lld bytes)\n", path, (long long)st.st_size );
         goto out;
     }
-    data = malloc( st.st_size ? (size_t)st.st_size : 1 );
-    if (data && fread( data, 1, (size_t)st.st_size, f ) == (size_t)st.st_size) {
-        *len = (size_t)st.st_size;
+    const size_t size = (size_t)st.st_size;
+    data = malloc( size ? size : 1 );
+    size_t got = 0;
+    while (data && got < size) {
+        ssize_t r = read( fd, (char*)data + got, size - got );
+        if (r < 0 && errno == EINTR) continue;
+        if (r <= 0) break;
+        got += (size_t)r;
+    }
+    if (data && got == size) {
+        *len = size;
     } else {
         free( data );
         data = NULL;
     }
 out:
-    fclose( f );
+    close( fd );
     return data;
+}
+
+void* awl_icon_read( const char* path, size_t* len ) {
+    return read_max( path, len, AWL_ICON_MAX_BYTES );
 }
 
 /** w x h fitted into max_w x max_h, keeping the aspect ratio */
@@ -497,12 +523,52 @@ static void fit( double w, double h, int max_w, int max_h, int* tw, int* th ) {
     if (*th < 1) *th = 1;
 }
 
+/** img shrunk by k on each side, each pixel the mean of a k x k block
+ * (premultiplied, so the mean is right); takes img. Far cheaper than the
+ * convolution, whose kernel grows with the factor: a photo is first
+ * brought close to the size it is fitted to this way. */
+static pixman_image_t* shrink( pixman_image_t* img, int k ) {
+    const int w = pixman_image_get_width( img ) / k, h = pixman_image_get_height( img ) / k;
+    pixman_image_t* out = pixman_image_create_bits( PIXMAN_a8r8g8b8, w, h, NULL, 0 );
+    if (!out) {
+        pixman_image_unref( img );
+        return NULL;
+    }
+    const uint32_t* src = pixman_image_get_data( img );
+    const int sstride = pixman_image_get_stride( img ) / 4;
+    uint32_t* dst = pixman_image_get_data( out );
+    const int dstride = pixman_image_get_stride( out ) / 4;
+    /* k <= AWL_ICON_MAX_DIM-ish: k * k * 255 fits easily */
+    const uint64_t n = (uint64_t)k * k;
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            uint64_t sum[4] = { 0 };
+            for (int j = 0; j < k; j++) {
+                const uint32_t* row = src + (size_t)(y * k + j) * sstride + (size_t)x * k;
+                for (int i = 0; i < k; i++)
+                    for (int c = 0; c < 4; c++) sum[c] += row[i] >> (8 * c) & 0xff;
+            }
+            uint32_t p = 0;
+            for (int c = 0; c < 4; c++) p |= (uint32_t)((sum[c] + n / 2) / n) << (8 * c);
+            dst[(size_t)y * dstride + x] = p;
+        }
+    pixman_image_unref( img );
+    return out;
+}
+
 /** img fitted into max_w x max_h, Lanczos3 as fcft scales its bitmaps; takes
  * img */
 static pixman_image_t* scaled( pixman_image_t* img, int max_w, int max_h ) {
     int w = pixman_image_get_width( img ), h = pixman_image_get_height( img ), tw, th;
     fit( w, h, max_w, max_h, &tw, &th );
     if (tw == w && th == h) return img;
+    /* to twice the size or so first */
+    const int k = w / (2 * tw) < h / (2 * th) ? w / (2 * tw) : h / (2 * th);
+    if (k >= 2) {
+        if (!(img = shrink( img, k ))) return NULL;
+        w = pixman_image_get_width( img );
+        h = pixman_image_get_height( img );
+    }
     pixman_image_t* out = pixman_image_create_bits( PIXMAN_a8r8g8b8, tw, th, NULL, 0 );
     if (!out) {
         pixman_image_unref( img );
@@ -529,9 +595,121 @@ static pixman_image_t* scaled( pixman_image_t* img, int max_w, int max_h ) {
     return out;
 }
 
-/** a PNG's or JPEG's pixels through dec, a Wuffs decoder made for it; kind
- * names it in the log */
-static pixman_image_t* wuffs_image( wuffs_base__image_decoder* dec, const uint8_t* data, size_t len, const char* kind ) {
+/* ---- EXIF orientation ---- */
+
+static uint32_t be16( const uint8_t* p ) {
+    return (uint32_t)p[0] << 8 | p[1];
+}
+
+static uint32_t be32( const uint8_t* p ) {
+    return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+
+/** a TIFF structure's (EXIF's) Orientation, 1 to 8: IFD0's tag 0x0112; 1
+ * if there is none or anything is off */
+static int tiff_orientation( const uint8_t* t, size_t len ) {
+    if (len < 8) return 1;
+    const int le = !memcmp( t, "II*\0", 4 );
+    if (!le && memcmp( t, "MM\0*", 4 )) return 1;
+#define U16( p ) (le ? (uint32_t)(p)[1] << 8 | (p)[0] : be16( p ))
+#define U32( p ) (le ? (uint32_t)(p)[3] << 24 | (uint32_t)(p)[2] << 16 | (uint32_t)(p)[1] << 8 | (p)[0] : be32( p ))
+    const uint32_t ifd = U32( t + 4 );
+    if (ifd > len - 2) return 1;
+    const uint32_t n = U16( t + ifd );
+    int o = 1;
+    for (uint32_t i = 0; i < n && ifd + 2 + (uint64_t)(i + 1) * 12 <= len; i++) {
+        const uint8_t* e = t + ifd + 2 + (size_t)i * 12;
+        /* SHORT, one: the value in the entry's first two bytes */
+        if (U16( e ) == 0x0112 && U16( e + 2 ) == 3 && U32( e + 4 ) == 1) {
+            const uint32_t v = U16( e + 8 );
+            if (v >= 1 && v <= 8) o = (int)v;
+            break;
+        }
+    }
+#undef U16
+#undef U32
+    return o;
+}
+
+/** a JPEG's EXIF orientation (APP1 "Exif"), 1 if none: the markers before
+ * the first scan */
+static int jpeg_orientation( const uint8_t* d, size_t len ) {
+    size_t at = 2;
+    while (at + 4 <= len) {
+        if (d[at] != 0xff) return 1;
+        const uint8_t m = d[at + 1];
+        /* fill bytes, then the markers without a length */
+        if (m == 0xff) {
+            at++;
+            continue;
+        }
+        if (m == 0x01 || (m >= 0xd0 && m <= 0xd8)) {
+            at += 2;
+            continue;
+        }
+        /* a scan or the end: too late for metadata */
+        if (m == 0xda || m == 0xd9) return 1;
+        const size_t seg = be16( d + at + 2 );
+        if (seg < 2 || seg > len - at - 2) return 1;
+        if (m == 0xe1 && seg >= 2 + 6 && !memcmp( d + at + 4, "Exif\0\0", 6 ))
+            return tiff_orientation( d + at + 10, seg - 8 );
+        at += 2 + seg;
+    }
+    return 1;
+}
+
+/** a PNG's EXIF orientation (an eXIf chunk), 1 if none: the chunks before
+ * the first IDAT, as the spec puts it */
+static int png_orientation( const uint8_t* d, size_t len ) {
+    size_t at = 8;
+    while (at + 12 <= len) {
+        const size_t n = be32( d + at );
+        if (n > len - at - 12) return 1;
+        const uint8_t* type = d + at + 4;
+        if (!memcmp( type, "IDAT", 4 ) || !memcmp( type, "IEND", 4 )) return 1;
+        if (!memcmp( type, "eXIf", 4 )) return tiff_orientation( d + at + 8, n );
+        at += 12 + n;
+    }
+    return 1;
+}
+
+/** whether orientation o turns the image on its side (5 to 8) */
+static int transposed( int o ) {
+    return o >= 5;
+}
+
+/** img shown as EXIF orientation o says; takes img */
+static pixman_image_t* oriented( pixman_image_t* img, int o ) {
+    if (o <= 1) return img;
+    const int w = pixman_image_get_width( img ), h = pixman_image_get_height( img );
+    const int tr = transposed( o ), ow = tr ? h : w, oh = tr ? w : h;
+    /* where a shown pixel comes from: (x, y), swapped if transposed, then
+     * mirrored in the stored image's x, y */
+    const int flip_x = o == 2 || o == 3 || o == 7 || o == 8, flip_y = o == 3 || o == 4 || o == 6 || o == 7;
+    pixman_image_t* out = pixman_image_create_bits( PIXMAN_a8r8g8b8, ow, oh, NULL, 0 );
+    if (!out) {
+        pixman_image_unref( img );
+        return NULL;
+    }
+    const uint32_t* src = pixman_image_get_data( img );
+    const int sstride = pixman_image_get_stride( img ) / 4;
+    uint32_t* dst = pixman_image_get_data( out );
+    const int dstride = pixman_image_get_stride( out ) / 4;
+    for (int y = 0; y < oh; y++)
+        for (int x = 0; x < ow; x++) {
+            int sx = tr ? y : x, sy = tr ? x : y;
+            if (flip_x) sx = w - 1 - sx;
+            if (flip_y) sy = h - 1 - sy;
+            dst[(size_t)y * dstride + x] = src[(size_t)sy * sstride + sx];
+        }
+    pixman_image_unref( img );
+    return out;
+}
+
+/** a PNG's or JPEG's pixels through dec, a Wuffs decoder made for it, within
+ * lim; kind names it in the log */
+static pixman_image_t* wuffs_image( wuffs_base__image_decoder* dec, const uint8_t* data, size_t len, const char* kind,
+                                    const awl_icon_limits_t* lim ) {
     const char* err = NULL;
     void* work = NULL;
     pixman_image_t* img = NULL;
@@ -541,7 +719,7 @@ static pixman_image_t* wuffs_image( wuffs_base__image_decoder* dec, const uint8_
     wuffs_base__status st = wuffs_base__image_decoder__decode_image_config( dec, &ic, &src );
     if (!wuffs_base__status__is_ok( &st )) goto out;
     uint32_t w = wuffs_base__pixel_config__width( &ic.pixcfg ), h = wuffs_base__pixel_config__height( &ic.pixcfg );
-    if (!w || !h || w > AWL_ICON_MAX_DIM || h > AWL_ICON_MAX_DIM) {
+    if (!w || !h || w > (uint32_t)lim->dim || h > (uint32_t)lim->dim || (uint64_t)w * h > lim->pixels) {
         err = "too large";
         goto out;
     }
@@ -549,7 +727,7 @@ static pixman_image_t* wuffs_image( wuffs_base__image_decoder* dec, const uint8_
      * progressive JPEG's coefficients (2 bytes a sample) for a JPEG; known
      * before anything is allocated */
     uint64_t wlen = wuffs_base__image_decoder__workbuf_len( dec ).max_incl;
-    if (wlen > AWL_ICON_MAX_WORK) {
+    if (wlen > lim->work) {
         err = "needs too much memory";
         goto out;
     }
@@ -577,7 +755,7 @@ out:
     return img;
 }
 
-static pixman_image_t* png( const uint8_t* data, size_t len ) {
+static pixman_image_t* png( const uint8_t* data, size_t len, const awl_icon_limits_t* lim ) {
     pixman_image_t* img = NULL;
     wuffs_png__decoder* dec = malloc( sizeof__wuffs_png__decoder() );
     if (!dec) return NULL;
@@ -585,23 +763,22 @@ static pixman_image_t* png( const uint8_t* data, size_t len ) {
                                                             WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
     if (wuffs_base__status__is_ok( &st )) {
         wuffs_png__decoder__set_quirk( dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, 1 );
-        img = wuffs_image( wuffs_png__decoder__upcast_as__wuffs_base__image_decoder( dec ), data, len, "PNG" );
+        img = wuffs_image( wuffs_png__decoder__upcast_as__wuffs_base__image_decoder( dec ), data, len, "PNG", lim );
     }
     free( dec );
     return img;
 }
 
 /** baseline and progressive, CMYK too; not arithmetic coded, lossless or
- * 12 bits (Wuffs has no decoder for those). The EXIF orientation isn't
- * applied. */
-static pixman_image_t* jpeg( const uint8_t* data, size_t len ) {
+ * 12 bits (Wuffs has no decoder for those) */
+static pixman_image_t* jpeg( const uint8_t* data, size_t len, const awl_icon_limits_t* lim ) {
     pixman_image_t* img = NULL;
     wuffs_jpeg__decoder* dec = malloc( sizeof__wuffs_jpeg__decoder() );
     if (!dec) return NULL;
     wuffs_base__status st = wuffs_jpeg__decoder__initialize( dec, sizeof__wuffs_jpeg__decoder(), WUFFS_VERSION,
                                                              WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
     if (wuffs_base__status__is_ok( &st ))
-        img = wuffs_image( wuffs_jpeg__decoder__upcast_as__wuffs_base__image_decoder( dec ), data, len, "JPEG" );
+        img = wuffs_image( wuffs_jpeg__decoder__upcast_as__wuffs_base__image_decoder( dec ), data, len, "JPEG", lim );
     free( dec );
     return img;
 }
@@ -780,10 +957,16 @@ static int sane( int max_w, int max_h ) {
 }
 
 pixman_image_t* awl_icon_decode( const void* data, size_t len, int allow_svg, int max_w, int max_h, const char* source ) {
+    return awl_icon_decode_limited( data, len, allow_svg, max_w, max_h, source, NULL );
+}
+
+pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int allow_svg, int max_w, int max_h,
+                                         const char* source, const awl_icon_limits_t* lim ) {
     static const uint8_t magic[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
+    lim = limits_or_default( lim );
     if (!data || !len || !sane( max_w, max_h )) return NULL;
     if (!source) source = "data";
-    if (len > AWL_ICON_MAX_BYTES) {
+    if (len > lim->bytes) {
         awl_vrb_printf( "icon: %s: too large (%zu bytes)\n", source, len );
         return NULL;
     }
@@ -791,23 +974,34 @@ pixman_image_t* awl_icon_decode( const void* data, size_t len, int allow_svg, in
     /* SOI, then a marker */
     int is_jpeg = len >= 3 && !memcmp( data, "\xff\xd8\xff", 3 );
     if (is_png || is_jpeg) {
-        pixman_image_t* img = is_png ? png( data, len ) : jpeg( data, len );
+        pixman_image_t* img = is_png ? png( data, len, lim ) : jpeg( data, len, lim );
         if (!img) return NULL;
         int w = pixman_image_get_width( img ), h = pixman_image_get_height( img );
-        img = scaled( img, max_w, max_h );
+        const int o = is_png ? png_orientation( data, len ) : jpeg_orientation( data, len );
+        /* turned after scaling, where it's cheap: fitted on its side then */
+        img = transposed( o ) ? scaled( img, max_h, max_w ) : scaled( img, max_w, max_h );
+        if (img) img = oriented( img, o );
         if (img)
-            awl_vrb_printf( "icon: decoded %s %s (%zu bytes): %dx%d, fitted to %dx%d into %dx%d\n",
-                            is_png ? "PNG" : "JPEG", source, len, w, h, pixman_image_get_width( img ),
+            awl_vrb_printf( "icon: decoded %s %s (%zu bytes): %dx%d, orientation %d, fitted to %dx%d into %dx%d\n",
+                            is_png ? "PNG" : "JPEG", source, len, w, h, o, pixman_image_get_width( img ),
                             pixman_image_get_height( img ), max_w, max_h );
         return img;
+    }
+    if (allow_svg && len > AWL_ICON_MAX_BYTES) {
+        awl_vrb_printf( "icon: %s: too large for an SVG (%zu bytes)\n", source, len );
+        return NULL;
     }
     return allow_svg ? svg( data, len, max_w, max_h, source ) : NULL;
 }
 
 pixman_image_t* awl_icon_load( const char* path, int max_w, int max_h ) {
+    return awl_icon_load_limited( path, max_w, max_h, NULL );
+}
+
+pixman_image_t* awl_icon_load_limited( const char* path, int max_w, int max_h, const awl_icon_limits_t* lim ) {
     size_t len;
-    void* data = awl_icon_read( path, &len );
-    pixman_image_t* img = data ? awl_icon_decode( data, len, 1, max_w, max_h, path ) : NULL;
+    void* data = read_max( path, &len, limits_or_default( lim )->bytes );
+    pixman_image_t* img = data ? awl_icon_decode_limited( data, len, 1, max_w, max_h, path, lim ) : NULL;
     if (data && !img) awl_vrb_printf( "icon: can't decode %s\n", path );
     free( data );
     return img;

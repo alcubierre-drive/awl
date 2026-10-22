@@ -44,7 +44,7 @@ int awl_desktop_entry_parse( awl_desktop_entry_t* e, const char* text, char lang
 void awl_desktop_entry_clear( awl_desktop_entry_t* e );
 
 /** The argv of an Exec value (unescaped as the entry has it): split at
- * blanks, double quotes quoting (in them, a backslash escapes ", `, $ and
+ * blanks, double quotes quoting (in them, a backslash escapes ", \`, $ and
  * itself), field codes expanded: %% a '%', %c the name, %k file (the
  * .desktop file's path, NULL: none), %i as an argument of its own
  * "--icon" and the icon if there is one; the file and URL ones (%f %F %u

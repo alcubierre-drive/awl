@@ -2,12 +2,12 @@
 
 Status (2026-10-22): the launcher, the keyboard grab, placement, bold and
 italic fonts, the markup parser and layout, JPEG (Wuffs v0.4),
-`awl_icon_from_rgba()`, the core's D-Bus server, persistent windows (0c)
-the library's notification windows (without image files and icon
-names), awl's own notifications past D-Bus and the stack fitted to the
-window area are done. Open: images from files and names, the actions and the
-widget, the launcher's leftovers. Replaces fnott (autostart,
-`fnottctl actions`); fuzzel (`menucmd`) is replaced already.
+`awl_icon_from_rgba()`, the core's D-Bus server, persistent windows (0c),
+the library's notification windows, awl's own notifications past D-Bus,
+the stack fitted to the window area and images from files and icon names
+(on a thread), the menu, do-not-disturb and the bar's widget are done.
+Open: awl's own looks, blur, the launcher's leftovers. fnott and fuzzel
+are replaced already.
 
 ## Done, for reference
 
@@ -66,7 +66,9 @@ widget, the launcher's leftovers. Replaces fnott (autostart,
     `init`; everything copied out of the record (summary, parsed body,
     actions); image-data converted at the image's size and scale in
     `measure()`, from a fresh `notif_list`.
-  - The summary bold, the body's markup (styles, colors, underline)
+  - The summary bold, then the app's name in italic braces
+    (`notify.show_app`, default on; the summary is cut first, down to
+    half the line), the body's markup (styles, colors, underline)
     wrapped to `max_lines`, the value's bar (track in the popups' dim),
     the actions as buttons in rows (not "default": the click).
   - Stacked from `at` on the selected monitor, newest nearest the corner,
@@ -94,71 +96,106 @@ widget, the launcher's leftovers. Replaces fnott (autostart,
   last window that fits is cut to the room left (the body's lines, the
   last ending in "…"); "+k more" always fits under it. Each restack starts
   whole again. Tested in "-- the room".
+- Images from files and names: plugins/notify_image.{c,h}, a thread
+  started with the first wish, stopped with the windows (stuck: reported
+  to the reload as the others).
+  - image_data first (converted on the main thread, as before), else the
+    first of image_path, app_icon, desktop_entry's Icon that yields one: a
+    path, a `file://` URL (percent-decoded, localhost only) or an icon
+    name in the desktop's themes (`tray.icon_theme` first). The desktop
+    entry is `<id>.desktop` in the applications directories, a plain file
+    name only.
+  - Asked for at the monitor's scale (new host call `monitor_scale`, ABI
+    35) and the uncut square's size; anything else is drawn scaled until
+    the right size comes, so a cut window doesn't ask anew each restack.
+    Symbolic icons in the text color.
+  - A new window shows once its image came or failed, 100 ms at most
+    (polled every 10 ms meanwhile); a replacement keeps showing what it
+    had until a changed source's image comes.
+  - icons/icon.h: `awl_icon_limits_t` and `awl_icon_decode_limited()`,
+    `awl_icon_load_limited()`. Notifications' files may have 16 MiB, 12.6
+    megapixels (4096 x 3072; 8192 a side), 64 MiB of decoder memory (a
+    12 MP progressive 4:2:0 JPEG needs 52, a 4:4:4 one 105: refused); SVGs
+    stay at 2 MiB. Large images are box-shrunk to about twice the size
+    before the Lanczos pass (a 3000x2000 PNG to 48 px: 0.1 s, was over 2
+    s).
+  - The EXIF orientation (a JPEG's APP1, a PNG's eXIf) is applied to every
+    decode, after scaling (fitted on its side for 5 to 8); tray and
+    launcher icons too. test/icon_unit.c "-- orientation": all eight on a
+    four-colored JPEG.
+  - A cache on the thread: a file at a size, keyed by its path and what
+    stat() says (inode, size, mtime), 32 entries and 8 MiB of pixels, LRU;
+    failures are kept too. The main thread gets a copy (pixman's reference
+    count isn't atomic).
+  - Files are opened with O_NONBLOCK and must be regular: a FIFO as
+    image_path no longer hangs the reader (the tray's and launcher's
+    reads gain the same).
+  - Tested in test/notifications.sh ("-- images", with its own icon theme
+    and desktop entry through `$XDG_DATA_DIRS`; the cache, a changed file,
+    a 15 MP PNG refused) and test/icon_unit.c ("-- large").
+- The menu, do-not-disturb, the widget: plugins/notify_menu.{c,h}, no key
+  bindings (a notification's actions are its buttons).
+  - Do-not-disturb is the config dictionary's `notify_dnd` (survives a
+    reload): only critical ones show, the rest stay open and in the menu.
+  - The menu, a painter of its own in the menus' style: "Do not disturb"
+    (on/off), "Dismiss all", then each notification's title (bold, the app
+    in italic) and its actions indented. A title: left its default action,
+    else dismiss; right dismiss. An action: invoked, the menu closes;
+    everything else leaves it open and it follows the changes. Rows that
+    don't fit end in "+k more" (not clickable: a text window's "…" row
+    would map to a real row).
+  - While it is open no notification window shows (they would cover it,
+    being persistent); they come back when it closes, a press elsewhere
+    included.
+  - `AwlWidgetNotifications` (in the default widgets, left of the clock):
+    🔔 or 🔕 and the count, red while a critical one is open. Left: the
+    menu under it; right: do-not-disturb; middle: dismiss all. A click on
+    "+k more" opens the menu in the stack's place.
+  - Tested in test/notifications.sh ("-- the menu"; the dump's new
+    `widget` lines). `look()` there now dismisses awl's alerts: the logind
+    one comes a while after the start (the test bus has no logind) and
+    landed on a check now and then.
 - Launcher (phase 1), keyboard grab (0a), placement (0b).
   - Still open for the launcher: desktop Actions, the xdg-activation
     token, a live.sh-driven launcher test.
 
 ## The library's notification windows: what is left
 
-### Images from files and names
-
-- The order of `awl_notif_t`: image_data (done), image_path, app_icon,
-  then desktop_entry's Icon through the launcher's index.
-- A path or a `file://` URL (percent-decoded) is decoded with
-  `awl_icon_decode()`. Anything else is an icon name for
-  `awl_icons_lookup()` with the desktop's themes.
-- Files and names are decoded on a worker (plugins/thread.h, as the
-  launcher's icons do). A notification shows only once its image is done or
-  has failed, bounded by ~100 ms, so it doesn't change size right after it
-  appears.
-- Still open: `AWL_ICON_MAX_DIM` (1024) and `AWL_ICON_MAX_BYTES` (2 MiB)
-  refuse screenshots and photos, and Wuffs can't decode scaled down. That
-  needs a separate, larger cap for notification image files (and the work
-  buffer with it), on the worker.
-- Decoded at the monitor's scale, so moving to another output stays sharp;
-  symbolic icons in the text color, as in the tray.
-
 ### Loose ends
 
-- A scale or font change on the monitor redraws the windows in awl, but
-  doesn't restack them: they may overlap until the next change. A host
-  hook (or `window_set_hidden`-like "resized" callback) would fix it.
-- The stack stays on the monitor it was placed on until the next change,
-  even when the selection moves.
-- Fitting: a window that would fit whole as the last is cut anyway when
-  more come after it (room is kept for "+k more"). Critical ones can end
-  up behind "+k more" like any other.
 - awl's own looks: which of awl's notifications get which
   `awl_notif_look_t` (config, wallpaper, alerts), and from where (the
   plugin config).
 - Blur: the windows blur as the popups (`blur.launcher`); maybe their own
   `blur.notifications` (already in `awl_config_t`, for fnott's layer
-  surfaces) once fnott is gone.
-- Do-not-disturb: a cfgdict key the library reads (it survives reloads).
-  Non-critical notifications aren't shown while it's on; the core still
-  stores, answers and expires them.
+  surfaces), now that fnott is gone.
 
-### Actions and widget
+Left as they are (decided): a wish for a closed notification is still
+decoded (on the thread, so it costs nothing that matters); a desktop entry
+is read anew each time; a scale or font change doesn't restack; the stack
+stays on its monitor until the next change; the last window is cut to
+keep room for "+k more", critical ones included.
 
-- Library actions: dismiss, dismiss all, the newest one's default action,
-  and show its actions (replacing `fnottctl actions` on MOD+Shift+N).
-- Do-not-disturb toggle, plus an optional bar widget with a count.
-- Later: a history popup of the last N closed (not the transient ones;
+### Later
+
+- A history popup of the last N closed (not the transient ones;
   the core would have to keep them).
-- Later: the xdg-activation token for `notif_invoke`.
+- The xdg-activation token for `notif_invoke`. A Wayland client may
+  not focus itself; to bring up its window when an action is clicked (the
+  chat a message came from), the server hands it a token first (the
+  spec's `ActivationToken` signal, before `ActionInvoked`), and the client
+  passes the token to `xdg_activation_v1.activate` for its window. awl
+  would create the token for the click (wlr_xdg_activation_v1 does that)
+  and, in `urgent()` (awl_client.c), focus a window that comes with one of
+  its own tokens, instead of only marking it urgent as now. Without it
+  the window turns urgent and the user has to go there.
 
 ## Tests still to write
 
-- test/notifications.sh: images from files and names once they exist;
-  markup and the bar only by eye so far (a screenshot check).
+- test/notifications.sh: markup, the bar, the title and symbolic icons
+  only by eye so far (a screenshot check).
 - The launcher: `live.sh key` (wtype) against a fake `$XDG_DATA_DIRS`.
 
 ## Order
 
-1. Images from files and names, on the worker.
-2. Actions, do-not-disturb, the widget; the config changes below.
-
-## The user's config afterwards
-
-plugins_config.c changes, reported rather than made silently: `fnott`
-leaves autostart, and `fnottctl` is replaced by the new actions.
+1. awl's own looks; blur.

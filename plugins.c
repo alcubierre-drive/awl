@@ -175,8 +175,8 @@ static void api_init( int paused ) {
 
 static int api_fini( void ) {
     if (!plugin_data) return 0;
-    awl_notify_stop();
-    int stuck = awl_calpopup_stop();
+    int stuck = awl_notify_stop();
+    stuck |= awl_calpopup_stop();
     stuck |= awl_desktop_stop();
     stuck |= awl_launcher_stop();
     stuck |= awl_wallpaper_stop();

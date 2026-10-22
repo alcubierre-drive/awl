@@ -40,3 +40,4 @@ void setselmon(Monitor *m);
 Monitor *monitornamed(const char *name);
 /** selmon, for the host table */
 Monitor *monitorselected(void);
+float monitorscale(Monitor *m);

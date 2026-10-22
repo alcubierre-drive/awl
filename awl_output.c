@@ -208,6 +208,12 @@ monitorselected(void)
     return selmon;
 }
 
+float
+monitorscale(Monitor *m)
+{
+    return m && m->wlr_output ? m->wlr_output->scale : 1;
+}
+
 Monitor *
 nextmon(int add) {
     int i = 0, i_sel = 1;

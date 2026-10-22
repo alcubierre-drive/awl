@@ -4,6 +4,8 @@
 #include "../icons/icon.h"
 #include "../plugins.h"
 #include "markup.h"
+#include "notify_image.h"
+#include "notify_menu.h"
 
 #include <fcft/fcft.h>
 #include <linux/input-event-codes.h>
@@ -11,13 +13,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define CFG (&awl_plugin_config()->notify)
+/** the config dictionary's key for do-not-disturb, a number */
+#define DND_KEY "notify_dnd"
 
 /** what the server keeps open at most (awl_notifications.c) */
 enum { MAX_OPEN = 256 };
 /** the action buttons at most (the server takes 16 pairs) */
 enum { MAX_ACTIONS = 16 };
+/** a new notification waits this long for its image from a file or an
+ * icon name, so it doesn't grow right after it shows; the thread is looked
+ * at this often meanwhile */
+enum { IMAGE_WAIT_MS = 100, IMAGE_POLL_MS = 10 };
 
 typedef struct { int x, y, w, h; } box_t;
 
@@ -40,9 +49,21 @@ typedef struct {
     int nactions, has_default;
     /** the pointer is on it: its timeout is held (notif_hold) */
     int held;
-    /** the image-data at img_px, NULL if none (or not yet converted) */
+    /** the image at img_px (the image-data's, or what notify_image.h
+     * found), NULL if none (or not yet converted, or not come) */
     pixman_image_t* img;
-    int has_image, img_px;
+    int has_image, img_px, img_symbolic;
+    /** the image-data's (has_data), else the first of these sources'
+     * (image_path, app_icon, desktop_entry; NULL none), img_serial counting
+     * their changes; img_want the size asked for and not come, 0 none */
+    int has_data;
+    char* src[3];
+    uint64_t img_serial;
+    int img_want;
+    /** may be shown: no image wanted, or it came, or not by ready_by
+     * (monotonic ms) */
+    int ready;
+    long long ready_by;
 
     /* measure()'s, physical pixels from the content's top left */
     struct fcft_font* font;
@@ -70,7 +91,16 @@ static struct {
     awl_timer_t* timer;
     /** restack() runs: its own hides don't count */
     int restacking;
+    /** looks for what the image thread did while anything waits for it */
+    awl_timer_t* img_timer;
+    uint64_t img_serial;
 } N;
+
+static long long now_ms( void ) {
+    struct timespec t;
+    clock_gettime( CLOCK_MONOTONIC, &t );
+    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
 
 static int px( const note_t* n, float v ) {
     return (int)lroundf( v * n->scale );
@@ -130,9 +160,36 @@ static struct fcft_font* italic( const note_t* n ) {
     return n->fonts[AWL_MARKUP_ITALIC] ? n->fonts[AWL_MARKUP_ITALIC] : n->font;
 }
 
-/** the image-data fitted into the image's square, from the record */
-static void image_for( note_t* n ) {
-    if (!n->has_image || (n->img && n->img_px == n->img_sz)) return;
+static int same_src( const char* a, const char* b ) {
+    return a ? b && !strcmp( a, b ) : !b;
+}
+
+static void image_drop( note_t* n ) {
+    if (n->img) pixman_image_unref( n->img );
+    n->img = NULL;
+    n->img_px = 0;
+    n->img_symbolic = 0;
+}
+
+/** asks the image thread for n's sources at px */
+static void image_want( note_t* n, int px ) {
+    if (n->img_want == px) return;
+    if (!awl_notify_image_want( n->id, n->img_serial, px, n->src[0], n->src[1], n->src[2] )) return;
+    n->img_want = px;
+    awl_host->timer_set( N.img_timer, IMAGE_POLL_MS );
+}
+
+/** the image fitted into the image's square: the image-data's from the
+ * record, else asked for from the thread at full, the square's size uncut
+ * (anything else is drawn scaled: a cut window doesn't ask anew each
+ * restack) */
+static void image_for( note_t* n, int full ) {
+    if (!n->has_image) return;
+    if (!n->has_data) {
+        if (full > 0 && n->img_px != full) image_want( n, full );
+        return;
+    }
+    if (n->img && n->img_px == n->img_sz) return;
     if (n->img) pixman_image_unref( n->img );
     n->img = NULL;
     n->img_px = n->img_sz;
@@ -203,9 +260,10 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
 
     n->w = px( n, (float)or_( (uint32_t)n->look.width, (uint32_t)CFG->width ) );
     if (n->w > max_w) n->w = max_w;
-    n->img_sz = n->has_image ? px( n, (float)or_( (uint32_t)n->look.image_size, (uint32_t)CFG->image_size ) ) : 0;
-    if (n->img_sz > max_h) n->img_sz = max_h;
-    image_for( n );
+    const int full =
+        n->has_image ? px( n, (float)or_( (uint32_t)n->look.image_size, (uint32_t)CFG->image_size ) ) : 0;
+    n->img_sz = full > max_h ? max_h : full;
+    image_for( n, full );
     if (!n->img) n->img_sz = 0;
     n->text_x = n->img_sz ? n->img_sz + pad : 0;
     n->text_w = n->w - n->text_x;
@@ -305,15 +363,42 @@ static void paint_title( note_t* n, pixman_image_t* pix, int x0, int y0, uint32_
                              fg );
 }
 
+/** the image centered in its square: scaled if it came at another size
+ * (until the right one comes), a symbolic one's shape in fg */
+static void paint_image( const note_t* n, pixman_image_t* pix, int x0, int y0, uint32_t fg ) {
+    int iw = pixman_image_get_width( n->img ), ih = pixman_image_get_height( n->img );
+    const int scaled = n->img_px > 0 && n->img_px != n->img_sz;
+    if (scaled) {
+        const double f = (double)n->img_sz / n->img_px;
+        pixman_transform_t t;
+        pixman_transform_init_scale( &t, pixman_double_to_fixed( 1 / f ), pixman_double_to_fixed( 1 / f ) );
+        pixman_image_set_transform( n->img, &t );
+        pixman_image_set_filter( n->img, PIXMAN_FILTER_BILINEAR, NULL, 0 );
+        iw = (int)lround( iw * f );
+        ih = (int)lround( ih * f );
+    }
+    const int x = x0 + (n->img_sz - iw) / 2, y = y0 + (n->img_sz - ih) / 2;
+    if (n->img_symbolic) {
+        const uint16_t a = (uint16_t)((fg & 0xff) * 0x101);
+        const pixman_color_t col = { (uint16_t)((fg >> 24) * 0x101 * a / 0xffff),
+                                     (uint16_t)(((fg >> 16) & 0xff) * 0x101 * a / 0xffff),
+                                     (uint16_t)(((fg >> 8) & 0xff) * 0x101 * a / 0xffff), a };
+        pixman_image_t* solid = pixman_image_create_solid_fill( &col );
+        if (solid) {
+            pixman_image_composite32( PIXMAN_OP_OVER, solid, n->img, pix, 0, 0, 0, 0, x, y, iw, ih );
+            pixman_image_unref( solid );
+        }
+    } else {
+        pixman_image_composite32( PIXMAN_OP_OVER, n->img, NULL, pix, 0, 0, 0, 0, x, y, iw, ih );
+    }
+    if (scaled) pixman_image_set_transform( n->img, NULL );
+}
+
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     note_t* n = data;
     const awl_config_t* c = awl_config();
     const uint32_t fg = fg_of( n );
-    if (n->img) {
-        const int iw = pixman_image_get_width( n->img ), ih = pixman_image_get_height( n->img );
-        pixman_image_composite32( PIXMAN_OP_OVER, n->img, NULL, pix, 0, 0, 0, 0, x0 + (n->img_sz - iw) / 2,
-                                  y0 + (n->img_sz - ih) / 2, iw, ih );
-    }
+    if (n->img) paint_image( n, pix, x0, y0, fg );
     if (n->sum_h) paint_title( n, pix, x0, y0, fg );
     if (n->body.len) paint_body( n, pix, x0, y0, fg );
     if (n->bar_h) {
@@ -345,7 +430,7 @@ static const awl_window_painter_t painter = {
 
 /* ---- input ---- */
 
-static void dismiss_all( void ) {
+void awl_notify_dismiss_all( void ) {
     uint32_t ids[MAX_OPEN];
     int k = 0;
     /* copied first: a close changes the list */
@@ -357,7 +442,7 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
     note_t* n = data;
     (void)win;
     (void)col;
-    if (button == BTN_MIDDLE) dismiss_all();
+    if (button == BTN_MIDDLE) awl_notify_dismiss_all();
     else if (button == BTN_RIGHT) awl_host->notif_close( n->id, AWL_NOTIF_DISMISSED );
     else if (button != BTN_LEFT) return;
     else if (row >= 1 && row <= n->nactions) awl_host->notif_invoke( n->id, n->actions[2 * (row - 1)], NULL );
@@ -388,6 +473,86 @@ static void hidden( awl_window_t* win, void* data ) {
 static void restack_timer( void* data ) {
     (void)data;
     restack();
+}
+
+static note_t* note_of( uint32_t id ) {
+    for (int i = 0; i < N.n; i++)
+        if (N.v[i]->id == id) return N.v[i];
+    return NULL;
+}
+
+/** what the image thread did: into the windows, which show once ready */
+static void image_timer( void* data ) {
+    (void)data;
+    awl_notify_image_t* done = awl_notify_image_take();
+    int changed = 0, waiting = 0;
+    for (awl_notify_image_t* r = done; r; r = r->next) {
+        note_t* n = note_of( r->id );
+        /* closed, or its sources changed since */
+        if (!n || n->img_serial != r->serial || n->has_data) continue;
+        if (r->img || r->px == n->img_want) {
+            image_drop( n );
+            n->img = r->img;
+            n->img_px = r->px;
+            n->img_symbolic = r->symbolic;
+            r->img = NULL;
+        }
+        if (r->px == n->img_want) n->img_want = 0;
+        n->ready = 1;
+        awl_host->window_redraw( n->win );
+        changed = 1;
+    }
+    awl_notify_image_free( done );
+    const long long now = now_ms();
+    for (int i = 0; i < N.n; i++) {
+        note_t* n = N.v[i];
+        if (!n->ready && now >= n->ready_by) {
+            n->ready = 1;
+            changed = 1;
+        }
+        waiting |= n->img_want || !n->ready;
+    }
+    if (changed) restack();
+    if (waiting) awl_host->timer_set( N.img_timer, IMAGE_POLL_MS );
+}
+
+/** r's image sources into n: the image-data converted anew, files and names
+ * asked for if they changed (what was found before shows meanwhile); a new
+ * notification that waits for one isn't ready */
+static void sources( note_t* n, const awl_notif_t* r ) {
+    const int data = r->image_data.data != NULL;
+    const char* src[3] = { NULL, NULL, NULL };
+    if (!data) {
+        const char* s[3] = { r->image_path, r->app_icon, r->desktop_entry };
+        for (int i = 0; i < 3; i++) src[i] = s[i] && *s[i] ? s[i] : NULL;
+    }
+    int same = data == n->has_data;
+    for (int i = 0; i < 3; i++) same &= same_src( n->src[i], src[i] );
+    n->has_data = data;
+    if (data) image_drop( n );
+    if (same) {
+        n->ready = 1;
+        return;
+    }
+    int any = 0;
+    for (int i = 0; i < 3; i++) {
+        free( n->src[i] );
+        n->src[i] = src[i] ? strdup( src[i] ) : NULL;
+        any |= n->src[i] != NULL;
+    }
+    n->img_serial = ++N.img_serial;
+    n->img_want = 0;
+    n->has_image = data || any;
+    if (!any) {
+        if (!data) image_drop( n );
+        n->ready = 1;
+        return;
+    }
+    /* at the size measure() will want on the selected monitor */
+    const float scale = awl_host->monitor_scale( awl_host->monitor_selected() );
+    image_want( n, (int)lroundf( (float)or_( (uint32_t)n->look.image_size, (uint32_t)CFG->image_size ) * scale ) );
+    if (!n->img_want) n->ready = 1;
+    else if (!n->ready) n->ready_by = now_ms() + IMAGE_WAIT_MS;
 }
 
 /** copies r into n; returns 0 when out of memory */
@@ -434,10 +599,7 @@ static int fill( note_t* n, const awl_notif_t* r ) {
     n->urgency = r->urgency <= AWL_NOTIF_CRITICAL ? r->urgency : AWL_NOTIF_NORMAL;
     n->value = r->value;
     n->look = r->look;
-    n->has_image = r->image_data.data != NULL;
-    if (n->img) pixman_image_unref( n->img );
-    n->img = NULL;
-    n->img_px = 0;
+    sources( n, r );
     n->laid = 0;
     awl_host->window_set_colors( n->win, or_( n->look.bg, CFG->urgency[n->urgency].bg ), fg_of( n ),
                                  or_( n->look.frame, CFG->urgency[n->urgency].frame ) );
@@ -455,6 +617,7 @@ static void note_free( note_t* n ) {
     free( n->app );
     for (int i = 0; i < 2 * n->nactions; i++) free( n->actions[i] );
     free( n->actions );
+    for (int i = 0; i < 3; i++) free( n->src[i] );
     if (n->img) pixman_image_unref( n->img );
     free( n );
 }
@@ -485,13 +648,24 @@ static int downward( int at ) {
     return at == AWL_WINDOW_AT_TOP || at == AWL_WINDOW_AT_TOP_LEFT || at == AWL_WINDOW_AT_TOP_RIGHT;
 }
 
+/** a click on "+k more": the menu in the stack's place */
+static void more_click( awl_window_t* win, int row, int col, uint32_t button, void* data ) {
+    (void)row;
+    (void)col;
+    (void)data;
+    if (button == BTN_LEFT) awl_notify_menu_at( awl_host->window_monitor( win ), CFG->at, CFG->dx, CFG->dy );
+}
+
 /** the "+k more" window's height for the newest k, shown; 0 if it can't */
 static int more_show( Monitor* m, int k, int off ) {
     char text[32];
     int x, y, w, h;
-    if (!N.more && !(N.more = awl_host->window_create())) return 0;
+    if (!N.more) {
+        if (!(N.more = awl_host->window_create())) return 0;
+        awl_host->window_set_persistent( N.more, 1 );
+        awl_host->window_set_click( N.more, more_click, NULL );
+    }
     snprintf( text, sizeof text, "+%d more", k );
-    awl_host->window_set_persistent( N.more, 1 );
     awl_host->window_set_text( N.more, text );
     awl_host->window_show_at( N.more, m, CFG->at, CFG->dx, CFG->dy + (downward( CFG->at ) ? off : -off) );
     return awl_host->window_box( N.more, &x, &y, &w, &h ) ? h : 0;
@@ -514,20 +688,42 @@ static int cap( note_t* n, Monitor* m, int h, int off ) {
     return 1;
 }
 
+/** whether n may show: ready (its image came, or not in time), and
+ * critical or not while do-not-disturb */
+static int showable( const note_t* n, int dnd ) {
+    return n->ready && (!dnd || n->urgency == AWL_NOTIF_CRITICAL);
+}
+
+/** hides n's window, releasing its hold: the pointer can't leave it now */
+static void note_hide( note_t* n ) {
+    awl_host->window_hide( n->win );
+    if (n->held) awl_host->notif_hold( n->id, 0 );
+    n->held = 0;
+}
+
 /** shows the newest max_shown on the selected monitor, one after the
  * other from the corner, as many as its window area has room for: the
  * last one that fits cut to the room left (the body's lines; "…"), the
- * rest hidden behind "+k more", which always fits */
+ * rest hidden behind "+k more", which always fits. Those not showable
+ * don't count. None while the menu is open: it lists them all. */
 static void restack( void ) {
-    Monitor* m = awl_host->monitor_selected();
+    Monitor* m = awl_notify_menu_is_open() ? NULL : awl_host->monitor_selected();
     const int down = downward( CFG->at ), max = CFG->max_shown > 0 ? CFG->max_shown : MAX_OPEN;
     int off = 0, shown = 0, full = 0, base = 0, more_h = -1, x, y, w, h, rx = 0, ry = 0, rw = 0, rh = 0;
+    int ready = 0, seen = 0;
+    const int dnd = awl_notify_dnd();
     N.restacking = 1;
     if (m && N.n) awl_host->window_room( N.v[0]->win, m, &rx, &ry, &rw, &rh );
+    for (int i = 0; i < N.n; i++) ready += showable( N.v[i], dnd );
     for (int i = 0; i < N.n; i++) {
         note_t* n = N.v[i];
+        if (!showable( n, dnd )) {
+            note_hide( n );
+            continue;
+        }
+        seen++;
         if (!m || shown >= max || full) {
-            awl_host->window_hide( n->win );
+            note_hide( n );
             continue;
         }
         if (n->max_h) {
@@ -542,7 +738,7 @@ static void restack( void ) {
          * the others) to the room's far edge */
         const int room = down ? ry + rh - (base + off) : base - off - ry;
         int need = h;
-        if (i + 1 < N.n) {
+        if (seen < ready) {
             /* what comes after it: at least "+k more" */
             if (more_h < 0) more_h = more_show( m, N.n, off );
             need += CFG->gap + more_h;
@@ -553,14 +749,14 @@ static void restack( void ) {
             if (more_h < 0) more_h = more_show( m, N.n, off );
             const int left = room - (need - h);
             if (left < more_h || !cap( n, m, left, off ) || !awl_host->window_box( n->win, &x, &y, &w, &h )) {
-                awl_host->window_hide( n->win );
+                note_hide( n );
                 continue;
             }
         }
         off += h + CFG->gap;
         shown++;
     }
-    if (m && shown < N.n) more_show( m, N.n - shown, off );
+    if (m && shown < ready) more_show( m, ready - shown, off );
     else if (N.more) awl_host->window_hide( N.more );
     N.restacking = 0;
 }
@@ -592,19 +788,52 @@ void awl_notify_changed( void ) {
     memcpy( N.v, next, (size_t)nn * sizeof(*next) );
     N.n = nn;
     restack();
+    awl_notify_menu_changed();
+    /* the bar's widget */
+    awl_host->redraw_request();
+}
+
+void awl_notify_restack( void ) {
+    if (N.started) restack();
+}
+
+int awl_notify_dnd( void ) {
+    awl_dict_val_t v;
+    return AWL_HOST_CFG_GET( awl_host, DND_KEY, &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_NUM && v.num;
+}
+
+void awl_notify_set_dnd( int on ) {
+    awl_dict_val_t v = AWL_DICT_NUM( !!on );
+    if (on == awl_notify_dnd()) return;
+    if (AWL_HOST_CFG_SET( awl_host, DND_KEY, v ) != AWL_DICT_OK) return;
+    awl_log_printf( "notify: do-not-disturb %s\n", on ? "on" : "off" );
+    if (N.started) restack();
+    awl_notify_menu_changed();
+    awl_host->redraw_request();
+}
+
+int awl_notify_count( int* critical ) {
+    int c = 0;
+    for (int i = 0; i < N.n; i++) c += N.v[i]->urgency == AWL_NOTIF_CRITICAL;
+    if (critical) *critical = c;
+    return N.n;
 }
 
 void awl_notify_start( void ) {
     if (N.started) return;
     N.started = 1;
     N.timer = awl_host->timer_add( restack_timer, NULL );
+    N.img_timer = awl_host->timer_add( image_timer, NULL );
     awl_notify_changed();
 }
 
-void awl_notify_stop( void ) {
-    if (!N.started) return;
+int awl_notify_stop( void ) {
+    if (!N.started) return 0;
+    awl_notify_menu_stop();
     for (int i = 0; i < N.n; i++) note_free( N.v[i] );
     awl_host->window_destroy( N.more );
     awl_host->timer_remove( N.timer );
+    awl_host->timer_remove( N.img_timer );
     memset( &N, 0, sizeof N );
+    return awl_notify_image_stop();
 }

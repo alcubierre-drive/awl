@@ -54,8 +54,8 @@ int awl_fuzzy_budget( int n );
 void awl_fuzzy_query( awl_fuzzy_query_t* q, const char* text );
 
 /** Matches q against text (UTF-8). Returns 0 if it doesn't match, else 1
- * with its score in *score (higher is better; the errors' penalty already
- * in it) and the errors in *errors (either may be NULL). An empty query
+ * with its score in \*score (higher is better; the errors' penalty already
+ * in it) and the errors in \*errors (either may be NULL). An empty query
  * matches everything with score 0. pos (NULL: not wanted) gets, for each
  * of q's characters, the byte offset in text of the character it matched,
  * -1 for one that is an error (wrong or extra); a swapped pair matched

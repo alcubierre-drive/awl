@@ -46,6 +46,14 @@ check() {
 look() {
 	"$live" alive || die "awl died"
 	state=$("$live" win "${@:-}") && [ -n "$state" ] || die "no state from awl"
+	# awl's alerts come whenever (the logind one a while after the start:
+	# the test bus has no logind): dismissed, they don't count
+	local a
+	a=$(awk '$1 == "notif" && $(NF - 1) == "awl" && $NF == "alert" { print $2 }' <<<"$state")
+	[ -z "$a" ] && return
+	for a in $a; do "$live" win "nclose $a 2" >/dev/null; done
+	# the windows follow in the next loop round
+	state=$("$live" win) && [ -n "$state" ] || die "no state from awl"
 }
 
 call() {
@@ -76,6 +84,35 @@ place() { grep '^notif ' <<<"$state" | awk -v id="$1" '$2 == id { print NR }'; }
 sawclosed() { grep -q "NotificationClosed (uint32 $1, uint32 $2)" "$signals"; }
 sawaction() { grep -q "ActionInvoked (uint32 $1, '$2')" "$signals"; }
 sawtoken() { grep -q "ActivationToken (uint32 $1, '$2')" "$signals"; }
+
+# images: PNGs (a w x h square of color c), an icon theme and a desktop
+# entry of their own, found first through $XDG_DATA_DIRS (the test home's
+# icon folders are the user's)
+png() {
+	python3 -I -c 'import sys, zlib, struct
+w, h, c, out = int(sys.argv[1]), int(sys.argv[2]), bytes.fromhex(sys.argv[3]), sys.argv[4]
+def chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+raw = b"".join(b"\0" + c * w for _ in range(h))
+open(out, "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+    + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))' "$@"
+}
+share=$LIVE_DIR/share
+img=$LIVE_DIR/img
+rm -rf "$share" "$img"
+mkdir -p "$share/icons/hicolor/48x48/apps" "$share/applications" "$img"
+printf '[Icon Theme]\nName=Hicolor\nDirectories=48x48/apps\n\n[48x48/apps]\nSize=48\nType=Fixed\n' \
+	>"$share/icons/hicolor/index.theme"
+png 48 48 3366ccff "$share/icons/hicolor/48x48/apps/awltest-notif.png"
+printf '[Desktop Entry]\nType=Application\nName=awl test\nExec=true\nIcon=awltest-notif\n' \
+	>"$share/applications/awltest.desktop"
+png 32 32 cc3333ff "$img/small.png"
+png 32 32 33cc33ff "$img/a b.png"
+# past icons' 1024 pixels a side, within a notification's limits
+png 3000 2000 cccc33ff "$img/big.png"
+mkfifo "$img/fifo"
+# past a notification's 4096 x 3072
+png 5000 3000 cccc33ff "$img/huge.png"
+export XDG_DATA_DIRS=$share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}
 
 "$live" stop >/dev/null 2>&1
 "$live" start -d >/dev/null || die "no start"
@@ -346,6 +383,130 @@ read -r px py < <(partat 1 0)
 press "$px" "$py" middle
 look
 check "awl's own: no signal" eval '! grep -q "NotificationClosed (uint32 $o," "$signals"'
+
+echo "-- images (plugins/notify_image.c)"
+# ICON HINTS: a notification shown alone, its window's height in $hof
+# once it showed (up to 2 s), the first height seen in $first; closed
+# after
+one() {
+	local i k
+	first= hof=
+	i=$(call Notify app 0 "$1" summary '' '[]' "$2" 'int32 0' | id)
+	for k in $(seq 20); do
+		look
+		hof=$(boxof 1 | cut -d' ' -f4)
+		[ -z "$first" ] && first=$hof
+		[ -n "$hof" ] && [ "$k" -gt 3 ] && break
+		sleep 0.1
+	done
+	call CloseNotification "uint32 $i" >/dev/null
+}
+one '' '{}'
+h0=$hof
+taller() { [ -n "$hof" ] && [ "$hof" -gt "$h0" ]; }
+plain() { [ "$hof" = "$h0" ]; }
+one '' "{\"image-path\": <\"$img/small.png\">}"
+check "image-path, a file: the image" taller
+check "shown with it from the start" eq "$first" "$hof"
+one '' "{\"image-path\": <\"file://$img/a%20b.png\">}"
+check "a file:// URL, percent-decoded" taller
+one "$img/small.png" '{}'
+check "app_icon, a file" taller
+one awltest-notif '{}'
+check "app_icon, an icon name" taller
+one '' '{"desktop-entry": <"awltest">}'
+check "desktop-entry's Icon" taller
+one "$img/small.png" "{\"image-path\": <\"$img/none.png\">}"
+check "image-path missing: app_icon" taller
+one '' "{\"image-path\": <\"$img/big.png\">}"
+check "a 3000x2000 PNG" taller
+one '' "{\"image-path\": <\"$img/none.png\">}"
+check "missing: none" plain
+one '' '{"image-path": <"/dev/zero">}'
+check "no regular file: none" plain
+one '' "{\"image-path\": <\"$img/fifo\">}"
+check "a FIFO: none, not stuck on it" plain
+one '' "{\"image-path\": <\"$img/small.png\">}"
+check "and the next one comes" taller
+check "the second time from the cache" eval '"$live" log | grep -q "notify: image $img/small.png at [0-9]* from the cache"'
+# a changed file is decoded again: now it is none
+printf 'not a PNG' >"$img/small.png.new" && mv "$img/small.png.new" "$img/small.png"
+one '' "{\"image-path\": <\"$img/small.png\">}"
+check "a changed file: decoded again" plain
+png 32 32 cc3333ff "$img/small.png"
+one '' "{\"image-path\": <\"$img/small.png\">}"
+check "and changed back" taller
+one '' "{\"image-path\": <\"$img/huge.png\">}"
+check "past 12 megapixels: none" plain
+one '' '{"desktop-entry": <"../applications/awltest">}'
+check "a desktop entry id with a slash: none" plain
+i=$(call Notify app 0 awltest-notif reload '' '[]' '{}' 'int32 0' | id)
+look restart
+sleep 1
+look
+check "after a reload: the image again" eval '[ "$(boxof 1 | cut -d" " -f4)" -gt "$h0" ]'
+call CloseNotification "uint32 $i" >/dev/null
+
+echo "-- the menu, do-not-disturb, the widget (plugins/notify_menu.c)"
+# the menu: the visible popup that isn't persistent; its row P's center
+menu() { awk '$1 == "pwin" && $8 == 1 && $9 == 0 { print $2; exit }' <<<"$state"; }
+menurow() {
+	local i
+	i=$(menu)
+	[ -n "$i" ] && awk -v i="$i" -v p="$1" '$1 == "pcell" && $2 == i && $3 == p { print $4, $5 }' <<<"$state"
+}
+menurows() { local i; i=$(menu); [ -n "$i" ] && awk -v i="$i" '$1 == "pcell" && $2 == i' <<<"$state" | wc -l; }
+# the notifications' widget: the defaults' second from the right
+widget() { awk '$1 == "widget" && $3 == 1 { print $4, $5; exit }' <<<"$state"; }
+clickrow() { local x y; read -r x y < <(menurow "$1"); [ -n "${x:-}" ] && press "$x" "$y" "$2"; look; }
+clickwidget() { local x y; read -r x y < <(widget); [ -n "${x:-}" ] && press "$x" "$y" "$1"; look; }
+look
+read -r wx wy < <(widget)
+check "the widget is on the bar" eval '[ -n "${wx:-}" ]'
+m1=$(notify app 0 one '[]' '{}' 0)
+m2=$(notify app 0 two '["default", "Open", "reply", "Reply"]' '{}' 0)
+m3=$(notify app 0 three '[]' '{"urgency": <byte 2>}' 0)
+look
+clickwidget left
+check "a left click on it opens the menu" eval '[ -n "$(menu)" ]'
+check "which hides the windows" eq "$(nwincount)" 0
+# do-not-disturb, dismiss all, three, two, Reply, one
+check "a row each: the switch, dismiss all, the titles, the action" eq "$(menurows)" 6
+clickrow 4 left
+check "an action's row invokes it" sawaction "$m2" reply
+check "and closes the menu" eval '[ -z "$(menu)" ]'
+clickwidget left
+clickrow 3 right
+check "a right click on a title dismisses it" eval 'closed "$m1" && sawclosed "$m1" 2'
+check "the menu stays, without it" eq "$(menurows)" 3
+clickrow 0 left
+check "do-not-disturb from the menu" eval '"$live" log | grep -q "notify: do-not-disturb on"'
+m4=$(notify app 0 four '[]' '{}' 0)
+look
+check "the menu lists the new one too" eq "$(menurows)" 4
+clickwidget left
+check "closed: the windows again; while on, only the critical one" eq "$(nwincount)" 1
+look restart
+sleep 1
+look
+check "after a reload: still on" eq "$(nwincount)" 1
+clickwidget right
+check "a right click on the widget: off again" eq "$(nwincount)" 2
+clickwidget middle
+check "a middle click on it dismisses all" eq "$(notifs) $(nwincount)" "0 0"
+for k in $(seq 15); do notify app 0 "k$k" '[]' '{}' 0 >/dev/null; done
+look
+n=$(nwincount)
+read -r px1 py1 pw1 _ < <(boxof 1)
+read -r px py < <(partat "$n" 0)
+press "$px" "$py" left
+look
+check "a click on \"+k more\" opens the menu" eval '[ -n "$(menu)" ]'
+read -r mx my mw _ < <(awk -v i="$(menu)" '$1 == "pwin" && $2 == i { print $4, $5, $6, $7 }' <<<"$state")
+check "in the stack's place, its corner" eq "$((mx + mw)) $my $(nwincount)" "$((px1 + pw1)) $py1 0"
+clickrow 1 left
+check "dismiss all from the menu" eq "$(notifs) $(nwincount)" "0 0"
+check "an empty menu: the switch and \"No notifications\"" eq "$(menurows)" 2
 
 sleep 0.3
 kill "$monitor" 2>/dev/null

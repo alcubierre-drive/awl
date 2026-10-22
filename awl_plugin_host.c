@@ -115,6 +115,7 @@ static awl_host_t host = {
     .arrange = arrange,
     .monitor_named = monitornamed,
     .monitor_selected = monitorselected,
+    .monitor_scale = monitorscale,
 
     .window_create = popupcreate,
     .window_destroy = popupdestroy,

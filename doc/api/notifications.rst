@@ -36,3 +36,19 @@ in awl_host.h, see awl_popup.h), stacked from a corner as far as the window
 area has room (``window_room``): the last one cut to fit, "+k more" under it.
 
 .. c:autodoc:: plugins/notify.h
+
+plugins/notify_image.h
+----------------------
+
+The images named by files and icon names, decoded on a thread of their own.
+
+.. c:autodoc:: plugins/notify_image.h
+
+plugins/notify_menu.h
+---------------------
+
+The menu of every open notification and its actions, with do-not-disturb and
+"Dismiss all", from the bar's notification widget (``AwlWidgetNotifications``)
+and from "+k more".
+
+.. c:autodoc:: plugins/notify_menu.h

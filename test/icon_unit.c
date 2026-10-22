@@ -2,7 +2,9 @@
  * the files in test/data (the first argument): their pixels, what is
  * refused, and truncated and mutated copies, which must fail or decode but
  * never crash (best run under ASan); and notifications' raw RGB(A) image
- * data, awl_icon_from_rgba(). Built and run by meson test; prints
+ * data, awl_icon_from_rgba(); larger limits than icons' (a notification's
+ * files), the shrinking before a large downscale, a FIFO not read; the
+ * EXIF orientation. Built and run by meson test; prints
  * ok/FAIL per check, the exit status is the number of failures. */
 #include "icons/icon.h"
 #include "awl_host.h"
@@ -12,6 +14,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int fails;
 
@@ -127,7 +131,8 @@ static void test_refused( void ) {
 
 /* each file with random bytes changed: decodes or not, never a crash */
 static void test_mutated( void ) {
-    static const char* names[] = { "baseline.jpg", "progressive.jpg", "cmyk.jpg", "gray.jpg", "rb.png" };
+    static const char* names[] = { "baseline.jpg", "progressive.jpg", "cmyk.jpg", "gray.jpg", "rb.png",
+                                   "exif6.jpg",    "exif8.png",       "quad.jpg" };
     int runs = 0;
     printf( "-- mutated\n" );
     srand( 1 );
@@ -153,7 +158,7 @@ static void test_mutated( void ) {
         free( data );
         free( orig );
     }
-    CHECK( runs == 5 * 2000 );
+    CHECK( runs == 8 * 2000 );
 }
 
 /* awl_icon_from_rgba(): the image-data hint's pixels, and what is refused */
@@ -237,6 +242,108 @@ static void test_rgba( void ) {
     CHECK( img == NULL );
 }
 
+/* the EXIF orientation: exif6.jpg is baseline.jpg with an APP1 saying 6
+ * (big-endian TIFF), exif8.png rb.png with an eXIf saying 8 (little-endian) */
+static void test_orientation( void ) {
+    size_t len;
+    printf( "-- orientation\n" );
+    /* turned clockwise: the left (red) on top, fitted standing */
+    pixman_image_t* img = decode( "exif6.jpg", 64, 64 );
+    CHECK( img && pixman_image_get_width( img ) == 48 && pixman_image_get_height( img ) == 64 &&
+           near( pixel( img, 24, 8 ), 0xffff0000, 12 ) && near( pixel( img, 24, 56 ), 0xff0000ff, 12 ) );
+    if (img) pixman_image_unref( img );
+    /* fitted as shown: 48 high in a 64 x 48 box */
+    img = decode( "exif6.jpg", 64, 48 );
+    CHECK( img && pixman_image_get_width( img ) == 36 && pixman_image_get_height( img ) == 48 );
+    if (img) pixman_image_unref( img );
+    /* counter-clockwise: the right (half blue) on top */
+    img = decode( "exif8.png", 64, 64 );
+    CHECK( img && pixman_image_get_width( img ) == 48 && pixman_image_get_height( img ) == 64 &&
+           near( pixel( img, 24, 8 ), 0x80000080, 1 ) && pixel( img, 24, 56 ) == 0xffff0000 );
+    if (img) pixman_image_unref( img );
+
+    /* each orientation, by changing quad.jpg's value in place: quad.jpg is
+     * red, blue over green, white, 64 x 48; which is in the corners shown */
+#define R 0xffff0000u
+#define B 0xff0000ffu
+#define G 0xff00ff00u
+#define W 0xffffffffu
+    static const uint32_t corners[10][4] = {
+        { R, B, G, W }, /* 0: none, as stored */
+        { R, B, G, W }, { B, R, W, G }, { W, G, B, R }, { G, W, R, B },
+        { R, G, B, W }, { G, R, W, B }, { W, B, G, R }, { B, W, R, G },
+        { R, B, G, W }, /* 9: none */
+    };
+#undef R
+#undef B
+#undef G
+#undef W
+    uint8_t* data = load( "quad.jpg", &len );
+    uint8_t* at = NULL;
+    for (size_t i = 0; data && i + 10 <= len && !at; i++)
+        if (!memcmp( data + i, "\x01\x12\x00\x03\x00\x00\x00\x01", 8 )) at = data + i + 8;
+    CHECK( at != NULL );
+    int right = 0;
+    for (int o = 0; at && o <= 9; o++) {
+        at[0] = 0;
+        at[1] = (uint8_t)o;
+        img = awl_icon_decode( data, len, 0, 64, 64, "orientation" );
+        const int standing = o >= 5 && o <= 8, w = standing ? 48 : 64, h = standing ? 64 : 48;
+        int ok = img && pixman_image_get_width( img ) == w && pixman_image_get_height( img ) == h;
+        for (int c = 0; ok && c < 4; c++) ok = near( pixel( img, c % 2 ? w - 6 : 5, c / 2 ? h - 6 : 5 ), corners[o][c], 16 );
+        if (!ok) printf( "      orientation %d wrong\n", o );
+        right += ok;
+        if (img) pixman_image_unref( img );
+    }
+    CHECK( right == 10 );
+    free( data );
+}
+
+/* awl_icon_decode_limited(), the downscale's shrinking, a FIFO */
+static void test_large( void ) {
+    const awl_icon_limits_t large = { .bytes = 32u << 20, .dim = 16384, .pixels = 1u << 24, .work = 96u << 20 };
+    size_t len;
+    printf( "-- large\n" );
+    /* 1100 x 8: past icons' limits, within larger ones, not past their pixels */
+    uint8_t* data = load( "wide.jpg", &len );
+    pixman_image_t* img = data ? awl_icon_decode_limited( data, len, 0, 64, 64, "wide", &large ) : NULL;
+    CHECK( img && pixman_image_get_width( img ) == 64 );
+    if (img) pixman_image_unref( img );
+    awl_icon_limits_t few = large;
+    few.pixels = 1100 * 8 - 1;
+    CHECK( data && !awl_icon_decode_limited( data, len, 0, 64, 64, "wide", &few ) );
+    CHECK( data && !awl_icon_decode_limited( data, len, 0, 64, 64, "wide", NULL ) );
+    free( data );
+
+    /* 1024 x 1024 to 64: shrunk by 8 first; red on the left, blue at half
+     * alpha on the right stay apart, premultiplied */
+    enum { S = 1024 };
+    uint8_t* rgba = malloc( (size_t)S * S * 4 );
+    for (int y = 0; rgba && y < S; y++)
+        for (int x = 0; x < S; x++) {
+            uint8_t* p = rgba + ((size_t)y * S + (size_t)x) * 4;
+            const int left = x < S / 2;
+            p[0] = left ? 255 : 0;
+            p[1] = 0;
+            p[2] = left ? 0 : 255;
+            p[3] = left ? 255 : 128;
+        }
+    img = rgba ? awl_icon_from_rgba( rgba, (size_t)S * S * 4, S, S, S * 4, 1, 8, 4, 64, 64 ) : NULL;
+    CHECK( img && pixman_image_get_width( img ) == 64 && near( pixel( img, 8, 32 ), 0xffff0000, 2 ) &&
+           near( pixel( img, 56, 32 ), 0x80000080, 2 ) );
+    if (img) pixman_image_unref( img );
+    free( rgba );
+
+    /* a FIFO isn't opened for reading (that would wait for a writer) */
+    char tmp[] = "/tmp/icon_unit.XXXXXX", fifo[64];
+    if (mkdtemp( tmp )) {
+        snprintf( fifo, sizeof fifo, "%s/fifo", tmp );
+        CHECK( !mkfifo( fifo, 0600 ) && !awl_icon_read( fifo, &len ) && !awl_icon_load( fifo, 16, 16 ) );
+        unlink( fifo );
+        rmdir( tmp );
+    }
+}
+
 int main( int argc, char** argv ) {
     dir = argc > 1 ? argv[1] : "test/data";
     verbose = getenv( "VERBOSE" ) != NULL;
@@ -244,6 +351,8 @@ int main( int argc, char** argv ) {
     test_refused();
     test_mutated();
     test_rgba();
+    test_large();
+    test_orientation();
     printf( "%d failed\n", fails );
     return fails;
 }
