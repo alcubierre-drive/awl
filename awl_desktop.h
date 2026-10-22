@@ -17,7 +17,8 @@
 
 #include "awl_core.h"
 
-/** How the panels look; awl fills it from cfg->blur (the launcher's). */
+/** How the panels look; awl fills it from cfg->blur (popups) and
+ * cfg->desktop.radius. */
 typedef struct {
     /** blur the wallpaper behind the panel */
     int blur;

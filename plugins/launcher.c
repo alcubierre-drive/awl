@@ -28,6 +28,7 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 #define CFG (&awl_plugin_config()->launcher)
+#define COLORS (&awl_plugin_config()->colors)
 
 enum {
     /** after an inotify event, wait this long for more before scanning */
@@ -985,11 +986,11 @@ static int text_marked( pixman_image_t* pix, struct fcft_font* font, const char*
  * color); fg, dim: the colors for those that aren't configured */
 static void paint_query( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg,
                          uint32_t dim ) {
-    if (CFG->query_color) fg = CFG->query_color;
+    if (COLORS->launcher_query) fg = COLORS->launcher_query;
     const char* p = prompt();
     if (*p)
         awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)h, p,
-                             CFG->prompt_color ? CFG->prompt_color : dim );
+                             COLORS->launcher_prompt ? COLORS->launcher_prompt : dim );
     x += (int)awl_host->text_width( font, p );
     const int cursor_w = px( 1.5f ) > 1 ? px( 1.5f ) : 1;
     const char* q = L.query;
@@ -1035,7 +1036,7 @@ static void paint_bar( pixman_image_t* pix, struct fcft_font* font, int x0, int 
         const int r = L.top + i, x = x0 + L.bx[i];
         if (r == L.sel)
             awl_fill_shape( pix, (float)x, (float)(y0 + inset), (float)L.bw[i], (float)(L.h - 2 * inset),
-                            (float)px( pc->radius < 6 ? (float)pc->radius : 6 ), 0, pc->hover );
+                            (float)px( pc->radius < 6 ? (float)pc->radius : 6 ), 0, awl_config()->colors.popup_hover );
         int tx = x + L.pad;
         if (icon_slot( r )) {
             paint_icon( pix, r, tx, y0, L.h );
@@ -1049,7 +1050,10 @@ static void paint_bar( pixman_image_t* pix, struct fcft_font* font, int x0, int 
 
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     const awl_popup_config_t* pc = &awl_config()->popup;
-    const uint32_t fg = pc->fg, dim = CFG->dim ? CFG->dim : pc->dim, match = CFG->match ? CFG->match : fg;
+    const awl_colors_t* ak = &awl_config()->colors;
+    const awl_plugin_colors_t* k = COLORS;
+    const uint32_t fg = ak->popup_fg, dim = k->launcher_dim ? k->launcher_dim : ak->popup_dim,
+                   match = k->launcher_match ? k->launcher_match : fg;
     if (bar()) {
         paint_bar( pix, font, x0, y0, fg, dim, match );
         return;
@@ -1073,7 +1077,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         const int r = L.top + i, y = ry0 + i * L.row_h;
         if (r == L.sel)
             awl_fill_shape( pix, (float)x0, (float)y, (float)L.w, (float)L.row_h,
-                            (float)px( pc->radius < 6 ? (float)pc->radius : 6 ), 0, pc->hover );
+                            (float)px( pc->radius < 6 ? (float)pc->radius : 6 ), 0, awl_config()->colors.popup_hover );
         x = x0 + L.pad;
         /* the run mode has no icons, nor their column */
         if (!run_mode()) {

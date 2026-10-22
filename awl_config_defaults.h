@@ -118,21 +118,29 @@ static const awl_config_t awl_config_defaults = {
     .ntags = 9,
     .sloppyfocus = 1,
     .bypass_surface_visibility = 0,
-    .borderpx = 1,
-    .bordercolors = {
-        [BorderNorm] = 0x444444ff,
-        [BorderSel]  = 0x005577ff,
-        [BorderUrg]  = 0x770000ff,
+    .colors = {
+        .root           = 0x000000ff,
+        .fullscreen     = 0x1a1a1aff,
+        .border         = 0x444444ff,
+        .border_focused = 0x005577ff,
+        .border_urgent  = 0x770000ff,
+
+        .popup_bg       = 0x3c3c3c4d, /* awl blurs what is behind it */
+        .popup_fg       = 0xf8f8f2ff,
+        .popup_border   = 0xa6e22eff,
+        .popup_hover    = 0xffffff26, /* the row under the pointer, the buttons */
+        .popup_dim      = 0xf8f8f259,
+        /* .menu_*: all 0, the popups' */
+        .alert_fg       = 0xffffffff,
+        .alert_bg       = 0xc00000ff,
     },
+    .borderpx = 1,
     .font = "monospace:size=",
     .fontsize = 10,
     .emoji_font = "emoji", /* NULL: text instead of emoji */
-    .rootcolor = 0x000000ff,
-    .fullscreen_bg = 0x1a1a1aff,
     .blur = {
         .strength = 1.0f, .alpha = 1.0f,
-        .notifications = 1, .notifications_radius = 15,
-        .launcher = 1, .launcher_radius = 15,
+        .popups = 1,
         .windowlist = 1,
     },
     .keyboard = {
@@ -163,29 +171,22 @@ static const awl_config_t awl_config_defaults = {
         .on_suspend = 1,
         .blur = 1,
     },
-    /* none; e.g. static const char *autostart[][8] = { { "fnott", NULL },
+    /* none; e.g. static const char *autostart[][8] = {
      * { TRAY_ICONS, "nm-applet", NULL } }; SETLIST(c->autostart, autostart) */
     .autostart = { NULL, 0 },
     .wlr_log_level = WLR_ERROR,
 
     .alert = {
-        .fg = 0xffffffff, .bg = 0xc00000ff,
         .opacity = 0.9f, .font_scale = 1.5f,
         .margin = 12,
     },
 
     .tray = {
         .icon_theme = NULL, /* the desktop's */
-        .bg = 0x859394ff,
         .icon_size = 16,
         .icon_gap = 4,
     },
     .popup = {
-        .bg           = 0x3c3c3c4d, /* awl blurs what is behind it */
-        .fg           = 0xf8f8f2ff,
-        .border       = 0xa6e22eff,
-        .hover        = 0xffffff26, /* the row under the pointer, the buttons */
-        .dim          = 0xf8f8f259,
         .border_width = 1,
         .radius       = 15, /* the blur's corners */
         .padding      = 8,
@@ -197,14 +198,11 @@ static const awl_config_t awl_config_defaults = {
         .font         = NULL, /* the bar's */
         .fontsize     = 0,    /* the bar's */
         .calendar = {
-            .today    = 0xb6ec52ff,
-            .selected = 0xffffff33,
             .list_min_height = 120,
             .list_max_height = 200,
         },
-        /* the tray's menus: all 0, so the popups': .bg, .fg, .border,
-         * .highlight (hover), .dim, .border_width, .radius; .highlight_fg the
-         * menu's fg; .blur blur.launcher */
+        /* the tray's and the notifications' menus: all 0, so the popups'
+         * .border_width, .radius; .blur blur.popups */
         .menu = { 0 },
         /* the notifications over fullscreen clients too */
         .persistent_overlay = 1,
@@ -212,12 +210,9 @@ static const awl_config_t awl_config_defaults = {
     .desktop = {
         .font = NULL,  /* the bar's */
         .fontsize = 0, /* the bar's */
-        .bg     = 0x3c3c3c4c,
-        .file   = 0xf8f8f2ff,
-        .dir    = 0x66d9efff, /* molokai_blue */
-        .broken = 0xf92672ff, /* molokai_red */
         .hidden_alpha = 0xa0,
         .margin = 10,
+        .radius = 15,
         .columns = 3,
     },
     .notifications = {

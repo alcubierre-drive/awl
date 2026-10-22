@@ -61,6 +61,10 @@ static void AWL_ACTION( micmute )( const Arg* arg ) {
     awl_mic_mute_toggle();
 }
 
+static void AWL_ACTION( speakermute )( const Arg* arg ) {
+    awl_speaker_mute_toggle();
+}
+
 static void AWL_ACTION( tagmonf )( const Arg* arg ) {
     AWL_ACTION(tagmon)(arg);
     AWL_ACTION(focusmon)(arg);
@@ -78,7 +82,7 @@ static void AWL_ACTION( tagmonf )( const Arg* arg ) {
  * what AWL_ACTIONS lists (awl_plugin_abi.h) and of the library's actions
  * above (notifyconfig, launcher, backlighttoggle), and functions defined here by
  * their own name; layouts AWL_LAYOUT(name) of what AWL_ARRANGES lists. The
- * molokai_* colors are in plugins/colors.h.
+ * molokai_* colors are in awl.h.
  * ====================================================================== */
 
 static const Rule rules[] = {
@@ -124,7 +128,6 @@ static const char *termcmd[] = { "kitty", "-d", "$HOME", NULL };
 static const char *const launcher_terminal[] = { "kitty", NULL };
 static const char *suspend[] = { "systemctl", "suspend", NULL };
 static const char *hyprcopy[] = { "hyprcopy", NULL };
-static const char *speakerT[] = { "pulse_port_switch", NULL };
 static const char *grimslurp[] = { "grim_slurp", NULL };
 static const char *wdisplays[] = { "wdisplays", NULL };
 static const char *docked_r[] = { "docked", "reset", NULL };
@@ -188,7 +191,7 @@ static const Key keys[] = {
     { 0, XKB_KEY_XF86AudioLowerVolume,               AWL_ACTION(volume),           {.f = -0.05f} },
     { 0, XKB_KEY_XF86AudioMute,                      AWL_ACTION(volumemute),       {0} },
     { 0, XKB_KEY_XF86AudioMicMute,                   AWL_ACTION(micmute),          {0} },
-    { MODKEY,                    XKB_KEY_F1,         AWL_ACTION(spawn),            {.v = speakerT} },
+    { MODKEY,                    XKB_KEY_F1,         AWL_ACTION(speakermute),      {0} },
     { 0,                         XKB_KEY_Print,      AWL_ACTION(spawn),            {.v=grimslurp} },
     { MODKEY,                    XKB_KEY_d,          AWL_ACTION(spawn),            {.v=wdisplays} },
     { 0,                         XKB_KEY_XF86Display,AWL_ACTION(spawn),            {.v=wdisplays} },
@@ -248,37 +251,42 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     c->lock.locker = locker;
     c->lock.at_start = 1;
 
+    /* colors */
+    c->colors.border          = molokai_gray;
+    c->colors.border_focused  = molokai_blue;
+    c->colors.border_urgent   = molokai_orange;
+    // c->colors.popup_border = molokai_blue;
+    // c->colors.popup_border = molokai_light_gray;
+    c->colors.popup_border    = 0x657374ff;
+    /* the tray's menus */
+    c->colors.menu_bg         = 0x3c3c3c4d;
+    c->colors.menu_fg         = 0xf8f8f2ff;
+    c->colors.menu_border     = 0x859394ff;
+    c->colors.menu_highlight  = 0xffffff26;
+    c->colors.menu_dim        = 0xf8f8f259;
+    p->colors.tray_bg         = molokai_light_gray;
+    p->colors.launcher_prompt = molokai_red;
+    p->colors.launcher_query  = molokai_orange;
+
     /* appearance */
     c->borderpx = 2;
-    c->bordercolors[BorderNorm] = molokai_gray;
-    c->bordercolors[BorderSel]  = molokai_blue;
-    c->bordercolors[BorderUrg]  = molokai_orange;
 
     /* blur */
     c->blur.windowlist = 0;
 
     /* the tray */
     c->tray.icon_theme = "Papirus-Dark";
-    c->tray.bg = molokai_light_gray;
 
     /* the notifications' bell, from the icon theme */
     p->notify.bell_icon = "notifications-symbolic;preferences-system-notifications-symbolic";
     p->notify.bell_icon_dnd = "notifications-disabled-symbolic";
 
     /* the popups */
-    // c->popup.border = molokai_blue;
-    // c->popup.border = molokai_light_gray;
-    c->popup.border         = 0x657374ff;
     c->popup.border_width   = c->borderpx;
     c->popup.font           = "sans:size=";
     c->popup.fontsize       = 10;
 
     /* the tray's menus */
-    c->popup.menu.bg           = 0x3c3c3c4d;
-    c->popup.menu.fg           = 0xf8f8f2ff;
-    c->popup.menu.border       = 0x859394ff;
-    c->popup.menu.highlight    = 0xffffff26;
-    c->popup.menu.dim          = 0xf8f8f259;
     c->popup.menu.border_width = 2;
     c->popup.menu.radius       = 4;
     c->popup.menu.blur         = 1;
@@ -294,6 +302,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     c->keyboard.xkb.layout  = "de";
     c->keyboard.xkb.variant = "nodeadkeys";
 
+    /* the built-in speaker, muted on its own (MOD+F1) */
+    p->volume.speaker = "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink";
+
     /* the battery's color scale */
     p->battery.scale.bad     = 10;
     p->battery.scale.warning = 20;
@@ -303,8 +314,6 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     p->launcher.layout       = AWL_LAUNCHER_BAR; /* a strip over the bar */
     p->launcher.strip_at     = AWL_WINDOW_AT_STRIP_TOP; /* or _AT_BAR, _AT_STRIP_BOTTOM */
     p->launcher.terminal     = launcher_terminal;
-    p->launcher.prompt_color = molokai_red;
-    p->launcher.query_color  = molokai_orange;
 }
 
 /* ======================================================================

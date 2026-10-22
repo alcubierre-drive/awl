@@ -74,28 +74,6 @@ arrangelayers(Monitor *m)
     awl_alert_draw(m);
     popupsupdate(m);
 
-    /* a loop of its own: the focus search below stops at the first
-     * keyboard-interactive surface (e.g. a launcher), which would leave
-     * the blur of anything after it (a new notification) unsized */
-    for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
-        wl_list_for_each(l, &m->layers[layers_above_shell[i]], link) {
-            if ((l->is_notification || l->is_launcher) && l->blur && l->layer_surface) {
-                /* arrangelayers() runs on every layer-surface commit (e.g.
-                 * every redrawn frame of a notification/launcher), not just
-                 * on actual resizes; only touch the blur node's size when it
-                 * actually changed, otherwise scenefx redoes its blur-region
-                 * bookkeeping every frame, which shows up as flicker. */
-                uint32_t desired_width = l->layer_surface->current.desired_width;
-                uint32_t desired_height = l->layer_surface->current.desired_height;
-                if ((uint32_t)l->geom.width != desired_width || (uint32_t)l->geom.height != desired_height) {
-                    wlr_scene_blur_set_size(l->blur, desired_width, desired_height);
-                    l->geom.width = desired_width;
-                    l->geom.height = desired_height;
-                }
-            }
-        }
-    }
-
     /* Find topmost keyboard interactive layer, if such a layer exists */
     for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
         wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
@@ -158,8 +136,6 @@ createlayersurface(struct wl_listener *listener, void *data)
         return;
     }
     l = layer_surface->data = ecalloc(1, sizeof(*l));
-    l->is_notification = cfg->blur.notifications && !strcmp(layer_surface->namespace, "notifications");
-    l->is_launcher = cfg->blur.launcher && !strcmp(layer_surface->namespace, "launcher");
     l->type = LayerShell;
     LISTEN(&surface->events.commit, &l->surface_commit, commitlayersurfacenotify);
     LISTEN(&surface->events.unmap, &l->unmap, unmaplayersurfacenotify);
@@ -169,17 +145,6 @@ createlayersurface(struct wl_listener *listener, void *data)
     l->mon = layer_surface->output->data;
     l->scene_layer = wlr_scene_layer_surface_v1_create(scene_layer, layer_surface);
     l->scene = l->scene_layer->tree;
-    if (l->is_notification || l->is_launcher) {
-        l->blur = wlr_scene_blur_create(l->scene, l->scene->node.x, l->scene->node.y);
-        if (l->is_launcher) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur.launcher_radius);
-        if (l->is_notification) wlr_scene_blur_set_corner_radius(l->blur, cfg->blur.notifications_radius);
-        wlr_scene_blur_set_size(l->blur, l->layer_surface->current.desired_width, l->layer_surface->current.desired_height);
-        wlr_scene_blur_set_strength(l->blur, cfg->blur.strength);
-        wlr_scene_blur_set_alpha(l->blur, cfg->blur.alpha);
-        wlr_scene_blur_set_should_only_blur_bottom_layer(l->blur, 0);
-        wlr_scene_node_set_enabled(&l->blur->node, 1);
-        wlr_scene_node_lower_to_bottom(&l->blur->node);
-    }
 
     l->popups = surface->data = wlr_scene_tree_create(layer_surface->current.layer
             < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? layers[LyrTop] : scene_layer);
@@ -217,25 +182,4 @@ unmaplayersurfacenotify(struct wl_listener *listener, void *data)
     if (l->layer_surface->surface == seat->keyboard_state.focused_surface)
         focusclient(focustop(selmon), 1);
     motionnotify(0, NULL, 0, 0, 0, 0);
-}
-
-void
-layersconfigure(void)
-{
-    Monitor *m;
-    LayerSurface *l;
-    int i;
-
-    wl_list_for_each(m, &mons, link) {
-        for (i = 0; i < (int)LENGTH(m->layers); i++) {
-            wl_list_for_each(l, &m->layers[i], link) {
-                if (!l->blur)
-                    continue;
-                wlr_scene_blur_set_strength(l->blur, cfg->blur.strength);
-                wlr_scene_blur_set_alpha(l->blur, cfg->blur.alpha);
-                wlr_scene_blur_set_corner_radius(l->blur, l->is_notification
-                        ? cfg->blur.notifications_radius : cfg->blur.launcher_radius);
-            }
-        }
-    }
 }

@@ -3,7 +3,7 @@
 /**
  * Popups that awl draws itself, part of awl: a box of text, or what a
  * painter (awl_window_draw.h) draws, like the plugins' calendar, next to
- * the bar, styled by ``cfg->popup`` (colors, border,
+ * the bar, styled by ``cfg->popup`` and ``cfg->colors``' popup_* (border,
  * corner radius, padding; blurred behind like the launcher), in its
  * ``font`` (NULL: the bar's), its ``margin`` away from the bar and the
  * monitor's sides. Not a client: no Wayland

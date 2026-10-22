@@ -7,8 +7,9 @@ the library's notification windows, awl's own notifications past D-Bus,
 the stack fitted to the window area and images from files and icon names
 (on a thread), the menu, do-not-disturb, the bar's widget, the history
 and the idle pause are done.
-Open: awl's own looks, blur, the launcher's leftovers. fnott and fuzzel
-are replaced already.
+Open: awl's own looks, the launcher's leftovers. fnott and fuzzel are
+replaced already; awl serves no external notification daemon (no
+"notifications" layer-surface blur).
 
 ## Done, for reference
 
@@ -192,9 +193,6 @@ are replaced already.
 - awl's own looks: which of awl's notifications get which
   `awl_notif_look_t` (config, wallpaper, alerts), and from where (the
   plugin config).
-- Blur: the windows blur as the popups (`blur.launcher`); maybe their own
-  `blur.notifications` (already in `awl_config_t`, for fnott's layer
-  surfaces), now that fnott is gone.
 
 Left as they are (decided): a wish for a closed notification is still
 decoded (on the thread, so it costs nothing that matters); a desktop entry

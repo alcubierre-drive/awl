@@ -35,28 +35,57 @@ enum {
                              * dismiss all; hover: how many are unread */
 };
 
-/**
- * The bar's colors, `awl_plugin_config_t.colors` (0xRRGGBBAA) and as
- * pixman's `awl_plugin_data_t.colors`:
- * bg and fg: the layout symbol's, the clock's and the status widgets';
- * tag_bg, and over it in this order (its alpha says how much)
- * tag_occupied, tag_urgent, tag_selected: the tags;
- * selmon: the selected monitor's mark under the first tag;
- * pertag: the frame around a per-tag layout's symbol;
- * win_bg, win_focused, win_urgent, win_minimized and win_fg: the task bar's
- * windows (shown, focused, urgent, minimized) and their titles;
- * clock_meter: the clock's seconds;
- * stats_bg, cpu, io, mem and swap: the graphs;
- * good, warning and bad: the volume's, battery's, network's and
- * backlight's states.
- */
+/** `awl_plugin_config_t.colors`: the colors only the plugins draw with,
+ * 0xRRGGBBAA (awl's are `awl_colors_t`, awl.h, whose popup_* the plugins'
+ * popups use too). Where one says "0: ...", 0 takes that instead. */
+typedef struct awl_plugin_colors_t {
+    /** the bar: the layout symbol's, the clock's and the status widgets'
+     * background and text */
+    uint32_t bar_bg, bar_fg;
+    /** the tags: tag_bg, and over it in this order (its alpha says how
+     * much) tag_occupied, tag_urgent, tag_selected */
+    uint32_t tag_bg, tag_occupied, tag_urgent, tag_selected;
+    /** the selected monitor's mark under the first tag; the frame around a
+     * per-tag layout's symbol */
+    uint32_t selmon, pertag;
+    /** the task bar's windows (shown, focused, urgent, minimized) and
+     * their titles */
+    uint32_t win_bg, win_focused, win_urgent, win_minimized, win_fg;
+    /** the clock's seconds */
+    uint32_t clock_meter;
+    /** the graphs: their background, the CPU's, I/O's, memory's, swap's */
+    uint32_t stats_bg, cpu, io, mem, swap;
+    /** the volume's, battery's, network's and backlight's states; full: a
+     * full battery */
+    uint32_t good, warning, bad, full;
+    /** the tray widget's background */
+    uint32_t tray_bg;
+    /** the clock's calendar: today's date, the selected day's background */
+    uint32_t calendar_today, calendar_selected;
+    /** the launcher (plugins/launcher.h): the characters the query
+     * matched, 0: popup_fg; the description (GenericName), 0: popup_dim;
+     * the prompt, 0: launcher_dim; the query and the cursor, 0: popup_fg */
+    uint32_t launcher_match, launcher_dim, launcher_prompt, launcher_query;
+    /** the notifications' windows (plugins/notify.h) by urgency: text,
+     * background and frame, each 0: the popups'; the bar of one with a
+     * value, its filled part, 0: its frame's */
+    uint32_t notify_low_fg, notify_low_bg, notify_low_frame;
+    uint32_t notify_normal_fg, notify_normal_bg, notify_normal_frame;
+    uint32_t notify_critical_fg, notify_critical_bg, notify_critical_frame;
+    uint32_t notify_progress;
+    /** the desktop file list (awl_desktop.h): its background, the names of
+     * files, folders and broken links */
+    uint32_t desktop_bg, desktop_file, desktop_dir, desktop_broken;
+} awl_plugin_colors_t;
+
+/** the bar's colors of `awl_plugin_colors_t`, which
+ * `awl_plugin_data_t.colors` has as pixman's */
 #define AWL_BAR_COLORS( X ) \
-    X( bg ) X( fg ) X( tag_bg ) X( tag_occupied ) X( tag_urgent ) X( tag_selected ) X( selmon ) \
+    X( bar_bg ) X( bar_fg ) X( tag_bg ) X( tag_occupied ) X( tag_urgent ) X( tag_selected ) X( selmon ) \
     X( pertag ) X( win_bg ) X( win_focused ) X( win_urgent ) X( win_minimized ) X( win_fg ) \
     X( clock_meter ) X( stats_bg ) X( cpu ) X( io ) X( mem ) X( swap ) X( good ) X( warning ) X( bad ) \
     X( full )
 
-#define AWL_BAR_COLOR_U32( name ) uint32_t name;
 #define AWL_BAR_COLOR_PIXMAN( name ) pixman_color_t name;
 
 /**
@@ -73,7 +102,7 @@ typedef struct awl_plugin_config_t {
     /** the widgets' padding on either side of each of their cells
      * (AWL_PADDING_DEFAULT, almost all of them), in the bar font's heights */
     float widgets_padding;
-    struct { AWL_BAR_COLORS( AWL_BAR_COLOR_U32 ) } colors;
+    awl_plugin_colors_t colors;
     /** the temperature's color scale, °C: of the CPU package sensor
      * (coretemp), else of ACPI's thermal_zone0 */
     struct {
@@ -84,9 +113,9 @@ typedef struct awl_plugin_config_t {
          * trailing '/' */
         const char* dir;
         const char* ac_dir;
-        /** its color scale, percent of the charge: colors.bad up to bad,
-         * to colors.warning at warning, to colors.fg at ok and above
-         * (linearly in between); colors.good while charging */
+        /** its color scale, percent of the charge (colors'): bad
+         * up to bad, to warning at warning, to bar_fg at ok and above
+         * (linearly in between); good while charging, to full at full */
         struct { float bad, warning, ok, full; } scale;
         /** the dock widget's icons from the icon theme, as
          * `awl_plugin_config_t.notify`'s bell_icon: what the machine sits
@@ -97,8 +126,22 @@ typedef struct awl_plugin_config_t {
          * glyph (💻, 🖥️, ⚡, 🔋, 🪫). */
         struct { const char* laptop, * docked, * ac, * battery, * battery_low; } icons;
     } battery;
+    /** the volume (PulseAudio's default sink) */
+    struct {
+        /** what the volume goes up to at most, 1 is 100% (above 100% the
+         * widget's number is in colors.bad) */
+        float max;
+        /** a sink to mute on its own (the speakermute action), e.g. the
+         * built-in speaker's while headphones play on another
+         * (`pactl list short sinks` names them); the widget's speaker is in
+         * colors.bad while it is muted, even with the default sink muted
+         * (whose mute is colors.warning, all of the widget otherwise).
+         * NULL or "": none. */
+        const char* speaker;
+    } volume;
     /** the launcher (plugins/launcher.h), a popup: styled as the others
-     * (`awl_config_t.popup`, blurred with blur.launcher) */
+     * (`awl_config_t.popup`, blurred with blur.popups; its own colors are
+     * colors.launcher_*) */
     struct {
         /** AWL_LAUNCHER_LIST: a box with the query above a list of results;
          * AWL_LAUNCHER_BAR: a strip over the bar, the query left, the
@@ -124,14 +167,9 @@ typedef struct awl_plugin_config_t {
         const char* run_prompt;
         /** where it shows: an AWL_WINDOW_AT_* (awl.h), moved down by dy */
         int at, dy;
-        /** the characters the query matched; the description (GenericName),
-         * 0: the popups' dim */
-        uint32_t match, dim;
-        /** the prompt, 0: dim; the query and the cursor, 0: the popups' fg */
-        uint32_t prompt_color, query_color;
     } launcher;
     /** the notifications' windows (plugins/notify.h), persistent popups
-     * styled as the others; how long they stay is awl's
+     * styled as the others (their colors by urgency are colors.notify_*); how long they stay is awl's
      * (`awl_config_t.notifications`) */
     struct {
         /** where they stack from, an AWL_WINDOW_AT_* (awl.h; the top ones
@@ -146,12 +184,7 @@ typedef struct awl_plugin_config_t {
         /** the body's lines at most (<= 0: any); the windows shown at
          * most, a "+k more" under them for the rest */
         int max_lines, max_shown;
-        /** per urgency (AWL_NOTIF_LOW, _NORMAL, _CRITICAL): the text, the
-         * background and the frame; 0: the popups' */
-        struct { uint32_t fg, bg, frame; } urgency[3];
-        /** the bar of a notification with a value: its filled part, 0:
-         * its frame's color; its height */
-        uint32_t progress_color;
+        /** the bar of a notification with a value: its height */
         int progress_height;
         /** the app's name after the summary, in italic and braces:
          * "summary {app}" */
@@ -191,7 +224,7 @@ typedef struct awl_plugin_data_t {
     awl_loop_t* tray_loop;
     int paused;
 
-    /** `awl_plugin_config_t.colors` as pixman's */
+    /** `awl_plugin_colors_t`'s bar colors (AWL_BAR_COLORS) as pixman's */
     struct { AWL_BAR_COLORS( AWL_BAR_COLOR_PIXMAN ) } colors;
 } awl_plugin_data_t;
 
@@ -215,7 +248,8 @@ void awl_notify_config( void );
 void awl_notify_wallpaper_shown( const char* title );
 
 /** plugins.c: the default sink's volume up (delta > 0) or down by delta (1
- * is 100%), up no further than 100% (`pulse_volume_adjust()`); for a
+ * is 100%), up no further than the config's volume.max
+ * (`pulse_volume_adjust()`); for a
  * binding's action, e.g. `.f = 0.05f`. Main thread, returns at once. */
 void awl_volume_adjust( float delta );
 /** plugins.c: mutes the default sink or unmutes it (`pulse_mute_toggle()`) */
@@ -223,6 +257,9 @@ void awl_volume_mute_toggle( void );
 /** plugins.c: mutes the default source or unmutes it
  * (`pulse_mic_mute_toggle()`) */
 void awl_mic_mute_toggle( void );
+/** plugins.c: mutes the config's volume.speaker sink or unmutes it
+ * (`pulse_speaker_mute_toggle()`) */
+void awl_speaker_mute_toggle( void );
 /** plugins.c: the screen brightness up or down by delta (1 is all of it),
  * through the backlight daemon (`backlight_adjust()`), which this starts if
  * it isn't running. Main thread, returns at once. */

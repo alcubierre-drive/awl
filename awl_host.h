@@ -272,7 +272,7 @@ typedef struct awl_host_t {
     /** `popupdestroy()` */
     void (*window_destroy)( awl_window_t* win );
     /** `popupsetmenustyle()`: the window looks like a menu,
-     * `awl_config_t.popup`'s menu (awl_popup_menu_config()), from now on */
+     * `awl_menu_style()`, from now on */
     void (*window_set_menu_style)( awl_window_t* win );
     /** `popupsetpersistent()`: the window stays until it is hidden (a
      * notification): a press elsewhere and other popups shown leave it,

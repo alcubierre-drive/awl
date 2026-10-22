@@ -94,8 +94,8 @@ void awl_alert_configure( void ) {
 }
 
 void awl_alert_draw( Monitor* m ) {
-    const pixman_color_t fg = color_8bit_to_16bit( cfg->alert.fg ),
-                         bg = color_8bit_to_16bit( cfg->alert.bg );
+    const pixman_color_t fg = color_8bit_to_16bit( cfg->colors.alert_fg ),
+                         bg = color_8bit_to_16bit( cfg->colors.alert_bg );
     const int margin = cfg->alert.margin;
     const char* text = awl_alert_text();
     const float s = m->wlr_output->scale;

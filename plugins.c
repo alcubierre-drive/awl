@@ -73,7 +73,7 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     // one thread for all of the others, see plugins/poller.h
     p->poller = poller_new( p->stats, p->temp, p->date, p->bat, p->ip );
     if (!p->poller) return;
-    p->pulse = pulse_init( poller_api( p->poller ) );
+    p->pulse = pulse_init( poller_api( p->poller ), pc->volume.max, pc->volume.speaker );
     p->backlight = backlight_init( poller_api( p->poller ) );
     poller_set_paused( p->poller, p->paused );
     if (poller_start( p->poller )) {
@@ -292,6 +292,11 @@ void awl_volume_mute_toggle( void ) {
 void awl_mic_mute_toggle( void ) {
     awl_plugin_data_t* p = awl_plugin_get();
     if (p) pulse_mic_mute_toggle( p->pulse );
+}
+
+void awl_speaker_mute_toggle( void ) {
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) pulse_speaker_mute_toggle( p->pulse );
 }
 
 void awl_brightness_adjust( float delta ) {

@@ -141,12 +141,27 @@ static uint32_t or_( uint32_t c, uint32_t dflt ) {
     return c ? c : dflt;
 }
 
+/** `awl_plugin_colors_t`'s notify_* of an urgency */
+typedef struct { uint32_t fg, bg, frame; } urgency_colors_t;
+
+static urgency_colors_t urgency_colors( int urgency ) {
+    const awl_plugin_colors_t* k = &awl_plugin_config()->colors;
+    switch (urgency) {
+    case AWL_NOTIF_LOW:
+        return (urgency_colors_t){ k->notify_low_fg, k->notify_low_bg, k->notify_low_frame };
+    case AWL_NOTIF_CRITICAL:
+        return (urgency_colors_t){ k->notify_critical_fg, k->notify_critical_bg, k->notify_critical_frame };
+    default:
+        return (urgency_colors_t){ k->notify_normal_fg, k->notify_normal_bg, k->notify_normal_frame };
+    }
+}
+
 static uint32_t fg_of( const note_t* n ) {
-    return or_( n->look.fg, or_( CFG->urgency[n->urgency].fg, awl_config()->popup.fg ) );
+    return or_( n->look.fg, or_( urgency_colors( n->urgency ).fg, awl_config()->colors.popup_fg ) );
 }
 
 static uint32_t frame_of( const note_t* n ) {
-    return or_( n->look.frame, or_( CFG->urgency[n->urgency].frame, awl_config()->popup.border ) );
+    return or_( n->look.frame, or_( urgency_colors( n->urgency ).frame, awl_config()->colors.popup_border ) );
 }
 
 /** the body's lines at most, 0 any */
@@ -425,18 +440,18 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     if (n->body.len) paint_body( n, pix, x0, y0, fg );
     if (n->bar_h) {
         const float x = (float)(x0 + n->text_x), y = (float)(y0 + n->bar_y), r = (float)n->bar_h / 2;
-        awl_fill_shape( pix, x, y, (float)n->text_w, (float)n->bar_h, r, 0, c->popup.dim );
+        awl_fill_shape( pix, x, y, (float)n->text_w, (float)n->bar_h, r, 0, c->colors.popup_dim );
         if (n->value > 0)
             awl_fill_shape( pix, x, y, (float)n->text_w * (float)n->value / 100.f, (float)n->bar_h, r, 0,
-                            or_( n->look.progress, or_( CFG->progress_color, frame_of( n ) ) ) );
+                            or_( n->look.progress, or_( awl_plugin_config()->colors.notify_progress, frame_of( n ) ) ) );
     }
     for (int i = 0; i < n->nactions; i++) {
         const box_t b = n->act[i];
         const float r = (float)b.h / 4;
-        awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0, c->popup.hover );
+        awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0, c->colors.popup_hover );
         if (hover == i + 1)
             awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0,
-                            c->popup.hover );
+                            c->colors.popup_hover );
         const char* label = n->actions[2 * i + 1];
         const int lw = (int)awl_host->text_width( font, label );
         const int lx = lw < b.w ? b.x + (b.w - lw) / 2 : b.x;
@@ -624,8 +639,8 @@ static int fill( note_t* n, const awl_notif_t* r ) {
     n->flags = r->flags;
     sources( n, r );
     n->laid = 0;
-    awl_host->window_set_colors( n->win, or_( n->look.bg, CFG->urgency[n->urgency].bg ), fg_of( n ),
-                                 or_( n->look.frame, CFG->urgency[n->urgency].frame ) );
+    const urgency_colors_t u = urgency_colors( n->urgency );
+    awl_host->window_set_colors( n->win, or_( n->look.bg, u.bg ), fg_of( n ), or_( n->look.frame, u.frame ) );
     return 1;
 }
 

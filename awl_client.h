@@ -20,7 +20,7 @@ extern struct wl_list clients;
 extern struct wl_list fstack;
 /** the layer surface or unmanaged client that holds the keyboard, or NULL */
 extern void *exclusive_focus;
-/** cfg->bordercolors, copied: the clients' borders outlive a reload */
+/** cfg->colors' border, border_focused and border_urgent, copied: the clients' borders outlive a reload */
 extern uint32_t borders[BorderLast];
 
 /* xdg-shell's new toplevels, popups and decorations, xdg-activation's

@@ -20,9 +20,11 @@
 #include <sys/inotify.h>
 #include <unistd.h>
 
-/** the look, `awl_config_t.desktop`; hidden entries, "(empty)" and
- * "… N more" keep their color at its hidden_alpha */
+/** the look, `awl_config_t.desktop` and `awl_plugin_colors_t`'s desktop_*;
+ * hidden entries, "(empty)" and "… N more" keep their color at its
+ * hidden_alpha */
 #define DESK (&awl_config()->desktop)
+#define COLORS (&awl_plugin_config()->colors)
 
 #define NFILES (sizeof(((DesktopFiles*)0)->files) / sizeof(Filename))
 
@@ -247,7 +249,7 @@ static uint32_t fade( uint32_t c, uint32_t a ) {
 }
 
 static uint32_t color( const Filename* f ) {
-    uint32_t c = f->isbroken ? DESK->broken : f->isdir ? DESK->dir : DESK->file;
+    uint32_t c = f->isbroken ? COLORS->desktop_broken : f->isdir ? COLORS->desktop_dir : COLORS->desktop_file;
     return f->ishidden ? fade( c, DESK->hidden_alpha ) : c;
 }
 
@@ -375,15 +377,15 @@ void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* da
     char buf[sizeof(desk.files[0].name) + 2];
 
     if (l->n == 0)
-        text( pix, font, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( DESK->file, DESK->hidden_alpha ) );
+        text( pix, font, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( COLORS->desktop_file, DESK->hidden_alpha ) );
     for (int i = 0; i < l->shown; i++) {
         const Filename* f = &desk.files[l->idx[i]];
         const char* more = more_of( l, i );
         label( f, buf, sizeof(buf) );
         text( pix, font, l->col_x[l->col[i]], l->pad + l->row[i] * l->row_h, l->col_w[l->col[i]], l->row_h,
-              more ? more : buf, more ? fade( DESK->file, DESK->hidden_alpha ) : color( f ) );
+              more ? more : buf, more ? fade( COLORS->desktop_file, DESK->hidden_alpha ) : color( f ) );
     }
-    panel_under( data, stride, w, h, radius, DESK->bg );
+    panel_under( data, stride, w, h, radius, COLORS->desktop_bg );
 }
 
 /* plain clicks change the wallpaper, Shift+clicks the panel and the timer */

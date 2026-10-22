@@ -154,14 +154,13 @@ configapply(void)
     tagsconfigure();
     barconfigure();
     clientsconfigure();
-    wlr_scene_rect_set_color(root_bg, (float[4])RGBA(cfg->rootcolor));
+    wlr_scene_rect_set_color(root_bg, (float[4])RGBA(cfg->colors.root));
     wl_list_for_each(m, &mons, link)
-        wlr_scene_rect_set_color(m->fullscreen_bg, (float[4])RGBA(cfg->fullscreen_bg));
-    layersconfigure();
+        wlr_scene_rect_set_color(m->fullscreen_bg, (float[4])RGBA(cfg->colors.fullscreen));
     lockconfigure();
     wallpaperconfigure();
     desktop_configure(&(desktop_style_t){
-            .blur = cfg->blur.launcher, .radius = cfg->blur.launcher_radius,
+            .blur = cfg->blur.popups, .radius = cfg->desktop.radius,
             .blur_strength = cfg->blur.strength, .blur_alpha = cfg->blur.alpha });
     popupsrestyle();
     awl_alert_configure();

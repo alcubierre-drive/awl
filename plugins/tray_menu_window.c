@@ -232,7 +232,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
                    int hover ) {
     level_t* L = data;
     /* the blur is the window's (window_set_menu_style) */
-    const struct awl_popup_menu_config_t c = awl_popup_menu_config( &awl_config()->popup, 0 );
+    const awl_menu_style_t c = awl_menu_style( &awl_config()->colors, &awl_config()->popup, 0 );
     const uint32_t dim = c.dim, highlight_fg = c.highlight_fg;
     const level_t* sub = child_of( L );
     L->x0 = x0;

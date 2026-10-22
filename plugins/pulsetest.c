@@ -11,7 +11,8 @@
 
 /* Tracks the default sink's volume/mute through PulseAudio subscriptions,
  * on the plugins' shared loop (poller.h), which only wakes for server events
- * (sink changes, default sink changes). Everything but value/muted is only
+ * (sink changes, default sink changes), and the speaker sink's mute state
+ * likewise. Everything but value/muted is only
  * touched on the loop thread, or before it starts and after it has stopped.
  * The first connection is made from the loop too. If the server goes away
  * (or isn't there yet), the last value is kept and a new connection is
@@ -24,7 +25,7 @@
 
 /** pulse_test_t.requests; a second toggle before the loop got to the first
  * one cancels it */
-enum { REQ_MUTE = 1, REQ_MIC_MUTE = 2 };
+enum { REQ_MUTE = 1, REQ_MIC_MUTE = 2, REQ_SPEAKER_MUTE = 4 };
 
 struct PulseAudio {
     pa_mainloop_api* _mainloop_api;
@@ -32,6 +33,8 @@ struct PulseAudio {
     pa_time_event* _retry;
     pa_io_event* _wake; // pulse_test_t.wake_fd
     char name[256]; // the default sink's
+    char speaker[256]; // pulse_init()'s, "" if none
+    pa_volume_t max; // pulse_init()'s
     // the default sink's as last seen, or as last set
     pa_cvolume volume;
     int volume_known, muted;
@@ -50,7 +53,7 @@ static void PulseAudio_connect( PulseAudio* p );
 static void PulseAudio_drop_context( PulseAudio* p );
 static void PulseAudio_schedule_retry( PulseAudio* p, pa_usec_t usec );
 
-pulse_test_t* pulse_init( pa_mainloop_api* api ) {
+pulse_test_t* pulse_init( pa_mainloop_api* api, float max, const char* speaker ) {
     pulse_test_t* p = calloc(1, sizeof(pulse_test_t));
     if (!p) return NULL;
     p->pa = calloc(1, sizeof(PulseAudio));
@@ -60,8 +63,12 @@ pulse_test_t* pulse_init( pa_mainloop_api* api ) {
     }
     p->pa->_mainloop_api = api;
     p->pa->t = p;
+    double v = (double)PA_VOLUME_NORM * (max > 0 ? max : 1.0) + 0.5;
+    p->pa->max = v > (double)PA_VOLUME_MAX ? PA_VOLUME_MAX : (pa_volume_t)v;
+    snprintf( p->pa->speaker, sizeof(p->pa->speaker), "%s", speaker ? speaker : "" );
     atomic_init( &p->value, 0 );
     atomic_init( &p->muted, 0 );
+    atomic_init( &p->speaker_muted, 0 );
     atomic_init( &p->requests, 0 );
     atomic_init( &p->volume_delta, 0 );
     p->wake_fd = eventfd( 0, EFD_CLOEXEC | EFD_NONBLOCK );
@@ -113,6 +120,10 @@ static void context_state_callback( pa_context* c, void* userdata ) {
             if (op) pa_operation_unref( op );
             op = pa_context_get_server_info( c, server_info_callback, userdata );
             if (op) pa_operation_unref( op );
+            if (pa->speaker[0]) {
+                op = pa_context_get_sink_info_by_name( c, pa->speaker, sink_info_callback, userdata );
+                if (op) pa_operation_unref( op );
+            }
             break;
         case PA_CONTEXT_TERMINATED:
         case PA_CONTEXT_FAILED:
@@ -148,6 +159,9 @@ static void sink_info_callback( pa_context* c, const pa_sink_info* i, int eol, v
 
     PulseAudio* pa = userdata;
     pulse_test_t* t = pa->t;
+    if (i && i->name && pa->speaker[0] && !strcmp( i->name, pa->speaker ) &&
+        atomic_exchange( &t->speaker_muted, !!i->mute ) != !!i->mute)
+        awl_host->redraw_request();
     if (i && i->name && !strcmp( i->name, pa->name )) {
         float value = (float)pa_cvolume_avg(&(i->volume)) / (float)PA_VOLUME_NORM;
         int muted = i->mute;
@@ -212,6 +226,14 @@ static void PulseAudio_schedule_retry( PulseAudio* p, pa_usec_t usec ) {
     p->_retry = p->_mainloop_api->time_new( p->_mainloop_api, &tv, retry_callback, p );
 }
 
+/* the speaker sink as it is now: muted the other way */
+static void speaker_mute_callback( pa_context* c, const pa_sink_info* i, int eol, void* userdata ) {
+    (void)eol; (void)userdata;
+    if (!i) return;
+    pa_operation* op = pa_context_set_sink_mute_by_index( c, i->index, !i->mute, NULL, NULL );
+    if (op) pa_operation_unref( op );
+}
+
 /* the default source as it is now: muted the other way */
 static void source_mute_callback( pa_context* c, const pa_source_info* i, int eol, void* userdata ) {
     (void)eol; (void)userdata;
@@ -225,7 +247,7 @@ static void set_volume( PulseAudio* pa, int permille ) {
     pa_volume_t step = (pa_volume_t)((double)PA_VOLUME_NORM * abs( permille ) / 1000.0 + 0.5);
     if (permille > 0) {
         pa_volume_t max = pa_cvolume_max( &cv );
-        if (!pa_cvolume_inc_clamp( &cv, step, max > PA_VOLUME_NORM ? max : PA_VOLUME_NORM )) return;
+        if (!pa_cvolume_inc_clamp( &cv, step, max > pa->max ? max : pa->max )) return;
     } else if (!pa_cvolume_dec( &cv, step )) {
         return;
     }
@@ -247,6 +269,10 @@ static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_eve
     pa_operation* op;
     if (req & REQ_MIC_MUTE) {
         op = pa_context_get_source_info_by_name( pa->_context, "@DEFAULT_SOURCE@", source_mute_callback, pa );
+        if (op) pa_operation_unref( op );
+    }
+    if ((req & REQ_SPEAKER_MUTE) && pa->speaker[0]) {
+        op = pa_context_get_sink_info_by_name( pa->_context, pa->speaker, speaker_mute_callback, pa );
         if (op) pa_operation_unref( op );
     }
     // the sink's, only once it is known
@@ -281,4 +307,8 @@ void pulse_mute_toggle( pulse_test_t* p ) {
 
 void pulse_mic_mute_toggle( pulse_test_t* p ) {
     request( p, REQ_MIC_MUTE, 0 );
+}
+
+void pulse_speaker_mute_toggle( pulse_test_t* p ) {
+    request( p, REQ_SPEAKER_MUTE, 0 );
 }

@@ -265,24 +265,25 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
 
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
                    int hover ) {
-    const awl_popup_config_t* c = &awl_config()->popup;
+    const awl_colors_t* c = &awl_config()->colors;
+    const awl_plugin_colors_t* pc = &awl_plugin_config()->colors;
     char buf[128];
     const float r = (float)px( 4 );
     if (hover >= 0 && hover != P_LIST && C.has[hover]) {
         box_t b = C.part[hover];
-        awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0, c->hover );
+        awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0, c->popup_hover );
     }
 
     /* the heading */
     time_t first = awl_calendar_day_start( C.year, C.month, 1 );
-    text_center( pix, font, x0, y0, C.part[P_MPREV], "‹", c->fg );
+    text_center( pix, font, x0, y0, C.part[P_MPREV], "‹", c->popup_fg );
     strtime( buf, sizeof buf, "%B", first );
-    text_center( pix, font, x0, y0, C.month_label, buf, c->fg );
-    text_center( pix, font, x0, y0, C.part[P_MNEXT], "›", c->fg );
-    text_center( pix, font, x0, y0, C.part[P_YPREV], "‹", c->fg );
+    text_center( pix, font, x0, y0, C.month_label, buf, c->popup_fg );
+    text_center( pix, font, x0, y0, C.part[P_MNEXT], "›", c->popup_fg );
+    text_center( pix, font, x0, y0, C.part[P_YPREV], "‹", c->popup_fg );
     snprintf( buf, sizeof buf, "%d", C.year );
-    text_center( pix, font, x0, y0, C.year_label, buf, c->fg );
-    text_center( pix, font, x0, y0, C.part[P_YNEXT], "›", c->fg );
+    text_center( pix, font, x0, y0, C.year_label, buf, c->popup_fg );
+    text_center( pix, font, x0, y0, C.part[P_YNEXT], "›", c->popup_fg );
 
     /* weekdays and weeks */
     const int ws = week_start(), cw = C.part[P_DAY0].w;
@@ -292,7 +293,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     for (int col = 0; col < 7; col++) {
         strtime( buf, sizeof buf, "%a", awl_calendar_day_start( 2024, 0, 7 + (ws + col) % 7 ) );
         box_t b = { C.part[P_DAY0 + col].x, C.names_y, cw, C.cell_h };
-        text_center( pix, font, x0, y0, b, buf, c->dim );
+        text_center( pix, font, x0, y0, b, buf, c->popup_dim );
     }
     awl_cal_month_t* events = C.plain ? NULL : cached( month_key( C.year, C.month ) );
     const int today = today_ymd(), thursday = (4 - ws + 7) % 7;
@@ -305,12 +306,12 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             /* ISO week number, of the week's Thursday */
             strtime( buf, sizeof buf, "%V", awl_calendar_day_start( C.year, C.month, i - offset + 1 + thursday ) );
             box_t wb = { b.x - cw, b.y, cw, b.h };
-            text_center( pix, font, x0, y0, wb, buf[0] == '0' ? buf + 1 : buf, c->dim );
+            text_center( pix, font, x0, y0, wb, buf[0] == '0' ? buf + 1 : buf, c->popup_dim );
         }
         const int other = t.tm_mon != C.month, sel = !other && t.tm_mday == C.day;
         if (sel)
-            awl_fill_shape( pix, (float)(x0 + b.x + 1), (float)(y0 + b.y), (float)(b.w - 2), (float)b.h, r, 0, c->calendar.selected );
-        uint32_t fg = ymd( &t ) == today ? c->calendar.today : other ? c->dim : c->fg;
+            awl_fill_shape( pix, (float)(x0 + b.x + 1), (float)(y0 + b.y), (float)(b.w - 2), (float)b.h, r, 0, pc->calendar_selected );
+        uint32_t fg = ymd( &t ) == today ? pc->calendar_today : other ? c->popup_dim : c->popup_fg;
         snprintf( buf, sizeof buf, "%d", t.tm_mday );
         text_center( pix, font, x0, y0, b, buf, fg );
         /* a dot under the days with events */
@@ -325,12 +326,12 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     }
 
     /* the day */
-    text_center( pix, font, x0, y0, C.part[P_DPREV], "‹", c->fg );
+    text_center( pix, font, x0, y0, C.part[P_DPREV], "‹", c->popup_fg );
     strtime( buf, sizeof buf, "%A, %e %B", awl_calendar_day_start( C.year, C.month, C.day ) );
-    text_center( pix, font, x0, y0, C.day_label, buf, c->fg );
-    text_center( pix, font, x0, y0, C.part[P_DNEXT], "›", c->fg );
-    text_center( pix, font, x0, y0, C.part[P_TODAY], "Today", c->fg );
-    if (C.has[P_EVO]) text_center( pix, font, x0, y0, C.part[P_EVO], "Evolution", c->fg );
+    text_center( pix, font, x0, y0, C.day_label, buf, c->popup_fg );
+    text_center( pix, font, x0, y0, C.part[P_DNEXT], "›", c->popup_fg );
+    text_center( pix, font, x0, y0, C.part[P_TODAY], "Today", c->popup_fg );
+    if (C.has[P_EVO]) text_center( pix, font, x0, y0, C.part[P_EVO], "Evolution", c->popup_fg );
 
     /* its events, once fetched */
     if (!C.has[P_LIST]) return;
@@ -338,7 +339,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     const awl_cal_event_t** ev = day_events( &n );
     if (!ev) return;
     if (!n) {
-        awl_host->text_over( pix, font, x0, y0 + C.list_y, (unsigned)C.w, (unsigned)C.row_h, "No events", c->dim );
+        awl_host->text_over( pix, font, x0, y0 + C.list_y, (unsigned)C.w, (unsigned)C.row_h, "No events", c->popup_dim );
         return;
     }
     for (int i = C.list_top, row = 0; i < n && row < C.rows_fit; i++, row++) {
@@ -356,16 +357,16 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             strtime( b, sizeof b, "%H:%M", e->end );
             snprintf( buf, sizeof buf, "%s–%s", a, b );
         }
-        awl_host->text_over( pix, font, x, y, (unsigned)C.time_w + 1, (unsigned)C.row_h, buf, c->fg );
+        awl_host->text_over( pix, font, x, y, (unsigned)C.time_w + 1, (unsigned)C.row_h, buf, c->popup_fg );
         x += C.time_w + C.gap;
         int room = x0 + C.w - x;
         if (room <= 0) continue;
         int sw = (int)awl_host->text_width( font, e->summary );
-        awl_host->text_over( pix, font, x, y, (unsigned)(sw < room ? sw + 1 : room), (unsigned)C.row_h, e->summary, c->fg );
+        awl_host->text_over( pix, font, x, y, (unsigned)(sw < room ? sw + 1 : room), (unsigned)C.row_h, e->summary, c->popup_fg );
         room -= sw;
         if (*e->location && room > (int)awl_host->text_width( font, " · …" )) {
             snprintf( buf, sizeof buf, " · %s", e->location );
-            awl_host->text_over( pix, font, x + sw, y, (unsigned)room, (unsigned)C.row_h, buf, c->dim );
+            awl_host->text_over( pix, font, x + sw, y, (unsigned)room, (unsigned)C.row_h, buf, c->popup_dim );
         }
     }
 }

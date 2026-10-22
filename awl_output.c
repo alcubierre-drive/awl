@@ -174,7 +174,7 @@ createmon(struct wl_listener *listener, void *data)
      *
      */
     /* updatemons() will resize and set correct position */
-    m->fullscreen_bg = wlr_scene_rect_create(layers[LyrFS], 0, 0, (float[4])RGBA(cfg->fullscreen_bg));
+    m->fullscreen_bg = wlr_scene_rect_create(layers[LyrFS], 0, 0, (float[4])RGBA(cfg->colors.fullscreen));
     wlr_scene_node_set_enabled(&m->fullscreen_bg->node, 0);
 
     /* Adds this to the output layout in the order it was configured.

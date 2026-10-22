@@ -299,7 +299,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     (void)data;
     (void)scale;
     const awl_config_t* c = awl_config();
-    const struct awl_popup_menu_config_t mc = awl_popup_menu_config( &c->popup, c->blur.launcher );
+    const awl_menu_style_t mc = awl_menu_style( &c->colors, &c->popup, c->blur.popups );
     for (int i = 0; i < M.shown; i++) {
         const row_t* r = &M.rows[i];
         uint32_t fg = mc.fg;

@@ -358,7 +358,7 @@ setup(void)
 
     /* Initialize the scene graph used to lay out windows */
     scene = wlr_scene_create();
-    root_bg = wlr_scene_rect_create(&scene->tree, 0, 0, (float[4])RGBA(cfg->rootcolor));
+    root_bg = wlr_scene_rect_create(&scene->tree, 0, 0, (float[4])RGBA(cfg->colors.root));
     for (i = 0; i < NUM_LAYERS; i++) {
         layers[i] = wlr_scene_tree_create(&scene->tree);
     }
@@ -372,7 +372,7 @@ setup(void)
     desktop_tree = wlr_scene_tree_create(&scene->tree);
     wlr_scene_node_place_above(&desktop_tree->node, &layers[LyrBg]->node);
     desktop_init(desktop_tree, &(desktop_style_t){
-            .blur = cfg->blur.launcher, .radius = cfg->blur.launcher_radius,
+            .blur = cfg->blur.popups, .radius = cfg->desktop.radius,
             .blur_strength = cfg->blur.strength, .blur_alpha = cfg->blur.alpha });
     /* the alerts, over everything (awl_alert_draw() keeps it on top) */
     awl_alert_init();

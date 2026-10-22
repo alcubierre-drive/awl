@@ -884,7 +884,9 @@ clientsconfigure(void)
             arrange(m);
     }
 
-    memcpy(borders, cfg->bordercolors, sizeof(borders));
+    borders[BorderNorm] = cfg->colors.border;
+    borders[BorderSel] = cfg->colors.border_focused;
+    borders[BorderUrg] = cfg->colors.border_urgent;
     wl_list_for_each(c, &clients, link)
         if (c->border[0])
             client_set_border_color(c, (float[])RGBA(borders[c->isurgent ? BorderUrg

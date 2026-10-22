@@ -44,7 +44,7 @@
 #define LENGTH(X)               (sizeof X / sizeof X[0])
 
 /* enums */
-/** `awl_config_t.bordercolors` */
+/** `awl_colors_t`'s border, border_focused and border_urgent, in this order */
 enum BorderColor { BorderNorm, BorderSel, BorderUrg, BorderLast };
 /** cursor */
 enum CursorMode { CurNormal, CurPressed, CurMove, CurResize };
@@ -300,16 +300,44 @@ enum {
     AWL_WINDOW_AT_STRIP_BOTTOM,
 };
 
+/** the molokai palette, 0xRRGGBBAA, which the defaults' colors come from */
+#define molokai_blue 0x66d9efffu
+#define molokai_red 0xf92672ffu
+#define molokai_green 0xa6e22effu
+#define molokai_orange 0xfd971fffu
+#define molokai_purple 0xae81ffffu
+#define molokai_gray 0x232526ffu
+#define molokai_dark_gray 0x1b1d1effu
+#define molokai_light_gray 0x455354ffu
+
+/** `awl_config_t.colors`: the colors awl itself draws with, 0xRRGGBBAA
+ * (the plugins' own are `awl_plugin_colors_t`, plugins.h). Where one says
+ * "0: ...", 0 takes that instead. */
+typedef struct awl_colors_t {
+    /** behind everything, and behind fullscreen windows (an alpha of 0
+     * shows what is below) */
+    uint32_t root, fullscreen;
+    /** windows' borders: the others', the focused one's, an urgent one's */
+    uint32_t border, border_focused, border_urgent;
+    /** awl's own popups (awl_window.h), the bar widgets' (the clock's
+     * calendar, the IP addresses) and awl's: background, text, border; the
+     * row under the pointer and the buttons' background; what matters less
+     * (the calendar's neighbouring months' days, the IP popup's missing
+     * routes) */
+    uint32_t popup_bg, popup_fg, popup_border, popup_hover, popup_dim;
+    /** the tray's and the notifications' menus, each 0: the popups'
+     * (highlight: popup_hover, highlight_fg: menu_fg): background, text,
+     * border; the entry under the pointer (and the one whose submenu is
+     * open) and its text; disabled entries, shortcuts and separators */
+    uint32_t menu_bg, menu_fg, menu_border, menu_highlight, menu_highlight_fg, menu_dim;
+    /** the alert (awl_alert.h): its text and background */
+    uint32_t alert_fg, alert_bg;
+} awl_colors_t;
+
 /** `awl_config_t.popup`: how awl's own popups (awl_window.h) look, the bar
- * widgets' (the clock's calendar, the IP addresses) and awl's. Colors
- * 0xRRGGBBAA, sizes logical pixels. */
+ * widgets' (the clock's calendar, the IP addresses) and awl's; their
+ * colors are `awl_colors_t`'s popup_*. Sizes logical pixels. */
 typedef struct awl_popup_config_t {
-    uint32_t bg, fg, border;
-    /** the row under the pointer, the buttons' background */
-    uint32_t hover;
-    /** what matters less: the calendar's neighbouring months' days, the
-     * IP popup's missing routes */
-    uint32_t dim;
     int border_width, radius, padding;
     /** the gap to the bar and to the monitor's sides, see awl_window_margin() */
     int margin;
@@ -319,47 +347,46 @@ typedef struct awl_popup_config_t {
      * font); NULL and 0 each take the bar's */
     const char *font;
     int fontsize;
-    /** the clock's calendar: today's date, the selected day's background;
-     * list_min_height and list_max_height: the event list, which scrolls
-     * beyond the maximum (0: none) */
+    /** the clock's calendar's event list, which scrolls beyond the
+     * maximum (0: none) */
     struct {
-        uint32_t today, selected;
         int list_min_height, list_max_height;
     } calendar;
-    /** the tray's menus, their own look; what is 0 (left out) is the
-     * popups': bg, fg, border, highlight (hover), dim, border_width, radius
-     * and blur (blur.launcher), and highlight_fg is the menu's fg. A
-     * negative border_width, radius or blur is none. */
-    struct awl_popup_menu_config_t {
-        uint32_t bg, fg, border;
-        /** the entry under the pointer, the one whose submenu is open, and
-         * its text */
-        uint32_t highlight, highlight_fg;
-        /** disabled entries, shortcuts and separators */
-        uint32_t dim;
-        int border_width, radius;
-        /** blur what is behind them, as the launcher */
-        int blur;
+    /** the tray's and the notifications' menus, their own look (colors:
+     * `awl_colors_t`'s menu_*); what is 0 (left out) is the popups':
+     * border_width, radius and blur (blur.popups, blur what is behind
+     * them). A negative one is none. */
+    struct {
+        int border_width, radius, blur;
     } menu;
     /** the persistent popups (the notifications) over fullscreen clients
      * too, in the overlay layer; 0: under them, as the other popups */
     int persistent_overlay;
 } awl_popup_config_t;
 
-/** c's menu look with what is left out filled in from the popups' (see
- * menu), negative sizes and blur as 0; blur_launcher is the popups' blur
- * (`awl_config_t.blur`'s launcher) */
-static inline struct awl_popup_menu_config_t awl_popup_menu_config( const awl_popup_config_t* c, int blur_launcher ) {
-    struct awl_popup_menu_config_t m = c->menu;
-    if (!m.bg) m.bg = c->bg;
-    if (!m.fg) m.fg = c->fg;
-    if (!m.border) m.border = c->border;
-    if (!m.highlight) m.highlight = c->hover;
-    if (!m.highlight_fg) m.highlight_fg = m.fg;
-    if (!m.dim) m.dim = c->dim;
-    m.border_width = m.border_width < 0 ? 0 : m.border_width ? m.border_width : c->border_width;
-    m.radius = m.radius < 0 ? 0 : m.radius ? m.radius : c->radius;
-    m.blur = m.blur < 0 ? 0 : m.blur ? m.blur : blur_launcher;
+/** a menu's look, `awl_menu_style()` */
+typedef struct awl_menu_style_t {
+    uint32_t bg, fg, border, highlight, highlight_fg, dim;
+    int border_width, radius, blur;
+} awl_menu_style_t;
+
+/** the menus' look (`awl_colors_t`'s menu_*, `awl_popup_config_t.menu`)
+ * with what is left out filled in from the popups', negative sizes and blur
+ * as 0; blur_popups is the popups' blur (`awl_config_t.blur`'s
+ * popups) */
+static inline awl_menu_style_t awl_menu_style( const awl_colors_t* k, const awl_popup_config_t* c,
+                                               int blur_popups ) {
+    awl_menu_style_t m = {
+        .bg = k->menu_bg ? k->menu_bg : k->popup_bg,
+        .fg = k->menu_fg ? k->menu_fg : k->popup_fg,
+        .border = k->menu_border ? k->menu_border : k->popup_border,
+        .highlight = k->menu_highlight ? k->menu_highlight : k->popup_hover,
+        .dim = k->menu_dim ? k->menu_dim : k->popup_dim,
+        .border_width = c->menu.border_width < 0 ? 0 : c->menu.border_width ? c->menu.border_width : c->border_width,
+        .radius = c->menu.radius < 0 ? 0 : c->menu.radius ? c->menu.radius : c->radius,
+        .blur = c->menu.blur < 0 ? 0 : c->menu.blur ? c->menu.blur : blur_popups,
+    };
+    m.highlight_fg = k->menu_highlight_fg ? k->menu_highlight_fg : m.fg;
     return m;
 }
 
@@ -373,24 +400,24 @@ typedef struct awl_tray_config_t {
      * sends as images, or looks up in its own IconThemePath, stay as they
      * are. */
     const char *icon_theme;
-    /** the widget's background, its icons' size and the gap between them */
-    uint32_t bg;
+    /** the widget's icons' size and the gap between them (its background
+     * is `awl_plugin_colors_t.tray_bg`) */
     float icon_size, icon_gap;
 } awl_tray_config_t;
 
 /** `awl_config_t.desktop`, the desktop file list (awl_desktop.h); it is
- * blurred like the launcher (`awl_config_t.blur`) */
+ * blurred like the popups (`awl_config_t.blur`) */
 typedef struct awl_desktop_config_t {
     /** the font, as `awl_config_t.font` and fontsize (size appended to
      * font); NULL and 0 each take the bar's */
     const char *font;
     int fontsize;
-    /** its background, the names of files, folders and broken links, the
-     * alpha of hidden files' names, its distance from the usable area's
-     * corner */
-    uint32_t bg, file, dir, broken;
+    /** the alpha of hidden files' names (the colors are `awl_plugin_colors_t`'s
+     * desktop_*), its distance from the usable area's corner */
     uint8_t hidden_alpha;
     float margin;
+    /** its corner radius, logical pixels */
+    int radius;
     /** how many columns the entries are spread over, evenly; the files
      * first, then the folders from the first column on again */
     int columns;
@@ -458,9 +485,10 @@ typedef struct awl_config_t {
     int sloppyfocus;
     /** idle inhibitors inhibit even while their surface isn't visible */
     int bypass_surface_visibility;
-    /** windows' borders: width and colors (0xRRGGBBAA) */
+    /** the colors awl draws with: the windows', the popups', the menus' */
+    awl_colors_t colors;
+    /** windows' borders' width */
     unsigned int borderpx;
-    uint32_t bordercolors[BorderLast];
     /** the bar's font, its size appended to it */
     const char *font;
     int fontsize;
@@ -469,20 +497,16 @@ typedef struct awl_config_t {
      * (fontconfig's generic "emoji" is Noto Color Emoji or the like); NULL,
      * or one that isn't in color: text instead of emoji */
     const char *emoji_font;
-    /** behind everything, and behind fullscreen windows (0xRRGGBBAA; an
-     * alpha of 0 shows what is below) */
-    uint32_t rootcolor, fullscreen_bg;
-    /** every blur's strength and alpha: windows' (rules), notifications',
-     * the launcher's, the desktop file list's and the lock screen's; and
-     * whether to blur behind layer surfaces of the namespaces
-     * "notifications" and "launcher" (the launcher's also for the desktop
-     * file list and the popups), with corner radius; windowlist: the bar's
+    /** every blur's strength and alpha: windows' (rules), the popups'
+     * (the notifications', the launcher's, the menus'), the desktop file
+     * list's and the lock screen's; popups: whether to blur behind the
+     * popups, the menus (`awl_popup_config_t.menu` may differ) and the
+     * desktop file list; windowlist: the bar's
      * window list shows inactive and minimized windows translucent over a
      * blur, the focused one opaque */
     struct {
         float strength, alpha;
-        int notifications, notifications_radius;
-        int launcher, launcher_radius;
+        int popups;
         int windowlist;
     } blur;
     /** the keymap (rules, model, layout, variant, options; NULL: the
@@ -511,11 +535,9 @@ typedef struct awl_config_t {
     } pointer;
 
     /** the alert (awl_alert.h) in every output's window area's bottom left
-     * corner: its
-     * text and background (0xRRGGBBAA), its opacity, its font size relative
-     * to the bar's, its distance from the corner */
+     * corner: its opacity, its font size relative to the bar's, its
+     * distance from the corner (its colors are `awl_colors_t`'s alert_*) */
     struct {
-        uint32_t fg, bg;
         float opacity, font_scale;
         int margin;
     } alert;

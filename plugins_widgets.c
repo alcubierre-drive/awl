@@ -273,7 +273,7 @@ static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
         char num[16] = ""; snprintf( num, sizeof(num)-1, "%i", t+1 );
         int ww = text_cell_width( w, w->bar->font, "0" );
         pixman_color_t bg_color = P->colors.tag_bg,
-                       fg_color = P->colors.fg;
+                       fg_color = P->colors.bar_fg;
         if (w->bar->occ & (1 << t))
             bg_color = alpha_blend_16( bg_color, P->colors.tag_occupied );
         if (w->bar->urg & (1 << t))
@@ -361,7 +361,7 @@ static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P) return 0;
     int ww = text_cell_width( w, w->bar->font, "XXX" );
-    cell_text( w, pix, x, ww, w->bar->font, w->bar->ltsymbol, P->colors.fg, P->colors.bg );
+    cell_text( w, pix, x, ww, w->bar->font, w->bar->ltsymbol, P->colors.bar_fg, P->colors.bar_bg );
     /* each tag has its own layout: a red frame around the symbol */
     if (w->bar->pertag) {
         int hh = w->bar->height;
@@ -439,7 +439,7 @@ static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
     int mw = 3 * w->bar->scale + 0.5f;
     if (mw < 2) mw = 2;
     int ww = w->width - mw;
-    cell_text( w, pix, x, ww, w->bar->font, u->timestr, P->colors.fg, P->colors.bg );
+    cell_text( w, pix, x, ww, w->bar->font, u->timestr, P->colors.bar_fg, P->colors.bar_bg );
 
     // seconds meter right of the time: empty at :00, full at :59
     int sec = u->sec;
@@ -447,7 +447,7 @@ static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
     int ydiv = sec < 0 ? bar_height : bar_height - (sec * bar_height + 29) / 59;
     pixman_box32_t bg = { .x1 = x+ww, .x2 = x+ww+mw, .y1 = 0, .y2 = ydiv },
                    fg = { .x1 = x+ww, .x2 = x+ww+mw, .y1 = ydiv, .y2 = bar_height };
-    pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &P->colors.bg, 1, &bg );
+    pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &P->colors.bar_bg, 1, &bg );
     pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &P->colors.clock_meter, 1, &fg );
     return w->width;
 }
@@ -555,7 +555,7 @@ static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     if (!P || !u) return 0;
     u->x = x;
     int h = (int)w->bar->height;
-    pixman_color_t bg = color_8bit_to_16bit( awl_config()->tray.bg );
+    pixman_color_t bg = color_8bit_to_16bit( awl_plugin_config()->colors.tray_bg );
     pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &bg, 1, &(pixman_box32_t){
         .x1 = x, .x2 = x + w->width, .y1 = 0, .y2 = h } );
     for (int i = 0; i < u->nicons; i++) {
@@ -566,7 +566,7 @@ static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
         int iy = (h - ih) / 2;
         if (u->snap->items[i].file && (u->snap->items[i].file_flags & AWL_ICON_SYMBOLIC)) {
             /* its shape in the text's color */
-            pixman_image_t* solid = pixman_image_create_solid_fill( &P->colors.fg );
+            pixman_image_t* solid = pixman_image_create_solid_fill( &P->colors.bar_fg );
             pixman_image_composite32( PIXMAN_OP_OVER, solid, img, pix, 0, 0, 0, 0, ix, iy, iw, ih );
             pixman_image_unref( solid );
         } else {
@@ -667,9 +667,12 @@ static void sniwidget_free( void* userdata ) {
 
 /* the volume: a speaker filled from below as far as the volume goes (all
  * of it above 100 %), the rest dim, then the percentage; in the warning
- * color while muted, in the bad one above 100 % */
+ * color while muted, in the bad one above 100 %; the speaker alone in the
+ * bad color while the config's volume.speaker sink is muted, the default
+ * sink muted or not */
 typedef struct {
     textsnap_t text;
+    pixman_color_t speaker;
     float level;
     /** the speaker's size, its top and its gap to the text, in the bar's
      * pixels */
@@ -687,8 +690,9 @@ static uint32_t pulsewidget_measure( widget_t* w ) {
     snprintf( s->text.text, sizeof(s->text.text), "%3.0f%%", val * 100.0f );
     s->text.fg = muted ? P->colors.warning :
                  lround(val*100.0) > 100 ? P->colors.bad :
-                                           P->colors.fg;
-    s->text.bg = P->colors.bg;
+                                           P->colors.bar_fg;
+    s->text.bg = P->colors.bar_bg;
+    s->speaker = atomic_load( &P->pulse->speaker_muted ) ? P->colors.bad : s->text.fg;
     s->level = val < 0 ? 0 : val > 1 ? 1 : val;
     /* as tall as the digits, on their line as text() places them */
     struct fcft_font* font = w->bar->font;
@@ -729,13 +733,13 @@ static uint32_t pulsewidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
     const int sx = (int)x + l, sy = s->sy;
     pixman_image_t* mask = s->sw > 0 && s->sh > 0 ? speaker_mask( s->sw, s->sh ) : NULL;
     if (mask) {
-        pixman_color_t dim = s->text.fg;
+        pixman_color_t dim = s->speaker;
         dim.red /= 3, dim.green /= 3, dim.blue /= 3, dim.alpha /= 3;
         const int filled = (int)lroundf( s->level * (float)s->sh );
         pixman_image_t* solid = pixman_image_create_solid_fill( &dim );
         pixman_image_composite32( PIXMAN_OP_OVER, solid, mask, pix, 0, 0, 0, 0, sx, sy, s->sw, s->sh - filled );
         pixman_image_unref( solid );
-        solid = pixman_image_create_solid_fill( &s->text.fg );
+        solid = pixman_image_create_solid_fill( &s->speaker );
         pixman_image_composite32( PIXMAN_OP_OVER, solid, mask, pix, 0, 0, 0, s->sh - filled, sx, sy + s->sh - filled,
                                   s->sw, filled );
         pixman_image_unref( solid );
@@ -783,7 +787,7 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
 
     unsigned samples = atomic_load( &st->samples );
     int bar_height = w->bar->height;
-    cell_pads( w, pix, x, w->width, P->colors.bg );
+    cell_pads( w, pix, x, w->width, P->colors.bar_bg );
     // the graphs between the paddings; with a negative one, the columns
     // outside the bar are left out (pixman doesn't clip fills)
     int l, r, x0, pix_w = pixman_image_get_width( pix );
@@ -863,7 +867,7 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
         tempwidget_text( T, i, u->temps[i], text, sizeof(text) );
         pixman_color_t fgcolor = color_8bit_to_16bit(
                 P->temp_color( u->temps[i], T->f_t_min[i], T->f_t_max[i] ) );
-        cell_text( w, pix, x, u->widths[i], w->bar->font, text, fgcolor, P->colors.bg );
+        cell_text( w, pix, x, u->widths[i], w->bar->font, text, fgcolor, P->colors.bar_bg );
         x += u->widths[i];
     }
     return w->width;
@@ -887,8 +891,8 @@ static pixman_color_t batwidget_color( const awl_plugin_data_t* P, float percent
         if (percent < warning)
             return percent <= bad ? P->colors.bad :
                 color_mix_16( P->colors.bad, P->colors.warning, (percent - bad) / (warning - bad) );
-        return percent >= ok ? P->colors.fg :
-            color_mix_16( P->colors.warning, P->colors.fg, (percent - warning) / (ok - warning) );
+        return percent >= ok ? P->colors.bar_fg :
+            color_mix_16( P->colors.warning, P->colors.bar_fg, (percent - warning) / (ok - warning) );
     }
 }
 
@@ -903,7 +907,7 @@ static uint32_t batwidget_measure( widget_t* w ) {
     textsnap_t* s = textsnap( w );
     snprintf( s->text, sizeof(s->text), "%3.0f%%", charge * 100.0 );
     s->fg = batwidget_color(P, charge * 100.0f, charging);
-    s->bg = P->colors.bg;
+    s->bg = P->colors.bar_bg;
     return textsnap_width( w );
 }
 
@@ -1013,8 +1017,8 @@ static uint32_t dockwidget_measure( widget_t* w ) {
     docksnap_t* s = w->userdata;
     if (!s) return 0;
     const awl_plugin_config_t* pc = awl_plugin_config();
-    s->fg = P->colors.fg;
-    s->bg = P->colors.bg;
+    s->fg = P->colors.bar_fg;
+    s->bg = P->colors.bar_bg;
     s->font = w->bar->emojifont ? w->bar->emojifont : w->bar->font;
     const int px = bar_icon_px( w );
     if (docked < 0) dockpart_set( w, &s->part[0], NULL, px, "", "" );
@@ -1130,11 +1134,11 @@ static uint32_t ipwidget_measure( widget_t* w ) {
             online ? P->colors.good :
             connectivity == AWL_NM_CONNECTIVITY_NONE ? P->colors.bad :
             P->colors.warning;
-    s->bg = P->colors.bg;
+    s->bg = P->colors.bar_bg;
 
     // the popup: interface, address, default route metric; the routed one
     // in the bar's color for it, what is missing dimmed
-    const uint32_t fg = awl_config()->popup.fg, dim = awl_config()->popup.dim,
+    const uint32_t fg = awl_config()->colors.popup_fg, dim = awl_config()->colors.popup_dim,
                    hi = color_16bit_to_8bit( s->fg );
     ipwidget_table_t t;
     memset( &t, 0, sizeof t );
@@ -1241,7 +1245,7 @@ static void ipwidget_window_paint( void* data, pixman_image_t* pix, struct fcft_
     }
     if (u->cut && u->widths[0] > 0)
         awl_host->text_over( pix, font, x0, y0 + u->shown * (u->fh + u->rowsp), (unsigned)u->widths[0],
-                             (unsigned)u->fh, AWL_WINDOW_ELLIPSIS, awl_config()->popup.fg );
+                             (unsigned)u->fh, AWL_WINDOW_ELLIPSIS, awl_config()->colors.popup_fg );
 }
 
 /* the popup centered under the widget, in logical pixels */
@@ -1421,8 +1425,8 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
 
     const int enabled = atomic_load( &P->backlight->enabled );
     const int screen = atomic_load( &P->backlight->screen );
-    s->text.fg = enabled ? P->colors.fg : P->colors.warning;
-    s->text.bg = P->colors.bg;
+    s->text.fg = enabled ? P->colors.bar_fg : P->colors.warning;
+    s->text.bg = P->colors.bar_bg;
     struct fcft_font* ef = w->bar->emojifont;
     if (!ef) {
         s->mode = NULL;
@@ -1677,15 +1681,15 @@ static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     int h = (int)w->bar->height, l, r;
     widget_padding( w, &l, &r );
     s->x = x;
-    awl_host->text( pix, w->bar->font, x, -2, w->width, h, 0, "", P->colors.fg, P->colors.bg );
+    awl_host->text( pix, w->bar->font, x, -2, w->width, h, 0, "", P->colors.bar_fg, P->colors.bar_bg );
     /* the dot at the bell's top: the icon's, or the glyph's line, centered
      * as text() centers it */
     float top;
     if (s->icon) {
-        top = (float)bar_icon_draw( w, pix, s->icon, s->symbolic, (int)x + l, P->colors.fg );
+        top = (float)bar_icon_draw( w, pix, s->icon, s->symbolic, (int)x + l, P->colors.bar_fg );
     } else {
         awl_host->text_over( pix, s->bell_font, (int)x + l, -2, s->bell_w, h, s->bell,
-                             color_16bit_to_8bit( P->colors.fg ) );
+                             color_16bit_to_8bit( P->colors.bar_fg ) );
         top = (float)(h - s->bell_font->height) / 2.0f - 2.0f;
     }
     if (awl_notify_unread()) {

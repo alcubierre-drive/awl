@@ -69,7 +69,7 @@ void popupsgrabupdate(void);
 /** shows win on m beside the box x, y, w, h, a row of another popup, on
  * its right unless left (`awl_window_show_beside()`) */
 void popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
-/** makes win look like a menu, cfg->popup.menu, from now on */
+/** makes win look like a menu, awl_menu_style(), from now on */
 void popupsetmenustyle(awl_window_t *win);
 /** makes win persistent, or not (see above), from now on */
 void popupsetpersistent(awl_window_t *win, int persistent);

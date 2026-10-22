@@ -79,7 +79,7 @@
 // stupid SINCE_VERSION
 #include "xdg-shell-protocol.h"
 
-/** a 0xRRGGBBAA color as wlroots' 4 floats, e.g. ``(float[4])RGBA(cfg->rootcolor)`` */
+/** a 0xRRGGBBAA color as wlroots' 4 floats, e.g. ``(float[4])RGBA(cfg->colors.root)`` */
 #define RGBA(hex)               { (((hex) >> 24) & 0xFF) / 255.0f, \
                                   (((hex) >> 16) & 0xFF) / 255.0f, \
                                   (((hex) >> 8) & 0xFF) / 255.0f, \
@@ -100,14 +100,12 @@ typedef struct {
     struct wlr_scene_tree *popups;
     struct wlr_scene_layer_surface_v1 *scene_layer;
     struct wl_list link;
-    short mapped, is_notification, is_launcher;
+    short mapped;
     struct wlr_layer_surface_v1 *layer_surface;
 
     struct wl_listener destroy;
     struct wl_listener unmap;
     struct wl_listener surface_commit;
-
-    struct wlr_scene_blur* blur;
 } LayerSurface;
 
 /** A ``wlr_buffer`` of ARGB pixels in memory, for the bar and the desktop

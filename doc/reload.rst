@@ -158,8 +158,11 @@ meson.options' compile-time switches (``scenefx_shatter``) only a rebuild
 and restart of awl apply. Everything else is two structs: `awl_config_t`
 (awl.h) holds what awl itself reads (the library may read it too),
 `awl_plugin_config_t` (plugins.h) what only the library reads: the bar's
-widgets and colors, the tray widget's look, the calendar's, the desktop
-file list's, the temperature scales, the battery.
+widgets, the launcher's and the notifications' look, the temperature
+scales, the battery. The colors are split alike: awl's (borders, popups,
+menus, the alert) in `awl_config_t.colors` (`awl_colors_t`), the library's
+(the bar, the launcher, the notifications, ...) in
+`awl_plugin_config_t.colors` (`awl_plugin_colors_t`).
 
 awl_config_defaults.h holds awl's defaults; awl runs with them while no library is
 loaded, and hands them to the library as `awl_host_t.config_defaults`.

@@ -27,25 +27,25 @@ pointerinpopup(awl_window_t *win)
     return popupfind(win) && awl_window_contains(win, cursor->x, cursor->y);
 }
 
-/** p's look, from cfg->popup; a menu's its own (cfg->popup.menu); p's
- * colors over either (NULL: none) */
+/** p's look, from cfg->popup and cfg->colors' popup_*; a menu's its own
+ * (awl_menu_style()); p's colors over either (NULL: none) */
 static awl_window_style_t
 popupstyle(const Popup *p)
 {
     int menu = p && p->menu;
     awl_window_style_t s = {
-            .bg = cfg->popup.bg, .fg = cfg->popup.fg,
-            .border = cfg->popup.border,
-            .highlight = cfg->popup.hover,
+            .bg = cfg->colors.popup_bg, .fg = cfg->colors.popup_fg,
+            .border = cfg->colors.popup_border,
+            .highlight = cfg->colors.popup_hover,
             .border_width = cfg->popup.border_width,
             .radius = cfg->popup.radius, .padding = cfg->popup.padding,
             .margin = cfg->popup.margin,
             .column_spacing = cfg->popup.column_spacing,
             .row_spacing = cfg->popup.row_spacing,
-            .blur = cfg->blur.launcher,
+            .blur = cfg->blur.popups,
             .blur_strength = cfg->blur.strength, .blur_alpha = cfg->blur.alpha };
     if (menu) {
-        struct awl_popup_menu_config_t c = awl_popup_menu_config(&cfg->popup, cfg->blur.launcher);
+        awl_menu_style_t c = awl_menu_style(&cfg->colors, &cfg->popup, cfg->blur.popups);
         s.bg = c.bg;
         s.fg = c.fg;
         s.border = c.border;

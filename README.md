@@ -58,7 +58,8 @@ The configuration is in two files:
   `configure(c, p)` gets awl's defaults (awl_config_defaults.h) in `c` and the
   plugins' (plugins_config_defaults.h) in `p`, and changes only what it wants,
   e.g. `c->modkey = WLR_MODIFIER_LOGO;`, `SETLIST(c->keys, keys);` for
-  bindings of its own, or `p->colors.bg = ...;` for the bar. The two
+  bindings of its own, or `p->colors.bar_bg = ...;` for the bar (awl's own
+  colors are in `c->colors`, the plugins' in `p->colors`). The two
   defaults files list every setting with its default (what zero means where
   one is left zero), `awl_config_t` in awl.h and `awl_plugin_config_t` in
   plugins.h what each one does.
@@ -72,7 +73,7 @@ that, no separate lock handler (`xss-lock`, a `sleep.target` unit calling
 Its `CUSTOM` part covers keys, buttons, rules, layouts, tags, colors, font,
 borders, blur, input devices, the keymap, the bar's place, the screen lock,
 the programs started with awl, wlroots' log level, the alert, the popups,
-the tray and wallpaper settings, and the bar's widgets and colors.
+the tray and wallpaper settings, and the bar's widgets.
 
 ## Running
 
