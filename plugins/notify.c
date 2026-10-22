@@ -27,6 +27,17 @@ enum { MAX_ACTIONS = 16 };
  * icon name, so it doesn't grow right after it shows; the thread is looked
  * at this often meanwhile */
 enum { IMAGE_WAIT_MS = 100, IMAGE_POLL_MS = 10 };
+/** the bar's bells kept, by size and do-not-disturb (two per monitor's
+ * scale), the oldest go */
+enum { MAX_BELLS = 8 };
+
+/** a bell from the icon theme at px, asked of the image thread once; img
+ * NULL while it is on the way, or if none of the names was found */
+typedef struct {
+    int px, dnd, done;
+    pixman_image_t* img;
+    int symbolic;
+} bell_t;
 
 typedef struct { int x, y, w, h; } box_t;
 
@@ -37,6 +48,10 @@ typedef struct {
     awl_window_t* win;
     awl_notif_urgency_t urgency;
     int value;
+    /** the record's AWL_NOTIF_* flags */
+    unsigned flags;
+    /** shown on request though do-not-disturb (`awl_notify_reveal()`) */
+    int revealed;
     /** awl's own look for it (all 0: the config's) */
     awl_notif_look_t look;
     char* summary;
@@ -94,6 +109,9 @@ static struct {
     /** looks for what the image thread did while anything waits for it */
     awl_timer_t* img_timer;
     uint64_t img_serial;
+    /** `awl_notify_bell()`'s, oldest first */
+    bell_t bells[MAX_BELLS];
+    int nbells;
 } N;
 
 static long long now_ms( void ) {
@@ -599,6 +617,7 @@ static int fill( note_t* n, const awl_notif_t* r ) {
     n->urgency = r->urgency <= AWL_NOTIF_CRITICAL ? r->urgency : AWL_NOTIF_NORMAL;
     n->value = r->value;
     n->look = r->look;
+    n->flags = r->flags;
     sources( n, r );
     n->laid = 0;
     awl_host->window_set_colors( n->win, or_( n->look.bg, CFG->urgency[n->urgency].bg ), fg_of( n ),
@@ -688,10 +707,16 @@ static int cap( note_t* n, Monitor* m, int h, int off ) {
     return 1;
 }
 
+/** whether n was shown on request: again from the history
+ * (AWL_NOTIF_SHOWN) or with `awl_notify_reveal()` */
+static int asked_for( const note_t* n ) {
+    return n->revealed || (n->flags & AWL_NOTIF_SHOWN);
+}
+
 /** whether n may show: ready (its image came, or not in time), and
- * critical or not while do-not-disturb */
+ * critical, asked for or not while do-not-disturb */
 static int showable( const note_t* n, int dnd ) {
-    return n->ready && (!dnd || n->urgency == AWL_NOTIF_CRITICAL);
+    return n->ready && (!dnd || n->urgency == AWL_NOTIF_CRITICAL || asked_for( n ));
 }
 
 /** hides n's window, releasing its hold: the pointer can't leave it now */
@@ -705,9 +730,9 @@ static void note_hide( note_t* n ) {
  * other from the corner, as many as its window area has room for: the
  * last one that fits cut to the room left (the body's lines; "…"), the
  * rest hidden behind "+k more", which always fits. Those not showable
- * don't count. None while the menu is open: it lists them all. */
+ * don't count. An open menu covers them (awl_popup.c). */
 static void restack( void ) {
-    Monitor* m = awl_notify_menu_is_open() ? NULL : awl_host->monitor_selected();
+    Monitor* m = awl_host->monitor_selected();
     const int down = downward( CFG->at ), max = CFG->max_shown > 0 ? CFG->max_shown : MAX_OPEN;
     int off = 0, shown = 0, full = 0, base = 0, more_h = -1, x, y, w, h, rx = 0, ry = 0, rw = 0, rh = 0;
     int ready = 0, seen = 0;
@@ -793,10 +818,6 @@ void awl_notify_changed( void ) {
     awl_host->redraw_request();
 }
 
-void awl_notify_restack( void ) {
-    if (N.started) restack();
-}
-
 int awl_notify_dnd( void ) {
     awl_dict_val_t v;
     return AWL_HOST_CFG_GET( awl_host, DND_KEY, &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_NUM && v.num;
@@ -819,6 +840,81 @@ int awl_notify_count( int* critical ) {
     return N.n;
 }
 
+int awl_notify_unread( void ) {
+    int c = 0;
+    for (int i = 0; i < N.n; i++) c += !asked_for( N.v[i] );
+    return c;
+}
+
+int awl_notify_hidden( uint32_t id ) {
+    const note_t* n = note_of( id );
+    return n && awl_notify_dnd() && n->urgency != AWL_NOTIF_CRITICAL && !asked_for( n );
+}
+
+void awl_notify_reveal( uint32_t id ) {
+    note_t* n = note_of( id );
+    if (!n || asked_for( n )) return;
+    n->revealed = 1;
+    /* its timeout starts over, as the history's: a hold released does that */
+    if (!n->held) {
+        awl_host->notif_hold( id, 1 );
+        awl_host->notif_hold( id, 0 );
+    }
+    restack();
+    awl_notify_menu_changed();
+    awl_host->redraw_request();
+}
+
+/** the bells the image thread is done with into N.bells */
+static void bells_take( void ) {
+    awl_notify_image_t* done = awl_notify_image_icon_take();
+    for (awl_notify_image_t* r = done; r; r = r->next) {
+        const int dnd = (int)(r->serial & 1);
+        for (int i = 0; i < N.nbells; i++) {
+            bell_t* b = &N.bells[i];
+            if (b->px != r->px || b->dnd != dnd || b->done) continue;
+            b->done = 1;
+            b->img = r->img;
+            b->symbolic = r->symbolic;
+            r->img = NULL;
+            if (!b->img)
+                awl_wrn_printf( "notify: none of the bell icons '%s' found at %d px\n",
+                                dnd ? CFG->bell_icon_dnd : CFG->bell_icon, b->px );
+            break;
+        }
+    }
+    awl_notify_image_free( done );
+}
+
+static void bells_free( void ) {
+    for (int i = 0; i < N.nbells; i++)
+        if (N.bells[i].img) pixman_image_unref( N.bells[i].img );
+    N.nbells = 0;
+}
+
+pixman_image_t* awl_notify_bell( int px, int dnd, int* symbolic ) {
+    const char* names = dnd ? CFG->bell_icon_dnd : CFG->bell_icon;
+    *symbolic = 0;
+    if (!N.started || !names || !*names || px < 1) return NULL;
+    bells_take();
+    dnd = !!dnd;
+    for (int i = 0; i < N.nbells; i++) {
+        const bell_t* b = &N.bells[i];
+        if (b->px != px || b->dnd != dnd) continue;
+        *symbolic = b->symbolic;
+        return b->img;
+    }
+    if (N.nbells == MAX_BELLS) {
+        if (N.bells[0].img) pixman_image_unref( N.bells[0].img );
+        memmove( N.bells, N.bells + 1, (MAX_BELLS - 1) * sizeof *N.bells );
+        N.nbells--;
+    }
+    /* none if it can't be asked for: not asked again */
+    const int asked = awl_notify_image_icon_want( (uint64_t)px << 1 | (uint64_t)dnd, px, names );
+    N.bells[N.nbells++] = (bell_t){ .px = px, .dnd = dnd, .done = !asked };
+    return NULL;
+}
+
 void awl_notify_start( void ) {
     if (N.started) return;
     N.started = 1;
@@ -834,6 +930,7 @@ int awl_notify_stop( void ) {
     awl_host->window_destroy( N.more );
     awl_host->timer_remove( N.timer );
     awl_host->timer_remove( N.img_timer );
+    bells_free();
     memset( &N, 0, sizeof N );
     return awl_notify_image_stop();
 }

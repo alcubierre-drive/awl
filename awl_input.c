@@ -3,6 +3,7 @@
 #include "awl_cursor.h"
 #include "awl_lockscreen.h"
 #include "awl_log.h"
+#include "awl_notifications.h"
 #include "awl_popup.h"
 
 typedef struct {
@@ -313,6 +314,7 @@ keypress(struct wl_listener *listener, void *data)
     uint32_t mods = wlr_keyboard_get_modifiers(&group->wlr_group->keyboard);
 
     wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+    awl_notifications_activity();
 
     if (locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
         lockkeystroke();

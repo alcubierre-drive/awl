@@ -104,6 +104,12 @@ testunescape(char *s)
  *   nclose ID REASON       the notification server's host calls, as the
  *   ninvoke ID KEY [TOKEN]   library makes them (awl_notifications.h)
  *   nhold ID 0|1
+ *   nforget SEQ            drops SEQ from the history, 0 all of it
+ *   nshow SEQ              opens history entry SEQ again
+ *   nidle                  the user away: the notifications' timeouts stop
+ *                          as after `awl_config_t.notifications.idle_pause`
+ *   nactive                the user back (every command but nidle and dump
+ *                          counts as that: they stand in for the user)
  *   nsend URGENCY TIMEOUT LINES WIDTH TAG|- SUMMARY\tBODY
  *                          awl's own (awl_notifications_send()), its look's
  *                          max_lines and width
@@ -120,6 +126,8 @@ testunescape(char *s)
  *                              plugins')
  *                            pcell I ROW X Y (the center of row ROW of
  *                              visible pwin I, a painter's part; first 8)
+ *                            ppart I PART X Y (likewise, every part with
+ *                              a box, of the first 1024)
  *                            hover MON X Y (the center of a bar widget
  *                              with callback_hover)
  *                            widget MON I X Y (the center of right-hand
@@ -132,6 +140,9 @@ testunescape(char *s)
  *                              WxHxCHANNELS, an empty string -; the
  *                              first 256, all the server keeps)
  *                            notifs COUNT (how many are open)
+ *                            past SEQ ID REASON SUMMARY (the history,
+ *                              newest first)
+ *                            pasts COUNT (how many it keeps)
  *                            persistent LAYER VISIBLE (popuppersistentlayer():
  *                              overlay, top or -; whether in sight)
  *                            margin PX (cfg->popup.margin)
@@ -153,11 +164,14 @@ testwincmd(char *line)
     unsigned int id;
     char key[64] = "", token[64] = "", img[48];
     static const awl_notif_t *notifs[256];
+    static const awl_notif_past_t *past[100];
     FILE *f;
 
     if (sscanf(line, "%15s%n", cmd, &off) != 1)
         return;
     line += off;
+    if (strcmp(cmd, "nidle") && strcmp(cmd, "dump"))
+        awl_notifications_activity();
     if (*line == ' ')
         line++;
     toggle = !strcmp(cmd, "toggle");
@@ -246,6 +260,19 @@ testwincmd(char *line)
         }
         if (!awl_notifications_send(&s))
             goto bad;
+    } else if (!strcmp(cmd, "nforget")) {
+        unsigned long long seq;
+        if (sscanf(line, "%llu", &seq) != 1)
+            goto bad;
+        awl_notifications_forget(seq);
+    } else if (!strcmp(cmd, "nshow")) {
+        unsigned long long seq;
+        if (sscanf(line, "%llu", &seq) != 1 || !awl_notifications_show(seq))
+            goto bad;
+    } else if (!strcmp(cmd, "nidle")) {
+        awl_notifications_idle();
+    } else if (!strcmp(cmd, "nactive")) {
+        /* above */
     } else if (!strcmp(cmd, "ninvoke")) {
         if (sscanf(line, "%u %63s %63s", &id, key, token) < 2)
             goto bad;
@@ -284,6 +311,9 @@ testwincmd(char *line)
                     box.x, box.y, box.width, box.height, x, p->persistent);
             for (int r = 0; x && r < 8 && awl_window_cell_center(p->win, r, 0, &cx, &cy); r++)
                 fprintf(f, "pcell %d %d %.0f %.0f\n", n, r, cx, cy);
+            for (int r = 0; x && r < 1024; r++)
+                if (awl_window_cell_center(p->win, r, 0, &cx, &cy))
+                    fprintf(f, "ppart %d %d %.0f %.0f\n", n, r, cx, cy);
             n++;
         }
         /* barwidgetat()'s layout of the right-hand widgets */
@@ -317,6 +347,11 @@ testwincmd(char *line)
                     *o->app_icon ? o->app_icon : "-", *o->category ? o->category : "-", o->summary);
         }
         fprintf(f, "notifs %d\n", nn);
+        nn = awl_notifications_history(past, (int)LENGTH(past));
+        for (i = 0; i < nn && i < (int)LENGTH(past); i++)
+            fprintf(f, "past %llu %u %d %s\n", (unsigned long long)past[i]->seq, past[i]->id,
+                    past[i]->reason, past[i]->summary);
+        fprintf(f, "pasts %d\n", nn);
         i = popuppersistentlayer(&x);
         fprintf(f, "persistent %s %d\n", i == LyrOverlay ? "overlay" : i == LyrTop ? "top" : "-", x);
         fprintf(f, "margin %d\n", cfg->popup.margin);

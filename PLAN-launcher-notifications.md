@@ -5,7 +5,8 @@ italic fonts, the markup parser and layout, JPEG (Wuffs v0.4),
 `awl_icon_from_rgba()`, the core's D-Bus server, persistent windows (0c),
 the library's notification windows, awl's own notifications past D-Bus,
 the stack fitted to the window area and images from files and icon names
-(on a thread), the menu, do-not-disturb and the bar's widget are done.
+(on a thread), the menu, do-not-disturb, the bar's widget, the history
+and the idle pause are done.
 Open: awl's own looks, blur, the launcher's leftovers. fnott and fuzzel
 are replaced already.
 
@@ -136,7 +137,9 @@ are replaced already.
 - The menu, do-not-disturb, the widget: plugins/notify_menu.{c,h}, no key
   bindings (a notification's actions are its buttons).
   - Do-not-disturb is the config dictionary's `notify_dnd` (survives a
-    reload): only critical ones show, the rest stay open and in the menu.
+    reload): only critical ones show, and those asked for (shown again
+    from the history, or an open one's "Show" in the menu); the rest stay
+    open and in the menu.
   - The menu, a painter of its own in the menus' style: "Do not disturb"
     (on/off), "Dismiss all", then each notification's title (bold, the app
     in italic) and its actions indented. A title: left its default action,
@@ -144,17 +147,40 @@ are replaced already.
     everything else leaves it open and it follows the changes. Rows that
     don't fit end in "+k more" (not clickable: a text window's "…" row
     would map to a real row).
-  - While it is open no notification window shows (they would cover it,
-    being persistent); they come back when it closes, a press elsewhere
-    included.
+  - The notification windows stay while it is open: an open menu is
+    above the persistent popups (awl_popup.c), clicks included.
   - `AwlWidgetNotifications` (in the default widgets, left of the clock):
-    🔔 or 🔕 and the count, red while a critical one is open. Left: the
-    menu under it; right: do-not-disturb; middle: dismiss all. A click on
-    "+k more" opens the menu in the stack's place.
+    🔔 or 🔕, a red dot at its top right while any are open. Left:
+    do-not-disturb; right: the menu under it; middle: dismiss all. A click
+    on "+k more" opens the menu in the stack's place.
+  - The menu closes 300 ms after the pointer left it and the widget (the
+    widget's `callback_view`); opened from "+k more", only once the
+    pointer was in it.
   - Tested in test/notifications.sh ("-- the menu"; the dump's new
     `widget` lines). `look()` there now dismisses awl's alerts: the logind
     one comes a while after the start (the test bus has no logind) and
     landed on a check now and then.
+- The history: the core keeps the last 100 closed (`awl_notif_past_t`,
+  host calls `notif_history`, `notif_forget`, ABI 36): expired, dismissed,
+  evicted; not closed by their client, by an action or transient. In
+  memory, across reloads. The menu lists them after the open ones, dimmed,
+  with the time they closed, under "Clear history" and the count; a right
+  click forgets one. Tested in "-- the history" (dump `past` lines, FIFO
+  `nforget`).
+- Show again: a "Show" button on each past row of the menu (its own
+  painter part) opens it again and closes the menu (host call
+  `notif_show`, ABI 37). The history keeps the whole notification for it,
+  without its actions (no client waits on them) and with at most 16 MiB of
+  image data for all entries, the oldest's dropped first. Shown again it
+  gets a new id and AWL_NOTIF_SHOWN: no client replaces or closes it, no
+  signal tells of it; its timeout starts over; closed again, it goes back
+  into the history. Tested in "-- the history" (FIFO `nshow`) and the
+  menu section (dump `ppart` lines).
+- The idle pause: after `notifications.idle_pause` (10 s) without a key or
+  pointer motion the timeouts stop; the next activity resumes them with
+  what was left at the last one, at least half the timeout. Defaults now
+  10 s (low) and 20 s (normal). Tested in "-- idle" (FIFO `nidle`,
+  `nactive`; every other FIFO command but the dump counts as activity).
 - Launcher (phase 1), keyboard grab (0a), placement (0b).
   - Still open for the launcher: desktop Actions, the xdg-activation
     token, a live.sh-driven launcher test.
@@ -178,8 +204,8 @@ keep room for "+k more", critical ones included.
 
 ### Later
 
-- A history popup of the last N closed (not the transient ones;
-  the core would have to keep them).
+- The history on disk (across awl restarts)? Left out so far: it would
+  write message contents to disk.
 - The xdg-activation token for `notif_invoke`. A Wayland client may
   not focus itself; to bring up its window when an action is clicked (the
   chat a message came from), the server hands it a token first (the

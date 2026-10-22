@@ -510,7 +510,8 @@ typedef struct awl_config_t {
         enum libinput_config_tap_button_map button_map;
     } pointer;
 
-    /** the alert (awl_alert.h) on every output's bottom left corner: its
+    /** the alert (awl_alert.h) in every output's window area's bottom left
+     * corner: its
      * text and background (0xRRGGBBAA), its opacity, its font size relative
      * to the bar's, its distance from the corner */
     struct {
@@ -546,9 +547,13 @@ typedef struct awl_config_t {
     /** the notification server (awl_notifications.h): how long a
      * notification stays, in ms, by urgency (low, normal), when its client
      * leaves that to the server; 0: until dismissed. Critical ones always
-     * stay. */
+     * stay. idle_pause: after that many ms without a key or the pointer,
+     * the timeouts stop; the next key or motion resumes them with what was
+     * left at the last one, at least half the timeout: only time the user
+     * is there counts (0: never pause). */
     struct {
         int timeout_low, timeout_normal;
+        int idle_pause;
     } notifications;
 } awl_config_t;
 

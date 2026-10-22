@@ -15,6 +15,9 @@
  * changes (its inode, size or modification time): an app sends the same
  * icon with each notification.
  *
+ * The bar's bell (`awl_plugin_config_t.notify`'s bell_icon) comes from
+ * here too, so no file system is touched on the main thread for it.
+ *
  * Everything a client names is untrusted: a path that is no regular file
  * (a FIFO, a device) is refused without being read, a desktop entry id is
  * a file name in the applications directories, nothing else.
@@ -45,6 +48,15 @@ int awl_notify_image_want( uint32_t id, uint64_t serial, int px, const char* ima
                            const char* desktop_entry );
 /** what is done since the last call, a list, oldest first; NULL none */
 awl_notify_image_t* awl_notify_image_take( void );
+/** Asks for the first of names (the config's: icon names or paths, ";"
+ * between them) the themes have, at px pixels, for the bar; key is the
+ * caller's, handed back as the result's serial (its id is 0). The thread
+ * asks for a redraw when it is done. Returns 0 if it can't: nothing will
+ * come of it then. */
+int awl_notify_image_icon_want( uint64_t key, int px, const char* names );
+/** what `awl_notify_image_icon_want()` asked for that is done since the
+ * last call, like `awl_notify_image_take()`'s */
+awl_notify_image_t* awl_notify_image_icon_take( void );
 /** frees a list of what came, the images with it */
 void awl_notify_image_free( awl_notify_image_t* list );
 /** Stops the thread, dropping what is wished for and done. Returns nonzero

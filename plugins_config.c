@@ -45,6 +45,22 @@ static void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
     if (p) backlight_toggle( p->backlight );
 }
 
+static void AWL_ACTION( brightness )( const Arg* arg ) {
+    awl_brightness_adjust( arg->f );
+}
+
+static void AWL_ACTION( volume )( const Arg* arg ) {
+    awl_volume_adjust( arg->f );
+}
+
+static void AWL_ACTION( volumemute )( const Arg* arg ) {
+    awl_volume_mute_toggle();
+}
+
+static void AWL_ACTION( micmute )( const Arg* arg ) {
+    awl_mic_mute_toggle();
+}
+
 static void AWL_ACTION( tagmonf )( const Arg* arg ) {
     AWL_ACTION(tagmon)(arg);
     AWL_ACTION(focusmon)(arg);
@@ -108,12 +124,6 @@ static const char *termcmd[] = { "kitty", "-d", "$HOME", NULL };
 static const char *const launcher_terminal[] = { "kitty", NULL };
 static const char *suspend[] = { "systemctl", "suspend", NULL };
 static const char *hyprcopy[] = { "hyprcopy", NULL };
-static const char *brightp[] = { "backlight-tooler", "-v5", NULL };
-static const char *brightm[] = { "backlight-tooler", "-v-5", NULL };
-static const char *volp[] = { "pactl", "set-sink-volume", "@DEFAULT_SINK@", "+5%", NULL };
-static const char *volm[] = { "pactl", "set-sink-volume", "@DEFAULT_SINK@", "-5%", NULL };
-static const char *volt[] = { "pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle", NULL };
-static const char *volT[] = { "pactl", "set-source-mute", "@DEFAULT_SOURCE@", "toggle", NULL };
 static const char *speakerT[] = { "pulse_port_switch", NULL };
 static const char *grimslurp[] = { "grim_slurp", NULL };
 static const char *wdisplays[] = { "wdisplays", NULL };
@@ -172,12 +182,12 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_n,          AWL_ACTION(minimize),         {0} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_n,          AWL_ACTION(unminimize),       {0} },
     { MODKEY,                    XKB_KEY_c,          AWL_ACTION(spawn),            {.v = hyprcopy} },
-    { 0, XKB_KEY_XF86MonBrightnessUp,                AWL_ACTION(spawn),            {.v=brightp} },
-    { 0, XKB_KEY_XF86MonBrightnessDown,              AWL_ACTION(spawn),            {.v=brightm} },
-    { 0, XKB_KEY_XF86AudioRaiseVolume,               AWL_ACTION(spawn),            {.v=volp} },
-    { 0, XKB_KEY_XF86AudioLowerVolume,               AWL_ACTION(spawn),            {.v=volm} },
-    { 0, XKB_KEY_XF86AudioMute,                      AWL_ACTION(spawn),            {.v=volt} },
-    { 0, XKB_KEY_XF86AudioMicMute,                   AWL_ACTION(spawn),            {.v=volT} },
+    { 0, XKB_KEY_XF86MonBrightnessUp,                AWL_ACTION(brightness),       {.f =  0.05f} },
+    { 0, XKB_KEY_XF86MonBrightnessDown,              AWL_ACTION(brightness),       {.f = -0.05f} },
+    { 0, XKB_KEY_XF86AudioRaiseVolume,               AWL_ACTION(volume),           {.f =  0.05f} },
+    { 0, XKB_KEY_XF86AudioLowerVolume,               AWL_ACTION(volume),           {.f = -0.05f} },
+    { 0, XKB_KEY_XF86AudioMute,                      AWL_ACTION(volumemute),       {0} },
+    { 0, XKB_KEY_XF86AudioMicMute,                   AWL_ACTION(micmute),          {0} },
     { MODKEY,                    XKB_KEY_F1,         AWL_ACTION(spawn),            {.v = speakerT} },
     { 0,                         XKB_KEY_Print,      AWL_ACTION(spawn),            {.v=grimslurp} },
     { MODKEY,                    XKB_KEY_d,          AWL_ACTION(spawn),            {.v=wdisplays} },
@@ -250,6 +260,10 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the tray */
     c->tray.icon_theme = "Papirus-Dark";
     c->tray.bg = molokai_light_gray;
+
+    /* the notifications' bell, from the icon theme */
+    p->notify.bell_icon = "notifications-symbolic;preferences-system-notifications-symbolic";
+    p->notify.bell_icon_dnd = "notifications-disabled-symbolic";
 
     /* the popups */
     // c->popup.border = molokai_blue;

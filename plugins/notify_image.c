@@ -1,6 +1,7 @@
 /* The notifications' images from files and icon names, see notify_image.h:
  * wishes go to the thread under a lock, what came of them back the same
- * way; the main thread polls for it (notify.c's timer). */
+ * way; the main thread polls for it (notify.c's timer), the bar's icons
+ * when the thread's redraw comes. */
 
 #include "notify_image.h"
 #include "desktop_entry.h"
@@ -35,8 +36,11 @@ enum { MAX_DESKTOP_FILE = 64 << 10 };
 
 typedef struct wish {
     awl_notify_image_t r;
-    /** image_path, app_icon, desktop_entry; NULL none */
+    /** image_path, app_icon, desktop_entry; NULL none. The bar's: its
+     * names in src[0] */
     char* src[3];
+    /** the bar's (`awl_notify_image_icon_want()`) */
+    int bar;
 } wish_t;
 
 /** a file decoded at px, known by what stat() says of it: a changed file
@@ -61,6 +65,8 @@ typedef struct {
     /** under lock: main -> thread, newest first; thread -> main, oldest
      * first */
     wish_t *wanted, *done;
+    /** under lock: the bar's done, oldest first */
+    wish_t* bar_done;
     /** the thread's alone */
     cached_t cache[CACHE_N];
     size_t cache_bytes;
@@ -273,6 +279,25 @@ static void grant( worker_t* x, awl_icons_t* icons, wish_t* w ) {
     }
 }
 
+/** the first of the names, ";" between them, the themes have */
+static void grant_names( worker_t* x, awl_icons_t* icons, wish_t* w ) {
+    for (const char* p = w->src[0]; *p && !w->r.img;) {
+        const size_t k = strcspn( p, ";" );
+        char* name = k ? strndup( p, k ) : NULL;
+        if (name) {
+            unsigned flags = 0;
+            char* found = icons ? awl_icons_lookup( icons, name, w->r.px, NULL, &flags ) : NULL;
+            if (found) {
+                w->r.img = load( x, found, w->r.px );
+                w->r.symbolic = w->r.img && (flags & AWL_ICON_SYMBOLIC);
+            }
+            free( found );
+            free( name );
+        }
+        p += k + (p[k] == ';');
+    }
+}
+
 static void* worker( void* data ) {
     worker_t* x = data;
     awl_icons_t* icons = awl_icons_new_desktop( x->icon_theme );
@@ -298,13 +323,17 @@ static void* worker( void* data ) {
                 wish_free( w );
                 continue;
             }
-            grant( x, icons, w );
+            if (w->bar) grant_names( x, icons, w );
+            else grant( x, icons, w );
             w->r.next = NULL;
+            const int bar = w->bar;
             pthread_mutex_lock( &x->lock );
-            wish_t** tail = &x->done;
+            wish_t** tail = bar ? &x->bar_done : &x->done;
             while (*tail) tail = (wish_t**)&(*tail)->r.next;
             *tail = w;
             pthread_mutex_unlock( &x->lock );
+            /* the bar's measure() takes it */
+            if (bar) awl_host->redraw_request();
         }
     }
     cache_free( x );
@@ -358,19 +387,47 @@ int awl_notify_image_want( uint32_t id, uint64_t serial, int px, const char* ima
     return 1;
 }
 
-awl_notify_image_t* awl_notify_image_take( void ) {
-    if (!W) return NULL;
+int awl_notify_image_icon_want( uint64_t key, int px, const char* names ) {
+    if (!names || !*names || px < 1) return 0;
+    if (px > AWL_ICON_MAX_DIM) px = AWL_ICON_MAX_DIM;
+    worker_t* x = worker_get();
+    wish_t* w = x ? calloc( 1, sizeof(*w) ) : NULL;
+    if (!w) return 0;
+    w->r = (awl_notify_image_t){ .serial = key, .px = px };
+    w->bar = 1;
+    if (!(w->src[0] = strdup( names ))) {
+        wish_free( w );
+        return 0;
+    }
+    pthread_mutex_lock( &x->lock );
+    w->r.next = (awl_notify_image_t*)x->wanted;
+    x->wanted = w;
+    pthread_mutex_unlock( &x->lock );
+    awl_thread_wake( &x->thread );
+    return 1;
+}
+
+/** list's whole, with the sources freed: they aren't the caller's
+ * business */
+static awl_notify_image_t* take( wish_t** list ) {
     pthread_mutex_lock( &W->lock );
-    wish_t* done = W->done;
-    W->done = NULL;
+    wish_t* done = *list;
+    *list = NULL;
     pthread_mutex_unlock( &W->lock );
-    /* the sources aren't the caller's business */
     for (wish_t* w = done; w; w = (wish_t*)w->r.next)
         for (int i = 0; i < 3; i++) {
             free( w->src[i] );
             w->src[i] = NULL;
         }
     return done ? &done->r : NULL;
+}
+
+awl_notify_image_t* awl_notify_image_take( void ) {
+    return W ? take( &W->done ) : NULL;
+}
+
+awl_notify_image_t* awl_notify_image_icon_take( void ) {
+    return W ? take( &W->bar_done ) : NULL;
 }
 
 void awl_notify_image_free( awl_notify_image_t* list ) {
@@ -386,6 +443,7 @@ int awl_notify_image_stop( void ) {
     if (awl_thread_stop( &x->thread, 500 )) return 1;
     wishes_free( x->wanted );
     wishes_free( x->done );
+    wishes_free( x->bar_done );
     pthread_mutex_destroy( &x->lock );
     free( x->icon_theme );
     free( x );

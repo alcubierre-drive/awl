@@ -41,10 +41,6 @@ void awl_alert_clear( awl_alert_id_t id ) {
     awl_redraw_request();
 }
 
-unsigned int awl_alert_version( void ) {
-    return version;
-}
-
 int awl_alert_up( awl_alert_id_t id ) {
     return texts[id][0] != 0;
 }
@@ -111,12 +107,13 @@ void awl_alert_draw( Monitor* m ) {
     if (!m->alert) /* createmon() arranges before it makes it */
         return;
     if (m->alert_version == version && m->alert_scale == s
-            && wlr_box_equal( &m->alert_area, &m->m ))
+            && wlr_box_equal( &m->alert_area, &m->w ))
         return;
     m->alert_version = version;
     m->alert_scale = s;
-    m->alert_area = m->m;
-    if (!text || !m->wlr_output->enabled || m->m.width <= 0) {
+    /* the window area: clear of the bar and of exclusive layer surfaces */
+    m->alert_area = m->w;
+    if (!text || !m->wlr_output->enabled || m->w.width <= 0) {
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
         return;
     }
@@ -129,8 +126,8 @@ void awl_alert_draw( Monitor* m ) {
     pad = font->height * 6 / 10;
     h = font->height + pad;
     w = (int)awl_draw_text_width( font, text ) + 2 * pad;
-    if (w > (int)(m->m.width * s) - 2 * (int)(margin * s))
-        w = (int)(m->m.width * s) - 2 * (int)(margin * s);
+    if (w > (int)(m->w.width * s) - 2 * (int)(margin * s))
+        w = (int)(m->w.width * s) - 2 * (int)(margin * s);
     if (w <= 0) {
         awl_font_release( font );
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
@@ -147,8 +144,8 @@ void awl_alert_draw( Monitor* m ) {
     wlr_scene_buffer_set_buffer( m->alert, &buf->base );
     wlr_buffer_drop( &buf->base ); /* the scene holds it now */
     wlr_scene_buffer_set_dest_size( m->alert, (int)(w / s), (int)(h / s) );
-    wlr_scene_node_set_position( &m->alert->node, m->m.x + margin,
-            m->m.y + m->m.height - margin - (int)(h / s) );
+    wlr_scene_node_set_position( &m->alert->node, m->w.x + margin,
+            m->w.y + m->w.height - margin - (int)(h / s) );
     wlr_scene_node_raise_to_top( &tree->node );
     wlr_scene_node_set_enabled( &m->alert->node, 1 );
 }

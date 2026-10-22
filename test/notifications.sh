@@ -50,6 +50,7 @@ look() {
 	# the test bus has no logind): dismissed, they don't count
 	local a
 	a=$(awk '$1 == "notif" && $(NF - 1) == "awl" && $NF == "alert" { print $2 }' <<<"$state")
+	alerts=$(wc -w <<<"$a")
 	[ -z "$a" ] && return
 	for a in $a; do "$live" win "nclose $a 2" >/dev/null; done
 	# the windows follow in the next loop round
@@ -76,6 +77,7 @@ notify() {
 field() { awk -v id="$1" -v c="$2" '$1 == "notif" && $2 == id { print $c }' <<<"$state"; }
 open_() { grep -q "^notif $1 " <<<"$state"; }
 closed() { ! open_ "$1"; }
+notifs() { awk '$1 == "notifs" { print $2 }' <<<"$state"; }
 count() { grep -c '^notif ' <<<"$state"; }
 eq() { [ "$1" = "$2" ]; }
 # the place of ID among the open ones, newest first, from 1
@@ -137,8 +139,8 @@ c=$(notify app 0 third '[]' '{"urgency": <byte 2>}' 3000)
 look
 check "ids grow" [ -n "$a" ] && [ "$b" -gt "$a" ] && [ "$c" -gt "$b" ]
 check "newest first" eq "$(place "$c")$(place "$b")$(place "$a")" 123
-check "normal: the config's timeout" eq "$(field "$a" 5)" 10000
-check "low: the config's timeout, category" eq "$(field "$b" 5) $(field "$b" 12)" "5000 im"
+check "normal: the config's timeout" eq "$(field "$a" 5)" 20000
+check "low: the config's timeout, category" eq "$(field "$b" 5) $(field "$b" 12)" "10000 im"
 check "critical: none, even when asked" eq "$(field "$c" 4) $(field "$c" 5)" "2 0"
 d=$(notify app 0 never '[]' '{}' 0)
 look
@@ -182,6 +184,33 @@ look
 check "released, it expires" closed "$h"
 look "nclose $a 2"
 check "the library dismisses" closed "$a"
+
+echo "-- idle: the timeouts stop while the user is away"
+# every FIFO command but nidle and the dump counts as activity
+look nidle
+i1=$(notify app 0 away '[]' '{}' 300)
+sleep 0.8
+look
+check "away: it doesn't expire" open_ "$i1"
+look nactive
+check "back: not at once" open_ "$i1"
+sleep 0.8
+look
+check "then it expires" closed "$i1"
+# 2 s, 1.2 of them with the user there: 0.8 left, at least half, 1 s
+i2=$(notify app 0 resume '[]' '{}' 2000)
+look nactive
+sleep 1.2
+look nactive
+look nidle
+sleep 0.3
+look nactive
+sleep 0.6
+look
+check "back: it resumes, not yet out" open_ "$i2"
+sleep 0.7
+look
+check "only the time the user was there counted" closed "$i2"
 
 echo "-- actions"
 x=$(notify app 0 act '["default", "Open", "reply", "Reply"]' '{}' 0)
@@ -231,6 +260,8 @@ look
 check "and new ones come" open_ "$r"
 
 echo "-- caps"
+# no earlier one expires meanwhile: the timeouts stop
+look nidle
 # 50 at a time; not a bare wait, which would wait for the monitor too
 for k in $(seq 300); do
 	call Notify flood 0 '' "f$k" '' '[]' '{}' 'int32 0' >/dev/null &
@@ -238,7 +269,9 @@ for k in $(seq 300); do
 	[ $((k % 50)) = 0 ] && wait "${pids[@]}" && pids=()
 done
 look
-check "256 open at most" grep -qx "notifs 256" <<<"$state"
+# with the alerts look() dismissed
+check "256 open at most" eq "$(($(notifs) + alerts))" 256
+look nactive
 check "critical ones stay" open_ "$c"
 "$live" log | grep -q "notifications: .* closed (4)" || echo "      (no eviction logged)"
 
@@ -256,7 +289,6 @@ partat() {
 # the K-th window from the top: "X Y W H"
 boxof() { nwins | sed -n "$1p" | cut -d' ' -f2-; }
 press() { "$live" click "$1" "$2" "$3" >/dev/null || die "click"; sleep 0.3; }
-notifs() { awk '$1 == "notifs" { print $2 }' <<<"$state"; }
 read -r px py < <(partat 1 0)
 [ -n "${px:-}" ] || die "no notification window"
 press "$px" "$py" middle
@@ -386,8 +418,8 @@ check "awl's own: no signal" eval '! grep -q "NotificationClosed (uint32 $o," "$
 
 echo "-- images (plugins/notify_image.c)"
 # ICON HINTS: a notification shown alone, its window's height in $hof
-# once it showed (up to 2 s), the first height seen in $first; closed
-# after
+# once it showed (up to 2 s, at least $rounds rounds of 0.1 s), the first
+# height seen in $first; closed after
 one() {
 	local i k
 	first= hof=
@@ -396,7 +428,7 @@ one() {
 		look
 		hof=$(boxof 1 | cut -d' ' -f4)
 		[ -z "$first" ] && first=$hof
-		[ -n "$hof" ] && [ "$k" -gt 3 ] && break
+		[ -n "$hof" ] && [ "$k" -gt "${rounds:-3}" ] && break
 		sleep 0.1
 	done
 	call CloseNotification "uint32 $i" >/dev/null
@@ -418,7 +450,8 @@ one '' '{"desktop-entry": <"awltest">}'
 check "desktop-entry's Icon" taller
 one "$img/small.png" "{\"image-path\": <\"$img/none.png\">}"
 check "image-path missing: app_icon" taller
-one '' "{\"image-path\": <\"$img/big.png\">}"
+# slow under ASan
+rounds=15 one '' "{\"image-path\": <\"$img/big.png\">}"
 check "a 3000x2000 PNG" taller
 one '' "{\"image-path\": <\"$img/none.png\">}"
 check "missing: none" plain
@@ -447,6 +480,47 @@ look
 check "after a reload: the image again" eval '[ "$(boxof 1 | cut -d" " -f4)" -gt "$h0" ]'
 call CloseNotification "uint32 $i" >/dev/null
 
+echo "-- the history (awl_notifications.c)"
+pasts() { awk '$1 == "pasts" { print $2 }' <<<"$state"; }
+# the history's summaries and reasons, newest first
+pastsum() { awk '$1 == "past" { printf "%s%s:%s", sep, $5, $4; sep = " " }' <<<"$state"; }
+look "nforget 0"
+check "cleared" eq "$(pasts)" 0
+h1=$(notify app 0 dismissed '[]' '{}' 0)
+h2=$(notify app 0 byclient '[]' '{}' 0)
+h3=$(notify app 0 transient '[]' '{"transient": <true>}' 0)
+h4=$(notify app 0 acted '["reply", "Reply"]' '{}' 0)
+look "nclose $h1 2"
+call CloseNotification "uint32 $h2" >/dev/null
+look "nclose $h3 2"
+look "ninvoke $h4 reply"
+h5=$(notify app 0 expired '[]' '{}' 300)
+look nactive
+sleep 0.8
+look
+check "expired and dismissed ones, newest first; not one its client closed, a transient or acted on one" \
+	eq "$(pastsum)" "expired:1 dismissed:2"
+look "nforget $(awk '$1 == "past" { print $2; exit }' <<<"$state")"
+check "one forgotten" eq "$(pastsum)" "dismissed:2"
+look restart
+sleep 1
+look
+check "it stays across a reload" eq "$(pastsum)" "dismissed:2"
+s0=$(notify app 0 again '["reply", "Reply"]' "{\"image-data\": <(1,1,4,true,8,4,[byte 1,2,3,4])>}" 0)
+look "nclose $s0 2"
+n=$(pasts)
+look "nshow $(awk '$1 == "past" && $5 == "again" { print $2; exit }' <<<"$state")"
+s1=$(awk '$1 == "notif" && $13 == "again" { print $2; exit }' <<<"$state")
+check "shown again: open under a new id, out of the history" \
+	eval '[ -n "$s1" ] && [ "$s1" != "$s0" ] && [ "$(pasts)" = "$((n - 1))" ]'
+check "flagged, without its actions, with its image" eq "$(field "$s1" 7) $(field "$s1" 8) $(field "$s1" 9)" "8 0 1x1x4"
+call CloseNotification "uint32 $s1" >/dev/null
+look
+check "no client closes it" eval 'open_ "$s1"'
+look "nclose $s1 2"
+check "dismissed again: back in the history" eq "$(pastsum | cut -d' ' -f1)" "again:2"
+look "nforget 0"
+
 echo "-- the menu, do-not-disturb, the widget (plugins/notify_menu.c)"
 # the menu: the visible popup that isn't persistent; its row P's center
 menu() { awk '$1 == "pwin" && $8 == 1 && $9 == 0 { print $2; exit }' <<<"$state"; }
@@ -455,6 +529,8 @@ menurow() {
 	i=$(menu)
 	[ -n "$i" ] && awk -v i="$i" -v p="$1" '$1 == "pcell" && $2 == i && $3 == p { print $4, $5 }' <<<"$state"
 }
+# the menu's "Show" buttons: parts after all the rows, "X Y" each
+showparts() { awk -v i="$(menu)" -v r="$(menurows)" '$1 == "ppart" && $2 == i && $3 >= r { print $4, $5 }' <<<"$state"; }
 menurows() { local i; i=$(menu); [ -n "$i" ] && awk -v i="$i" '$1 == "pcell" && $2 == i' <<<"$state" | wc -l; }
 # the notifications' widget: the defaults' second from the right
 widget() { awk '$1 == "widget" && $3 == 1 { print $4, $5; exit }' <<<"$state"; }
@@ -467,31 +543,42 @@ m1=$(notify app 0 one '[]' '{}' 0)
 m2=$(notify app 0 two '["default", "Open", "reply", "Reply"]' '{}' 0)
 m3=$(notify app 0 three '[]' '{"urgency": <byte 2>}' 0)
 look
-clickwidget left
-check "a left click on it opens the menu" eval '[ -n "$(menu)" ]'
-check "which hides the windows" eq "$(nwincount)" 0
+clickwidget right
+check "a right click on it opens the menu" eval '[ -n "$(menu)" ]'
+check "over the windows, which stay" eq "$(nwincount)" 3
 # do-not-disturb, dismiss all, three, two, Reply, one
 check "a row each: the switch, dismiss all, the titles, the action" eq "$(menurows)" 6
+check "no open one has \"Show\" while off" eq "$(showparts | wc -l)" 0
 clickrow 4 left
 check "an action's row invokes it" sawaction "$m2" reply
 check "and closes the menu" eval '[ -z "$(menu)" ]'
-clickwidget left
+clickwidget right
 clickrow 3 right
 check "a right click on a title dismisses it" eval 'closed "$m1" && sawclosed "$m1" 2'
-check "the menu stays, without it" eq "$(menurows)" 3
+# do-not-disturb, dismiss all, three, the history's head, one
+check "the menu stays, the dismissed one in its history" eq "$(menurows) $(pasts)" "5 1"
 clickrow 0 left
 check "do-not-disturb from the menu" eval '"$live" log | grep -q "notify: do-not-disturb on"'
 m4=$(notify app 0 four '[]' '{}' 0)
 look
-check "the menu lists the new one too" eq "$(menurows)" 4
-clickwidget left
+check "the menu lists the new one too" eq "$(menurows)" 6
+clickwidget right
 check "closed: the windows again; while on, only the critical one" eq "$(nwincount)" 1
 look restart
 sleep 1
 look
 check "after a reload: still on" eq "$(nwincount)" 1
+look "nshow $(awk '$1 == "past" { print $2; exit }' <<<"$state")"
+look
+check "one shown again from the history shows while on too" eq "$(nwincount)" 2
 clickwidget right
-check "a right click on the widget: off again" eq "$(nwincount)" 2
+check "while on: \"Show\" on the hidden one only" eq "$(showparts | wc -l)" 1
+read -r sx sy < <(showparts)
+press "$sx" "$sy" left
+look
+check "an open one's \"Show\": its window too, the menu closes" eq "$(nwincount) $(menu)" "3 "
+clickwidget left
+check "a left click on the widget: off again" eq "$(nwincount)" 3
 clickwidget middle
 check "a middle click on it dismisses all" eq "$(notifs) $(nwincount)" "0 0"
 for k in $(seq 15); do notify app 0 "k$k" '[]' '{}' 0 >/dev/null; done
@@ -503,10 +590,41 @@ press "$px" "$py" left
 look
 check "a click on \"+k more\" opens the menu" eval '[ -n "$(menu)" ]'
 read -r mx my mw _ < <(awk -v i="$(menu)" '$1 == "pwin" && $2 == i { print $4, $5, $6, $7 }' <<<"$state")
-check "in the stack's place, its corner" eq "$((mx + mw)) $my $(nwincount)" "$((px1 + pw1)) $py1 0"
+check "in the stack's place, its corner, over it" eq "$((mx + mw)) $my $(nwincount)" "$((px1 + pw1)) $py1 $n"
+move() { "$live" click "$1" "$2" >/dev/null || die "move"; sleep 0.6; look; }
+move 640 400
+check "the pointer not yet in it: it stays" eval '[ -n "$(menu)" ]'
 clickrow 1 left
-check "dismiss all from the menu" eq "$(notifs) $(nwincount)" "0 0"
+check "dismiss all from the menu, over a window (the menu takes it)" eq "$(notifs) $(nwincount)" "0 0"
+n=$(pasts)
+clickrow 3 right
+check "a right click on the history's one forgets it" eq "$(pasts)" "$((n - 1))"
+clickrow 2 left
+check "\"Clear history\" clears it" eq "$(pasts)" 0
 check "an empty menu: the switch and \"No notifications\"" eq "$(menurows)" 2
+move 640 400
+check "in it, then off it: it closes" eval '[ -z "$(menu)" ]'
+clickwidget right
+check "opened by the widget" eval '[ -n "$(menu)" ]'
+read -r rx ry < <(menurow 0)
+move "$rx" "$ry"
+check "the pointer from the widget into it: it stays" eval '[ -n "$(menu)" ]'
+read -r wx wy < <(widget)
+move "$wx" "$wy"
+check "back on the widget: it stays" eval '[ -n "$(menu)" ]'
+move 640 400
+check "off both: it closes" eval '[ -z "$(menu)" ]'
+s2=$(notify app 0 showme '[]' '{}' 0)
+look "nclose $s2 2"
+clickwidget right
+# a past row's "Show" button: a part after all the rows
+read -r sx sy < <(showparts | head -1)
+press "$sx" "$sy" left
+look
+check "a past one's \"Show\": it opens again, the menu closes" \
+	eq "$(notifs) $(awk '$1 == "notif" { print $13; exit }' <<<"$state") $(pasts) $(menu)" "1 showme 0 "
+check "its window is shown" eq "$(nwincount)" 1
+look "nclose $(awk '$1 == "notif" { print $2; exit }' <<<"$state") 2"
 
 sleep 0.3
 kill "$monitor" 2>/dev/null
@@ -516,6 +634,7 @@ check "signal: dismissed, reason 2" sawclosed "$a" 2
 check "signal: ActionInvoked" sawaction "$x" reply
 check "signal: ActivationToken" sawtoken "$x" tok123
 check "signal: the action dismissed it" sawclosed "$x" 2
+check "signal: none for one shown again" eval '! grep -q "NotificationClosed (uint32 $s1," "$signals"'
 check "signal: the resident one's action" sawaction "$y" default
 check "signal: evicted, reason 4" grep -q "NotificationClosed (uint32 [0-9]*, uint32 4)" "$signals"
 

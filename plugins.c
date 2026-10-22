@@ -279,6 +279,26 @@ static int cmpline( const void* a, const void* b ) {
     return strcmp( *(char* const*)a, *(char* const*)b );
 }
 
+void awl_volume_adjust( float delta ) {
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) pulse_volume_adjust( p->pulse, delta );
+}
+
+void awl_volume_mute_toggle( void ) {
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) pulse_mute_toggle( p->pulse );
+}
+
+void awl_mic_mute_toggle( void ) {
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) pulse_mic_mute_toggle( p->pulse );
+}
+
+void awl_brightness_adjust( float delta ) {
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) backlight_adjust( p->backlight, delta );
+}
+
 void awl_notify_config( void ) {
     ConfigLines cl = { 0 };
     /* holds the lock throughout; nothing waits under it but malloc() */
@@ -301,7 +321,11 @@ void awl_notify_config( void ) {
     }
     char head[128] = {0};
     snprintf( head, 127, "AWL config (ABI v%i)", AWL_PLUGIN_ABI );
-    awl_notify( head, body[0] ? body : "(empty)" );
+    awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
+    n.summary = head;
+    n.body = body[0] ? body : "(empty)";
+    n.look.max_lines = -1; /* every entry, up to the screen's height */
+    awl_notify_send( &n );
     free( body );
 }
 

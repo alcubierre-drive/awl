@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 35
+#define AWL_PLUGIN_ABI 37
 /** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 

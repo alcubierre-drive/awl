@@ -30,6 +30,12 @@
  *   no say in (`awl_notif_look_t`, a timeout for critical ones), flagged
  *   AWL_NOTIF_AWL. No client replaces (by id or tag) or closes them, no
  *   signal tells of them; they replace each other by tag.
+ * - The history (`awl_host_t.notif_history`) keeps the closed ones'
+ *   contents but their actions (no client waits on those), image data up
+ *   to 16 MiB for all of them (the oldest's goes first).
+ *   `awl_notifications_show()` opens one again under a new id, flagged
+ *   AWL_NOTIF_SHOWN: as awl's own, no client replaces or closes it, no
+ *   signal tells of it; its timeout starts over.
  * - The name is requested with SD_BUS_NAME_QUEUE: another server that has
  *   it keeps it (logged), awl's waits behind it. A lost bus is connected to
  *   again; the notifications stay.
@@ -59,5 +65,18 @@ void awl_notifications_invoke( uint32_t id, const char* key, const char* token )
 /** `awl_host_t.notif_send`: awl's own notifications, the library's and
  * the core's (awl_alert.c) */
 uint32_t awl_notifications_send( const awl_notif_send_t* send );
+/** `awl_host_t.notif_history` */
+int awl_notifications_history( const awl_notif_past_t** out, int max );
+/** `awl_host_t.notif_forget` */
+void awl_notifications_forget( uint64_t seq );
+/** `awl_host_t.notif_show` */
+uint32_t awl_notifications_show( uint64_t seq );
 /** `awl_host_t.notif_hold` */
 void awl_notifications_hold( uint32_t id, int held );
+/** a key or the pointer moved: timeouts stopped for idleness
+ * (`awl_config_t.notifications.idle_pause`) resume. Cheap enough for
+ * every motion. */
+void awl_notifications_activity( void );
+/** as if idle_pause had passed now (the test FIFO's nidle): the timeouts
+ * stop until the next activity */
+void awl_notifications_idle( void );

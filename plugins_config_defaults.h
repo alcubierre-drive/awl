@@ -18,7 +18,7 @@ static const char* const default_terminal[] = { "xterm", "-e", NULL };
 
 static const awl_plugin_config_t awl_plugin_config_defaults = {
     .widgets = { default_widgets, LENGTH( default_widgets ) },
-    .widgets_bar_padding = 0, /* each widget's own (plugins_widgets.c) */
+    .widgets_padding = 0.25f, /* a widget's gap to the next: half the font's height */
     .colors = {
         .bg            = molokai_light_gray,
         .fg            = 0xf5efffff,
@@ -70,6 +70,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     .notify = {
         .at = AWL_WINDOW_AT_TOP_RIGHT, .dx = 0, .dy = 0, .gap = 6,
         .width = 360, .image_size = 48,
+        .menu_width = 440, /* the windows' and a past one's "Show" and time */
         .max_lines = 14, .max_shown = 8,
         /* low and normal: the popups' colors */
         .urgency = {
@@ -79,5 +80,8 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .progress_color = 0, /* the frame's */
         .progress_height = 6,
         .show_app = 1,
+        /* .bell_icon, .bell_icon_dnd: NULL, the glyphs; e.g.
+         * "notifications-symbolic;preferences-system-notifications-symbolic"
+         * and "notifications-disabled-symbolic" (Adwaita, Breeze, Papirus) */
     },
 };

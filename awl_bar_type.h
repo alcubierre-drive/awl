@@ -13,6 +13,9 @@
 
 /** `widget_t.pad_left`, `pad_right`: half the bar font's height */
 #define AWL_PADDING_FONT INT_MIN
+/** `widget_t.pad_left`, `pad_right`: the configuration's padding, the same
+ * for (almost) every widget */
+#define AWL_PADDING_DEFAULT (INT_MIN + 1)
 
 typedef struct widget_t widget_t;
 typedef struct awl_bar_t awl_bar_t;
@@ -74,7 +77,8 @@ struct widget_t {
     void (*free)( void* userdata );
     /** logical pixels left and right of each of its cells (each tag, task
      * bar window, temperature...: see plugins_widgets.c), negative ones
-     * overlapping the neighbours; AWL_PADDING_FONT: half the font's height */
+     * overlapping the neighbours; AWL_PADDING_FONT: half the font's height,
+     * AWL_PADDING_DEFAULT: the configuration's */
     int pad_left, pad_right;
     /** the bar it is on */
     awl_bar_t* bar;

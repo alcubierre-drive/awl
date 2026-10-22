@@ -57,6 +57,9 @@ enum {
     /** awl's own (`awl_host_t.notif_send`): no D-Bus client replaces or
      * closes it */
     AWL_NOTIF_AWL = 4,
+    /** shown again from the history (`awl_host_t.notif_show`): its client
+     * is done with it, no client replaces or closes it, it has no actions */
+    AWL_NOTIF_SHOWN = 8,
 };
 
 /** why a notification closed, NotificationClosed's reasons */
@@ -112,13 +115,34 @@ typedef struct awl_notif_t {
     awl_notif_urgency_t urgency;
     /** the ``value`` hint, 0 to 100 (a progress bar); -1 none */
     int value;
-    /** AWL_NOTIF_TRANSIENT, AWL_NOTIF_RESIDENT */
+    /** AWL_NOTIF_TRANSIENT, AWL_NOTIF_RESIDENT, AWL_NOTIF_AWL,
+     * AWL_NOTIF_SHOWN */
     unsigned flags;
     /** ms it stays from its last change, 0 until it is dismissed */
     int timeout;
     /** awl's own look for it, all 0 for a D-Bus one */
     awl_notif_look_t look;
 } awl_notif_t;
+
+/**
+ * A closed notification in the history awl's server keeps (the last 100,
+ * newest first): it expired, was dismissed (not by an action) or made room;
+ * not one its client closed, nor a transient one. Read only, as
+ * `awl_notif_t`; the history lives as long as awl, past reloads. It keeps
+ * what `awl_host_t.notif_show` needs to show it again.
+ */
+typedef struct awl_notif_past_t {
+    /** unique in the history (ids are given out again) */
+    uint64_t seq;
+    /** the id it had */
+    uint32_t id;
+    const char *app, *summary;
+    awl_notif_urgency_t urgency;
+    unsigned flags;
+    awl_notif_reason_t reason;
+    /** when it closed, seconds since the epoch */
+    int64_t closed;
+} awl_notif_past_t;
 
 /**
  * A notification awl sends itself (`awl_host_t.notif_send`): its app is
@@ -354,6 +378,16 @@ typedef struct awl_host_t {
      * whether or not a client could reach the server; returns its id, 0 if
      * it couldn't (out of memory, the server not started) */
     uint32_t (*notif_send)( const awl_notif_send_t* n );
+    /** the history into out, newest first, at most max; returns how many
+     * there are. Valid as notif_list's, and until notif_forget. A change
+     * fires `awl_plugin_api_t.notifications_changed` too. */
+    int (*notif_history)( const awl_notif_past_t** out, int max );
+    /** drops entry seq from the history, 0: all of it */
+    void (*notif_forget)( uint64_t seq );
+    /** opens history entry seq again, out of the history, as a new
+     * notification (AWL_NOTIF_SHOWN, without actions, its timeout from the
+     * start); returns its id, 0 if there is no such entry */
+    uint32_t (*notif_show)( uint64_t seq );
 
     /* ---- timers on awl's main loop ---- */
 

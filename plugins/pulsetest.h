@@ -10,6 +10,13 @@ typedef struct pulse_test_t {
     _Atomic float value;
     atomic_int muted;
 
+    /** requests for the loop thread, from any thread (pulsetest.c) */
+    atomic_int requests;
+    /** the volume changes asked for and not yet made, in per mille */
+    atomic_int volume_delta;
+    /** an eventfd that wakes the loop for them */
+    int wake_fd;
+
     /** loop thread only */
     PulseAudio* pa;
 } pulse_test_t;
@@ -19,3 +26,13 @@ typedef struct pulse_test_t {
 pulse_test_t* pulse_init( pa_mainloop_api* api );
 /** Only once the loop thread has stopped. No-op for NULL. */
 void pulse_free( pulse_test_t* p );
+
+/** Changes the default sink's volume by delta (1 is 100%), keeping its
+ * balance; up no further than 100%, or than it is if that's more. Any
+ * thread; returns at once, the bar follows by the sink's events. Dropped
+ * while there is no server or no default sink. No-op for NULL. */
+void pulse_volume_adjust( pulse_test_t* p, float delta );
+/** Mutes the default sink, or unmutes it; likewise. */
+void pulse_mute_toggle( pulse_test_t* p );
+/** Mutes the default source (the microphone), or unmutes it; likewise. */
+void pulse_mic_mute_toggle( pulse_test_t* p );

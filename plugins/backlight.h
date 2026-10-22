@@ -25,6 +25,8 @@ typedef struct awl_backlight_t {
     atomic_int webcam;
     /** requests for the loop thread, from any thread (backlight.c) */
     atomic_int requests;
+    /** the brightness changes asked for and not yet sent, in per mille */
+    atomic_int adjust;
     /** an eventfd that wakes the loop for them */
     int wake_fd;
     /** loop thread only */
@@ -46,3 +48,7 @@ void backlight_toggle( awl_backlight_t* b );
  * its user unit if it isn't running, which updates once on start. Any
  * thread, returns at once. No-op for NULL. */
 void backlight_update( awl_backlight_t* b );
+/** Has the daemon change the screen brightness by delta (1 is all of it,
+ * ``Adjust()``); starts its user unit if it isn't running and sends it once
+ * the daemon is there. Any thread, returns at once. No-op for NULL. */
+void backlight_adjust( awl_backlight_t* b, float delta );

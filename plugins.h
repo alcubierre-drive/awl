@@ -30,8 +30,9 @@ enum {
     AwlWidgetBattery,
     AwlWidgetNetwork,     /* the address; hover: all of them */
     AwlWidgetBacklight,   /* the backlight daemon's state */
-    AwlWidgetNotifications, /* a bell and the count; left: the menu, right:
-                             * do-not-disturb, middle: dismiss all */
+    AwlWidgetNotifications, /* a bell, a dot while any are open; left:
+                             * do-not-disturb, right: the menu, middle:
+                             * dismiss all; hover: how many are unread */
 };
 
 /**
@@ -69,9 +70,9 @@ typedef struct awl_plugin_config_t {
     /** the bar's widgets right of the task bar, AwlWidget*, from the right
      * edge in; set with SETLIST() */
     struct { const int* v; size_t n; } widgets;
-    /** logical pixels added to every widget's own padding on either side
-     * (`widget_t.pad_left`, `pad_right`), may be negative */
-    int widgets_bar_padding;
+    /** the widgets' padding on either side of each of their cells
+     * (AWL_PADDING_DEFAULT, almost all of them), in the bar font's heights */
+    float widgets_padding;
     struct { AWL_BAR_COLORS( AWL_BAR_COLOR_U32 ) } colors;
     /** the temperature's color scale, °C: of the CPU package sensor
      * (coretemp), else of ACPI's thermal_zone0 */
@@ -131,6 +132,9 @@ typedef struct awl_plugin_config_t {
         /** the content's width (the frame's padding around it); the
          * image's square left of the text */
         int width, image_size;
+        /** the menu's content's width (notify_menu.h; its padding around
+         * it), whatever it lists, at most the screen's */
+        int menu_width;
         /** the body's lines at most (<= 0: any); the windows shown at
          * most, a "+k more" under them for the rest */
         int max_lines, max_shown;
@@ -144,6 +148,14 @@ typedef struct awl_plugin_config_t {
         /** the app's name after the summary, in italic and braces:
          * "summary {app}" */
         int show_app;
+        /** the bar widget's bell from the icon theme (`awl_config_t.tray`'s
+         * icon_theme first, then the desktop's), without and with
+         * do-not-disturb: icon names or paths, ";" between them, the
+         * first found wins; looked up and decoded on the image thread
+         * (notify_image.h), as large as the tray's icons. NULL, "" or none
+         * found: the glyph (🔔, 🔕). */
+        const char* bell_icon;
+        const char* bell_icon_dnd;
     } notify;
 } awl_plugin_config_t;
 
@@ -187,11 +199,26 @@ void awl_notify( const char* title, const char* body );
 uint32_t awl_notify_send( const awl_notif_send_t* n );
 /** plugins.c: a notification "AWL config" listing the config dictionary,
  * one ``key=value`` line per entry, sorted by key; an owned value (one the
- * dictionary frees) as ``key=pointer(free function)``. Main thread. */
+ * dictionary frees) as ``key=pointer(free function)``; its lines aren't
+ * capped (but by the screen). Main thread. */
 void awl_notify_config( void );
 /** plugins.c: a notification "x/N" once the wallpaper all changes asked for
  * end on is shown; main thread */
 void awl_notify_wallpaper_shown( const char* title );
+
+/** plugins.c: the default sink's volume up (delta > 0) or down by delta (1
+ * is 100%), up no further than 100% (`pulse_volume_adjust()`); for a
+ * binding's action, e.g. `.f = 0.05f`. Main thread, returns at once. */
+void awl_volume_adjust( float delta );
+/** plugins.c: mutes the default sink or unmutes it (`pulse_mute_toggle()`) */
+void awl_volume_mute_toggle( void );
+/** plugins.c: mutes the default source or unmutes it
+ * (`pulse_mic_mute_toggle()`) */
+void awl_mic_mute_toggle( void );
+/** plugins.c: the screen brightness up or down by delta (1 is all of it),
+ * through the backlight daemon (`backlight_adjust()`), which this starts if
+ * it isn't running. Main thread, returns at once. */
+void awl_brightness_adjust( float delta );
 
 /** plugins_widgets.c: `awl_plugin_api_t.bar_widgets` */
 void awl_widgets_create( awl_bar_t* bar );

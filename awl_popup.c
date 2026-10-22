@@ -63,11 +63,29 @@ popupstyle(const Popup *p)
     return s;
 }
 
+/** whether a menu (not a persistent popup) is shown */
+static int
+popupsmenuopen(void)
+{
+    Popup *p;
+    wl_list_for_each(p, &popups, link)
+        if (p->menu && !p->persistent && awl_window_monitor(p->win))
+            return 1;
+    return 0;
+}
+
 /** puts the trees where they belong: the popups' right above LyrTop, the
- * persistent ones' right above it or above LyrOverlay */
+ * persistent ones' right above it or above LyrOverlay; while a menu is
+ * open, the persistent ones' right under the popups', so that it covers
+ * them (the notification center over the notifications) */
 static void
 popupsplace(void)
 {
+    if (persistent_tree && popup_tree && popupsmenuopen()) {
+        wlr_scene_node_place_above(&persistent_tree->node, &layers[LyrTop]->node);
+        wlr_scene_node_place_above(&popup_tree->node, &persistent_tree->node);
+        return;
+    }
     if (popup_tree)
         wlr_scene_node_place_above(&popup_tree->node, &layers[LyrTop]->node);
     if (persistent_tree)
@@ -191,6 +209,8 @@ void
 popupsgrabupdate(void)
 {
     awl_window_t *win = popupkeyboard();
+    /* a menu shown or hidden: its place over the persistent ones */
+    popupsplace();
     if (!win == !popup_keyboard) {
         popup_keyboard = win;
         return;
@@ -231,11 +251,12 @@ awl_window_t *
 popupat(double x, double y)
 {
     Popup *p;
-    /* the persistent ones are on top, then the newest */
-    for (int persistent = 1; persistent >= 0; persistent--)
+    /* the top tree's first (popupsplace()), then the newest */
+    const int top = !popupsmenuopen();
+    for (int i = 0; i < 2; i++)
         wl_list_for_each_reverse(p, &popups, link)
-            if (p->persistent == persistent && awl_window_takes_pointer(p->win, x, y))
-                return popupcovered(p->win, persistent, x, y) ? NULL : p->win;
+            if (p->persistent == (i ? !top : top) && awl_window_takes_pointer(p->win, x, y))
+                return popupcovered(p->win, p->persistent, x, y) ? NULL : p->win;
     return NULL;
 }
 

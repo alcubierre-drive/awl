@@ -9,7 +9,7 @@
 #include <string.h>
 
 /** ms the pointer rests on an icon before its tooltip shows */
-enum { TOOLTIP_DELAY = 500 };
+enum { TOOLTIP_DELAY = 200 };
 
 static struct {
     awl_window_t* win;

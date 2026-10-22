@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <math.h>
 #include <poll.h>
 #include <time.h>
 #include <unistd.h>
@@ -19,7 +20,7 @@
  * polled. Runs on the plugins' shared loop (poller.h): the bus
  * fd and its timeout are event sources there, and every call is
  * asynchronous, so a slow bus never holds up the other plugins. The bar's
- * requests (backlight_toggle(), backlight_update()) go out on the same
+ * requests (backlight_toggle(), backlight_update(), backlight_adjust()) go out on the same
  * connection; they are the only thing that starts the daemon, through its
  * systemd user unit, never D-Bus auto-start. Everything but the atomics and
  * the wake fd is only touched on the loop thread, or before it starts and
@@ -38,7 +39,7 @@
 
 /** awl_backlight_t.requests; a second toggle before the loop got to the
  * first one cancels it */
-enum awl_backlight_request { REQ_TOGGLE = 1, REQ_UPDATE = 2 };
+enum awl_backlight_request { REQ_TOGGLE = 1, REQ_UPDATE = 2, REQ_ADJUST = 4 };
 
 struct awl_backlight_bus_t {
     awl_backlight_t* b;
@@ -54,9 +55,13 @@ struct awl_backlight_bus_t {
     /* the daemon's Interval and ConfigInterval as last seen; Interval as
      * last set by a toggle until the daemon tells otherwise */
     uint64_t interval, config_interval;
+    /* brightness changes (per mille) asked for while the daemon wasn't
+     * running, sent when it is */
+    int pending_adjust;
 };
 
 static void bus_update( awl_backlight_bus_t* s );
+static void send_adjust( awl_backlight_bus_t* s );
 
 /** a timeval `usec` from now on the wall clock, which pa_mainloop_api takes */
 static struct timeval in_usec( uint64_t usec ) {
@@ -140,8 +145,10 @@ out:
 static int on_properties( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
     awl_backlight_bus_t* s = userdata;
-    if (!sd_bus_message_is_method_error( m, NULL ))
+    if (!sd_bus_message_is_method_error( m, NULL )) {
         read_properties( s, m, 1 );
+        send_adjust( s );
+    }
     return 0;
 }
 
@@ -232,6 +239,7 @@ static void drop_bus( awl_backlight_bus_t* s ) {
     if (s->bus) sd_bus_close( s->bus );
     s->bus = sd_bus_unref( s->bus );
     s->failed = 0;
+    s->pending_adjust = 0;
 }
 
 static void bus_io( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
@@ -359,15 +367,34 @@ static void do_update( awl_backlight_bus_t* s ) {
         start_unit( s );
 }
 
+/** sends pending_adjust, if any; the daemon takes [-1,1] */
+static void send_adjust( awl_backlight_bus_t* s ) {
+    int d = s->pending_adjust;
+    s->pending_adjust = 0;
+    if (d < -1000) d = -1000;
+    if (d > 1000) d = 1000;
+    if (d) call_daemon( s, BUS_IFACE, "Adjust", NULL, "d", d / 1000.0 );
+}
+
+static void do_adjust( awl_backlight_bus_t* s, int permille ) {
+    s->pending_adjust += permille;
+    if (atomic_load( &s->b->running ))
+        send_adjust( s );
+    else
+        start_unit( s );
+}
+
 static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
     (void)a; (void)e; (void)f;
     awl_backlight_bus_t* s = userdata;
     uint64_t count;
     if (read( fd, &count, sizeof count ) < 0) {}
     int req = atomic_exchange( &s->b->requests, 0 );
+    int adjust = atomic_exchange( &s->b->adjust, 0 );
     if (!req || !s->bus) return;
     if (req & REQ_TOGGLE) do_toggle( s );
     if (req & REQ_UPDATE) do_update( s );
+    if (adjust) do_adjust( s, adjust );
     bus_update( s );
 }
 
@@ -390,6 +417,12 @@ void backlight_update( awl_backlight_t* b ) {
     request( b, REQ_UPDATE );
 }
 
+void backlight_adjust( awl_backlight_t* b, float delta ) {
+    if (!b || !(delta >= -1.0f && delta <= 1.0f)) return;
+    atomic_fetch_add( &b->adjust, (int)lroundf( delta * 1000.0f ) );
+    request( b, REQ_ADJUST );
+}
+
 awl_backlight_t* backlight_init( pa_mainloop_api* api ) {
     awl_backlight_t* b = calloc(1, sizeof *b);
     if (!b) return NULL;
@@ -398,6 +431,7 @@ awl_backlight_t* backlight_init( pa_mainloop_api* api ) {
     atomic_init( &b->screen, BACKLIGHT_UNKNOWN );
     atomic_init( &b->webcam, BACKLIGHT_UNKNOWN );
     atomic_init( &b->requests, 0 );
+    atomic_init( &b->adjust, 0 );
     b->wake_fd = eventfd( 0, EFD_CLOEXEC | EFD_NONBLOCK );
     if (b->wake_fd < 0 || !(b->bus = calloc(1, sizeof *b->bus)))
         goto fail;

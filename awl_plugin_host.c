@@ -144,6 +144,9 @@ static awl_host_t host = {
     .notif_invoke = awl_notifications_invoke,
     .notif_hold = awl_notifications_hold,
     .notif_send = awl_notifications_send,
+    .notif_history = awl_notifications_history,
+    .notif_forget = awl_notifications_forget,
+    .notif_show = awl_notifications_show,
 
     .timer_add = timer_add,
     .timer_set = timer_set,
