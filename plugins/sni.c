@@ -378,7 +378,7 @@ awl_icons_t* sni_themes( void ) {
     return s->themes;
 }
 
-/** sets *b to nb unless they hold the same bytes; returns whether it changed */
+/** sets ``*b`` to nb unless they hold the same bytes; returns whether it changed */
 static int blob_set( awl_sni_blob_t** b, awl_sni_blob_t* nb ) {
     if (*b == nb) return 0;
     if (*b && nb && (*b)->len == nb->len && !memcmp( (*b)->data, nb->data, nb->len )) {
@@ -462,7 +462,7 @@ static void item_free( awl_sni_t* s, item_t* it ) {
     free( it );
 }
 
-/** a property's string (s or o) into *p */
+/** a property's string (s or o) into ``*p`` */
 static int read_str( sd_bus_message* m, const char* sig, char** p ) {
     const char* contents = NULL;
     if (sd_bus_message_peek_type( m, NULL, &contents ) <= 0 || !contents || strcmp( contents, sig ))
@@ -478,7 +478,7 @@ static int read_str( sd_bus_message* m, const char* sig, char** p ) {
 }
 
 /** a(iiay), the variant's or ToolTip's (entered), as a blob of
- * `awl_icon_pixmap_t`s and their data; only those whose data matches
+ * :c:type:`awl_icon_pixmap_t`s and their data; only those whose data matches
  * their size */
 static int read_pixmaps( sd_bus_message* m, awl_sni_blob_t** out, int* nout ) {
     struct { int32_t w, h; const void* data; size_t len; } p[MAX_PIXMAPS];

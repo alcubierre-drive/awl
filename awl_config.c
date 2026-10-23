@@ -2,6 +2,7 @@
 #include "awl_config_defaults.h"
 #include "awl_alert.h"
 #include "awl_bar.h"
+#include "awl_bus.h"
 #include "awl_client.h"
 #include "awl_desktop.h"
 #include "awl_input.h"
@@ -15,6 +16,8 @@
 #include "awl_wallpaper.h"
 #include "tray/awl_tray.h"
 #include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 
 static void configapply(void);
 static void pluginsdetach(void);
@@ -51,6 +54,7 @@ configfini(void)
     cfgdict = NULL;
 }
 
+/** the config dictionary's keys awl sets when it starts */
 static void
 cfgdictdefaults(void)
 {
@@ -140,6 +144,104 @@ updatepluginpause(void)
     awl_plugins_set_paused(locked || !visible);
 }
 
+/** each variable the config's environment changed, with its value from
+ * before (NULL: unset), to go back to once the config drops it; kept for
+ * awl's life */
+static struct { char *name, *orig; } *envsaved;
+static size_t nenvsaved;
+
+static int
+envconfigured(const char *name)
+{
+    size_t i;
+    for (i = 0; i < cfg->environment.n; i++)
+        if (cfg->environment.v[i].name && !strcmp(cfg->environment.v[i].name, name))
+            return 1;
+    return 0;
+}
+
+/** what goes to systemd's and the session bus' environment too */
+static const char *const envimported[] = {
+    "DISPLAY", "WAYLAND_DISPLAY", "XDG_CURRENT_DESKTOP", NULL };
+/** :c:func:`environmentimport` ran: from then on changes to those go there too */
+static int envimportstarted;
+/** one of them changed since */
+static int envimportdirty;
+
+/** sets name to value (NULL: unsets it), if that changes it: other threads
+ * may be reading the environment */
+static void
+envset(const char *name, const char *value)
+{
+    const char *now = getenv(name);
+    const char *const *n;
+    if (value ? now && !strcmp(now, value) : !now)
+        return;
+    if (value)
+        setenv(name, value, 1);
+    else
+        unsetenv(name);
+    for (n = envimported; *n; n++)
+        envimportdirty |= !strcmp(*n, name);
+}
+
+void
+environmentimport(void)
+{
+    envimportstarted = 1;
+    envimportdirty = 0;
+    awl_bus_import_environment(envimported);
+}
+
+/** cfg->environment into awl's environment */
+static void
+environmentapply(void)
+{
+    size_t i, j;
+    for (i = 0; i < nenvsaved; i++)
+        if (!envconfigured(envsaved[i].name))
+            envset(envsaved[i].name, envsaved[i].orig);
+    for (i = 0; i < cfg->environment.n; i++) {
+        const EnvVar *e = &cfg->environment.v[i];
+        if (!e->name || !*e->name || strchr(e->name, '=')) {
+            awl_wrn_printf("environment: no variable \"%s\"\n", e->name ? e->name : "(null)");
+            continue;
+        }
+        for (j = 0; j < nenvsaved && strcmp(envsaved[j].name, e->name); j++)
+            ;
+        if (j == nenvsaved) {
+            void *more = realloc(envsaved, (nenvsaved + 1) * sizeof(*envsaved));
+            const char *orig = getenv(e->name);
+            if (!more)
+                continue;
+            envsaved = more;
+            envsaved[j].name = strdup(e->name);
+            envsaved[j].orig = orig ? strdup(orig) : NULL;
+            if (!envsaved[j].name || (orig && !envsaved[j].orig)) {
+                free(envsaved[j].name);
+                free(envsaved[j].orig);
+                continue;
+            }
+            nenvsaved++;
+        }
+        envset(e->name, e->value);
+    }
+    /* grim's default folder: the desktop's, unless the config sets it */
+    if (!envconfigured("GRIM_DEFAULT_DIR")) {
+        awl_dict_val_t dir;
+        char path[PATH_MAX] = "";
+        awl_dict_lock(cfgdict);
+        if (awl_dict_get(cfgdict, "desktop_dir", &dir) == AWL_DICT_OK
+                && dir.kind == AWL_DICT_KIND_STR)
+            snprintf(path, sizeof(path), "%s", dir.str);
+        awl_dict_unlock(cfgdict);
+        if (*path)
+            envset("GRIM_DEFAULT_DIR", path);
+    }
+    if (envimportstarted && envimportdirty)
+        environmentimport();
+}
+
 /** Brings everything that was set up from the config up to
  * date with cfg, after it changed. What's only read when it's needed (key
  * and button bindings, rules, focus behaviour, which new layer surfaces get
@@ -149,6 +251,7 @@ configapply(void)
 {
     Monitor *m;
 
+    environmentapply();
     wlrloginit();
     inputconfigure();
     tagsconfigure();
@@ -186,7 +289,7 @@ configuse(void)
     configapply();
 }
 
-/** `awl_plugins_reload()`: the bars' widgets come from the library */
+/** :c:func:`awl_plugins_reload`: the bars' widgets come from the library */
 static void
 pluginsdetach(void)
 {
@@ -201,6 +304,8 @@ pluginsdetach(void)
     layoutsmoved(old, n_old);
 }
 
+/** :c:func:`awl_plugins_reload`: the new library's config (:c:func:`configuse`),
+ * the bars' widgets from it, the desktop panels redrawn */
 static void
 pluginsattach(void)
 {
@@ -223,7 +328,7 @@ pluginrestart(void *data)
 }
 
 /** The plugin_restart action: reloads ``libawlplugins.so`` (its tray widget
- * too), see `awl_plugins_reload()`. Deferred
+ * too), see :c:func:`awl_plugins_reload`. Deferred
  * to the event loop's next idle round, since the binding calling it is in the
  * library the reload unloads. */
 void

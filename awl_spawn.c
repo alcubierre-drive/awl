@@ -13,7 +13,7 @@
  * instead of fork() when spawning children after awl's background threads
  * (plugin monitors, GPU driver threads) are running, since fork() alone
  * risks inheriting a lock one of those threads held at the moment of the
- * fork -- see spawn_pid(). */
+ * fork -- see :c:func:`spawn_pid`. */
 extern pid_t vfork(void);
 extern int execvpe(const char *file, char *const argv[], char *const envp[]);
 
@@ -148,7 +148,7 @@ stopchildren(void)
 }
 
 /** For a (v)forked child before exec, which would keep setup()'s signal mask
- * and ignored SIGPIPE. Both are the child's own even after `vfork()`. */
+ * and ignored SIGPIPE. Both are the child's own even after ``vfork()``. */
 void
 unblocksignals(void)
 {

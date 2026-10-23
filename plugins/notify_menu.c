@@ -32,7 +32,7 @@ typedef struct {
     char *text, *app, *key;
     int has_default;
     /** a "Show" button: ROW_PAST's all, ROW_TITLE's while do-not-disturb
-     * hides it (`awl_notify_hidden()`) */
+     * hides it (:c:func:`awl_notify_hidden`) */
     int can_show;
     /** ROW_PAST: its entry and when it closed */
     uint64_t seq;
@@ -143,6 +143,11 @@ static void rows_build( void ) {
     rows_free();
     int k = awl_host->notif_list( open, MAX_OPEN );
     if (k > MAX_OPEN) k = MAX_OPEN;
+    /* the volume's and brightness's feedback isn't for the menu */
+    int kept = 0;
+    for (int i = 0; i < k; i++)
+        if (!(open[i]->flags & AWL_NOTIF_OSD)) open[kept++] = open[i];
+    k = kept;
     int np = awl_host->notif_history( past, MAX_PAST );
     if (np > MAX_PAST) np = MAX_PAST;
     size_t n = 4 + (size_t)np;
@@ -412,7 +417,7 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
         if (button == BTN_RIGHT || (button == BTN_LEFT && !r->has_default)) {
             awl_host->notif_close( r->id, AWL_NOTIF_DISMISSED );
         } else if (button == BTN_LEFT) {
-            awl_host->notif_invoke( r->id, "default", NULL );
+            awl_host->notif_invoke( r->id, "default" );
             awl_host->window_hide( win );
         }
         return;
@@ -420,7 +425,7 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
         if (button == BTN_RIGHT) {
             awl_host->notif_close( r->id, AWL_NOTIF_DISMISSED );
         } else if (button == BTN_LEFT) {
-            awl_host->notif_invoke( r->id, r->key, NULL );
+            awl_host->notif_invoke( r->id, r->key );
             awl_host->window_hide( win );
         }
         return;

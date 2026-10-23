@@ -7,7 +7,7 @@
  *
  * - sni_menu.c, on the tray's loop (plugins/sni.h): one menu per item with
  *   a menu. It talks D-Bus (AboutToShow, GetLayout, Event, LayoutUpdated)
- *   and turns each layout into an `awl_tray_menu_snap_t`, with the icons'
+ *   and turns each layout into an :c:type:`awl_tray_menu_snap_t`, with the icons'
  *   files already read (icons/icon.h's lookup for icon-name, the PNG of
  *   icon-data), and hands it to the main thread through sni.c's mailbox.
  * - tray_menu_window.c, on awl's main thread: shows the newest snapshot in
@@ -50,7 +50,7 @@ typedef struct awl_tray_menu_node_t {
     /** plain text without mnemonics (never NULL); shortcut e.g. "Ctrl+Q", or
      * NULL */
     char *label, *shortcut;
-    /** the icon's PNG, or SVG if AWL_TRAY_MENU_FILE, icon_len bytes (at
+    /** the icon's PNG, or SVG if :c:enumerator:`AWL_TRAY_MENU_FILE`, icon_len bytes (at
      * most AWL_ICON_MAX_BYTES, icons/icon.h), or NULL */
     uint8_t* icon;
     size_t icon_len;
@@ -83,7 +83,7 @@ void awl_tray_menu_event( uint64_t serial, int32_t id, const char* event );
 /** A click on the item: opens serial's menu on the monitor of the output
  * named monitor, centered on center_x (logical pixels from its left edge),
  * or closes it if it is open there. The pointer counts as on the item until
- * awl_tray_menu_window_pointer() says otherwise. */
+ * :c:func:`awl_tray_menu_window_pointer` says otherwise. */
 void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x );
 /** The pointer came onto the item (inside) or left it: the menu open
  * closes once the pointer is off both it and the item for a moment. */

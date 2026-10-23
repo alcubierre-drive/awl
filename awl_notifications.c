@@ -336,7 +336,7 @@ void awl_notifications_hold( uint32_t id, int held ) {
 /* ---- Notify ---- */
 
 /** an integer of any D-Bus type (clients differ: value comes as i, u or
- * y) into *v, clamped to int; 0 and nothing read if it is none */
+ * y) into ``*v``, clamped to int; 0 and nothing read if it is none */
 static int read_int( sd_bus_message* m, const char* type, int* v ) {
     union { uint8_t y; int b; int16_t n; uint16_t q; int32_t i; uint32_t u; int64_t x; uint64_t t; } u;
     if (strlen( type ) != 1 || !strchr( "ybnqiuxt", *type )) return 0;
@@ -356,7 +356,7 @@ static int read_int( sd_bus_message* m, const char* type, int* v ) {
     return 1;
 }
 
-/** a string hint into *out (replacing what was there), at most max bytes */
+/** a string hint into ``*out`` (replacing what was there), at most max bytes */
 static int read_str( sd_bus_message* m, const char* type, char** out, size_t max ) {
     const char* s;
     if (strcmp( type, "s" )) return 0;
@@ -370,7 +370,7 @@ static int read_str( sd_bus_message* m, const char* type, char** out, size_t max
 }
 
 /** image-data's (iiibiiay) into n, rows packed, if it is one awl takes
- * (then *taken) */
+ * (then ``*taken``) */
 static int read_image( sd_bus_message* m, const char* type, notif_t* n, int* taken ) {
     int32_t w, h, stride, bits, channels;
     int alpha;
@@ -412,7 +412,7 @@ static int read_image( sd_bus_message* m, const char* type, notif_t* n, int* tak
 }
 
 /** one hint, its value's type type, into n; what isn't taken is skipped.
- * *rank is the image data's so far: image-data beats image_data beats
+ * ``*rank`` is the image data's so far: image-data beats image_data beats
  * icon_data. */
 static int hint( sd_bus_message* m, const char* key, const char* type, notif_t* n, int* rank ) {
     static const char* images[] = { "icon_data", "image_data", "image-data" };
@@ -666,7 +666,8 @@ uint32_t awl_notifications_send( const awl_notif_send_t* s ) {
     n->pub.urgency = s->urgency <= AWL_NOTIF_LOW ? AWL_NOTIF_LOW
                    : s->urgency >= AWL_NOTIF_CRITICAL ? AWL_NOTIF_CRITICAL : AWL_NOTIF_NORMAL;
     n->pub.value = s->value < 0 ? -1 : s->value > 100 ? 100 : s->value;
-    n->pub.flags = AWL_NOTIF_AWL;
+    n->pub.flags = AWL_NOTIF_AWL | (s->flags & (AWL_NOTIF_TRANSIENT | AWL_NOTIF_OSD));
+    if (n->pub.flags & AWL_NOTIF_OSD) n->pub.flags |= AWL_NOTIF_TRANSIENT;
     n->pub.look = s->look;
     n->pub.timeout = s->timeout >= 0 ? s->timeout : default_timeout( n->pub.urgency );
     if (!(n->pub.app = strdup( "awl" )) || !(n->pub.summary = copy_utf8( s->summary, MAX_SUMMARY )) ||

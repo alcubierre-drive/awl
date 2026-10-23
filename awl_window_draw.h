@@ -21,7 +21,7 @@ typedef struct awl_window_style_t {
     uint32_t bg, fg, border, highlight;
     int border_width, radius, padding;
     /** the gap to the bar (the window area's edge) and to the monitor's
-     * sides, see awl_window_margin() */
+     * sides, see :c:func:`awl_window_margin` */
     int margin;
     /** between columns and rows */
     int column_spacing, row_spacing;
@@ -66,7 +66,7 @@ int awl_window_layout( awl_window_layout_t* L, const char* text, const awl_windo
 void awl_window_paint( const awl_window_layout_t* L, const char* text, const awl_window_style_t* style,
                        struct fcft_font* font, int highlight_row, uint32_t* data, int32_t stride );
 
-/** Lays out a painted window (awl_window_painter_t): its frame around
+/** Lays out a painted window (:c:type:`awl_window_painter_t`): its frame around
  * content_w x content_h pixels at scale, the content at L->x0, L->y0; no
  * cells. Returns whether there is anything to show. */
 int awl_window_layout_frame( awl_window_layout_t* L, const awl_window_style_t* style, float scale,
@@ -77,18 +77,18 @@ int awl_window_layout_frame( awl_window_layout_t* L, const awl_window_style_t* s
 int awl_window_inset( const awl_window_style_t* style, float scale );
 
 /** Paints only L's frame (background and border) into data, as
- * awl_window_paint() does before the text. */
+ * :c:func:`awl_window_paint` does before the text. */
 void awl_window_paint_frame( const awl_window_layout_t* L, const awl_window_style_t* style,
                              uint32_t* data, int32_t stride );
 
-/** The cell at px, py (pixels from the image's top left) into *row and *col:
+/** The cell at px, py (pixels from the image's top left) into ``*row`` and ``*col``:
  * the gap after a row or column counts to it, the ellipsis row is row
  * L->maxrows. Outside the text (the frame, the padding) both are -1, and it
  * returns 0. */
 int awl_window_cell_at( const awl_window_layout_t* L, int px, int py, int* row, int* col );
 
 /** Where cell row, col is in the image, the gaps after it included (the
- * area awl_window_cell_at() maps to it); 0 if there is no such cell. */
+ * area :c:func:`awl_window_cell_at` maps to it); 0 if there is no such cell. */
 int awl_window_cell_box( const awl_window_layout_t* L, int row, int col, int* x, int* y, int* w, int* h );
 
 /** How much of margin (logical pixels) a window keeps to each end of extent
@@ -99,7 +99,7 @@ int awl_window_margin( int margin, int extent );
 /** Where a lw x lh window (logical pixels) goes on a monitor at mon_x, mon_w
  * with the window area area_y, area_h (layout coordinates): centered on
  * center_x (from the monitor's left edge) but within the monitor, at the
- * area's top if top, else its bottom, awl_window_margin() of margin away
+ * area's top if top, else its bottom, :c:func:`awl_window_margin` of margin away
  * from the monitor's sides and the area's edge. Less of the margin where
  * the window would not fit with it, none where it does not fit at all: then
  * at the monitor's left edge, the area's top or bottom edge. */
@@ -109,16 +109,16 @@ void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int
 /** Where a lw x lh window (logical pixels) goes beside the box ax, ay, aw
  * wide (layout coordinates; a submenu's beside the menu, at the row that
  * opened it): right of the box (left of it if left) if it fits there within
- * the monitor at mon_x, mon_w, awl_window_margin() of margin away from its
+ * the monitor at mon_x, mon_w, :c:func:`awl_window_margin` of margin away from its
  * side, else on the other side if it fits there, else on the side with more
  * room, as far from the box as the monitor allows. Its top at ay, but
- * within the window area area_y, area_h as for awl_window_place(). */
+ * within the window area area_y, area_h as for :c:func:`awl_window_place`. */
 void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
                               int ax, int ay, int aw, int left, int margin, int* x, int* y );
 
 /** Where a lw x lh window (logical pixels) goes at spot at (an
  * AWL_WINDOW_AT_*) of the window area: the monitor at mon_x, mon_w across,
- * area_y, area_h down (layout coordinates), awl_window_margin() of margin
+ * area_y, area_h down (layout coordinates), :c:func:`awl_window_margin` of margin
  * away from the edges it is at, then moved by dx, dy, but kept within the
  * monitor and the area (at its top left where it doesn't fit). */
 void awl_window_place_at( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,

@@ -6,16 +6,16 @@
  * windows. A wish names a notification's sources in the spec's order,
  * image_path, app_icon, then desktop_entry's Icon. Each source is an
  * absolute path, a ``file://`` URL (percent-decoded) or an icon name
- * looked up in the desktop's themes (`awl_config_t.tray`'s icon_theme
+ * looked up in the desktop's themes (:c:member:`awl_config_t.tray`'s icon_theme
  * first). The first source that yields an image wins. Files may be
- * photos and screenshots, larger than icons: `awl_icon_limits_t` allows
+ * photos and screenshots, larger than icons: :c:type:`awl_icon_limits_t` allows
  * them more here, and only here (12 megapixels, 16 MiB), turned as their
  * EXIF orientation says. What a file came out as at a size is kept (32
  * of them, 8 MiB of pixels, the least recently used go) until the file
  * changes (its inode, size or modification time): an app sends the same
  * icon with each notification.
  *
- * The bar's icons (the bell, the dock widget's; `awl_notify_bar_icon()`)
+ * The bar's icons (the bell, the dock widget's; :c:func:`awl_notify_bar_icon`)
  * come from here too, so no file system is touched on the main thread for
  * them.
  *
@@ -29,7 +29,7 @@
 #include <pixman-1/pixman.h>
 #include <stdint.h>
 
-/** what came of a wish, `awl_notify_image_take()`'s */
+/** what came of a wish, :c:func:`awl_notify_image_take`'s */
 typedef struct awl_notify_image_t {
     struct awl_notify_image_t* next;
     /** the wish's: the notification, which of its sources, the size */
@@ -55,8 +55,8 @@ awl_notify_image_t* awl_notify_image_take( void );
  * asks for a redraw when it is done. Returns 0 if it can't: nothing will
  * come of it then. */
 int awl_notify_image_icon_want( uint64_t key, int px, const char* names );
-/** what `awl_notify_image_icon_want()` asked for that is done since the
- * last call, like `awl_notify_image_take()`'s */
+/** what :c:func:`awl_notify_image_icon_want` asked for that is done since the
+ * last call, like :c:func:`awl_notify_image_take`'s */
 awl_notify_image_t* awl_notify_image_icon_take( void );
 /** frees a list of what came, the images with it */
 void awl_notify_image_free( awl_notify_image_t* list );

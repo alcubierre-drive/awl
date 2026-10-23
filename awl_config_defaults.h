@@ -1,8 +1,8 @@
 #pragma once
 /**
- * awl's defaults for awl_config_t (awl.h): what awl runs with while no
+ * awl's defaults for :c:type:`awl_config_t` (awl.h): what awl runs with while no
  * plugin library is loaded, and what plugins_config.c starts from and
- * changes (`awl_host_t.config_defaults`). Only awl_config.c includes it:
+ * changes (:c:member:`awl_host_t.config_defaults`). Only awl_config.c includes it:
  * every file that did would get its own copy. Every setting is here with its
  * default; one left zero is a comment saying what zero means. Copy from here
  * what to change into plugins_config.c's configure(). The plugins' own
@@ -99,6 +99,22 @@ static const MonitorRule monrules[] = {
     { NULL,       0.55f, 1,      1,    0,     WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  0 },
 };
 
+/* output profiles (the outputprofile action, {.v = "docked"}), e.g.:
+ * static const OutputSetting docked[] = {
+ *     match                    on   x     y  scale  rotate/reflect
+ *   { "eDP-1",                 0,   0,    0, 0,     WL_OUTPUT_TRANSFORM_NORMAL },
+ *   { "Dell Inc. DELL U2722",  1,   0,    0, 1,     WL_OUTPUT_TRANSFORM_NORMAL },
+ * };
+ * static const OutputProfile outputprofiles[] = {
+ *   { "docked", { docked, LENGTH(docked) } },
+ * };
+ */
+
+static const EnvVar environment[] = {
+    { "XDG_CURRENT_DESKTOP", "wlroots" },
+    { "MOZ_ENABLE_WAYLAND", "1" },
+};
+
 /* rules, e.g.:
  *   app_id       title  tags mask  isfloating  monitor  w    h    blur  1-alpha
  * { "Gimp",      NULL,  0,         1,          -1,      0,   0,   0,    0 },   floating
@@ -112,6 +128,8 @@ static const awl_config_t awl_config_defaults = {
     .buttons = { buttons, LENGTH(buttons) },
     .layouts = { layouts, LENGTH(layouts) },
     .monrules = { monrules, LENGTH(monrules) },
+    /* .outputprofiles: none, see the example above */
+    .environment = { environment, LENGTH(environment) },
     /* .rules: none, see the examples above */
 
     .bar = { .show = 1, .top = 1 },

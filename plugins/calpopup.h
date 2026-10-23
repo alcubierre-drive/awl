@@ -6,7 +6,7 @@
  * from evolution-data-server (plugins/calendar.h), a Today button and one
  * to evolution. Without events (no libecal, no EDS) a plain calendar,
  * without the list and that button. Looks like awl's other popups
- * (`awl_config_t.popup`). One popup, shown on one
+ * (:c:member:`awl_config_t.popup`). One popup, shown on one
  * monitor at a time. Main thread.
  *
  * In it: the arrows step months, years and days, a day selects it, the

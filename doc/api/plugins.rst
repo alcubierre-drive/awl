@@ -65,6 +65,11 @@ plugins/ipaddr.h
 
 .. c:autodoc:: plugins/ipaddr.h
 
+plugins/nm.h
+^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/nm.h
+
 plugins/date.h
 ^^^^^^^^^^^^^^
 
@@ -92,3 +97,21 @@ plugins/colors.h
 ^^^^^^^^^^^^^^^^
 
 .. c:autodoc:: plugins/colors.h
+
+Calendar
+--------
+
+plugins/calendar.h
+^^^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/calendar.h
+
+plugins/cal_eds.h
+^^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/cal_eds.h
+
+plugins/calpopup.h
+^^^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/calpopup.h

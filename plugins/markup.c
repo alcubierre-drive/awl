@@ -6,7 +6,7 @@
 
 /* ---- parsing ---- */
 
-/** the tags known, with the style they add; `<br>` and `<img>` have no
+/** the tags known, with the style they add; ``<br>`` and ``<img>`` have no
  * close tag */
 static const struct {
     const char* name;
@@ -215,7 +215,7 @@ static void emit_text( parser_t* P, const char* text, size_t n, int markup, int 
     emit( P, text + start, i - start, style, color );
 }
 
-/** the tag at s[0 .. n) (s[0] is '<') into *t; its length, 0 if it isn't
+/** the tag at s[0 .. n) (s[0] is '<') into ``*t``; its length, 0 if it isn't
  * one of tags, or not well-formed (then '<' is text) */
 static size_t tag( const char* s, size_t n, tag_t* t ) {
     size_t i = 1, name;

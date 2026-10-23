@@ -11,9 +11,9 @@
  * applied before; masks, patterns and filters (a few app icons, Adwaita's
  * full color ones now and then) are left out. Icons are untrusted input (a
  * tray item's files and data), so anything unrealistically large is
- * refused before it is decoded: `AWL_ICON_MAX_BYTES`, `AWL_ICON_MAX_DIM`.
+ * refused before it is decoded: :c:enumerator:`AWL_ICON_MAX_BYTES`, :c:enumerator:`AWL_ICON_MAX_DIM`.
  *
- * Any thread: an `awl_icons_t` is immutable once made, apart from its
+ * Any thread: an :c:type:`awl_icons_t` is immutable once made, apart from its
  * lookup cache, which has a lock.
  */
 
@@ -25,6 +25,7 @@
 extern "C" {
 #endif
 
+/** limits against hostile icons */
 enum {
     /** files and data larger than this aren't read or decoded */
     AWL_ICON_MAX_BYTES = 2 << 20,
@@ -39,15 +40,16 @@ enum {
     AWL_ICON_MAX_WORK = AWL_ICON_MAX_DIM * AWL_ICON_MAX_DIM * 4 * 3,
 };
 
-/** what `awl_icons_lookup()` found */
+/** what :c:func:`awl_icons_lookup` found */
 enum {
     /** a symbolic icon, by GTK's rule (-symbolic.svg, .symbolic.png): only
      * its shape counts, to be drawn in the text's color */
     AWL_ICON_SYMBOLIC = 1 << 0,
-    /** an SVG file (by its name; `awl_icon_decode()` goes by the content) */
+    /** an SVG file (by its name; :c:func:`awl_icon_decode` goes by the content) */
     AWL_ICON_SVG = 1 << 1,
 };
 
+/** icon lookup in a theme and the ones it inherits (icons/icon.c); opaque */
 typedef struct awl_icons awl_icons_t;
 
 /** The themes named, in order (NULL terminated; NULL itself, NULL and ""
@@ -59,7 +61,7 @@ typedef struct awl_icons awl_icons_t;
  * changed on disk takes a new one. */
 awl_icons_t* awl_icons_new( const char* const* themes );
 /** The themes as GTK has them: theme (NULL or "": none, e.g.
- * `awl_config_t.tray`'s icon_theme), the desktop's (gtk-3.0/settings.ini's
+ * :c:member:`awl_config_t.tray`'s icon_theme), the desktop's (gtk-3.0/settings.ini's
  * gtk-icon-theme-name; GNOME's dconf setting isn't read), then Adwaita. */
 awl_icons_t* awl_icons_new_desktop( const char* theme );
 /** NULL is fine */
@@ -71,11 +73,11 @@ void awl_icons_free( awl_icons_t* icons );
  * IconThemePath; may be NULL) has them, hicolor's sizes there, then the
  * folders' own files; then the themes, the closest size first, and the
  * icons outside them. A name with an extension (.png, .svg) is looked up
- * without too. *flags (may be NULL): AWL_ICON_* of what was found. */
+ * without too. ``*flags`` (may be NULL): AWL_ICON_* of what was found. */
 char* awl_icons_lookup( awl_icons_t* icons, const char* name, int px, const char* const* extra, unsigned* flags );
 
 /** A file's contents, malloc()ed, its length in ``*len``; NULL if it can't be read
- * or is larger than `AWL_ICON_MAX_BYTES`. */
+ * or is larger than :c:enumerator:`AWL_ICON_MAX_BYTES`. */
 void* awl_icon_read( const char* path, size_t* len );
 
 /** A PNG or JPEG (by their magic bytes), or an SVG if svg, fitted into max_w x max_h keeping its aspect
@@ -86,7 +88,7 @@ void* awl_icon_read( const char* path, size_t* len );
  * verbose log line each decode writes (its path, or e.g. "tray item 'x'";
  * NULL: "data"). */
 pixman_image_t* awl_icon_decode( const void* data, size_t len, int svg, int max_w, int max_h, const char* source );
-/** `awl_icon_read()` and `awl_icon_decode()` of path, SVG allowed */
+/** :c:func:`awl_icon_read` and :c:func:`awl_icon_decode` of path, SVG allowed */
 pixman_image_t* awl_icon_load( const char* path, int max_w, int max_h );
 
 /** What a decode refuses beyond, for larger images than icons (a
@@ -104,14 +106,14 @@ typedef struct awl_icon_limits_t {
     uint64_t work;
 } awl_icon_limits_t;
 
-/** `awl_icon_decode()`'s: AWL_ICON_MAX_BYTES, _DIM (and its square), _WORK */
+/** :c:func:`awl_icon_decode`'s: AWL_ICON_MAX_BYTES, _DIM (and its square), _WORK */
 extern const awl_icon_limits_t awl_icon_limits;
 
-/** `awl_icon_decode()` within lim (NULL: `awl_icon_limits`); what it is
+/** :c:func:`awl_icon_decode` within lim (NULL: :c:var:`awl_icon_limits`); what it is
  * fitted into is AWL_ICON_MAX_DIM at most still */
 pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int svg, int max_w, int max_h,
                                          const char* source, const awl_icon_limits_t* lim );
-/** `awl_icon_load()` within lim (NULL: `awl_icon_limits`) */
+/** :c:func:`awl_icon_load` within lim (NULL: :c:var:`awl_icon_limits`) */
 pixman_image_t* awl_icon_load_limited( const char* path, int max_w, int max_h, const awl_icon_limits_t* lim );
 
 /** one of an item's pixmaps (StatusNotifierItem's IconPixmap, a(iiay)): w x h
@@ -123,16 +125,16 @@ typedef struct awl_icon_pixmap_t {
 } awl_icon_pixmap_t;
 
 /** Of n pixmaps, the smallest that covers max_w x max_h (else the largest),
- * fitted into it as `awl_icon_decode()` does; pixmaps whose data doesn't
- * match their size, or larger than `AWL_ICON_MAX_DIM`, don't count. NULL if
+ * fitted into it as :c:func:`awl_icon_decode` does; pixmaps whose data doesn't
+ * match their size, or larger than :c:enumerator:`AWL_ICON_MAX_DIM`, don't count. NULL if
  * none does. */
 pixman_image_t* awl_icon_from_pixmaps( const awl_icon_pixmap_t* pixmaps, int n, int max_w, int max_h );
 /** A notification's image-data, (iiibiiay): w x h pixels of non-premultiplied
  * RGB (has_alpha 0, channels 3) or RGBA (has_alpha, channels 4), a byte each
  * (bits 8), R first, rows rowstride bytes apart (at least w * channels; the
  * last row needn't be padded), fitted into max_w x max_h as
- * `awl_icon_decode()` does. NULL for anything else: other bits or channels,
- * no pixels, larger than `AWL_ICON_MAX_DIM`, or len short of
+ * :c:func:`awl_icon_decode` does. NULL for anything else: other bits or channels,
+ * no pixels, larger than :c:enumerator:`AWL_ICON_MAX_DIM`, or len short of
  * (h - 1) * rowstride + w * channels. */
 pixman_image_t* awl_icon_from_rgba( const uint8_t* data, size_t len, int w, int h, int rowstride, int has_alpha,
                                     int bits, int channels, int max_w, int max_h );

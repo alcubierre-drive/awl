@@ -63,7 +63,7 @@ static void notify( const char* text ) {
 
 /* ---- drawing ---- */
 
-/** the topmost tree, `awl_alert_init()`'s */
+/** the topmost tree, :c:func:`awl_alert_init`'s */
 static struct wlr_scene_tree* tree;
 
 /** clicks go through the alert */

@@ -14,6 +14,7 @@ typedef struct {
     float scale;
 } DesktopKey;
 
+/** the desktop panel on one monitor: its scene nodes and what it was drawn for */
 typedef struct DesktopView {
     Monitor* m;
     struct wl_list link;
@@ -115,7 +116,7 @@ static const struct wlr_buffer_impl buffer_impl = {
     .end_data_ptr_access = buffer_end,
 };
 
-/** what m's panel draws in: Monitor.desktopfont, else the bar's; NULL if none */
+/** what m's panel draws in: :c:member:`Monitor.desktopfont`, else the bar's; NULL if none */
 static struct fcft_font* font_of( Monitor* m ) {
     return m->desktopfont ? m->desktopfont : m->bar.font;
 }

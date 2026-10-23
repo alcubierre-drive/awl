@@ -1,11 +1,11 @@
 #pragma once
 
 /**
- * The bars, part of awl: each monitor's `awl_bar_t` (``Monitor.bar``) and
+ * The bars, part of awl: each monitor's :c:type:`awl_bar_t` (:c:member:`Monitor.bar`) and
  * the scene buffer that shows it (awl_bar.c). awl lays the widgets out,
  * draws them into a ring of two buffers, hands the scene only the pixels
  * that changed, and routes the pointer to them: presses, the wheel, hovering
- * (`widget_t.callback_hover`, with its delays) and `widget_t.callback_view`.
+ * (:c:member:`widget_t.callback_hover`, with its delays) and :c:member:`widget_t.callback_view`.
  * The widgets themselves come from the plugin library
  * (awl_plugin_host.h). Main thread only.
  */
@@ -21,7 +21,7 @@ void baraddmon(Monitor *m);
  * and tears its bar down (closemon() then leaves the bar alone);
  * cleanupmon() destroys the scene nodes and buffers */
 void barremovemon(Monitor *m);
-/** before the plugin library goes (`awl_plugins_reload()`): ends the hover
+/** before the plugin library goes (:c:func:`awl_plugins_reload`): ends the hover
  * (callback_leave, callback_view) while its widgets are still there, and
  * clears every bar's widgets */
 void barwidgetsclear(void);
@@ -34,7 +34,7 @@ void barconfigure(void);
 /** m's bar width, and its font and height if m's scale changed (or it has
  * none yet) */
 void updatebar(Monitor *m);
-/** redraws every bar now; barsdirty() is what to call on a change */
+/** redraws every bar now; :c:func:`barsdirty` is what to call on a change */
 void drawbars(void);
 /** Something the bars show changed: they are redrawn once the event loop
  * has handled what it has now, however many changes came in. */
@@ -63,14 +63,14 @@ int barbutton(uint32_t button, unsigned int *click);
 /* m's awl_bar_t (awl_bar_type.h) */
 /** makes bar m's (m->bar, unused), without font or widgets */
 void awl_bar_setup(awl_bar_t *bar, Monitor *m);
-/** Makes the registry's font (awl_font_get(), or awl_font_get_exact() if
+/** Makes the registry's font (:c:func:`awl_font_get`, or :c:func:`awl_font_get_exact` if
  * !fallback) bar's, giving back its old one. Returns it; NULL (bar keeps
  * its font) if none loads. */
 struct fcft_font *awl_bar_set_font(awl_bar_t *bar, const char *name, float size, float scale,
         int fallback);
-/** makes bar->pix an image of bits, see awl_draw_image() */
+/** makes bar->pix an image of bits, see :c:func:`awl_draw_image` */
 void awl_bar_prepare_drawing(awl_bar_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride);
-/** lets go of what `awl_bar_prepare_drawing()` pointed at */
+/** lets go of what :c:func:`awl_bar_prepare_drawing` pointed at */
 void awl_bar_finish_drawing(awl_bar_t *bar);
 /** gives back bar's font and image, frees its widgets and empties it: its
  * monitor has no bar anymore (bar->m is NULL) */

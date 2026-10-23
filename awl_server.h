@@ -26,7 +26,7 @@ extern struct wlr_allocator *alloc;
 extern struct wlr_compositor *compositor;
 
 extern struct wlr_scene *scene;
-/** the scene's layers, bottom to top, `SceneLayer`; the wallpaper and the
+/** the scene's layers, bottom to top, :c:enum:`SceneLayer`; the wallpaper and the
  * desktop panels are under LyrBg (awl_background.h, awl_desktop.h), awl's
  * popups right above LyrTop (awl_popup.h), the alerts above everything
  * (awl_alert.h) */

@@ -134,7 +134,7 @@ awl_draw_stride(unsigned int width)
 /** fcft's setup; once, later calls return the first's result */
 int awl_draw_init(void);
 
-/** awl_font_get()'s last resort, as `awl_config_t.font` and fontsize */
+/** :c:func:`awl_font_get`'s last resort, as :c:member:`awl_config_t.font` and fontsize */
 #define AWL_FONT_FALLBACK "monospace:size="
 #define AWL_FONT_FALLBACK_SIZE 10
 
@@ -146,30 +146,31 @@ int awl_draw_init(void);
 /**
  * The font registry, every font awl draws with: one fcft instance per
  * font, size and scale, shared by everyone asking for it. name is as
- * `awl_config_t.font` (size gets appended, as ":size=" unless name ends
+ * :c:member:`awl_config_t.font` (size gets appended, as ":size=" unless name ends
  * in '='), at size times scale and dpi 192 * scale. A size or scale that
  * isn't positive and finite takes 10 or 1; huge ones are clamped.
  *
- * A static ring of AWL_FONT_SLOTS: past that the oldest font nobody holds
+ * A static ring of :c:macro:`AWL_FONT_SLOTS`: past that the oldest font nobody holds
  * is unloaded (one in use never is). A font given back stays loaded until
  * then. One that doesn't load is logged once and not tried again until
- * awl_font_retry().
+ * :c:func:`awl_font_retry`.
  *
- * Returns that font, else AWL_FONT_FALLBACK at size, else at
+ * Returns that font, else :c:macro:`AWL_FONT_FALLBACK` at size, else at
  * AWL_FONT_FALLBACK_SIZE; NULL only when fontconfig has no font at all, or
  * all slots are in use (then awl draws no text). Give each back with
- * awl_font_release(). Main thread; loading a new font blocks on fontconfig
+ * :c:func:`awl_font_release`. Main thread; loading a new font blocks on fontconfig
  * and the font files.
  */
 struct fcft_font *awl_font_get(const char *name, float size, float scale);
-/** like awl_font_get(), but NULL instead of a fallback */
+/** like :c:func:`awl_font_get`, but NULL instead of a fallback */
 struct fcft_font *awl_font_get_exact(const char *name, float size, float scale);
-/** like awl_font_get_exact(), but in emoji presentation (emoji with a text
+/** like :c:func:`awl_font_get_exact`, but in emoji presentation (emoji with a text
  * default, like 🖥, in color too), and NULL if the font draws emoji in black
  * and white (then a text font's would come out too), not in color */
 struct fcft_font *awl_font_get_emoji(const char *name, float size, float scale);
-/** awl_font_style()'s styles, a mask */
+/** :c:func:`awl_font_style`'s styles, a mask: bold */
 #define AWL_FONT_BOLD 1
+/** italic */
 #define AWL_FONT_ITALIC 2
 /**
  * font (from the registry) in style besides its own: the same name, size
@@ -178,14 +179,14 @@ struct fcft_font *awl_font_get_emoji(const char *name, float size, float scale);
  * oblique matrix) by its usual config; fcft applies both. A weight or slant
  * in the font's own name comes first in the pattern and wins.
  *
- * Takes a reference like awl_font_get(): give it back with
- * awl_font_release(). If the styled font doesn't load, for style 0, a style
+ * Takes a reference like :c:func:`awl_font_get`: give it back with
+ * :c:func:`awl_font_release`. If the styled font doesn't load, for style 0, a style
  * font already has, and for emoji fonts, font itself comes back (with a new
  * reference), so callers needn't fall back. NULL only for a font that isn't
  * the registry's (or NULL). Main thread.
  */
 struct fcft_font *awl_font_style(struct fcft_font *font, int style);
-/** gives back a font from awl_font_get(); NULL, or a font that isn't the
+/** gives back a font from :c:func:`awl_font_get`; NULL, or a font that isn't the
  * registry's (logged), does nothing */
 void awl_font_release(struct fcft_font *font);
 /** makes the next get try the fonts that didn't load again (after a config
@@ -201,7 +202,7 @@ pixman_image_t *awl_draw_image(unsigned int w, unsigned int h, uint32_t *bits, i
 int awl_draw_text(pixman_image_t *pix, struct fcft_font *font, int x, int y,
         unsigned int w, unsigned int h, unsigned int lpad, const char *text,
         pixman_color_t fg, pixman_color_t bg);
-/** like `awl_draw_text()`, but without padding and over what is already
+/** like :c:func:`awl_draw_text`, but without padding and over what is already
  * there instead of a filled box; fg is 0xRRGGBBAA */
 int awl_draw_text_over(pixman_image_t *pix, struct fcft_font *font, int x, int y,
         unsigned int w, unsigned int h, const char *text, uint32_t fg);

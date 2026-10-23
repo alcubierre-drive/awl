@@ -20,7 +20,7 @@ typedef struct awl_battery_t {
 } awl_battery_t;
 
 /** reads the battery in dir and the AC adapter in ac_dir
- * (`awl_plugin_config_t.battery`) */
+ * (:c:member:`awl_plugin_config_t.battery`) */
 awl_battery_t* bat_init( const char* dir, const char* ac_dir );
 /** Re-reads the battery and the AC adapter; returns nonzero if charge or
  * state changed. */

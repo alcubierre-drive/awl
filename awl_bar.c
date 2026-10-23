@@ -53,7 +53,7 @@ static struct {
     int show, top;
 } applied = { .show = -1, .top = -1 };
 
-/** Bar widget hover (widget_t.callback_hover): hover_widget is the widget
+/** Bar widget hover (:c:member:`widget_t.callback_hover`): hover_widget is the widget
  * under the pointer if it has a hover callback, hover_timer fires its
  * callback hover_delay_ms after the pointer got there. hover_active is the
  * widget whose hover fired and that has a callback_leave; leave_timer fires
@@ -62,12 +62,12 @@ static struct {
 static struct wl_event_source *hover_timer, *leave_timer;
 static widget_t *hover_widget, *hover_active;
 static int leave_pending;
-/** the widget with a callback_view the pointer is on (widget_t.callback_view) */
+/** the widget with a callback_view the pointer is on (:c:member:`widget_t.callback_view`) */
 static widget_t *view_widget;
-/** barsdirty()'s redraw, NULL while none is due */
+/** :c:func:`barsdirty`'s redraw, NULL while none is due */
 static struct wl_event_source *redraw_idle;
 
-/** the widget of m's bar at layout x cx, if the bar is there; *xrel (may be
+/** the widget of m's bar at layout x cx, if the bar is there; ``*xrel`` (may be
  * NULL) its x there, from the widget's left edge in buffer pixels. The one
  * place that knows how the bar is laid out: hovering, scrolling and clicks
  * all find their widget here. */
@@ -100,7 +100,7 @@ barwidgetin(Monitor *m, double cx, unsigned int *xrel)
     return NULL;
 }
 
-/** the bar widget at cx, cy, if m's bar is what is there; *xrel as for
+/** the bar widget at cx, cy, if m's bar is what is there; ``*xrel`` as for
  * barwidgetin() */
 static widget_t *
 barwidgetatx(Monitor *m, double cx, double cy, unsigned int *xrel)
@@ -261,7 +261,7 @@ baroverflow(Monitor *m, uint32_t over)
     m->bar_over = over;
 }
 
-/** what m's widgets need of m, into its awl_bar_t */
+/** what m's widgets need of m, into its :c:type:`awl_bar_t` */
 static void
 barview(Monitor *m)
 {
@@ -518,7 +518,7 @@ void togglebar_mon(Monitor* m) {
     arrangelayers(m);
 }
 
-/** (re)loads *f, a font of m's other than the bar's, at m's scale: font
+/** (re)loads ``*f``, a font of m's other than the bar's, at m's scale: font
  * and size (NULL, 0: the bar's, cfg->font and ->fontsize); NULL if both are
  * the bar's, or it doesn't load (what says whose, for the warning) */
 static void
@@ -535,7 +535,7 @@ updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const c
         awl_wrn_printf("%s font %s not found, using the bar's\n", what, name);
 }
 
-/** (re)loads m's bar's emoji font (awl_bar_t.emojifont), at the bar's size */
+/** (re)loads m's bar's emoji font (:c:member:`awl_bar_t.emojifont`), at the bar's size */
 static void
 updateemojifont(Monitor *m)
 {
@@ -549,8 +549,8 @@ updateemojifont(Monitor *m)
                 cfg->emoji_font);
 }
 
-/** (re)loads m's emoji, popup and desktop fonts (awl_bar_t.emojifont,
- * Monitor.popupfont, .desktopfont) */
+/** (re)loads m's emoji, popup and desktop fonts (:c:member:`awl_bar_t.emojifont`,
+ * :c:member:`Monitor.popupfont`, .desktopfont) */
 static void
 updatefonts(Monitor *m)
 {

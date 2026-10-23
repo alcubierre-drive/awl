@@ -16,11 +16,12 @@
  */
 typedef struct awl_poller_t awl_poller_t;
 
-/** Sets up the loop, not running yet. NULL on failure. */
+/** Sets up the loop, not running yet; ip may be NULL (no addresses).
+ * NULL on failure. */
 awl_poller_t* poller_new( awl_stats_t* stats, awl_temperature_t* temp, awl_date_t* date,
                           awl_battery_t* bat, awl_ipaddr_t* ip );
 /** For the other plugins' event sources: from the calling thread until
- * `poller_start()`, then only from callbacks on the loop. */
+ * :c:func:`poller_start`, then only from callbacks on the loop. */
 pa_mainloop_api* poller_api( awl_poller_t* p );
 /** Starts the thread. Returns 0, or -1 if it can't. */
 int poller_start( awl_poller_t* p );
@@ -30,9 +31,9 @@ int poller_start( awl_poller_t* p );
 void poller_set_paused( awl_poller_t* p, int paused );
 /** Stops the thread, if it was started, waiting up to 2 s. Returns 0 once it
  * has exited (or for NULL): the other plugins free their event sources after
- * this, then `poller_free()`. Nonzero if it is stuck (in a sysfs read, say)
+ * this, then :c:func:`poller_free`. Nonzero if it is stuck (in a sysfs read, say)
  * and left running: then nothing it polls or runs may be freed, the loop
- * included, and the library must stay mapped (`awl_thread_stop()`). */
+ * included, and the library must stay mapped (:c:func:`awl_thread_stop`). */
 int poller_stop( awl_poller_t* p );
-/** Frees the loop; after `poller_stop()`. */
+/** Frees the loop; after :c:func:`poller_stop`. */
 void poller_free( awl_poller_t* p );

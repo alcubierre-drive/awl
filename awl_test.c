@@ -12,8 +12,8 @@
 #include <wlr/backend/wayland.h>
 #include <wlr/interfaces/wlr_output.h>
 
-/** AWL_TEST_WINDOWS' popups by number, see testwincmd(); popupdestroy()
- * clears a slot (testpopupdestroyed()), so a plugin reload leaves none
+/** AWL_TEST_WINDOWS' popups by number, see testwincmd(); :c:func:`popupdestroy`
+ * clears a slot (:c:func:`testpopupdestroyed`), so a plugin reload leaves none
  * dangling */
 static awl_window_t *testwins[8];
 
@@ -26,7 +26,7 @@ testoutputadd_backend(struct wlr_backend *b, void *data)
         wlr_wl_output_create(b);
 }
 
-/** the AWL_TEST_OUTPUTS hooks, see testinit() */
+/** the AWL_TEST_OUTPUTS hooks, see :c:func:`testinit` */
 static int
 testoutputadd(int signo, void *data)
 {
@@ -89,17 +89,17 @@ testunescape(char *s)
  * name, X logical pixels from its left edge, TEXT the rest of the line with
  * \n, \t and \\ escapes:
  *
- *   show N MON X TEXT      its text, then popupshow(), creating N first if
+ *   show N MON X TEXT      its text, then :c:func:`popupshow`, creating N first if
  *                          it is empty
  *   toggle N MON X TEXT    the same, but hides it if it is shown on MON
  *   update N TEXT          its text, if it is shown
  *   hide N | destroy N | hideall
  *   input N on|off         N takes the pointer, its presses are recorded
  *   scroll N on|off        N takes the pointer, its scrolling is recorded
- *   persist N on|off       N is persistent (popupsetpersistent())
+ *   persist N on|off       N is persistent (:c:func:`popupsetpersistent`)
  *   lock 1|0               what locking the screen does to the popups (sets
- *                          `locked` without a locker: test only)
- *   restart                the plugin_restart action (pluginsreap()
+ *                          :c:var:`locked` without a locker: test only)
+ *   restart                the plugin_restart action (:c:func:`pluginsreap`
  *                          destroys them all)
  *   nclose ID REASON       the notification server's host calls, as the
  *   ninvoke ID KEY [TOKEN]   library makes them (awl_notifications.h)
@@ -107,11 +107,11 @@ testunescape(char *s)
  *   nforget SEQ            drops SEQ from the history, 0 all of it
  *   nshow SEQ              opens history entry SEQ again
  *   nidle                  the user away: the notifications' timeouts stop
- *                          as after `awl_config_t.notifications.idle_pause`
+ *                          as after :c:member:`awl_config_t.notifications.idle_pause`
  *   nactive                the user back (every command but nidle and dump
  *                          counts as that: they stand in for the user)
  *   nsend URGENCY TIMEOUT LINES WIDTH TAG|- SUMMARY\tBODY
- *                          awl's own (awl_notifications_send()), its look's
+ *                          awl's own (:c:func:`awl_notifications_send`), its look's
  *                          max_lines and width
  *   dump PATH              writes PATH.tmp, then renames it to PATH:
  *                            mon NAME X Y W H WX WY WW WH SCALE ENABLED
@@ -143,7 +143,7 @@ testunescape(char *s)
  *                            past SEQ ID REASON SUMMARY (the history,
  *                              newest first)
  *                            pasts COUNT (how many it keeps)
- *                            persistent LAYER VISIBLE (popuppersistentlayer():
+ *                            persistent LAYER VISIBLE (:c:func:`popuppersistentlayer`:
  *                              overlay, top or -; whether in sight)
  *                            margin PX (cfg->popup.margin)
  *                            errors COUNT (lines rejected so far)

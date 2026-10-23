@@ -346,7 +346,7 @@ static int by_distance( const void* a_, const void* b_ ) {
     return a->distance != b->distance ? a->distance - b->distance : a->dir - b->dir;
 }
 
-/** name's files in folder, *flags what was found: at the exact size a PNG
+/** name's files in folder, ``*flags`` what was found: at the exact size a PNG
  * first (drawn for it), else an SVG */
 static char* try_files( const char* folder, const char* name, int png_first, unsigned* flags ) {
     char path[PATH_MAX];
@@ -862,7 +862,7 @@ static int scheme( const char* s, const char* end, rule_t* rules ) {
 }
 
 /** data with the color scheme's colors as the attribute color="..." of the
- * elements of their classes, which PlutoSVG understands: malloc()ed, *len
+ * elements of their classes, which PlutoSVG understands: malloc()ed, ``*len``
  * its length; NULL if there is no scheme, or no memory */
 static char* apply_scheme( const char* data, size_t* len ) {
     const char* end = data + *len;

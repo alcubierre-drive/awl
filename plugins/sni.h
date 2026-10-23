@@ -8,9 +8,9 @@
  * For each item it keeps its properties (re-read on the item's New*
  * signals), picks the icon to show (the attention one while the item needs
  * attention, if it has one) and reads its file, looked up in the item's
- * IconThemePath and the tray's themes (`awl_config_t.tray`'s icon_theme, the
+ * IconThemePath and the tray's themes (:c:member:`awl_config_t.tray`'s icon_theme, the
  * desktop's, Adwaita, hicolor; icons/icon.h), or takes its pixmaps. What
- * the bar shows of it all is an `awl_sni_snap_t`, immutable once made: the
+ * the bar shows of it all is an :c:type:`awl_sni_snap_t`, immutable once made: the
  * bar widget (plugins_widgets.c) takes the newest one on the main thread
  * and decodes the icons there at its size, so the loop never decodes and
  * the main thread never touches a file.
@@ -19,7 +19,7 @@
  * the same loop and connection, shown by tray_menu_window.c (tray_menu.h). The main thread's requests (clicks, scrolls,
  * the menus' requests and events) are queued for the loop; what goes back
  * (the menus' layouts) waits for a timer of the main thread
- * (`sni_main_poll()`), never on a pointer into the library that could
+ * (:c:func:`sni_main_poll`), never on a pointer into the library that could
  * outlive it.
  */
 
@@ -53,9 +53,9 @@ typedef struct awl_sni_item_t {
     char* name;
     /** changes whenever the icon does */
     uint32_t icon_gen;
-    /** the icon's file (a PNG, or an SVG with AWL_ICON_SVG in file_flags,
-     * AWL_ICON_SYMBOLIC too if it is one), else its pixmaps: the blob starts
-     * with npixmaps `awl_icon_pixmap_t`, whose data points behind them; both
+    /** the icon's file (a PNG, or an SVG with :c:enumerator:`AWL_ICON_SVG` in file_flags,
+     * :c:enumerator:`AWL_ICON_SYMBOLIC` too if it is one), else its pixmaps: the blob starts
+     * with npixmaps :c:type:`awl_icon_pixmap_t`, whose data points behind them; both
      * NULL: none */
     awl_sni_blob_t* file;
     unsigned file_flags;
@@ -70,20 +70,22 @@ typedef struct awl_sni_snap_t {
     awl_sni_item_t items[];
 } awl_sni_snap_t;
 
+/** the tray's host: its bus, its loop and the items; opaque */
 typedef struct awl_sni_t awl_sni_t;
 
 /** On event's loop, which isn't running yet; it connects from the loop. NULL
  * on failure. One at a time. */
 awl_sni_t* sni_new( sd_event* event );
-/** After the loop has stopped, and after awl_tray_menu_window_fini() (whose
+/** After the loop has stopped, and after :c:func:`awl_tray_menu_window_fini` (whose
  * "closed" it still sends); main thread. */
 void sni_free( awl_sni_t* s );
 
 /* ---- the main thread ---- */
 
-/** the newest snapshot, a reference to give back with `sni_snap_unref()`;
+/** the newest snapshot, a reference to give back with :c:func:`sni_snap_unref`;
  * never NULL */
 awl_sni_snap_t* sni_snap_get( awl_sni_t* s );
+/** gives a reference back; the last one frees it. NULL is fine */
 void sni_snap_unref( awl_sni_snap_t* snap );
 /** the size (physical pixels) the bar draws icons at, which the lookups
  * pick their files for; the largest of the bars' */

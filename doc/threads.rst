@@ -63,14 +63,17 @@ The main thread never touches the file system.
 Results are handed over, not shared.
    A thread publishes its result whole, through an atomic pointer or
    atomic values, so neither side ever waits for the other's lock. The
-   status plugins keep their readings in atomics (e.g. `awl_stats_t`), the
+   status plugins keep their readings in atomics (e.g. :c:type:`awl_stats_t`), the
    scanner hands over a copy of its list, the decoder a finished
-   `awl_image_t`.
+   :c:type:`awl_image_t`.
 
 Changes are announced with a redraw request.
-   `awl_redraw_request()` may be called from any thread; the libraries call
+   :c:func:`awl_redraw_request` may be called from any thread; the libraries call
    it as ``awl_host->redraw_request()``. Logging, too, is safe everywhere. The main loop
-   handles all requests since its last wakeup at once. Lock requests and the
+   handles all requests since its last wakeup at once, and tells the library
+   first (:c:member:`awl_plugin_api_t.redraw`), so that code which waits for a
+   thread's answer on the main thread (the volume's and brightness's
+   notification, plugins/osd.h) looks then rather than polling. Lock requests and the
    logind thread's state take the same way through their own eventfd
    (awl_lockscreen.h).
 
@@ -81,19 +84,19 @@ Alerts are awl's.
    thread should report, and raises the alert when it doesn't.
 
 Threads are woken, never cancelled.
-   Every library thread is an `awl_thread_t`: it sleeps in ``poll()`` on its
-   own eventfd among others, and `awl_thread_stop()` sets a flag and makes
+   Every library thread is an :c:type:`awl_thread_t`: it sleeps in ``poll()`` on its
+   own eventfd among others, and :c:func:`awl_thread_stop` sets a flag and makes
    the eventfd readable. The thread returns when it next looks.
 
 A stuck thread is left behind.
    A thread blocked in the kernel, e.g. on a dead mount, can't look. The
    scanner, the launcher's index and the decoder are given 500 ms to stop; after that, their
    state is abandoned with them, never freed, and since their code must stay
-   mapped, the old library is never unloaded (`awl_plugin_api_t.fini`
+   mapped, the old library is never unloaded (:c:member:`awl_plugin_api_t.fini`
    reports it). A reload still starts fresh threads in the new library.
 
 Signals belong to the main thread.
-   `awl_thread_start()` blocks all signals in the threads it starts.
+   :c:func:`awl_thread_start` blocks all signals in the threads it starts.
    Children are spawned with ``vfork()``, not ``fork()``, since a fork can
    inherit a lock another thread held at that moment.
 
@@ -122,6 +125,7 @@ picks up whatever they published.
      subgraph main["main thread (awl.c, awl_*.c)"]
        direction LR
        loop["Wayland event loop"] --> fire["redraw_fire()"]
+       fire --> hook["awl_plugins_redraw():<br/>the library's redraw"]
        fire --> bars["drawbars()"]
        fire --> panels["desktop_update_all()"]
        fire --> wp["wallpapertake()"]
@@ -136,6 +140,7 @@ picks up whatever they published.
      lockfd -. "readable" .-> loop
      main -. "session_covered()" .-> logind
      atomics -- "widgets read them" --> bars
+     atomics -- "awl_osd_redraw() reads them" --> hook
      snap -- "the tray widget takes it" --> bars
      pending -- "awl_desktop_version()" --> panels
      image -- "awl_wallpaper_take()" --> wp
@@ -144,7 +149,7 @@ picks up whatever they published.
 The life of a thread
 --------------------
 
-Every thread of the library is an `awl_thread_t`, started and stopped the
+Every thread of the library is an :c:type:`awl_thread_t`, started and stopped the
 same way. Only the poller is waited for without a limit: the only files it
 reads are in ``/proc`` and ``/sys``, which can't hang like a remote mount.
 The logind thread touches no files at all; it gets 2 s, and so does the
@@ -220,11 +225,49 @@ every output off):
      P->>P: tick: update_all()
      P-->>M: awl_host->redraw_request()
 
+A volume change
+---------------
+
+A key, a binding's ``volume`` action or a scroll on the volume widget, from
+the press to the notification with the new value (plugins/osd.h). The main
+thread only asks: the poller thread talks to PulseAudio, and the answer
+comes back as a server event, so the main thread learns of the new volume
+the way it learns of any reading, by a redraw request. The brightness takes
+the same way, through the backlight-tooler daemon's ``Adjust()`` and its
+``PropertiesChanged`` on the user bus (plugins/backlight.c).
+
+.. mermaid::
+
+   sequenceDiagram
+     participant M as main thread
+     participant P as poller thread
+     participant S as PulseAudio
+     M->>M: binding: awl_volume_adjust(+0.05)
+     M->>P: pulse_volume_adjust():<br/>volume_delta += 50, wake
+     M->>M: awl_osd_volume(): shown = the state now,<br/>asked = now, due = 1,<br/>the quiet timer in 150 ms
+     P->>P: wake_callback(): takes volume_delta,<br/>capped at volume.max
+     P->>S: set_sink_volume_by_name()
+     S-->>P: subscription event: the sink changed
+     P->>S: get_sink_info_by_index()
+     S-->>P: sink_info_callback():<br/>value, muted into the atomics
+     P-->>M: awl_host->redraw_request()
+     M->>M: redraw_fire(): awl_plugins_redraw()
+     M->>M: awl_osd_redraw(): within 1.5 s of the ask,<br/>the state differs from shown
+     M->>M: awl_notify_send(): tag "osd-volume",<br/>AWL_NOTIF_OSD, replaces the last one
+     M->>M: notifications_changed(): the window
+     M->>M: drawbars(): the widget's new number
+     Note over M: no change within 150 ms (at the cap, say):<br/>the quiet timer sends the state as it is
+
+Presses faster than PulseAudio answers add up in ``volume_delta``; each
+change that comes back differs from what was shown and replaces the
+notification in place. A change from elsewhere (a mixer) more than 1.5 s
+after the last press brings none.
+
 A wallpaper change
 ------------------
 
 Requests are counters, so several in a row cost one change, and
-`awl_wallpaper_settled()` can tell whether the wallpaper shown is the one
+:c:func:`awl_wallpaper_settled` can tell whether the wallpaper shown is the one
 all of them end on.
 
 .. mermaid::
@@ -264,10 +307,10 @@ Locking before suspend
 ----------------------
 
 The logind thread holds a delay inhibitor whenever the config's
-``lock.on_suspend`` is set, so logind sends ``PrepareForSleep(true)`` and then
+:c:member:`lock.on_suspend <awl_config_t.lock.on_suspend>` is set, so logind sends ``PrepareForSleep(true)`` and then
 waits, up to its ``InhibitDelayMaxSec`` (5 s by default), for the inhibitor's
 fd to be closed. "Covered" means every enabled output has shown a frame with
-the locker's surface (`lockcovered()`), or ``LOCK_COVER_MS`` passed.
+the locker's surface (:c:func:`lockcovered`), or :c:macro:`LOCK_COVER_MS` passed.
 
 .. mermaid::
 
@@ -291,13 +334,13 @@ the locker's surface (`lockcovered()`), or ``LOCK_COVER_MS`` passed.
      T->>L: Inhibit(sleep, delay)
 
 ``loginctl lock-session`` takes the first half of this: the session's
-``Lock`` signal, ``lock_request()``, and the locker. A request while a lock
+``Lock`` signal, :c:member:`lock_request() <awl_host_t.lock_request>`, and the locker. A request while a lock
 is in place, or while the locker started last hasn't locked yet, does
 nothing.
 
-The thread tells awl what it listens for (`awl_logind_flags`), on every
+The thread tells awl what it listens for (:c:enum:`awl_logind_flags`), on every
 change. While that is less than awl needs (``Lock``, plus ``PrepareForSleep``
-with an inhibitor if ``lock_on_suspend``) for ``LOGIND_GRACE_MS``, awl raises
+with an inhibitor if ``lock_on_suspend``) for :c:macro:`LOGIND_GRACE_MS`, awl raises
 the logind alert: a red box in every output's bottom left corner and a
 critical notification.
 That covers a thread that never reports at all, too, e.g. without a plugin

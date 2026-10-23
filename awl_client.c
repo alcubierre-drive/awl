@@ -780,6 +780,19 @@ updatetitle(struct wl_listener *listener, void *data)
         barsdirty();
 }
 
+/* marks awl's own tokens (wlr_xdg_activation_token_v1.data) */
+static char activationmark;
+
+const char *
+activationtoken(void)
+{
+    struct wlr_xdg_activation_token_v1 *t;
+    if (!activation || !(t = wlr_xdg_activation_token_v1_create(activation)))
+        return NULL;
+    t->data = &activationmark;
+    return wlr_xdg_activation_token_v1_get_name(t);
+}
+
 void
 urgent(struct wl_listener *listener, void *data)
 {
@@ -788,6 +801,21 @@ urgent(struct wl_listener *listener, void *data)
     toplevel_from_wlr_surface(event->surface, &c, NULL);
     if (!c || c == focustop(selmon))
         return;
+
+    /* the user asked for it (activationtoken()): to the window, on its
+     * monitor's view of its tags, back if it was minimized */
+    if (event->token->data == &activationmark && c->mon && !locked) {
+        if (!VISIBLEON(c, c->mon) && (c->tags & TAGMASK)) {
+            c->mon->seltags ^= 1;
+            c->mon->tagset[c->mon->seltags] = c->tags & TAGMASK;
+        }
+        c->isvisible = 1;
+        selmon = c->mon;
+        focusclient(c, 1);
+        arrange(c->mon);
+        barsdirty();
+        return;
+    }
 
     c->isurgent = 1;
     barsdirty();

@@ -5,6 +5,7 @@
 #include "launcher.h"
 #include "desktop_entry.h"
 #include "fuzzy.h"
+#include "markup.h"
 #include "thread.h"
 #include "../plugins.h"
 #include "../icons/icon.h"
@@ -30,6 +31,7 @@
 #define CFG (&awl_plugin_config()->launcher)
 #define COLORS (&awl_plugin_config()->colors)
 
+/** the launcher's limits and times */
 enum {
     /** after an inotify event, wait this long for more before scanning */
     SETTLE_MS = 200,
@@ -51,6 +53,7 @@ enum {
 
 /* ---- the index, made on the thread, read on the main thread ---- */
 
+/** an application: its desktop entry and how often it was launched */
 typedef struct {
     /** the desktop file id ("org.gnome.Nautilus.desktop"), its file */
     char *id, *file;
@@ -67,6 +70,8 @@ typedef struct {
     double frecency;
 } run_t;
 
+/** what the launcher matches against: the applications and the run mode's
+ * lines */
 typedef struct {
     entry_t* v;
     int n;
@@ -90,8 +95,8 @@ static void index_free( index_t* idx ) {
 
 /** main -> thread: an icon wanted, an id launched or a command line run;
  * thread -> main: an icon (NULL if there is none) */
-typedef struct msg {
-    struct msg* next;
+typedef struct msg_t {
+    struct msg_t* next;
     char* name;
     int px;
     pixman_image_t* img;
@@ -125,12 +130,14 @@ static indexer_t* ix;
 
 /* ---- the thread: launch counts ---- */
 
+/** an application's or a command line's launches */
 typedef struct {
     char* id;
     long count;
     long long last;
 } count_t;
 
+/** the launch counts, as kept in the state file */
 typedef struct {
     count_t* v;
     int n, cap;
@@ -225,7 +232,7 @@ static void counts_save( const indexer_t* x, const char* name, const counts_t* c
 
 /* ---- the thread: scanning ---- */
 
-/** the applications directories, in precedence order; *n how many */
+/** the applications directories, in precedence order; ``*n`` how many */
 static char** app_dirs( int* n ) {
     char** dirs = NULL;
     *n = 0;
@@ -258,6 +265,7 @@ typedef struct {
     int order;
 } found_t;
 
+/** a scan's findings */
 typedef struct {
     found_t* v;
     int n, cap;
@@ -372,7 +380,7 @@ static void desktops_of( char* buf, size_t n, const char** out, int max ) {
 }
 
 /** Reads every directory into a new index, watching them on ifd (-1:
- * none); *present gets which of them exist, a bit each. */
+ * none); ``*present`` gets which of them exist, a bit each. */
 static index_t* scan( const counts_t* counts, int ifd, unsigned* present ) {
     char langs[AWL_DESKTOP_MAX_LANGS][64], dbuf[256];
     const char* desktops[16];
@@ -504,8 +512,8 @@ static void scan_path( index_t* idx, const counts_t* ran, int ifd ) {
     }
 }
 
-/** scans, and hands the index to the main thread; a new inotify fd in *ifd */
-static void rescan( indexer_t* x, const counts_t* counts, const counts_t* ran, int* ifd, unsigned* present ) {
+/** scans, and hands the index to the main thread; a new inotify fd in ``*ifd`` */
+static void index_rescan( indexer_t* x, const counts_t* counts, const counts_t* ran, int* ifd, unsigned* present ) {
     if (*ifd >= 0) close( *ifd );
     *ifd = inotify_init1( IN_NONBLOCK | IN_CLOEXEC );
     index_t* idx = scan( counts, *ifd, present );
@@ -566,7 +574,7 @@ static void* indexer( void* data ) {
 
     counts_load( x, "launcher", &counts );
     counts_load( x, "run", &ran );
-    rescan( x, &counts, &ran, &ifd, &present );
+    index_rescan( x, &counts, &ran, &ifd, &present );
     int dirty = 0;
     while (1) {
         struct pollfd fds[2] = {
@@ -577,7 +585,7 @@ static void* indexer( void* data ) {
         if (r < 0 && errno != EINTR) break;
         if (!r) {
             /* settled, or a directory may have come (or gone) */
-            if (dirty || present_now() != present) rescan( x, &counts, &ran, &ifd, &present );
+            if (dirty || present_now() != present) index_rescan( x, &counts, &ran, &ifd, &present );
             dirty = 0;
             continue;
         }
@@ -597,7 +605,7 @@ static void* indexer( void* data ) {
         if (launched) counts_add( x, "launcher", &counts, launched, 0 );
         if (run) counts_add( x, "run", &ran, run, MAX_HISTORY );
         /* the new order */
-        if (launched || run) rescan( x, &counts, &ran, &ifd, &present );
+        if (launched || run) index_rescan( x, &counts, &ran, &ifd, &present );
         /* the newest wish first: the rows shown now */
         msg_t* found = NULL;
         for (msg_t *m = wanted, *next; m; m = next) {
@@ -695,6 +703,73 @@ static const char* prompt( void ) {
     return p ? p : "";
 }
 
+/** the prompt's markup, parsed while it is the same text, and the styles'
+ * fonts for the font it was last drawn in */
+static struct {
+    char* src;
+    awl_markup_t m;
+    struct fcft_font* font;
+    struct fcft_font* fonts[4];
+} P;
+
+static void prompt_free( void ) {
+    for (int i = 1; i < 4; i++)
+        if (P.fonts[i]) awl_host->font_release( P.fonts[i] );
+    free( P.src );
+    awl_markup_free( &P.m );
+    memset( &P, 0, sizeof P );
+}
+
+/** the prompt's markup for font, ready; 0 if it couldn't be (out of memory) */
+static int prompt_ready( struct fcft_font* font ) {
+    const char* p = prompt();
+    if (!P.src || strcmp( P.src, p )) {
+        free( P.src );
+        awl_markup_free( &P.m );
+        if (!(P.src = strdup( p )) || !awl_markup_parse( &P.m, p, 1 )) {
+            free( P.src );
+            P.src = NULL;
+            return 0;
+        }
+    }
+    if (font != P.font) {
+        for (int i = 1; i < 4; i++) {
+            if (P.fonts[i]) awl_host->font_release( P.fonts[i] );
+            P.fonts[i] = awl_host->font_style( font, i );
+        }
+        P.font = P.fonts[0] = font;
+    }
+    return 1;
+}
+
+/** draws the prompt (into pix; NULL: only measures) at x in a line h high at
+ * y, cut at right, its runs on font's baseline in their styles; returns its
+ * width */
+static int prompt_draw( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg ) {
+    if (!prompt_ready( font )) return 0;
+    const int x0 = x, base = y + (h - font->height) / 2 + font->ascent;
+    for (unsigned i = 0; i < P.m.nruns; i++) {
+        const awl_markup_run_t* r = &P.m.runs[i];
+        struct fcft_font* f = awl_markup_font( P.fonts, r->style );
+        const uint32_t c = r->style & AWL_MARKUP_COLOR ? r->color : fg;
+        /* the run alone: the text is ours, cut it there for a moment */
+        char* s = P.m.text + r->off;
+        const char end = s[r->len];
+        s[r->len] = 0;
+        const int w = (int)awl_host->text_width( f, s );
+        if (pix && x < right)
+            awl_host->text_over( pix, f, x, base - f->ascent, (unsigned)(right - x), (unsigned)f->height, s, c );
+        if (pix && x < right && r->style & AWL_MARKUP_UNDERLINE) {
+            const int t = f->underline.thickness > 0 ? f->underline.thickness : 1;
+            const int uw = x + w > right ? right - x : w;
+            awl_fill_shape( pix, (float)x, (float)(base - f->underline.position), (float)uw, (float)t, 0, 0, c );
+        }
+        s[r->len] = end;
+        x += w;
+    }
+    return x - x0;
+}
+
 /** what shows without results */
 static const char* empty_text( void ) {
     if (!L.idx) return run_mode() ? "reading $PATH…" : "reading the applications…";
@@ -765,8 +840,8 @@ static void icons_take( void ) {
     if (any) awl_host->window_redraw( L.win );
 }
 
-/** while it is open and waits: for icons, or for the first index */
 static void index_take( void );
+/** while it is open and waits: for icons, or for the first index */
 static void timer_fire( void* data ) {
     if (!awl_host->window_monitor( L.win )) return;
     if (ix && atomic_load( &ix->pending )) {
@@ -910,7 +985,7 @@ static int measure_bar( struct fcft_font* font, int max_w, int max_h, int* w, in
     const int ipx = px( (float)CFG->icon_size ), room = L.h - 2 * px( 2 );
     icon_size( ipx < room ? ipx : room );
     /* the query's width at least, more as it grows, the results right after */
-    const int typed = 2 * L.pad + px( 3 ) + (int)awl_host->text_width( font, prompt() ) +
+    const int typed = 2 * L.pad + px( 3 ) + prompt_draw( NULL, font, 0, 0, 0, 0, 0 ) +
                       (int)awl_host->text_width( font, L.query );
     L.input_w = px( (float)CFG->input_width );
     if (L.input_w < typed) L.input_w = typed;
@@ -987,11 +1062,7 @@ static int text_marked( pixman_image_t* pix, struct fcft_font* font, const char*
 static void paint_query( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg,
                          uint32_t dim ) {
     if (COLORS->launcher_query) fg = COLORS->launcher_query;
-    const char* p = prompt();
-    if (*p)
-        awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)h, p,
-                             COLORS->launcher_prompt ? COLORS->launcher_prompt : dim );
-    x += (int)awl_host->text_width( font, p );
+    x += prompt_draw( pix, font, x, right, y, h, COLORS->launcher_prompt ? COLORS->launcher_prompt : dim );
     const int cursor_w = px( 1.5f ) > 1 ? px( 1.5f ) : 1;
     const char* q = L.query;
     while (*q && x + (int)awl_host->text_width( font, q ) + cursor_w > right) {
@@ -1402,6 +1473,7 @@ int awl_launcher_stop( void ) {
     free( L.res );
     L.res = NULL;
     L.nres = 0;
+    prompt_free();
     indexer_t* x = ix;
     ix = NULL;
     if (!x) return 0;

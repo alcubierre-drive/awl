@@ -30,7 +30,7 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
 static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount );
 static void taskbarwidget_click( widget_t* w, uint32_t x, int button );
 
-/** draw() of the right-hand widgets that show a single text (see textsnap_t) */
+/** draw() of the right-hand widgets that show a single text (see :c:type:`textsnap_t`) */
 static uint32_t textsnap_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 
 static uint32_t clockwidget_measure( widget_t* w );
@@ -67,6 +67,7 @@ static void ipwidget_free( void* userdata );
 static uint32_t backlightwidget_measure( widget_t* w );
 static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void backlightwidget_click( widget_t* w, uint32_t x, int button );
+static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount );
 
 static uint32_t notifywidget_measure( widget_t* w );
 static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
@@ -76,10 +77,10 @@ static void notifywidget_hover( widget_t* w );
 static void notifywidget_leave( widget_t* w );
 static void notifywidget_free( void* userdata );
 
-/** the usual padding, `awl_plugin_config_t.widgets_padding` either side */
+/** the usual padding, :c:member:`awl_plugin_config_t.widgets_padding` either side */
 #define PAD_DEFAULT .pad_left = AWL_PADDING_DEFAULT, .pad_right = AWL_PADDING_DEFAULT
 
-/** the widgets right of the task bar, by `awl_plugin_config_t.widgets`' kind */
+/** the widgets right of the task bar, by :c:member:`awl_plugin_config_t.widgets`' kind */
 static const widget_t right_widgets[] = {
     [AwlWidgetClock] = {
         PAD_DEFAULT,
@@ -149,6 +150,7 @@ static const widget_t right_widgets[] = {
         .measure = &backlightwidget_measure,
         .draw = &backlightwidget_draw,
         .callback_click = &backlightwidget_click,
+        .callback_scroll = &backlightwidget_scroll,
         .free = free,
     },
     [AwlWidgetNotifications] = {
@@ -208,7 +210,7 @@ void awl_widgets_create( awl_bar_t* bar ) {
  * cell_width() says how wide one is, cell_text() draws a text one,
  * cell_pads() a picture's padding. */
 
-/** one side's padding, pad (a widget_t's), in the bar's pixels */
+/** one side's padding, pad (a :c:type:`widget_t`'s), in the bar's pixels */
 static int pad_px( const widget_t* w, int pad ) {
     if (pad == AWL_PADDING_FONT) return w->bar->lrpad / 2;
     if (pad == AWL_PADDING_DEFAULT)
@@ -380,7 +382,7 @@ static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
 }
 
 /** A right-hand widget showing one text: measure() fills it in, then
- * `textsnap_draw()` renders exactly that, so width and pixels always agree. */
+ * :c:func:`textsnap_draw` renders exactly that, so width and pixels always agree. */
 typedef struct {
     char text[128];
     pixman_color_t fg, bg;
@@ -463,6 +465,7 @@ typedef struct {
     pixman_image_t* img;
 } sni_icon_t;
 
+/** a tray widget: the items it shows, their icons and where they are */
 typedef struct sniwidget_t {
     /** what measure() saw, draw() draws */
     awl_sni_snap_t* snap;
@@ -866,7 +869,8 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
         char text[128];
         tempwidget_text( T, i, u->temps[i], text, sizeof(text) );
         pixman_color_t fgcolor = color_8bit_to_16bit(
-                P->temp_color( u->temps[i], T->f_t_min[i], T->f_t_max[i] ) );
+                colormap_color( &awl_plugin_config()->colors.temperature,
+                                (u->temps[i] - T->f_t_min[i]) / (T->f_t_max[i] - T->f_t_min[i]) ) );
         cell_text( w, pix, x, u->widths[i], w->bar->font, text, fgcolor, P->colors.bar_bg );
         x += u->widths[i];
     }
@@ -874,26 +878,11 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
 }
 
 
-/** The battery's color at percent charge, on `awl_plugin_config_t.battery`'s
- * scale: bad, to warning, to fg, clipped at either end. */
-static pixman_color_t batwidget_color( const awl_plugin_data_t* P, float percent, int charging ) {
-    const awl_plugin_config_t* pc = awl_plugin_config();
-    float bad = pc->battery.scale.bad,
-          warning = pc->battery.scale.warning,
-          ok = pc->battery.scale.ok,
-          full = pc->battery.scale.full;
-    if (charging) {
-        if (percent >= full)
-            return P->colors.full;
-        return color_mix_16(P->colors.good, P->colors.full, percent/full);
-    } else {
-        // a step where two limits coincide, no division by zero (-Ofast)
-        if (percent < warning)
-            return percent <= bad ? P->colors.bad :
-                color_mix_16( P->colors.bad, P->colors.warning, (percent - bad) / (warning - bad) );
-        return percent >= ok ? P->colors.bar_fg :
-            color_mix_16( P->colors.warning, P->colors.bar_fg, (percent - warning) / (ok - warning) );
-    }
+/** The battery's color at its charge (0 to 1), :c:type:`awl_plugin_colors_t`'s
+ * battery or battery_charging */
+static pixman_color_t batwidget_color( float charge, int charging ) {
+    const awl_plugin_colors_t* k = &awl_plugin_config()->colors;
+    return color_8bit_to_16bit( colormap_color( charging ? &k->battery_charging : &k->battery, charge ) );
 }
 
 static uint32_t batwidget_measure( widget_t* w ) {
@@ -906,7 +895,7 @@ static uint32_t batwidget_measure( widget_t* w ) {
 
     textsnap_t* s = textsnap( w );
     snprintf( s->text, sizeof(s->text), "%3.0f%%", charge * 100.0 );
-    s->fg = batwidget_color(P, charge * 100.0f, charging);
+    s->fg = batwidget_color( charge, charging );
     s->bg = P->colors.bar_bg;
     return textsnap_width( w );
 }
@@ -922,7 +911,7 @@ static int bar_icon_px( const widget_t* w ) {
     return px > h - 2 ? h - 2 : px;
 }
 
-/** *slot holding a reference of its own to icon (NULL: none), the cache's
+/** ``*slot`` holding a reference of its own to icon (NULL: none), the cache's
  * being valid only until its next call */
 static void bar_icon_keep( pixman_image_t** slot, pixman_image_t* icon ) {
     if (icon == *slot) return;
@@ -1002,8 +991,8 @@ static const char* dock_level_names( const char* names, float percent, char* buf
 /** Two parts, what the machine sits on and what it runs on: 🖥️ when a
  * Thunderbolt dock is attached, 💻 otherwise (neither without a Thunderbolt
  * bus); ⚡ on AC (by the adapter, else by whether the battery charges), 🔋 on
- * the battery, 🪫 below its scale's ok. "DOCK" and "AC" without the emoji
- * font; each the config's icon instead (`awl_plugin_config_t.battery`'s
+ * the battery, 🪫 below its low. "DOCK" and "AC" without the emoji
+ * font; each the config's icon instead (:c:member:`awl_plugin_config_t.battery`'s
  * icons) if it has one, the power's following the charge. */
 static uint32_t dockwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
@@ -1031,7 +1020,7 @@ static uint32_t dockwidget_measure( widget_t* w ) {
     else if (ac)
         dockpart_set( w, &s->part[1], dock_level_names( pc->battery.icons.ac, percent, names, sizeof names ), px,
                       "⚡", ac_text );
-    else if (percent < pc->battery.scale.ok)
+    else if (percent < pc->battery.low)
         dockpart_set( w, &s->part[1], dock_level_names( pc->battery.icons.battery_low, percent, names, sizeof names ),
                       px, "🪫", "" );
     else
@@ -1071,7 +1060,7 @@ static void dockwidget_free( void* userdata ) {
     free( s );
 }
 
-/** the IP widget: the bar shows the primary address (`awl_ipaddr_t.best`:
+/** the IP widget: the bar shows the primary address (:c:member:`awl_ipaddr_t.best`:
  * NetworkManager's, else the one the kernel would use for the internet),
  * the popup all of them */
 #define IPWIDGET_COLS 3
@@ -1323,7 +1312,8 @@ static void taskbarwidget_click( widget_t* w, uint32_t x, int button ) {
 
 static void pulsewidget_click( widget_t* w, uint32_t x, int button ) {
     (void)w; (void)x; (void)button;
-    awl_host->actions->spawn( &(Arg){.v=(const char*[]){"pavucontrol", NULL}} );
+    const char* const* mixer = awl_plugin_config()->volume.mixer;
+    if (mixer && mixer[0]) awl_host->actions->spawn( &(Arg){.v=mixer} );
 }
 static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount ) {
     (void)w; (void)x;
@@ -1404,9 +1394,9 @@ static backlight_moons_t backlight_moons( int permille ) {
 /** the gap between the moon and the eyes, in pixels at scale 1 */
 static const float backlight_emoji_gap = 4.0f;
 
-/** the backlight widget's snapshot: `text` is "BR"/"DK" without the emoji
+/** the backlight widget's snapshot: ``text`` is "BR"/"DK" without the emoji
  * font; with it, moon (empty if the brightness is unknown, a stop sign if
- * it makes no sense) and mode, which `closed` draws as closed eyes in its
+ * it makes no sense) and mode, which ``closed`` draws as closed eyes in its
  * place */
 typedef struct {
     textsnap_t text;
@@ -1452,8 +1442,8 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     return cell_width( w, (w1 > w2 ? w1 : w2) + s->gap + awl_host->text_width( ef, s->mode ) );
 }
 
-/** Composites the one-glyph string `text` into dst at alpha (0..1), placed
- * as awl_draw_text() would place it with x being the pen position;
+/** Composites the one-glyph string ``text`` into dst at alpha (0..1), placed
+ * as :c:func:`awl_draw_text` would place it with x being the pen position;
  * ADD, so two calls with alphas adding up to one crossfade two glyphs. */
 static void backlight_glyph( pixman_image_t* dst, struct fcft_font* font,
         const char* text, int x, int ty, double alpha ) {
@@ -1472,7 +1462,12 @@ static void backlight_glyph( pixman_image_t* dst, struct fcft_font* font,
 /** The closed eyes for manual brightness: icons/eyes_closed.png, made for
  * Noto Color Emoji's 136x128 bitmaps (the box and palette of its 👀), and
  * decoded on first use. Static, so nothing outlives a reload. */
-enum eyes_closed_size { eyes_closed_w = 136, eyes_closed_h = 128 };
+enum eyes_closed_size {
+    /** pixels */
+    eyes_closed_w = 136,
+    /** pixels */
+    eyes_closed_h = 128
+};
 /** BGRA premultiplied, i.e. PIXMAN_a8r8g8b8 */
 static uint32_t eyes_closed_bits[eyes_closed_w * eyes_closed_h];
 /** scaled to the last box drawn into, if no larger than the image */
@@ -1528,7 +1523,7 @@ out:
 }
 
 /** Draws the closed eyes into dst where the font's 👀 would go, x being the
- * pen position as in backlight_glyph(); 0 if it can't. Scaled the way fcft
+ * pen position as in :c:func:`backlight_glyph`; 0 if it can't. Scaled the way fcft
  * scales the font's bitmaps (Lanczos3, its default), so both look alike. */
 static int backlight_eyes_closed( pixman_image_t* dst, struct fcft_font* font, int x, int ty ) {
     const struct fcft_glyph* g = fcft_rasterize_char_utf32( font, 0x1F440, FCFT_SUBPIXEL_NONE );
@@ -1625,6 +1620,11 @@ static void backlightwidget_click( widget_t* w, uint32_t x, int button ) {
         backlight_update( P->backlight );
     else
         backlight_toggle( P->backlight );
+}
+
+static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount ) {
+    (void)w; (void)x;
+    awl_brightness_adjust( amount < 0 ? 0.025f : -0.025f );
 }
 
 /* the notifications: a bell (the config's icon, else in the emoji font,

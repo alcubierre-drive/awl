@@ -12,8 +12,8 @@
  * alert is up (awl_alert.h).
  *
  * Main thread only, except the logind thread's two below
- * (plugins/logind.h): it calls `awl_lock_request()` and
- * `awl_lock_logind_state()` from its own thread, as
+ * (plugins/logind.h): it calls :c:func:`awl_lock_request` and
+ * :c:func:`awl_lock_logind_state` from its own thread, as
  * ``awl_host->lock_request()`` and ``awl_host->logind_state()``. Both wake
  * the main loop through an eventfd; requests made before it gets around to
  * them coalesce into one.
@@ -28,11 +28,11 @@ extern int locked;
 /** the eventfd for the logind thread and its event handler, the timers,
  * the blur over the screen while locked; before the plugins start */
 void lockinit(void);
-/** removes the handler and the timers; awl_lock_fini() closes the eventfd */
+/** removes the handler and the timers; :c:func:`awl_lock_fini` closes the eventfd */
 void lockfini(void);
 /** ext-session-lock's new locks */
 void locksession(struct wl_listener *listener, void *data);
-/** a monitor's lock surface is gone (``Monitor.destroy_lock_surface``) */
+/** a monitor's lock surface is gone (:c:member:`Monitor.destroy_lock_surface`) */
 void destroylocksurface(struct wl_listener *listener, void *data);
 /** m rendered a frame: with the locker's surface on it, that counts for
  * covering the screen */
@@ -48,7 +48,7 @@ void lockconfigure(void);
 
 /** Asks awl to lock the screen. Any thread. */
 void awl_lock_request(void);
-/** What the logind thread listens for now, `awl_logind_flags` (awl_host.h);
+/** What the logind thread listens for now, :c:enum:`awl_logind_flags` (awl_host.h);
  * 0 when it stops. Any thread. */
 void awl_lock_logind_state(unsigned flags);
 /** Closes the eventfd (requests and states are dropped from then on). Only

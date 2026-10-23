@@ -51,7 +51,7 @@ struct wlr_idle_notifier_v1 *idle_notifier;
 static struct wlr_scene_tree *desktop_tree;
 static struct wlr_scene_tree *background_tree;
 static struct wlr_xdg_shell *xdg_shell;
-static struct wlr_xdg_activation_v1 *activation;
+struct wlr_xdg_activation_v1 *activation;
 static struct wlr_xdg_decoration_manager_v1 *xdg_decoration_mgr;
 static struct wlr_keyboard_shortcuts_inhibit_manager_v1 *keyboard_shortcuts_inhibit_mgr;
 static struct wlr_layer_shell_v1 *layer_shell;
@@ -66,6 +66,7 @@ static struct wl_event_source* redraw_source = NULL;
 static int redraw_fire( int fd, uint32_t mask, void* data ) {
     (void)fd; (void)mask; (void)data;
     awl_redraw_drain();
+    awl_plugins_redraw();
     drawbars();
     desktop_update_all();
     wallpapertake();
@@ -248,25 +249,8 @@ run(char *startup_cmd)
     if (!socket)
         die("startup: display_add_socket_auto");
     setenv("WAYLAND_DISPLAY", socket, 1);
-    setenv("XDG_CURRENT_DESKTOP", "wlroots", 1 );
-    system("systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP");
-    setenv("MOZ_ENABLE_WAYLAND", "1", 1);
-    setenv("QT_STYLE_OVERRIDE","kvantum",1);
-    setenv("DESKTOP_SESSION","kde",1);
-    setenv("QT_AUTO_SCREEN_SCALE_FACTOR","0",1);
-    setenv("EDITOR","nvim",1);
-    setenv("SYSTEMD_EDITOR","/usr/bin/nvim",1);
-    setenv("SSH_AUTH_SOCK","1",1);
-    setenv("NO_AT_BRIDGE","1",1);
-    /* setup() filled in "desktop_dir" and the library's init() may have
-     * changed it since; later changes don't reach the environment */
-    awl_dict_val_t dir;
-    awl_dict_lock(cfgdict);
-    if (awl_dict_get(cfgdict, "desktop_dir", &dir) == AWL_DICT_OK
-            && dir.kind == AWL_DICT_KIND_STR)
-        setenv("GRIM_DEFAULT_DIR", dir.str, 1);
-    awl_dict_unlock(cfgdict);
-
+    /* the rest of awl's environment is the config's (configapply()) */
+    environmentimport();
     /* the icon theme of the programs started with TRAY_ICONS */
     awl_tray_app_set_theme(cfg->tray.icon_theme);
 
@@ -433,7 +417,8 @@ setup(void)
     wlr_presentation_create(dpy, backend, 2);
     wlr_alpha_modifier_v1_create(dpy);
 
-    /* Initializes the interface used to implement urgency hints */
+    /* Initializes the interface used to implement urgency hints, and
+     * awl's own tokens (activationtoken()) */
     activation = wlr_xdg_activation_v1_create(dpy);
     wl_signal_add(&activation->events.request_activate, &request_activate);
 

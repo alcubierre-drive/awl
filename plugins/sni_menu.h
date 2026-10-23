@@ -4,7 +4,7 @@
  * The items' menus over sd-bus (com.canonical.dbusmenu), the loop's half of
  * tray_menu.h: plugins/sni.c makes one per item with a menu,
  * tray_menu_window.c (the main thread's half) asks for its layouts through
- * sni.c's queue. Each layout becomes an `awl_tray_menu_snap_t`, its icons'
+ * sni.c's queue. Each layout becomes an :c:type:`awl_tray_menu_snap_t`, its icons'
  * files already read. Calls are asynchronous and
  * find their menu by serial when they're answered: one gone by then is
  * simply not found. Loop thread only.
@@ -15,6 +15,7 @@
 #include "../icons/icon.h"
 #include "tray_menu.h"
 
+/** an item's com.canonical.dbusmenu: its layout and the requests for it; opaque */
 typedef struct sni_menu sni_menu_t;
 
 /** the menu at path on bus_name, its icons also looked up in theme_path
@@ -27,9 +28,9 @@ const char* sni_menu_path( const sni_menu_t* menu );
 void sni_menu_set_theme_path( sni_menu_t* menu, const char* theme_path );
 /** serial's menu, NULL if there's none */
 sni_menu_t* sni_menu_find( uint64_t serial );
-/** tray_menu_window.c's awl_tray_menu_request(), on the loop */
+/** tray_menu_window.c's :c:func:`awl_tray_menu_request`, on the loop */
 void sni_menu_request( sni_menu_t* menu, uint32_t gen );
-/** tray_menu_window.c's awl_tray_menu_event(), on the loop */
+/** tray_menu_window.c's :c:func:`awl_tray_menu_event`, on the loop */
 void sni_menu_event( sni_menu_t* menu, int32_t id, const char* event );
 
 /* ---- plugins/sni.c's, for the menus ---- */

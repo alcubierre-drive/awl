@@ -1,6 +1,6 @@
 #pragma once
-/** The plugins' defaults for awl_plugin_config_t (plugins.h), which
- * plugins_config.c's configure() changes, next to awl's for awl_config_t
+/** The plugins' defaults for :c:type:`awl_plugin_config_t` (plugins.h), which
+ * plugins_config.c's configure() changes, next to awl's for :c:type:`awl_config_t`
  * (awl_config_defaults.h). Only plugins_config.c includes it: every file
  * that did would get its own copy. Every setting is here with its default;
  * one left zero is a comment saying what zero means. Copy from here what to
@@ -15,6 +15,8 @@ static const int default_widgets[] = {
 };
 
 static const char* const default_terminal[] = { "xterm", "-e", NULL };
+static const char* const default_mixer[] = { "pavucontrol", NULL };
+static const char* const default_calendar_app[] = { "evolution", "-c", "calendar", NULL };
 
 static const awl_plugin_config_t awl_plugin_config_defaults = {
     .widgets = { default_widgets, LENGTH( default_widgets ) },
@@ -42,7 +44,12 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .good           = molokai_green,
         .warning        = molokai_orange,
         .bad            = molokai_red,
-        .full           = molokai_blue,
+        /* the color maps' stops: {at, color}, at 0 to 1, linearly in
+         * between */
+        .temperature    = COLORMAP( { 0, 0x40cfebff }, { 0.5f, 0xfd9e2fff }, { 1, 0xf9327aff } ),
+        .battery        = COLORMAP( { 0.15f, molokai_red }, { 0.25f, molokai_orange },
+                                    { 0.3f, 0xf5efffff /* bar_fg */ } ),
+        .battery_charging = COLORMAP( { 0, molokai_green }, { 0.9f, molokai_blue } ),
         .tray_bg        = 0x859394ff,
 
         .calendar_today    = 0xb6ec52ff,
@@ -67,7 +74,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     .battery = {
         .dir = "/sys/class/power_supply/BAT0/",
         .ac_dir = "/sys/class/power_supply/AC/",
-        .scale = { .bad = 15, .warning = 25, .ok = 30, .full = 90 },
+        .low = 15,
         /* NULL or none found: the glyphs */
         .icons = {
             /* Papirus: laptop, Breeze: computer-laptop, Adwaita has neither */
@@ -91,6 +98,11 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     .volume = {
         .max = 2.0f,
         .speaker = NULL,
+        .mixer = default_mixer,
+    },
+    .calendar = {
+        .app = default_calendar_app,
+        .app_label = "Evolution",
     },
     .notify = {
         .at = AWL_WINDOW_AT_TOP_RIGHT, .dx = 0, .dy = 0, .gap = 6,
@@ -102,5 +114,23 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         /* NULL or none found: the glyphs (Adwaita, Breeze, Papirus have these) */
         .bell_icon = "notifications-symbolic;preferences-system-notifications-symbolic",
         .bell_icon_dnd = "notifications-disabled-symbolic",
+    },
+    .osd = {
+        .timeout = 1500, .width = 200, .image_size = 32,
+        /* Adwaita, Breeze, Papirus have the volume's; the brightness's are
+         * Papirus', then Adwaita's and Breeze's single one */
+        .volume_icons = {
+            .muted = "audio-volume-muted-symbolic",
+            .low = "audio-volume-low-symbolic",
+            .medium = "audio-volume-medium-symbolic",
+            .high = "audio-volume-high-symbolic",
+            .over = "audio-volume-overamplified-symbolic;audio-volume-high-danger-symbolic;audio-volume-high-symbolic",
+        },
+        .brightness_icons = {
+            .off = "display-brightness-off-symbolic;display-brightness-symbolic;video-display-brightness-symbolic",
+            .low = "display-brightness-low-symbolic;display-brightness-symbolic;video-display-brightness-symbolic",
+            .medium = "display-brightness-medium-symbolic;display-brightness-symbolic;video-display-brightness-symbolic",
+            .high = "display-brightness-high-symbolic;display-brightness-symbolic;video-display-brightness-symbolic",
+        },
     },
 };

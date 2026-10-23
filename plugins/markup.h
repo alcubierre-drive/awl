@@ -1,31 +1,31 @@
 #pragma once
 
 /**
- * Notification markup: a body's text with `<b>`, `<i>`, `<u>` and
- * `<t color="…">` (awl's own) parsed into runs of one style and color, and
+ * Notification markup: a body's text with ``<b>``, ``<i>``, ``<u>`` and
+ * ``<t color="…">`` (awl's own) parsed into runs of one style and color, and
  * those runs wrapped into lines in their styles' fonts.
  *
- * Parsing (`awl_markup_parse()`) never fails, since clients that don't
+ * Parsing (:c:func:`awl_markup_parse`) never fails, since clients that don't
  * escape their text are common:
  *
- * - Tags: `<b>`, `<i>`, `<u>`; `<t color>` and Pango's
- *   `<span foreground|fgcolor|color>`, the color as `#rgb`, `#rrggbb` or
- *   `#rrggbbaa` (an invalid one keeps the outer color). They nest; a close
+ * - Tags: ``<b>``, ``<i>``, ``<u>``; ``<t color>`` and Pango's
+ *   ``<span foreground|fgcolor|color>``, the color as ``#rgb``, ``#rrggbb`` or
+ *   ``#rrggbbaa`` (an invalid one keeps the outer color). They nest; a close
  *   tag closes everything up to its open tag, one without an open tag is
- *   dropped, unclosed ones end with the text. `<a href>` keeps its text,
- *   `<img alt>` becomes its alt text, `<br>`, `<br/>` a line break.
- *   Pango's `<s> <tt> <sub> <sup> <small> <big>` are dropped, their text
+ *   dropped, unclosed ones end with the text. ``<a href>`` keeps its text,
+ *   ``<img alt>`` becomes its alt text, ``<br>``, ``<br/>`` a line break.
+ *   Pango's ``<s> <tt> <sub> <sup> <small> <big>`` are dropped, their text
  *   kept. Names are case-insensitive.
- * - Anything else that starts with `<` is text: an unknown name (`a<b2>`,
- *   `x <y and z> w`), a malformed tag, a lone `<`.
- * - Entities: `&amp; &lt; &gt; &quot; &apos; &nbsp;`, `&#N;`, `&#xN;`;
+ * - Anything else that starts with ``<`` is text: an unknown name (``a<b2>``,
+ *   ``x <y and z> w``), a malformed tag, a lone ``<``.
+ * - Entities: ``&amp; &lt; &gt; &quot; &apos; &nbsp;``, ``&#N;``, ``&#xN;``;
  *   an unknown or invalid one stays as it is.
  * - Tabs become spaces; carriage returns and other control characters but
  *   newlines are dropped.
  *
- * Layout (`awl_markup_layout()`) wraps the runs into lines of at most max_w
+ * Layout (:c:func:`awl_markup_layout`) wraps the runs into lines of at most max_w
  * pixels: at spaces (dropped at a wrap) and after '-'; a word may span runs
- * (`a<b>b</b>c` is one word); a word longer than a line breaks between
+ * (``a<b>b</b>c`` is one word); a word longer than a line breaks between
  * characters; '\n' always breaks. After max_lines lines the last one ends
  * in an ellipsis. Runs on a line share a baseline.
  */
@@ -35,7 +35,7 @@
 
 struct fcft_font;
 
-/** a run's style, a mask; bold and italic are `awl_font_style()`'s
+/** a run's style, a mask; bold and italic are :c:func:`awl_font_style`'s
  * (awl_draw.h), so style & AWL_MARKUP_FONT indexes the layout's fonts */
 enum {
     AWL_MARKUP_BOLD = 1,
@@ -53,14 +53,16 @@ enum {
     AWL_MARKUP_DEPTH = 16,
 };
 
+/** a stretch of the text in one style and color */
 typedef struct awl_markup_run_t {
     /** the run's text: text[off .. off + len) */
     unsigned int off, len;
     int style;
-    /** 0xRRGGBBAA, if style has AWL_MARKUP_COLOR */
+    /** 0xRRGGBBAA, if style has :c:enumerator:`AWL_MARKUP_COLOR` */
     uint32_t color;
 } awl_markup_run_t;
 
+/** parsed markup: the plain text and its runs (:c:func:`awl_markup_parse`) */
 typedef struct awl_markup_t {
     /** the text without markup, entities decoded; NUL-terminated */
     char* text;
@@ -73,12 +75,13 @@ typedef struct awl_markup_t {
 /** Parses src (UTF-8, up to AWL_MARKUP_MAX bytes) into m; NULL is the empty
  * text. markup 0 takes src as plain text (a summary): one run, only tabs
  * and control characters handled. Returns 0 only when out of memory (then
- * m is empty). Free m with `awl_markup_free()`. */
+ * m is empty). Free m with :c:func:`awl_markup_free`. */
 int awl_markup_parse( awl_markup_t* m, const char* src, int markup );
+/** frees what m holds (not m) and empties it */
 void awl_markup_free( awl_markup_t* m );
 
 /** "#rgb", "#rrggbb", "#rrggbbaa" (case-insensitive) as 0xRRGGBBAA into
- * *color; 0 if s is none of them */
+ * ``*color``; 0 if s is none of them */
 int awl_markup_color( const char* s, size_t len, uint32_t* color );
 
 /** a piece of a line: one run's text on it */
@@ -101,6 +104,7 @@ typedef struct awl_markup_line_t {
     unsigned int first, n;
 } awl_markup_line_t;
 
+/** parsed markup wrapped into lines (:c:func:`awl_markup_layout`) */
 typedef struct awl_markup_layout_t {
     awl_markup_piece_t* pieces;
     unsigned int npieces;
@@ -114,7 +118,7 @@ typedef struct awl_markup_layout_t {
     char* buf;
 } awl_markup_layout_t;
 
-/** a font's text width in pixels, as `awl_draw_text_width()` */
+/** a font's text width in pixels, as :c:func:`awl_draw_text_width` */
 typedef unsigned int ( *awl_markup_width_t )( struct fcft_font* font, const char* text );
 
 /** Lays m out into L (zeroed first, or a layout to redo: it is freed

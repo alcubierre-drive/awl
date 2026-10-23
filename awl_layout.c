@@ -207,7 +207,7 @@ sellayout(Monitor *m)
     return l->lt[l->sellt];
 }
 
-/** per-tag layouts on selmon on or off (MonitorRule.pertag sets where it
+/** per-tag layouts on selmon on or off (:c:member:`MonitorRule.pertag` sets where it
  * starts). Either way the current view keeps its layout, mfact and nmaster;
  * turned on, the other views get back the ones they had when it was last on
  * (except views of several tags: their ptlt[0] is also the pertag-off one),

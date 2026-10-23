@@ -6,22 +6,23 @@
  * never by the plugin library (which may be the very thing that is missing).
  * While one is up, every output shows it in the bottom left corner of its
  * window area (above a bottom bar),
- * above everything (`awl_alert_draw()`, with `awl_alert_text()`), and
+ * above everything (:c:func:`awl_alert_draw`, with :c:func:`awl_alert_text`), and
  * raising it logs an error and sends a critical notification, awl's own
- * (`awl_notifications_send()`). Main thread only.
+ * (:c:func:`awl_notifications_send`). Main thread only.
  */
 
 #include "awl_server.h"
 
 /** the alerts there are; each is up or not */
-typedef enum awl_alert_id {
+typedef enum {
     /** the plugins' logind thread doesn't listen to logind (awl_lockscreen.c's
-     * ``logindupdate()``): no lock on ``loginctl lock-session``, or none
+     * :c:func:`logindupdate`): no lock on ``loginctl lock-session``, or none
      * before suspend */
     AwlAlertLogind,
     /** the locker lockscreen() started exited before it ever locked: a
      * wrong cfg->lock.locker, or it crashed */
     AwlAlertLocker,
+    /** how many there are */
     AwlAlertLast,
 } awl_alert_id_t;
 
@@ -39,7 +40,7 @@ const char* awl_alert_text( void );
 
 /** the alerts' tree, over everything, the lock screen included */
 void awl_alert_init( void );
-/** m's alert, hidden until `awl_alert_draw()` */
+/** m's alert, hidden until :c:func:`awl_alert_draw` */
 void awl_alert_addmon( Monitor* m );
 /** The alert on m, as cfg->alert says, in the bar's font: in the bottom
  * left corner of m's window area (m->w: clear of the bar and of exclusive
@@ -50,5 +51,5 @@ void awl_alert_addmon( Monitor* m );
 void awl_alert_draw( Monitor* m );
 /** after the config changed: the alerts' look */
 void awl_alert_configure( void );
-/** `awl_alert_draw()` on every monitor */
+/** :c:func:`awl_alert_draw` on every monitor */
 void awl_alert_draw_all( void );

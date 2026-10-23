@@ -53,7 +53,7 @@ typedef struct {
     int value;
     /** the record's AWL_NOTIF_* flags */
     unsigned flags;
-    /** shown on request though do-not-disturb (`awl_notify_reveal()`) */
+    /** shown on request though do-not-disturb (:c:func:`awl_notify_reveal`) */
     int revealed;
     /** awl's own look for it (all 0: the config's) */
     awl_notif_look_t look;
@@ -112,7 +112,7 @@ static struct {
     /** looks for what the image thread did while anything waits for it */
     awl_timer_t* img_timer;
     uint64_t img_serial;
-    /** `awl_notify_bar_icon()`'s, oldest first; the last one's serial */
+    /** :c:func:`awl_notify_bar_icon`'s, oldest first; the last one's serial */
     bar_icon_t icons[MAX_BAR_ICONS];
     int nicons;
     uint64_t icon_serial;
@@ -141,7 +141,7 @@ static uint32_t or_( uint32_t c, uint32_t dflt ) {
     return c ? c : dflt;
 }
 
-/** `awl_plugin_colors_t`'s notify_* of an urgency */
+/** :c:type:`awl_plugin_colors_t`'s notify_* of an urgency */
 typedef struct { uint32_t fg, bg, frame; } urgency_colors_t;
 
 static urgency_colors_t urgency_colors( int urgency ) {
@@ -283,6 +283,8 @@ static int stack( note_t* n, struct fcft_font* font, int lines ) {
         y = by + bh;
     }
     if (!y) y = font->height;
+    /* a bar alone: in the middle of the image */
+    if (n->bar_h && y == n->bar_h && y < n->img_sz) n->bar_y = (n->img_sz - y) / 2;
     return y > n->img_sz ? y : n->img_sz;
 }
 
@@ -482,8 +484,8 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
     if (button == BTN_MIDDLE) awl_notify_dismiss_all();
     else if (button == BTN_RIGHT) awl_host->notif_close( n->id, AWL_NOTIF_DISMISSED );
     else if (button != BTN_LEFT) return;
-    else if (row >= 1 && row <= n->nactions) awl_host->notif_invoke( n->id, n->actions[2 * (row - 1)], NULL );
-    else if (n->has_default) awl_host->notif_invoke( n->id, "default", NULL );
+    else if (row >= 1 && row <= n->nactions) awl_host->notif_invoke( n->id, n->actions[2 * (row - 1)] );
+    else if (n->has_default) awl_host->notif_invoke( n->id, "default" );
     else awl_host->notif_close( n->id, AWL_NOTIF_DISMISSED );
 }
 
@@ -596,7 +598,7 @@ static void sources( note_t* n, const awl_notif_t* r ) {
 static int fill( note_t* n, const awl_notif_t* r ) {
     char* summary = strdup( r->summary );
     char* app = NULL;
-    if (CFG->show_app && *r->app && (app = malloc( strlen( r->app ) + 3 )))
+    if (CFG->show_app && *r->app && !(r->flags & AWL_NOTIF_OSD) && (app = malloc( strlen( r->app ) + 3 )))
         sprintf( app, "(%s)", r->app );
     char** actions = calloc( (size_t)(r->nactions ? r->nactions : 1) * 2, sizeof(*actions) );
     awl_markup_t body;
@@ -727,9 +729,10 @@ static int cap( note_t* n, Monitor* m, int h, int off ) {
 }
 
 /** whether n was shown on request: again from the history
- * (AWL_NOTIF_SHOWN) or with `awl_notify_reveal()` */
+ * (:c:enumerator:`AWL_NOTIF_SHOWN`), with :c:func:`awl_notify_reveal`, or as feedback to what
+ * the user did (:c:enumerator:`AWL_NOTIF_OSD`) */
 static int asked_for( const note_t* n ) {
-    return n->revealed || (n->flags & AWL_NOTIF_SHOWN);
+    return n->revealed || (n->flags & (AWL_NOTIF_SHOWN | AWL_NOTIF_OSD));
 }
 
 /** whether n may show: ready (its image came, or not in time), and
@@ -853,10 +856,14 @@ void awl_notify_set_dnd( int on ) {
 }
 
 int awl_notify_count( int* critical ) {
-    int c = 0;
-    for (int i = 0; i < N.n; i++) c += N.v[i]->urgency == AWL_NOTIF_CRITICAL;
+    int c = 0, k = 0;
+    for (int i = 0; i < N.n; i++) {
+        if (N.v[i]->flags & AWL_NOTIF_OSD) continue;
+        c += N.v[i]->urgency == AWL_NOTIF_CRITICAL;
+        k++;
+    }
     if (critical) *critical = c;
-    return N.n;
+    return k;
 }
 
 int awl_notify_unread( void ) {

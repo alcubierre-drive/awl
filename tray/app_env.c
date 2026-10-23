@@ -37,7 +37,7 @@
 static struct {
     /** the config's icon_theme, NULL: none */
     char *theme;
-    /** what awl_tray_app_env() made, for theme made_for (NULL: nothing yet);
+    /** what :c:func:`awl_tray_app_env` made, for theme made_for (NULL: nothing yet);
      * env.env NULL: nothing to give */
     char *made_for;
     awl_tray_app_env_t env;
@@ -73,7 +73,7 @@ awl_tray_app_set_theme(const char *theme)
     E.theme = theme && *theme ? copy(theme) : NULL;
 }
 
-/** forgets what awl_tray_app_env() made */
+/** forgets what :c:func:`awl_tray_app_env` made */
 static void
 drop(void)
 {
@@ -275,7 +275,7 @@ append(bytes_t *b, const void *data, size_t n, size_t align)
 }
 
 /** a hash table of n items at its place, all in one bucket and without a
- * bloom filter: returns where it starts, *end where it ends */
+ * bloom filter: returns where it starts, ``*end`` where it ends */
 static size_t
 table(bytes_t *b, int n, size_t *end)
 {

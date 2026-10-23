@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * The outputs, part of awl: a `Monitor` for each, from the backend's
+ * The outputs, part of awl: a :c:type:`Monitor` for each, from the backend's
  * new_output to the output's destruction, their layout, the output
  * management and power protocols, and which monitor is selected
  * (awl_output.c). Main thread only.

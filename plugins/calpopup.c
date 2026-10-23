@@ -137,7 +137,7 @@ static void fit_font( struct fcft_font* font ) {
     }
 }
 
-/** the selected day's events, from the cache; *n of them, NULL while its
+/** the selected day's events, from the cache; ``*n`` of them, NULL while its
  * month is not fetched */
 static const awl_cal_event_t** day_events( int* n ) {
     static const awl_cal_event_t* list[256];
@@ -154,6 +154,14 @@ static const awl_cal_event_t** day_events( int* n ) {
 static void set_part( int p, int x, int y, int w, int h ) {
     C.part[p] = (box_t){ x, y, w, h };
     C.has[p] = 1;
+}
+
+/** the app button's text, NULL while there is no button */
+static const char* app_label( void ) {
+    const char* const* app = awl_plugin_config()->calendar.app;
+    if (C.plain || !app || !app[0]) return NULL;
+    const char* label = awl_plugin_config()->calendar.app_label;
+    return label && *label ? label : app[0];
 }
 
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
@@ -174,12 +182,13 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     const int year_w = (int)awl_host->text_width( font, "0000" ) + 2 * pad;
     const int day_w = C.widest_day + 2 * pad;
     const int today_w = (int)awl_host->text_width( font, "Today" ) + 2 * pad;
-    const int evo_w = (int)awl_host->text_width( font, "Evolution" ) + 2 * pad;
+    const char* app = app_label();
+    const int evo_w = app ? (int)awl_host->text_width( font, app ) + 2 * pad : 0;
 
     /* as wide as the widest of the rows */
     int W = 8 * cell_w;
     int head = 4 * arrow_w + month_w + year_w + gap;
-    int dayrow = 2 * arrow_w + day_w + gap + today_w + (C.plain ? 0 : gap + evo_w);
+    int dayrow = 2 * arrow_w + day_w + gap + today_w + (app ? gap + evo_w : 0);
     if (head > W) W = head;
     if (dayrow > W) W = dayrow;
     int n = 0;
@@ -221,13 +230,13 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     for (int i = 0; i < 42; i++)
         set_part( P_DAY0 + i, grid_x + (1 + i % 7) * cell_w, y + (i / 7) * cell_h, cell_w, cell_h );
     y += 6 * cell_h + gap;
-    /* < the day >, then Today and Evolution on the right */
+    /* < the day >, then Today and the app's button on the right */
     C.day_y = y;
     set_part( P_DPREV, 0, y, arrow_w, bh );
     C.day_label = (box_t){ arrow_w, y, day_w, bh };
     set_part( P_DNEXT, arrow_w + day_w, y, arrow_w, bh );
     int bx = W;
-    if (!C.plain) {
+    if (app) {
         bx -= evo_w;
         set_part( P_EVO, bx, y, evo_w, bh );
         bx -= gap;
@@ -331,7 +340,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     text_center( pix, font, x0, y0, C.day_label, buf, c->popup_fg );
     text_center( pix, font, x0, y0, C.part[P_DNEXT], "›", c->popup_fg );
     text_center( pix, font, x0, y0, C.part[P_TODAY], "Today", c->popup_fg );
-    if (C.has[P_EVO]) text_center( pix, font, x0, y0, C.part[P_EVO], "Evolution", c->popup_fg );
+    if (C.has[P_EVO]) text_center( pix, font, x0, y0, C.part[P_EVO], app_label(), c->popup_fg );
 
     /* its events, once fetched */
     if (!C.has[P_LIST]) return;
@@ -437,7 +446,7 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
     case P_DNEXT: step_day( 1 ); break;
     case P_TODAY: go_today(); break;
     case P_EVO:
-        awl_host->actions->spawn( &(Arg){ .v = (const char*[]){ "evolution", "-c", "calendar", NULL } } );
+        awl_host->actions->spawn( &(Arg){ .v = awl_plugin_config()->calendar.app } );
         awl_calpopup_hide();
         return;
     case P_LIST: return;

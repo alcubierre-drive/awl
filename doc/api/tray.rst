@@ -55,8 +55,8 @@ plugins/tray_tooltip.h
 Settings and the programs' icon theme
 -------------------------------------
 
-`awl_config_t.tray` (awl.h), and what awl's core keeps of the tray:
-the icon theme of the programs started with awl.h's ``TRAY_ICONS``
+:c:member:`awl_config_t.tray` (awl.h), and what awl's core keeps of the tray:
+the icon theme of the programs started with awl.h's :c:macro:`TRAY_ICONS`
 (tray/app_env.c, and ``libawltray-env.so``, built next to awl from
 tray/env_shim.c and preloaded into them).
 

@@ -2,7 +2,7 @@
 
 /**
  * What awl's core keeps of the tray: the icon theme of the programs awl
- * starts with TRAY_ICONS (awl.h), `awl_config_t.tray` (awl.h)'s
+ * starts with :c:macro:`TRAY_ICONS` (awl.h), :c:member:`awl_config_t.tray` (awl.h)'s
  * icon_theme (app_env.c, libawltray-env.so from env_shim.c). The bar's tray
  * widget is the library's (plugins/sni.h). Main thread only.
  */
@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 /** What a program awl starts that asks for the tray's icon theme
- * (TRAY_ICONS, awl.h) gets: a dconf profile of its own, the one it
+ * (:c:macro:`TRAY_ICONS`, awl.h) gets: a dconf profile of its own, the one it
  * would have had, but with org.gnome.desktop.interface's icon-theme set to
  * the config's icon_theme (and locked, over the user's value), so GTK
  * programs draw their icons, the ones they send the tray as images too, in
@@ -33,11 +33,11 @@ typedef struct awl_tray_app_env_t {
  * couldn't be made (the shim missing): start the program as it is. Made on
  * first use, and anew after a reload changed icon_theme, for the programs
  * started from then on. It lives until the next call or
- * awl_tray_app_cleanup(). */
+ * :c:func:`awl_tray_app_cleanup`. */
 const awl_tray_app_env_t *awl_tray_app_env(void);
 
 /** the config's icon_theme (NULL or "": none), at startup and after each
- * plugin reload; the next awl_tray_app_env() makes it anew if it changed */
+ * plugin reload; the next :c:func:`awl_tray_app_env` makes it anew if it changed */
 void awl_tray_app_set_theme(const char *theme);
-/** removes what awl_tray_app_env() made */
+/** removes what :c:func:`awl_tray_app_env` made */
 void awl_tray_app_cleanup(void);

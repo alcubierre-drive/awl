@@ -30,7 +30,7 @@ typedef struct {
     char session[256];
     /** a reply or a call failed; the connection is dropped and retried */
     int failed;
-    /** AWL_LOGIND_LOCK, AWL_LOGIND_SLEEP: whose matches are in place */
+    /** :c:enumerator:`AWL_LOGIND_LOCK`, :c:enumerator:`AWL_LOGIND_SLEEP`: whose matches are in place */
     unsigned subscribed;
     /** the delay inhibitor, -1 while none is held */
     int inhibit_fd;
@@ -40,15 +40,17 @@ typedef struct {
     int sleeping;
     /** the config dictionary's "lock_on_suspend", read on connecting */
     int lock_on_suspend;
-    /** what awl was told last (`report()`) */
+    /** what awl was told last (``report()``) */
     unsigned reported;
-    /** awl_logind_covered()'s, and what LockedHint was last set to (-1: not yet) */
+    /** :c:func:`awl_logind_covered`'s, and what LockedHint was last set to (-1: not yet) */
     atomic_int covered;
     int hint;
     /** CLOCK_MONOTONIC usec of the next connection attempt, 0 while connected */
     uint64_t retry_at;
     /** connection attempts failed in a row: only the first one warns */
     int failures;
+    /** :c:func:`awl_logind_suspend` asked, the thread hasn't called Suspend yet */
+    atomic_int suspend;
 } logind_t;
 
 static logind_t lg = { .inhibit_fd = -1, .hint = -1 };
@@ -282,6 +284,23 @@ static void bus_update( logind_t* s ) {
     report( s );
 }
 
+static int on_suspend( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
+    (void)userdata; (void)ret_error;
+    /* a refusal (polkit, an inhibitor) isn't the connection's fault */
+    const sd_bus_error* e = sd_bus_message_get_error( m );
+    if (e) awl_wrn_printf( "logind: Suspend: %s\n", e->message ? e->message : e->name );
+    return 0;
+}
+
+/** calls Suspend if :c:func:`awl_logind_suspend` asked */
+static void check_suspend( logind_t* s ) {
+    if (!atomic_exchange( &s->suspend, 0 )) return;
+    int r = s->bus ? sd_bus_call_method_async( s->bus, NULL, LOGIND_NAME, LOGIND_PATH, LOGIND_MANAGER,
+                                               "Suspend", on_suspend, s, "b", 0 )
+                   : -ENOTCONN;
+    if (r < 0) awl_wrn_printf( "logind: can't suspend: %s\n", strerror( -r ) );
+}
+
 static void* run( void* arg ) {
     logind_t* s = arg;
     connect_bus( s );
@@ -306,6 +325,7 @@ static void* run( void* arg ) {
         if ((p[0].revents & POLLIN) && awl_thread_woken( &s->t )) break;
         if (!s->bus && s->retry_at && now_usec() >= s->retry_at)
             connect_bus( s );
+        check_suspend( s );
         if (s->bus)
             bus_update( s );
     }
@@ -332,4 +352,13 @@ int awl_logind_stop( void ) {
 void awl_logind_covered( int covered ) {
     atomic_store( &lg.covered, !!covered );
     if (running) awl_thread_wake( &lg.t );
+}
+
+void awl_logind_suspend( void ) {
+    if (!running) {
+        awl_wrn_printf( "logind: not running, can't suspend\n" );
+        return;
+    }
+    atomic_store( &lg.suspend, 1 );
+    awl_thread_wake( &lg.t );
 }

@@ -1,4 +1,5 @@
 #include "colors.h"
+#include <math.h>
 
 #define MIN( A, B ) ( (A) < (B) ? (A) : (B) )
 
@@ -43,4 +44,23 @@ pixman_color_t color_mix_16( pixman_color_t A, pixman_color_t B, float t ) {
     for (int i=0; i<4; ++i)
         uR.f[i] = uA.f[i] + (uB.f[i] - uA.f[i]) * t;
     return fcolor2pixman(uR.c);
+}
+
+uint32_t colormap_color( const awl_colormap_t* m, float x ) {
+    const size_t n = m->n < AWL_COLORMAP_MAX ? m->n : AWL_COLORMAP_MAX;
+    if (!n) return 0;
+    if (x <= m->v[0].at) return m->v[0].color;
+    for (size_t i=1; i<n; ++i) {
+        const awl_colorstop_t* a = &m->v[i-1], * b = &m->v[i];
+        if (x >= b->at) continue;
+        // x < b->at here, so b->at > a->at: no division by zero (-Ofast)
+        float t = (x - a->at) / (b->at - a->at);
+        uint32_t c = 0;
+        for (int shift=0; shift<32; shift+=8) {
+            float ca = (a->color >> shift) & 0xff, cb = (b->color >> shift) & 0xff;
+            c |= (uint32_t)lroundf( ca + (cb - ca) * t ) << shift;
+        }
+        return c;
+    }
+    return m->v[n-1].color;
 }

@@ -6,18 +6,18 @@
  * (plugins_widgets.c), the desktop file list (plugins_desktop_panel.c;
  * awl_desktop.c only places it), picking and decoding the wallpaper
  * (plugins/wallpaper.c; awl_background.c shows it) and the configuration
- * (plugins_config.c), which fills in `awl_config_t` (awl.h) over awl's
+ * (plugins_config.c), which fills in :c:type:`awl_config_t` (awl.h) over awl's
  * defaults.
  * awl loads the library with ``dlopen()`` and looks up a single symbol,
- * `AWL_PLUGIN_ENTRY`; everything else goes through two tables, `awl_host_t`
- * (awl_host.h) and `awl_plugin_api_t` below, so the library has no unresolved
+ * :c:macro:`AWL_PLUGIN_ENTRY`; everything else goes through two tables, :c:type:`awl_host_t`
+ * (awl_host.h) and :c:type:`awl_plugin_api_t` below, so the library has no unresolved
  * references into awl (no ``-rdynamic``).
  *
- * The library still reads awl's structs directly (`awl_bar_t`, `widget_t`,
- * `awl_config_t`, `Arg`; all in awl.h), so it has to be built from the same
- * headers as the running awl. `Monitor` and `Client` are opaque to it: it
+ * The library still reads awl's structs directly (:c:type:`awl_bar_t`, :c:type:`widget_t`,
+ * :c:type:`awl_config_t`, :c:type:`Arg`; all in awl.h), so it has to be built from the same
+ * headers as the running awl. :c:type:`Monitor` and :c:type:`Client` are opaque to it: it
  * only hands them back to awl. The entry point refuses a
- * host whose ABI version or struct sizes differ from its own. Bump `AWL_PLUGIN_ABI` whenever either table
+ * host whose ABI version or struct sizes differ from its own. Bump :c:macro:`AWL_PLUGIN_ABI` whenever either table
  * changes.
  */
 
@@ -28,17 +28,17 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 38
-/** The name of the library's only exported symbol, an `awl_plugin_entry_t`. */
+#define AWL_PLUGIN_ABI 39
+/** The name of the library's only exported symbol, an :c:type:`awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
 /**
  * Every awl function the configuration (plugins_config.c) can bind to a key
  * or button, one ``AWL_ACTION_REGISTER( name )`` each: define
  * AWL_ACTION_REGISTER before expanding the list, undefine it after.
- * The library binds them through wrappers around `awl_host_t.actions`,
+ * The library binds them through wrappers around :c:member:`awl_host_t.actions`,
  * awl_action_<name> (plugins_config.c), which bindings write as
- * `AWL_ACTION()`.
+ * :c:macro:`AWL_ACTION() <AWL_ACTION>`.
  */
 #define AWL_ACTIONS \
     AWL_ACTION_REGISTER( changebw ) AWL_ACTION_REGISTER( chvt ) \
@@ -47,7 +47,8 @@
     AWL_ACTION_REGISTER( incnmaster ) AWL_ACTION_REGISTER( killclient ) \
     AWL_ACTION_REGISTER( lockscreen ) AWL_ACTION_REGISTER( maximize ) \
     AWL_ACTION_REGISTER( minimize ) AWL_ACTION_REGISTER( moveresize ) \
-    AWL_ACTION_REGISTER( movestack ) AWL_ACTION_REGISTER( plugin_restart ) \
+    AWL_ACTION_REGISTER( movestack ) AWL_ACTION_REGISTER( outputprofile ) \
+    AWL_ACTION_REGISTER( plugin_restart ) \
     AWL_ACTION_REGISTER( quit ) AWL_ACTION_REGISTER( setlayout ) \
     AWL_ACTION_REGISTER( setmfact ) AWL_ACTION_REGISTER( spawn ) AWL_ACTION_REGISTER( tag ) \
     AWL_ACTION_REGISTER( tagmon ) AWL_ACTION_REGISTER( togglebar ) \
@@ -59,20 +60,20 @@
     AWL_ACTION_REGISTER( wallpaper ) AWL_ACTION_REGISTER( wallpapermode )
 
 #define AWL_ACTION_REGISTER( name ) void (*name)( const Arg* arg );
-/** awl's functions of `AWL_ACTIONS`, one ``void (*name)( const Arg* )`` each */
+/** awl's functions of :c:macro:`AWL_ACTIONS`, one ``void (*name)( const Arg* )`` each */
 typedef struct awl_actions_t {
     AWL_ACTIONS
 } awl_actions_t;
 #undef AWL_ACTION_REGISTER
 
 /** awl's layouts' arrange functions, one ``AWL_LAYOUT_REGISTER( name )``
- * each, used like `AWL_ACTIONS`; layouts write them as `AWL_LAYOUT()` */
+ * each, used like :c:macro:`AWL_ACTIONS`; layouts write them as :c:macro:`AWL_LAYOUT() <AWL_LAYOUT>` */
 #define AWL_ARRANGES \
     AWL_LAYOUT_REGISTER( bstack ) AWL_LAYOUT_REGISTER( gaplessgrid ) \
     AWL_LAYOUT_REGISTER( monocle ) AWL_LAYOUT_REGISTER( tile )
 
 #define AWL_LAYOUT_REGISTER( name ) void (*name)( Monitor* m );
-/** the functions of `AWL_ARRANGES`, one ``void (*name)( Monitor* )`` each */
+/** the functions of :c:macro:`AWL_ARRANGES`, one ``void (*name)( Monitor* )`` each */
 typedef struct awl_arranges_t {
     AWL_ARRANGES
 } awl_arranges_t;
@@ -80,7 +81,7 @@ typedef struct awl_arranges_t {
 
 /** What the library provides. Main thread only. */
 typedef struct awl_plugin_api_t {
-    /** `AWL_PLUGIN_ABI` as the library was built */
+    /** :c:macro:`AWL_PLUGIN_ABI` as the library was built */
     uint32_t abi;
     /** makes the config (plugins_config.c's configure()), then starts the
      * plugin threads; before any other call but the entry point */
@@ -102,7 +103,7 @@ typedef struct awl_plugin_api_t {
      * toggles); 0: show nothing. Cheap, called on every redraw request.
      */
     uint64_t (*desktop_version)( void );
-    /** lays the panel out in font (Monitor.desktopfont,
+    /** lays the panel out in font (:c:member:`Monitor.desktopfont`,
      * else the bar's; never NULL) for the usable
      * area avail_w x avail_h with corner radius r; returns its position in
      * that area and its size (0: none) */
@@ -127,23 +128,28 @@ typedef struct awl_plugin_api_t {
     /** whether the screen is covered by the locker: from the first frame
      * that shows its surface on every output on, until it unlocks or
      * crashes (awl then stays locked under its blur, but not covered); right
-     * after `init` too */
+     * after :c:member:`~awl_plugin_api_t.init` too */
     void (*session_covered)( int covered );
 
-    /** fills in c: awl's defaults (`awl_host_t.config_defaults`) with
+    /** fills in c: awl's defaults (:c:member:`awl_host_t.config_defaults`) with
      * plugins_config.c's changes; what it points to stays valid until the
      * library is unloaded */
     void (*config)( awl_config_t* c );
 
-    /** the open notifications (`awl_host_t.notif_list`) changed: one
+    /** the open notifications (:c:member:`awl_host_t.notif_list`) changed: one
      * came, was replaced or closed. Called once per round of awl's loop
      * however many changed, not while the library sets up: it lists
-     * them itself in `init`. */
+     * them itself in :c:member:`~awl_plugin_api_t.init`. */
     void (*notifications_changed)( void );
+
+    /** awl woke for a redraw (:c:member:`awl_host_t.redraw_request`, from any
+     * thread): what a thread published may have changed. Main thread,
+     * before the bars are drawn; once per wakeup however many asked. */
+    void (*redraw)( void );
 } awl_plugin_api_t;
 
 /**
- * The type of the library's only exported symbol, `AWL_PLUGIN_ENTRY`.
+ * The type of the library's only exported symbol, :c:macro:`AWL_PLUGIN_ENTRY`.
  * Returns NULL if the library can't run against this host (ABI or struct
  * layout mismatch). The host table must stay valid as long as the library is
  * loaded.

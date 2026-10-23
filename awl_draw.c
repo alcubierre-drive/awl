@@ -17,11 +17,11 @@ typedef struct {
     char spec[AWL_FONT_SPEC_MAX];
     /** "dpi=...", then the style's ":weight=bold:slant=italic" */
     char attrs[48];
-    /** made for emoji: emoji presentation (see awl_font_get_emoji()) */
+    /** made for emoji: emoji presentation (see :c:func:`awl_font_get_emoji`) */
     int emoji;
-    /** AWL_FONT_BOLD, AWL_FONT_ITALIC (see awl_font_style()) */
+    /** :c:macro:`AWL_FONT_BOLD`, AWL_FONT_ITALIC (see :c:func:`awl_font_style`) */
     int style;
-    /** NULL: it didn't load (failed), or awl_font_retry() asked to try again */
+    /** NULL: it didn't load (failed), or :c:func:`awl_font_retry` asked to try again */
     struct fcft_font *font;
     int failed;
     int refs;

@@ -6,9 +6,9 @@
  * and fades from the previous one. Without the library, the last one stays.
  * Main thread only.
  *
- * The images live in their own scene tree right below ``LyrBg``, so
+ * The images live in their own scene tree right below :c:enumerator:`LyrBg`, so
  * background layer surfaces still go over them; it's not part of
- * ``layers[]``, so ``xytonode()`` and clicks go right through them.
+ * ``layers[]``, so :c:func:`xytonode` and clicks go right through them.
  */
 
 #include "awl_core.h"

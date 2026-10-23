@@ -10,6 +10,7 @@
 #include "plugins/loop.h"
 #include "plugins/persistent.h"
 #include "plugins/logind.h"
+#include "plugins/osd.h"
 #include "plugins/calpopup.h"
 #include "plugins/tray_menu.h"
 #include "plugins/tray_tooltip.h"
@@ -51,7 +52,6 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     strcpy( p->temp->f_labels[p->temp->f_ntemps++], "" );
     // here could go another thermal zone
     temp_init(p->temp);
-    p->temp_color = &temp_color;
 
     p->bat = bat_init( pc->battery.dir, pc->battery.ac_dir );
     p->date = date_init();
@@ -171,10 +171,12 @@ static void api_init( int paused ) {
     awl_wallpaper_start();
     awl_calpopup_start();
     awl_notify_start();
+    awl_osd_start();
 }
 
 static int api_fini( void ) {
     if (!plugin_data) return 0;
+    awl_osd_stop();
     int stuck = awl_notify_stop();
     stuck |= awl_calpopup_stop();
     stuck |= awl_desktop_stop();
@@ -217,7 +219,7 @@ uint32_t awl_notify_send( const awl_notif_send_t* n ) {
     return id;
 }
 
-/** `awl_notify_config()`'s lines so far */
+/** :c:func:`awl_notify_config`'s lines so far */
 typedef struct {
     char** lines;
     size_t n, cap;
@@ -281,12 +283,16 @@ static int cmpline( const void* a, const void* b ) {
 
 void awl_volume_adjust( float delta ) {
     awl_plugin_data_t* p = awl_plugin_get();
-    if (p) pulse_volume_adjust( p->pulse, delta );
+    if (!p || !p->pulse) return;
+    pulse_volume_adjust( p->pulse, delta );
+    awl_osd_volume();
 }
 
 void awl_volume_mute_toggle( void ) {
     awl_plugin_data_t* p = awl_plugin_get();
-    if (p) pulse_mute_toggle( p->pulse );
+    if (!p || !p->pulse) return;
+    pulse_mute_toggle( p->pulse );
+    awl_osd_volume();
 }
 
 void awl_mic_mute_toggle( void ) {
@@ -296,12 +302,16 @@ void awl_mic_mute_toggle( void ) {
 
 void awl_speaker_mute_toggle( void ) {
     awl_plugin_data_t* p = awl_plugin_get();
-    if (p) pulse_speaker_mute_toggle( p->pulse );
+    if (!p || !p->pulse) return;
+    pulse_speaker_mute_toggle( p->pulse );
+    awl_osd_volume();
 }
 
 void awl_brightness_adjust( float delta ) {
     awl_plugin_data_t* p = awl_plugin_get();
-    if (p) backlight_adjust( p->backlight, delta );
+    if (!p || !p->backlight) return;
+    backlight_adjust( p->backlight, delta );
+    awl_osd_brightness();
 }
 
 void awl_notify_config( void ) {
@@ -334,7 +344,7 @@ void awl_notify_config( void ) {
     free( body );
 }
 
-/** the wallpaper to tell about once it's shown (`awl_notify_wallpaper_shown()`);
+/** the wallpaper to tell about once it's shown (:c:func:`awl_notify_wallpaper_shown`);
  * main thread */
 static const char* shown_title;
 
@@ -389,8 +399,12 @@ static const awl_plugin_api_t api = {
     .session_covered = awl_logind_covered,
     .config = awl_config_fill,
     .notifications_changed = awl_notify_changed,
+    .redraw = awl_osd_redraw,
 };
 
+/** what awl looks up (:c:macro:`AWL_PLUGIN_ENTRY`): keeps host as
+ * :c:var:`awl_host` and returns the library's table; NULL if awl was built
+ * from other headers (the ABI or a shared struct's size differs) */
 __attribute__((visibility("default")))
 const awl_plugin_api_t* awl_plugin_entry( const awl_host_t* host ) {
     if (!host || host->abi != AWL_PLUGIN_ABI ||

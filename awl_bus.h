@@ -11,8 +11,10 @@
 
 typedef struct sd_bus sd_bus;
 struct wl_event_loop;
+/** a service's session bus connection on awl's loop; opaque */
 typedef struct awl_bus awl_bus_t;
 
+/** what a service on the bus does: its name and its callbacks */
 typedef struct awl_bus_ops_t {
     /** in the log: "<name>: no session bus ..." */
     const char* name;
@@ -34,3 +36,11 @@ awl_bus_t* awl_bus_start( struct wl_event_loop* loop, const awl_bus_ops_t* ops, 
 void awl_bus_fail( awl_bus_t* b );
 /** Disconnects and frees b; NULL is fine. */
 void awl_bus_stop( awl_bus_t* b );
+
+/** Hands the current values of the environment variables names (NULL
+ * terminated; unset ones are left out) to the session's systemd
+ * (SetEnvironment: the user units started from now on get them) and to the
+ * bus (UpdateActivationEnvironment: the services it starts get them), as
+ * ``dbus-update-activation-environment --systemd`` does. Blocks for up to a
+ * few seconds per call; failures are logged. */
+void awl_bus_import_environment( const char* const* names );

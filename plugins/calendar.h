@@ -3,8 +3,8 @@
 /**
  * The calendar's events, fetched on a plugin thread of their own: the
  * queries (cal_eds.h) block on D-Bus to evolution-data-server, which must not
- * stall awl. The main thread asks for months with `awl_calendar_request()`
- * and collects what came back with `awl_calendar_take()`; every result
+ * stall awl. The main thread asks for months with :c:func:`awl_calendar_request`
+ * and collects what came back with :c:func:`awl_calendar_take`; every result
  * requests a redraw, so the clock widget's measure() finds it soon.
  *
  * Months are keys year * 12 + month (month 0-based, as in struct tm).
@@ -14,7 +14,7 @@
 
 #include <time.h>
 
-/** one occurrence, as cal_event_t, the strings owned (never NULL) */
+/** one occurrence, as :c:type:`cal_event_t`, the strings owned (never NULL) */
 typedef struct {
     char *summary, *location, *color;
     time_t start, end;
@@ -22,13 +22,13 @@ typedef struct {
 } awl_cal_event_t;
 
 /** a month's events, sorted: the all-day ones first, then by start */
-typedef struct awl_cal_month {
+typedef struct awl_cal_month_t {
     int key;
     /** CAL_OK, or why there are no events */
     cal_status_t status;
     awl_cal_event_t* events;
     int n;
-    struct awl_cal_month* next;
+    struct awl_cal_month_t* next;
 } awl_cal_month_t;
 
 /** Starts the thread; it loads libecal on the first request. Returns 0, or
@@ -40,7 +40,7 @@ int awl_calendar_stop( void );
 /** Queues month key, unless it is queued already. Main thread. */
 void awl_calendar_request( int key );
 /** The results since the last call, oldest first, NULL if none; free each
- * with `awl_calendar_month_free()`. Main thread. */
+ * with :c:func:`awl_calendar_month_free`. Main thread. */
 awl_cal_month_t* awl_calendar_take( void );
 /** frees m (not the ones after it); NULL is fine */
 void awl_calendar_month_free( awl_cal_month_t* m );

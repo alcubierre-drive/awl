@@ -3,7 +3,7 @@
 /**
  * What the plugins keep across awl's restarts: ``key=value`` lines in one
  * file, at the config dictionary's ``state_home`` joined with its
- * ``awl_persistent`` (which the library's ``init()`` sets). The config
+ * ``awl_persistent`` (which the library's :c:member:`~awl_plugin_api_t.init` sets). The config
  * dictionary itself only lasts as long as awl.
  *
  * Plugin threads only: these read and write the file, and the main thread
@@ -18,11 +18,11 @@
 #define AWL_PERSISTENT_KEY "awl_persistent"
 
 /** the config dictionary's key that lists, space-separated, the keys
- * `awl_persistent_load_str()` has loaded in this awl run */
+ * :c:func:`awl_persistent_load_str` has loaded in this awl run */
 #define AWL_PERSISTENT_LOADED_KEY "awl_persistent_loaded"
 
 /** Writes the file's path to out. Returns 0, or -1 if ``state_home`` or
- * `AWL_PERSISTENT_KEY` isn't a string or the path doesn't fit. */
+ * :c:macro:`AWL_PERSISTENT_KEY` isn't a string or the path doesn't fit. */
 int awl_persistent_path( char* out, size_t n );
 /** Reads key's string into out. Returns 0, or -1 if the file or the key is
  * missing or the string doesn't fit. */
@@ -35,10 +35,10 @@ int awl_persistent_get_num( const char* key, int64_t* v );
  * (rename()), so a crash leaves one or the other. Returns 0, or -1
  * (logged). */
 int awl_persistent_set_num( const char* key, int64_t v );
-/** like `awl_persistent_set_num()`, for a string without newlines */
+/** like :c:func:`awl_persistent_set_num`, for a string without newlines */
 int awl_persistent_set_str( const char* key, const char* v );
 
-/** For a string key awl gives a default (awl_config.c's ``cfgdictdefaults()``):
+/** For a string key awl gives a default (awl_config.c's :c:func:`cfgdictdefaults`):
  * once per awl run, at the first call for key, replaces the dictionary's
  * value with the file's, so a saved one wins over the default. Later calls,
  * e.g. after a reload, leave the dictionary alone, its value is newer.

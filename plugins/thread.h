@@ -3,15 +3,15 @@
 /**
  * The plugin threads (poller.c's event loop, loop.c's (the tray's), plugins_desktop_panel.c's
  * scanner, wallpaper.c's decoder) all start and stop the same way: the thread sleeps
- * in ``poll()`` on, among others, ``wake_fd``; `awl_thread_stop()` sets
+ * in ``poll()`` on, among others, ``wake_fd``; :c:func:`awl_thread_stop` sets
  * ``quit`` and makes ``wake_fd`` readable, the thread notices in
- * `awl_thread_woken()` and returns. No thread is ever cancelled.
+ * :c:func:`awl_thread_woken` and returns. No thread is ever cancelled.
  */
 
 #include <pthread.h>
 #include <stdatomic.h>
 
-/** A plugin thread, see `awl_thread_start()`. */
+/** A plugin thread, see :c:func:`awl_thread_start`. */
 typedef struct {
     pthread_t thread;
     /** eventfd */

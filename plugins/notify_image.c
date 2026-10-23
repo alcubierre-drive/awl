@@ -39,7 +39,7 @@ typedef struct wish {
     /** image_path, app_icon, desktop_entry; NULL none. The bar's: its
      * names in src[0] */
     char* src[3];
-    /** the bar's (`awl_notify_image_icon_want()`) */
+    /** the bar's (:c:func:`awl_notify_image_icon_want`) */
     int bar;
 } wish_t;
 
@@ -195,11 +195,24 @@ static pixman_image_t* load( worker_t* x, const char* path, int px ) {
     return mine;
 }
 
-/** src's image at px: a path, a file:// URL, or an icon name in icons */
+/** src's image at px: a path, a file:// URL, or an icon name in icons
+ * (names, ";" between them: the first found) */
 static pixman_image_t* resolve( worker_t* x, awl_icons_t* icons, const char* src, int px, int* symbolic ) {
     char path[PATH_MAX];
     unsigned flags = 0;
     *symbolic = 0;
+    if (*src != '/' && strncmp( src, "file://", strlen( "file://" ) ) && strchr( src, ';' )) {
+        /* names, ";" between them (no icon name has one): the first found */
+        pixman_image_t* img = NULL;
+        for (const char* p = src; *p && !img;) {
+            const size_t k = strcspn( p, ";" );
+            char* name = k ? strndup( p, k ) : NULL;
+            if (name) img = resolve( x, icons, name, px, symbolic );
+            free( name );
+            p += k + (p[k] == ';');
+        }
+        return img;
+    }
     if (!strncmp( src, "file://", strlen( "file://" ) )) {
         if (!url_path( src, path, sizeof path )) return NULL;
         src = path;

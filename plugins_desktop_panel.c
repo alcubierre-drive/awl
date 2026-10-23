@@ -1,6 +1,6 @@
 /** The desktop file list's content: which files, how they look, what clicks
  * do. awl_desktop.c owns the panels' buffers and scene nodes and asks for the
- * pixels through awl_plugin_api_t (see awl_plugin_abi.h). */
+ * pixels through :c:type:`awl_plugin_api_t` (see awl_plugin_abi.h). */
 
 #include "plugins.h"
 #include "plugins/colors.h"
@@ -20,7 +20,7 @@
 #include <sys/inotify.h>
 #include <unistd.h>
 
-/** the look, `awl_config_t.desktop` and `awl_plugin_colors_t`'s desktop_*;
+/** the look, :c:member:`awl_config_t.desktop` and :c:type:`awl_plugin_colors_t`'s desktop_*;
  * hidden entries, "(empty)" and "… N more" keep their color at its
  * hidden_alpha */
 #define DESK (&awl_config()->desktop)
@@ -29,7 +29,7 @@
 #define NFILES (sizeof(((DesktopFiles*)0)->files) / sizeof(Filename))
 
 /** the layout of the last measure, for drawing: the files, then the folders,
- * each spread evenly over `awl_desktop_config_t.columns` columns, the
+ * each spread evenly over :c:member:`awl_desktop_config_t.columns` columns, the
  * folders from the first column on again below the files */
 typedef struct {
     int idx[NFILES];   /* the entries shown, in order */

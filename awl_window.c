@@ -16,9 +16,9 @@ struct awl_window {
     char* text;
     /** where it is shown, NULL while hidden */
     Monitor* m;
-    /** how it is placed: by the bar (awl_window_show()), beside anchor
-     * (awl_window_show_beside()) or at a spot of the window area
-     * (awl_window_show_at()) */
+    /** how it is placed: by the bar (:c:func:`awl_window_show`), beside anchor
+     * (:c:func:`awl_window_show_beside`) or at a spot of the window area
+     * (:c:func:`awl_window_show_at`) */
     enum { PLACE_BAR, PLACE_BESIDE, PLACE_AT } placement;
     int center_x, top;
     int left;
@@ -46,8 +46,8 @@ struct awl_window {
     awl_window_key_t key;
     void* key_data;
     int hover;
-    /** the pointer is on it (awl_window_pointer_motion() since the last
-     * awl_window_pointer_leave()) */
+    /** the pointer is on it (:c:func:`awl_window_pointer_motion` since the last
+     * :c:func:`awl_window_pointer_leave`) */
     int pointer_in;
     /** draws itself instead of the text, if painter.paint is set */
     awl_window_painter_t painter;
@@ -161,7 +161,7 @@ static struct fcft_font* font_of( Monitor* m ) {
     return m->popupfont ? m->popupfont : m->bar.font;
 }
 
-/** an AWL_WINDOW_AT_* that is a strip, AWL_WINDOW_AT_BAR's and the edges' */
+/** an AWL_WINDOW_AT_* that is a strip, :c:enumerator:`AWL_WINDOW_AT_BAR`'s and the edges' */
 static int is_strip( int at ) {
     return at == AWL_WINDOW_AT_BAR || at == AWL_WINDOW_AT_STRIP_TOP || at == AWL_WINDOW_AT_STRIP_BOTTOM;
 }
@@ -405,7 +405,7 @@ int awl_window_takes_pointer( const awl_window_t* win, double lx, double ly ) {
     return (win->click || win->scroll) && inside( win, lx, ly, 0, 0 );
 }
 
-/** the cell at layout coordinates lx, ly, see awl_window_cell_at() */
+/** the cell at layout coordinates lx, ly, see :c:func:`awl_window_cell_at` */
 static int cell_at( const awl_window_t* win, double lx, double ly, int* row, int* col ) {
     *row = *col = -1;
     if (!win->m || !win->drawn) return 0;

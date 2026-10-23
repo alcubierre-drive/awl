@@ -15,7 +15,7 @@ typedef struct awl_desktop_entry_t {
     char *name, *generic, *keywords;
     /** Icon: a name or a path */
     char* icon;
-    /** Exec, unescaped (`awl_desktop_exec_argv()` takes it so), TryExec,
+    /** Exec, unescaped (:c:func:`awl_desktop_exec_argv` takes it so), TryExec,
      * Path (the working directory) */
     char *exec, *try_exec, *path;
     int terminal;
@@ -24,7 +24,7 @@ typedef struct awl_desktop_entry_t {
     int hidden;
 } awl_desktop_entry_t;
 
-/** at most this many languages `awl_desktop_langs()` makes */
+/** at most this many languages :c:func:`awl_desktop_langs` makes */
 #define AWL_DESKTOP_MAX_LANGS 4
 
 /** The languages a localized key matches for locale (``lang_COUNTRY.ENCODING@MODIFIER``,
@@ -50,7 +50,8 @@ void awl_desktop_entry_clear( awl_desktop_entry_t* e );
  * "--icon" and the icon if there is one; the file and URL ones (%f %F %u
  * %U, the deprecated %d %D %n %N %v %m) dropped, an argument that was only
  * one of them with it. malloc()ed, NULL terminated, each argument
- * malloc()ed (`awl_desktop_argv_free()`); NULL if it has none, or for an
+ * malloc()ed (:c:func:`awl_desktop_argv_free`); NULL if it has none, or for an
  * unterminated quote. */
 char** awl_desktop_exec_argv( const char* exec, const char* name, const char* icon, const char* file );
+/** frees argv and its arguments; NULL is fine */
 void awl_desktop_argv_free( char** argv );

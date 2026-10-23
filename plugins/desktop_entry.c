@@ -113,7 +113,7 @@ static int is_true( const char* v, size_t len ) {
     return len == 4 && !strncmp( v, "true", 4 );
 }
 
-/** a localized key's string, if it is a better language than *rank's */
+/** a localized key's string, if it is a better language than ``*rank``'s */
 static void localized( char** dst, int* rank, int r, const char* v, size_t len, const char* sep ) {
     if (r < 0 || r >= *rank) return;
     char* s = unescape( v, len, sep );

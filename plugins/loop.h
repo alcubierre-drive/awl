@@ -12,7 +12,7 @@ typedef struct awl_loop_t awl_loop_t;
 
 /** Sets up the loop, not running yet. NULL on failure. */
 awl_loop_t* awl_loop_new( void );
-/** For event sources: from the calling thread until `awl_loop_start()`, then
+/** For event sources: from the calling thread until :c:func:`awl_loop_start`, then
  * only from callbacks on the loop. */
 sd_event* awl_loop_event( awl_loop_t* l );
 /** Starts the thread, named name (at most 11 characters). Returns 0, or -1
@@ -20,9 +20,9 @@ sd_event* awl_loop_event( awl_loop_t* l );
 int awl_loop_start( awl_loop_t* l, const char* name );
 /** Stops the thread, if it was started, waiting up to timeout_ms. Returns 0
  * once it has exited (or for NULL): free the event sources, then
- * `awl_loop_free()`. Nonzero if it is stuck and left running: then nothing it
+ * :c:func:`awl_loop_free`. Nonzero if it is stuck and left running: then nothing it
  * runs may be freed, the loop included, and the library must stay mapped
- * (`awl_thread_stop()`). */
+ * (:c:func:`awl_thread_stop`). */
 int awl_loop_stop( awl_loop_t* l, int timeout_ms );
-/** Frees the loop; after `awl_loop_stop()`. NULL is fine. */
+/** Frees the loop; after :c:func:`awl_loop_stop`. NULL is fine. */
 void awl_loop_free( awl_loop_t* l );

@@ -20,7 +20,7 @@
  * without an event of its own. */
 #define BAT_SETTLE_TICKS 10
 #define IP_FALLBACK_TICKS 5
-/** How long poller_stop() waits for the thread, which may hang in a sysfs
+/** How long :c:func:`poller_stop` waits for the thread, which may hang in a sysfs
  * read (an ACPI thermal zone goes through the EC); like logind's. */
 #define STOP_TIMEOUT_MS 2000
 
@@ -51,7 +51,7 @@ static void update_all( awl_poller_t* p ) {
     date_update( p->date );
     bat_update( p->bat );
     bat_dock_update( p->bat );
-    ip_update( p->ip );
+    if (p->ip) ip_update( p->ip );
     awl_host->redraw_request();
 }
 
@@ -73,7 +73,7 @@ static void tick_callback( pa_mainloop_api* a, pa_time_event* e, const struct ti
             bat_update( p->bat );
             if (p->bat->uevent_fd < 0) bat_dock_update( p->bat );
         }
-        if (p->ip->nl_fd < 0 && p->ticks % IP_FALLBACK_TICKS == 0)
+        if (p->ip && p->ip->nl_fd < 0 && p->ticks % IP_FALLBACK_TICKS == 0)
             ip_update( p->ip );
         /* the graph moves every second */
         awl_host->redraw_request();
@@ -156,9 +156,10 @@ awl_poller_t* poller_new( awl_stats_t* stats, awl_temperature_t* temp, awl_date_
     p->api = pa_mainloop_get_api( p->ml );
     if (bat->uevent_fd >= 0)
         p->bat_io = p->api->io_new( p->api, bat->uevent_fd, PA_IO_EVENT_INPUT, bat_callback, p );
-    if (ip->nl_fd >= 0)
+    /* without ip (out of memory) no addresses, nor NetworkManager */
+    if (ip && ip->nl_fd >= 0)
         p->ip_io = p->api->io_new( p->api, ip->nl_fd, PA_IO_EVENT_INPUT, ip_callback, p );
-    ip->nm = nm_new( p->api, nm_changed, p );
+    if (ip) ip->nm = nm_new( p->api, nm_changed, p );
     return p;
 }
 
@@ -188,8 +189,10 @@ int poller_stop( awl_poller_t* p ) {
 void poller_free( awl_poller_t* p ) {
     if (!p) return;
     /* its event sources first; the loop frees whatever is left */
-    nm_free( p->ip->nm );
-    p->ip->nm = NULL;
+    if (p->ip) {
+        nm_free( p->ip->nm );
+        p->ip->nm = NULL;
+    }
     pa_mainloop_free( p->ml );
     free( p );
 }

@@ -33,6 +33,7 @@ static int rtnl_open( void ) {
 
 awl_ipaddr_t* ip_init( void ) {
     awl_ipaddr_t* ip = calloc(1, sizeof(awl_ipaddr_t));
+    if (!ip) return NULL;
     strcpy( ip->exclude_list[ip->n_exclude_list++], "lo" );
     strcpy( ip->exclude_list[ip->n_exclude_list++], "virbr0" );
     strcpy( ip->exclude_list[ip->n_exclude_list++], "docker0" );
@@ -44,6 +45,7 @@ awl_ipaddr_t* ip_init( void ) {
 }
 
 void ip_free( awl_ipaddr_t* ip ) {
+    if (!ip) return;
     if (ip->nl_fd >= 0) close( ip->nl_fd );
     pthread_mutex_destroy( &ip->lock );
     free(ip);

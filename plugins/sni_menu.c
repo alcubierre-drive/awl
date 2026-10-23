@@ -175,7 +175,7 @@ static void icons_fini( icons_t* ic ) {
 
 /** a copy of the file of icon name (not larger than AWL_ICON_MAX_BYTES): a
  * path as it is, else from the item's folders, then the tray's themes; NULL
- * if there's none. *flags: AWL_TRAY_MENU_SYMBOLIC and AWL_TRAY_MENU_FILE
+ * if there's none. ``*flags``: :c:enumerator:`AWL_TRAY_MENU_SYMBOLIC` and :c:enumerator:`AWL_TRAY_MENU_FILE`
  * as they apply. */
 static unsigned char* icon_file( icons_t* ic, const char* name, size_t* len, uint32_t* flags ) {
     int i = 0;
@@ -223,7 +223,7 @@ static int variant_is( sd_bus_message* m, const char* sig ) {
 }
 
 /** The entry m is at, (ia{sv}av), its children too; NULL if hidden or
- * broken (*err then set), or past *budget entries. */
+ * broken (``*err`` then set), or past ``*budget`` entries. */
 static tnode* parse( sd_bus_message* m, icons_t* ic, int depth, int* budget, int* err ) {
     int32_t id = 0;
     int visible = 1, enabled = 1, state = -1;

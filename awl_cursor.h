@@ -15,7 +15,7 @@ extern struct wlr_pointer_constraints_v1 *pointer_constraints;
 extern struct wlr_relative_pointer_manager_v1 *relative_pointer_mgr;
 /** the drag icons, under LyrBlock */
 extern struct wlr_scene_tree *drag_icon;
-/** what the pointer does, `CursorMode` */
+/** what the pointer does, :c:enum:`CursorMode` */
 extern unsigned int cursor_mode;
 /** the client being moved or resized */
 extern Client *grabc;

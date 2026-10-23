@@ -2,7 +2,7 @@ Live reload
 ===========
 
 ``ninja -C build`` builds ``awl`` and ``libawlplugins.so`` (see meson.build). With awl running,
-``plugin_restart`` (MOD+Ctrl+r by default) swaps in the freshly
+:c:func:`plugin_restart` (MOD+Ctrl+r by default) swaps in the freshly
 built library: new widgets, new plugin code and plugins_config.c,
 without restarting awl or any client.
 
@@ -23,50 +23,50 @@ What a reload picks up
        wallpaper settings
      - meson.options: compile-time switches
    * -
-     - any change to `awl_host_t`, `awl_plugin_api_t` or to a struct both
-       sides read (`awl_config_t`, `awl_draw_t`, `widget_t`, `Arg`; all in
-       awl.h), i.e.
-       anything that bumps `AWL_PLUGIN_ABI`
+     - any change to :c:type:`awl_host_t`, :c:type:`awl_plugin_api_t` or to a struct both
+       sides read (:c:type:`awl_config_t`, :c:type:`awl_bar_t`, :c:type:`widget_t`, :c:type:`Arg`; in
+       awl.h and awl_bar_type.h), i.e.
+       anything that bumps :c:macro:`AWL_PLUGIN_ABI`
 
 Monitor rules apply to outputs that appear after the reload. A library that
 was built against a different awl refuses to load (see
-`awl_plugin_entry_t`); the old one then stays and its plugins are just
+:c:type:`awl_plugin_entry_t`); the old one then stays and its plugins are just
 restarted.
 
 The sequence
 ------------
 
-``plugin_restart`` usually runs from a key binding, i.e. from code in the
+:c:func:`plugin_restart` usually runs from a key binding, i.e. from code in the
 library that is about to be unloaded, so it only schedules the reload on the
-event loop's next idle round. Then `awl_plugins_reload()`:
+event loop's next idle round. Then :c:func:`awl_plugins_reload`:
 
 #. Copies the library file into a memfd and loads that with ``dlopen()``,
    so every load gets the current file, and a build rewriting the file
    can't change the copy in use. meson.build links under a temporary name and
    renames, so a reload during a build sees the old or the new library,
    never half of one.
-#. Looks up `AWL_PLUGIN_ENTRY` and calls it with awl's `awl_host_t`; the
-   library compares `AWL_PLUGIN_ABI` and the struct sizes and returns its
-   `awl_plugin_api_t`, or NULL.
-#. Calls awl's ``pluginsdetach()``: the hover popup gets its leave callback,
-   every bar's widgets are freed (`awl_draw_widgets_clear()`), and awl falls back
+#. Looks up :c:macro:`AWL_PLUGIN_ENTRY` and calls it with awl's :c:type:`awl_host_t`; the
+   library compares :c:macro:`AWL_PLUGIN_ABI` and the struct sizes and returns its
+   :c:type:`awl_plugin_api_t`, or NULL.
+#. Calls awl's :c:func:`pluginsdetach`: the hover popup gets its leave callback,
+   every bar's widgets are freed (``awl_draw_widgets_clear()``), and awl falls back
    to its built-in config, since the current one points into the old
    library.
-#. Stops the old library (`awl_plugin_api_t.fini`): its threads, and it
-   gives back its popups and timers. ``pluginsreap()`` removes what it left
+#. Stops the old library (:c:member:`awl_plugin_api_t.fini`): its threads, and it
+   gives back its popups and timers. :c:func:`pluginsreap` removes what it left
    of them (with a warning), since their callbacks point into it, and so do
    the ``AWL_TEST_WINDOWS`` popups go. Then it unloads the library, unless a
    thread is stuck in the kernel (see :doc:`threads`): then the old library
    stays mapped for good.
-#. Starts the new library's threads (`awl_plugin_api_t.init`).
-#. Calls awl's ``pluginsattach()``: switches to the new library's config and
-   applies what changed (``configapply()``), gives every bar its widgets
+#. Starts the new library's threads (:c:member:`awl_plugin_api_t.init`).
+#. Calls awl's :c:func:`pluginsattach`: switches to the new library's config and
+   applies what changed (:c:func:`configapply`), gives every bar its widgets
    again and redraws.
 
 The tray widget's host is one of the library's, so it starts afresh with the
 new library and asks awl's watcher, which keeps running, for the items
 again. Afterwards awl hands the new tray settings' icon theme to the
-programs it starts with ``TRAY_ICONS`` (`awl_tray_app_set_theme()`).
+programs it starts with :c:macro:`TRAY_ICONS` (:c:func:`awl_tray_app_set_theme`).
 
 As a sequence, with the library's threads in it:
 
@@ -155,52 +155,52 @@ The config split
 ----------------
 
 meson.options' compile-time switches (``scenefx_shatter``) only a rebuild
-and restart of awl apply. Everything else is two structs: `awl_config_t`
+and restart of awl apply. Everything else is two structs: :c:type:`awl_config_t`
 (awl.h) holds what awl itself reads (the library may read it too),
-`awl_plugin_config_t` (plugins.h) what only the library reads: the bar's
+:c:type:`awl_plugin_config_t` (plugins.h) what only the library reads: the bar's
 widgets, the launcher's and the notifications' look, the temperature
 scales, the battery. The colors are split alike: awl's (borders, popups,
-menus, the alert) in `awl_config_t.colors` (`awl_colors_t`), the library's
+menus, the alert) in :c:member:`awl_config_t.colors` (:c:type:`awl_colors_t`), the library's
 (the bar, the launcher, the notifications, ...) in
-`awl_plugin_config_t.colors` (`awl_plugin_colors_t`).
+:c:member:`awl_plugin_config_t.colors` (:c:type:`awl_plugin_colors_t`).
 
 awl_config_defaults.h holds awl's defaults; awl runs with them while no library is
-loaded, and hands them to the library as `awl_host_t.config_defaults`.
+loaded, and hands them to the library as :c:member:`awl_host_t.config_defaults`.
 plugin_config_defaults.h holds the library's. The ``CUSTOM`` part of
 plugins_config.c is the configuration: its ``configure(c, p)`` changes what it wants in both: a
 value (``c->borderpx = 2``), a part (``c->popup.font = "sans:size="``,
 ``p->colors.win_focused = ...``), or a list, pointed at its own array with
 ``SETLIST(c->keys, keys)`` or ``SETLIST(p->widgets, widgets)``. On every
-(re)load awl fills its copy of `awl_config_t` through
-`awl_plugin_api_t.config`; `awl_plugin_config_t` never leaves the library.
+(re)load awl fills its copy of :c:type:`awl_config_t` through
+:c:member:`awl_plugin_api_t.config`; :c:type:`awl_plugin_config_t` never leaves the library.
 Only the library ever sees it.
 
-In bindings, ``MODKEY`` stands for ``c->modkey``, whatever it is when the
+In bindings, :c:macro:`MODKEY` stands for ``c->modkey``, whatever it is when the
 binding is pressed, so changing the modifier needs no new bindings. Monitor
-rules and ``setlayout`` take a layout's index, so awl's default bindings and
+rules and :c:func:`setlayout` take a layout's index, so awl's default bindings and
 rules work with the library's layouts too.
 
 The functions the configuration binds keys to are awl's. A binding names
 one as ``AWL_ACTION(spawn)``, a layout its arrange function as
-``AWL_LAYOUT(tile)`` (`AWL_ACTION()`, awl.h): in the library that is a
-wrapper, ``awl_action_spawn``, that calls awl through `awl_host_t.actions`,
+``AWL_LAYOUT(tile)`` (:c:macro:`AWL_ACTION() <AWL_ACTION>`, awl.h): in the library that is a
+wrapper, ``awl_action_spawn``, that calls awl through :c:member:`awl_host_t.actions`,
 in awl the function itself, so the arrays of awl_config_defaults.h can be
 copied into the ``CUSTOM`` part as they are. A function a binding names so
-has to be listed in `AWL_ACTIONS` (or `AWL_ARRANGES` for layouts), or be one
+has to be listed in :c:macro:`AWL_ACTIONS` (or :c:macro:`AWL_ARRANGES` for layouts), or be one
 of the library's own actions, defined next to the wrappers
-(``notifyconfig``, ``launcher``, ``backlighttoggle``); a function defined in the
+(:c:func:`notifyconfig`, :c:func:`launcher`, :c:func:`backlighttoggle`); a function defined in the
 ``CUSTOM`` part is named as it is. The wrappers and those actions aren't
 static, so any of them may stay unbound without a warning, and the library
-exports none of them. awl's defaults can bind only `AWL_ACTIONS`.
+exports none of them. awl's defaults can bind only :c:macro:`AWL_ACTIONS`.
 
 Adding to the ABI
 -----------------
 
-Adding a function to `awl_host_t` or `awl_plugin_api_t`, or changing a
+Adding a function to :c:type:`awl_host_t` or :c:type:`awl_plugin_api_t`, or changing a
 struct both sides read:
 
 #. Change the table in awl_host.h or awl_plugin_abi.h and bump
-   `AWL_PLUGIN_ABI`.
+   :c:macro:`AWL_PLUGIN_ABI`.
 #. Fill in the new entry: in awl_plugin_host.c for the host table (the module the
-   action belongs to for `AWL_ACTIONS`, awl_config.h declares them), in plugins.c for the library's.
+   action belongs to for :c:macro:`AWL_ACTIONS`, awl_config.h declares them), in plugins.c for the library's.
 #. Rebuild and restart awl: the running one would refuse the new library.

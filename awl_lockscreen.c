@@ -23,9 +23,9 @@
 #endif
 
 /** how long the logind thread may not listen before the alert goes up
- * (logindupdate()), and the most a lock waits to cover every output
- * (lockcovered()) */
+ * (:c:func:`logindupdate`), ms */
 #define LOGIND_GRACE_MS 10000
+/** the most a lock waits to cover every output, ms (:c:func:`lockcovered`) */
 #define LOCK_COVER_MS 2000
 
 typedef struct {

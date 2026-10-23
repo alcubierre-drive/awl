@@ -18,7 +18,9 @@
 extern "C" {
 #endif
 
+/** how a query went */
 typedef enum {
+    /** it did */
     CAL_OK = 0,
     /** the library can't be loaded, or AWL_ECAL_LIBRARY is none; for good */
     CAL_ERR_NOLIB,
@@ -27,7 +29,7 @@ typedef enum {
     /** EDS's source registry is unreachable; asked again after
      * CAL_RETRY_SECONDS, until then queries fail right away */
     CAL_ERR_NOREGISTRY,
-    /** cal_backend_cancel() was called */
+    /** :c:func:`cal_backend_cancel` was called */
     CAL_ERR_CANCELLED,
 } cal_status_t;
 
@@ -42,10 +44,12 @@ typedef struct {
     int all_day;
 } cal_event_t;
 
+/** gets each occurrence a query finds, and the query's data */
 typedef void (*cal_event_cb)(const cal_event_t *e, void *data);
 /** warn: a warning, else for information; msg without a newline */
 typedef void (*cal_log_cb)(int warn, const char *msg);
 
+/** the loaded library and its connections to EDS; opaque */
 typedef struct cal_backend cal_backend_t;
 
 /** A backend that has loaded nothing yet; NULL only without memory. log

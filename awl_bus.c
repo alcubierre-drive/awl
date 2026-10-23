@@ -1,7 +1,9 @@
+#define _GNU_SOURCE /* asprintf() */
 #include "awl_bus.h"
 #include "awl_log.h"
 #include <errno.h>
 #include <poll.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -123,4 +125,61 @@ void awl_bus_stop( awl_bus_t* b ) {
     drop_bus( b );
     if (b->retry) wl_event_source_remove( b->retry );
     free( b );
+}
+
+/** a{ss} of the names' values, for UpdateActivationEnvironment */
+static int append_env_dict( sd_bus_message* m, const char* const* names ) {
+    int r = sd_bus_message_open_container( m, 'a', "{ss}" );
+    for (const char* const* n = names; r >= 0 && *n; n++) {
+        const char* v = getenv( *n );
+        if (v) r = sd_bus_message_append( m, "{ss}", *n, v );
+    }
+    return r < 0 ? r : sd_bus_message_close_container( m );
+}
+
+/** as: NAME=value strings, for SetEnvironment */
+static int append_env_strv( sd_bus_message* m, const char* const* names ) {
+    int r = sd_bus_message_open_container( m, 'a', "s" );
+    for (const char* const* n = names; r >= 0 && *n; n++) {
+        const char* v = getenv( *n );
+        char* kv;
+        if (!v) continue;
+        if (asprintf( &kv, "%s=%s", *n, v ) < 0) return -ENOMEM;
+        r = sd_bus_message_append( m, "s", kv );
+        free( kv );
+    }
+    return r < 0 ? r : sd_bus_message_close_container( m );
+}
+
+static void env_call( sd_bus* bus, const char* what, const char* dest, const char* path,
+                      const char* iface, const char* member,
+                      int (*append)( sd_bus_message*, const char* const* ), const char* const* names ) {
+    sd_bus_message *m = NULL, *reply = NULL;
+    sd_bus_error e = SD_BUS_ERROR_NULL;
+    int r;
+    if ((r = sd_bus_message_new_method_call( bus, &m, dest, path, iface, member )) >= 0 &&
+        (r = append( m, names )) >= 0)
+        r = sd_bus_call( bus, m, 0, &e, &reply );
+    if (r < 0)
+        awl_wrn_printf( "environment: %s: %s\n", what, e.message ? e.message : strerror( -r ) );
+    sd_bus_error_free( &e );
+    sd_bus_message_unref( reply );
+    sd_bus_message_unref( m );
+}
+
+void awl_bus_import_environment( const char* const* names ) {
+    sd_bus* bus = NULL;
+    int r;
+    if ((r = sd_bus_open_user_with_description( &bus, "awl-environment" )) < 0 ||
+        (r = sd_bus_set_method_call_timeout( bus, 2 * 1000000ull )) < 0) {
+        awl_wrn_printf( "environment: no session bus (%s)\n", strerror( -r ) );
+        sd_bus_unref( bus );
+        return;
+    }
+    /* what `dbus-update-activation-environment --systemd` does */
+    env_call( bus, "systemd", "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+              "org.freedesktop.systemd1.Manager", "SetEnvironment", append_env_strv, names );
+    env_call( bus, "D-Bus activation", "org.freedesktop.DBus", "/org/freedesktop/DBus",
+              "org.freedesktop.DBus", "UpdateActivationEnvironment", append_env_dict, names );
+    sd_bus_flush_close_unref( bus );
 }

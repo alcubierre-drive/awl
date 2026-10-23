@@ -1,4 +1,4 @@
-/** The configuration, built into libawlplugins.so, so `ninja -C build` and
+/** The configuration, built into libawlplugins.so, so ``ninja -C build`` and
  * plugin_restart (MOD+Ctrl+r) apply it to the running awl -- keymap, input
  * devices, font, colors, borders, blur, layouts and the bar's widgets
  * included (monitor rules are applied to outputs appearing afterwards).
@@ -7,13 +7,13 @@
  *
  * Only the part between the CUSTOM markers is yours to change: configure()
  * gets awl's defaults (awl_config_defaults.h,
- * `awl_host_t.config_defaults`) in c and the plugins'
+ * :c:member:`awl_host_t.config_defaults`) in c and the plugins'
  * (plugins_config_defaults.h) in p, and changes what it wants; those two
- * list every setting with its default, awl_config_t in awl.h and
- * awl_plugin_config_t in plugins.h what each means. The rest of this file is the library's: the
+ * list every setting with its default, :c:type:`awl_config_t` in awl.h and
+ * :c:type:`awl_plugin_config_t` in plugins.h what each means. The rest of this file is the library's: the
  * functions the config binds to keys and layouts are awl's, here
  * wrappers calling them through the host table (awl_action_<name>,
- * awl_layout_<name>: `AWL_ACTION()`, `AWL_LAYOUT()`), next to the
+ * awl_layout_<name>: :c:macro:`AWL_ACTION() <AWL_ACTION>`, :c:macro:`AWL_LAYOUT() <AWL_LAYOUT>`), next to the
  * library's own actions. None of them is static, so the config may leave
  * any of them unbound; the library exports none. */
 #include "awl.h"
@@ -21,6 +21,7 @@
 #include "plugins.h"
 #include "plugins/colors.h"
 #include "plugins_config_defaults.h"
+#include "plugins/logind.h"
 
 #define AWL_ACTION_REGISTER( name ) \
     void AWL_ACTION( name )( const Arg* arg ) { awl_host->actions->name( arg ); }
@@ -32,39 +33,53 @@ AWL_ACTIONS
 AWL_ARRANGES
 #undef AWL_LAYOUT_REGISTER
 
+/** the notifications' config popup (:c:func:`awl_notify_config`) */
 static void AWL_ACTION( notifyconfig )( const Arg* arg ) {
     awl_notify_config();
 }
 
+/** opens or closes the launcher, arg->i its mode (:c:enumerator:`AWL_LAUNCHER_APPS`, :c:enumerator:`AWL_LAUNCHER_RUN`) (:c:func:`awl_launcher_toggle`) */
 static void AWL_ACTION( launcher )( const Arg* arg ) {
     awl_launcher_toggle( arg->i );
 }
 
+/** switches the backlight daemon's automatic updates on or off (:c:func:`backlight_toggle`) */
 static void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
     if (p) backlight_toggle( p->backlight );
 }
 
+/** changes the screen's brightness by arg->f (:c:func:`awl_brightness_adjust`) */
 static void AWL_ACTION( brightness )( const Arg* arg ) {
     awl_brightness_adjust( arg->f );
 }
 
+/** changes the volume by arg->f (:c:func:`awl_volume_adjust`) */
 static void AWL_ACTION( volume )( const Arg* arg ) {
     awl_volume_adjust( arg->f );
 }
 
+/** mutes or unmutes the sink (:c:func:`awl_volume_mute_toggle`) */
 static void AWL_ACTION( volumemute )( const Arg* arg ) {
     awl_volume_mute_toggle();
 }
 
+/** mutes or unmutes the source (:c:func:`awl_mic_mute_toggle`) */
 static void AWL_ACTION( micmute )( const Arg* arg ) {
     awl_mic_mute_toggle();
 }
 
+/** mutes or unmutes the speaker port only (:c:func:`awl_speaker_mute_toggle`) */
 static void AWL_ACTION( speakermute )( const Arg* arg ) {
     awl_speaker_mute_toggle();
 }
 
+/** suspends through logind (:c:func:`awl_logind_suspend`) */
+static void AWL_ACTION( suspend )( const Arg* arg ) {
+    awl_logind_suspend();
+}
+
+/** sends the window to the monitor arg->i over and follows it there */
 static void AWL_ACTION( tagmonf )( const Arg* arg ) {
     AWL_ACTION(tagmon)(arg);
     AWL_ACTION(focusmon)(arg);
@@ -73,8 +88,8 @@ static void AWL_ACTION( tagmonf )( const Arg* arg ) {
 /* ======================================================================
  * CUSTOM: the user's configuration, from here to "CUSTOM end".
  *
- * The bindings, rules, layouts, monitor rules, autostarts and the bar's
- * widgets are lists: to change one, copy its array from
+ * The bindings, rules, layouts, monitor rules, output profiles, the
+ * environment, autostarts and the bar's widgets are lists: to change one, copy its array from
  * awl_config_defaults.h (or plugins_config_defaults.h) here, change it, and
  * point the list at it in configure(), e.g. SETLIST(c->keys, keys) or
  * SETLIST(p->widgets, widgets).
@@ -123,16 +138,52 @@ static const MonitorRule monrules[] = {
     { NULL,       0.5f,  1,      1,    0,           WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1, 0 },
 };
 
+/* output profiles (the outputprofile action): the laptop alone, or docked at
+ * WUE with the two Fujitsus, or with the laptop below them as a third */
+#define WUE_LEFT  "Fujitsu Siemens Computers GmbH B24-9 WS YVDJ005432"
+#define WUE_RIGHT "Fujitsu Siemens Computers GmbH B24-9 WS YVDJ004877"
+#define LAPTOP    "Samsung Display Corp. 0x419F"
+static const OutputSetting profile_laptop[] = {
+    /* match       on   x     y     scale  rotate/reflect */
+    { LAPTOP,      1,   0,    0,    1.5,   WL_OUTPUT_TRANSFORM_NORMAL },
+    { WUE_LEFT,    0,   0,    0,    0,     WL_OUTPUT_TRANSFORM_NORMAL },
+    { WUE_RIGHT,   0,   0,    0,    0,     WL_OUTPUT_TRANSFORM_NORMAL },
+};
+static const OutputSetting profile_docked[] = {
+    { LAPTOP,      0,   0,    0,    0,     WL_OUTPUT_TRANSFORM_NORMAL },
+    { WUE_LEFT,    1,   0,    0,    1,     WL_OUTPUT_TRANSFORM_NORMAL },
+    { WUE_RIGHT,   1,   1920, 0,    1,     WL_OUTPUT_TRANSFORM_NORMAL },
+};
+static const OutputSetting profile_triple[] = {
+    { LAPTOP,      1,   0,    1200, 1.5,   WL_OUTPUT_TRANSFORM_NORMAL },
+    { WUE_LEFT,    1,   0,    0,    1,     WL_OUTPUT_TRANSFORM_NORMAL },
+    { WUE_RIGHT,   1,   1920, 0,    1,     WL_OUTPUT_TRANSFORM_NORMAL },
+};
+static const OutputProfile outputprofiles[] = {
+    { "laptop", { profile_laptop, LENGTH(profile_laptop) } },
+    { "docked", { profile_docked, LENGTH(profile_docked) } },
+    { "triple", { profile_triple, LENGTH(profile_triple) } },
+};
+
+/* awl's environment, for what it starts (NULL unsets) */
+static const EnvVar environment[] = {
+    { "XDG_CURRENT_DESKTOP",         "wlroots" },
+    { "MOZ_ENABLE_WAYLAND",          "1" },
+    { "QT_STYLE_OVERRIDE",           "kvantum" },
+    { "DESKTOP_SESSION",             "kde" },
+    { "QT_AUTO_SCREEN_SCALE_FACTOR", "0" },
+    { "EDITOR",                      "nvim" },
+    { "SYSTEMD_EDITOR",              "/usr/bin/nvim" },
+    { "SSH_AUTH_SOCK",               "1" },
+    { "NO_AT_BRIDGE",                "1" },
+};
+
 /* commands */
 static const char *termcmd[] = { "kitty", "-d", "$HOME", NULL };
 static const char *const launcher_terminal[] = { "kitty", NULL };
-static const char *suspend[] = { "systemctl", "suspend", NULL };
 static const char *hyprcopy[] = { "hyprcopy", NULL };
 static const char *grimslurp[] = { "grim_slurp", NULL };
 static const char *wdisplays[] = { "wdisplays", NULL };
-static const char *docked_r[] = { "docked", "reset", NULL };
-static const char *docked_d[] = { "docked", "dock", NULL };
-static const char *docked_z[] = { "docked", "zoom", NULL };
 
 /* started with awl (only at its start), terminated when it exits;
  * TRAY_ICONS first: in the tray's icon theme */
@@ -180,7 +231,7 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_b,          AWL_ACTION(togglebw),         {0} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_B,          AWL_ACTION(changebw),         {.i=+1} },
     { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_B, AWL_ACTION(changebw), {.i=-1} },
-    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_S, AWL_ACTION(spawn),    {.v = suspend} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_S, AWL_ACTION(suspend),  {0} },
 
     { MODKEY,                    XKB_KEY_n,          AWL_ACTION(minimize),         {0} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_n,          AWL_ACTION(unminimize),       {0} },
@@ -199,9 +250,9 @@ static const Key keys[] = {
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_z,          AWL_ACTION(transluce),        {.i=+1} },
     { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_Z,AWL_ACTION(transluce), {.i=-1} },
 
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_D, AWL_ACTION(spawn),   {.v=docked_r} },
-    { MODKEY|WLR_MODIFIER_CTRL,     XKB_KEY_d,         AWL_ACTION(spawn),         {.v=docked_d} },
-    { MODKEY|WLR_MODIFIER_SHIFT,    XKB_KEY_D,         AWL_ACTION(spawn),         {.v=docked_z} },
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_D, AWL_ACTION(outputprofile), {.v="laptop"} },
+    { MODKEY|WLR_MODIFIER_CTRL,     XKB_KEY_d,         AWL_ACTION(outputprofile), {.v="docked"} },
+    { MODKEY|WLR_MODIFIER_SHIFT,    XKB_KEY_D,         AWL_ACTION(outputprofile), {.v="triple"} },
     /*{ MODKEY,                    XKB_KEY_0,          AWL_ACTION(view),           {.ui = ~0} },*/
     /*{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_parenright, AWL_ACTION(tag),            {.ui = ~0} },*/
 
@@ -242,6 +293,8 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     SETLIST(c->rules, rules);
     SETLIST(c->layouts, layouts);
     SETLIST(c->monrules, monrules);
+    SETLIST(c->outputprofiles, outputprofiles);
+    SETLIST(c->environment, environment);
     SETLIST(c->autostart, autostart);
 
     /* the bar */
@@ -267,6 +320,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     p->colors.tray_bg         = molokai_light_gray;
     p->colors.launcher_prompt = molokai_red;
     p->colors.launcher_query  = molokai_orange;
+
+    // TODO
+    p->launcher.prompt = "<b>&lt; </b>";
 
     /* appearance */
     c->borderpx = 2;
@@ -305,10 +361,10 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the built-in speaker, muted on its own (MOD+F1) */
     p->volume.speaker = "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink";
 
-    /* the battery's color scale */
-    p->battery.scale.bad     = 10;
-    p->battery.scale.warning = 20;
-    p->battery.scale.ok      = 30;
+    /* the battery's colors by its charge: {at, color}, at 0 to 1,
+     * linearly in between */
+    p->colors.battery = (awl_colormap_t)COLORMAP( { 0.1f, molokai_red }, { 0.2f, molokai_orange },
+                                                  { 0.3f, 0xf5efffff } );
 
     /* the launcher (plugins/launcher.h) */
     p->launcher.layout       = AWL_LAUNCHER_BAR; /* a strip over the bar */

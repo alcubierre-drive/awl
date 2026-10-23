@@ -5,9 +5,10 @@
 
 VENV ?= $(HOME)/.local/share/venvs/awl-doc
 SPHINXBUILD = $(VENV)/bin/sphinx-build
+SPHINXOPTS ?=
 
 html:
-	$(SPHINXBUILD) -b html . _build/html
+	$(SPHINXBUILD) -b html $(SPHINXOPTS) . _build/html
 
 venv:
 	python3 -m venv $(VENV)

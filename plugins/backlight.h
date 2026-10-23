@@ -3,12 +3,13 @@
 #include <stdatomic.h>
 #include <pulse/mainloop-api.h>
 
+/** the backlight daemon's D-Bus connection, on the poller thread; opaque */
 typedef struct awl_backlight_bus_t awl_backlight_bus_t;
 
-/** awl_backlight_t.screen and .webcam: not known (no daemon, or no
+/** :c:member:`awl_backlight_t.screen` and .webcam: not known (no daemon, or no
  * reading yet) */
 #define BACKLIGHT_UNKNOWN (-1)
-/** awl_backlight_t.screen and .webcam: the daemon reported something that
+/** :c:member:`awl_backlight_t.screen` and .webcam: the daemon reported something that
  * isn't a brightness (NaN, out of [0,1]) */
 #define BACKLIGHT_INVALID (-2)
 
@@ -19,7 +20,7 @@ typedef struct awl_backlight_t {
     /** whether it runs and updates automatically (``Interval`` > 0) */
     atomic_int enabled;
     /** screen brightness (``ScreenBrightness``) in per mille, or
-     * BACKLIGHT_UNKNOWN / BACKLIGHT_INVALID */
+     * :c:macro:`BACKLIGHT_UNKNOWN` / :c:macro:`BACKLIGHT_INVALID` */
     atomic_int screen;
     /** last webcam reading (``WebcamValue``) in per mille, likewise */
     atomic_int webcam;

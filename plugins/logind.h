@@ -10,7 +10,11 @@
  *   ``lock_on_suspend`` (the config's lock.on_suspend) is nonzero. A delay inhibitor makes
  *   logind wait for that lock, up to its ``InhibitDelayMaxSec``: the thread
  *   lets go of it once awl says the lock covers every output
- *   (`awl_logind_covered()`), and takes a new one on resume.
+ *   (:c:func:`awl_logind_covered`), and takes a new one on resume.
+ *
+ * It also suspends the machine on request (:c:func:`awl_logind_suspend`, logind's
+ * ``Suspend``: what ``systemctl suspend`` calls), with whatever lock that
+ * brings on.
  *
  * It also keeps the session's ``LockedHint`` (``loginctl show-session``)
  * up to date, and tells awl what it listens for (``awl_host->logind_state()``),
@@ -22,5 +26,8 @@
 int awl_logind_start( void );
 /** Stops it; returns nonzero if it had to be left running. */
 int awl_logind_stop( void );
-/** `awl_plugin_api_t.session_covered`; any thread */
+/** :c:member:`awl_plugin_api_t.session_covered`; any thread */
 void awl_logind_covered( int covered );
+/** Asks logind to suspend (the suspend action); returns at once, a refusal
+ * is logged. Any thread. */
+void awl_logind_suspend( void );

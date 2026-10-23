@@ -22,7 +22,7 @@ static struct {
 /** cfg->wallpaper.interval */
 static struct wl_event_source *wallpaper_timer;
 /** what the timer switches to: cfg->wallpaper.mode or cfgdict's "wallpaper_mode",
- * until `wallpapermode()` */
+ * until :c:func:`wallpapermode` */
 static WallpaperMode wallpaper_mode;
 
 /** cfgdict's "wallpaper_mode" values, the timer modes' names */
@@ -79,6 +79,9 @@ wallpapernext(WallpaperMode mode)
         api->wallpaper(mode);
 }
 
+/** the wallpaper action: switches to the wallpaper arg->i says (a
+ * :c:enum:`WallpaperMode`; the timer's next or back: as the timer's mode
+ * goes) */
 void
 wallpaper(const Arg *arg)
 {

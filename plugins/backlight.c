@@ -20,7 +20,7 @@
  * polled. Runs on the plugins' shared loop (poller.h): the bus
  * fd and its timeout are event sources there, and every call is
  * asynchronous, so a slow bus never holds up the other plugins. The bar's
- * requests (backlight_toggle(), backlight_update(), backlight_adjust()) go out on the same
+ * requests (:c:func:`backlight_toggle`, :c:func:`backlight_update`, :c:func:`backlight_adjust`) go out on the same
  * connection; they are the only thing that starts the daemon, through its
  * systemd user unit, never D-Bus auto-start. Everything but the atomics and
  * the wake fd is only touched on the loop thread, or before it starts and
@@ -37,7 +37,7 @@
 /** how long a call may go unanswered before it counts as failed */
 #define CALL_TIMEOUT_USEC (2 * 1000000ull)
 
-/** awl_backlight_t.requests; a second toggle before the loop got to the
+/** :c:member:`awl_backlight_t.requests`; a second toggle before the loop got to the
  * first one cancels it */
 enum awl_backlight_request { REQ_TOGGLE = 1, REQ_UPDATE = 2, REQ_ADJUST = 4 };
 
@@ -63,7 +63,7 @@ struct awl_backlight_bus_t {
 static void bus_update( awl_backlight_bus_t* s );
 static void send_adjust( awl_backlight_bus_t* s );
 
-/** a timeval `usec` from now on the wall clock, which pa_mainloop_api takes */
+/** a timeval ``usec`` from now on the wall clock, which pa_mainloop_api takes */
 static struct timeval in_usec( uint64_t usec ) {
     struct timeval tv;
     gettimeofday( &tv, NULL );
@@ -81,7 +81,7 @@ static int set_int( atomic_int* a, int v ) {
 }
 
 /** brightness in [0,1] as per mille; the daemon's -1 (none yet) as
- * BACKLIGHT_UNKNOWN, anything else (NaN, out of range) as BACKLIGHT_INVALID */
+ * :c:macro:`BACKLIGHT_UNKNOWN`, anything else (NaN, out of range) as :c:macro:`BACKLIGHT_INVALID` */
 static int to_permille( double v ) {
     if (v >= 0 && v <= 1) return (int)(v * 1000 + 0.5);
     return v == -1 ? BACKLIGHT_UNKNOWN : BACKLIGHT_INVALID;
@@ -107,7 +107,7 @@ static int reply_ok( sd_bus_message* m, awl_backlight_bus_t* s ) {
 }
 
 /** Reads an a{sv} of the daemon's properties, keeps those we track and
- * requests a redraw if any of them changed. `running`: 1 if the daemon is
+ * requests a redraw if any of them changed. ``running``: 1 if the daemon is
  * known to run now (a GetAll reply), 0 to leave it as is. */
 static void read_properties( awl_backlight_bus_t* s, sd_bus_message* m, int running ) {
     awl_backlight_t* b = s->b;
@@ -152,7 +152,7 @@ static int on_properties( sd_bus_message* m, void* userdata, sd_bus_error* ret_e
     return 0;
 }
 
-/** Calls the daemon's iface.member with the arguments of `types`; the reply
+/** Calls the daemon's iface.member with the arguments of ``types``; the reply
  * goes to callback, or nowhere if NULL. Built by hand to turn off
  * auto-start: a call never starts the daemon. */
 static void call_daemon( awl_backlight_bus_t* s, const char* iface, const char* member,
@@ -194,7 +194,7 @@ static int on_properties_changed( sd_bus_message* m, void* userdata, sd_bus_erro
     return 0;
 }
 
-/** NameOwnerChanged(s name, s old_owner, s new_owner), only for BUS_NAME
+/** NameOwnerChanged(s name, s old_owner, s new_owner), only for :c:macro:`BUS_NAME`
  * (arg0 in the match) */
 static int on_owner_changed( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;

@@ -36,7 +36,7 @@ static void draw_frame( uint32_t* data, size_t stride, int w, int h, float bw, f
 }
 
 /** calls f for each cell of text with its row and column; from the last
- * column of AWL_WINDOW_MAX_COLUMNS on, the rest of the row is one cell */
+ * column of :c:macro:`AWL_WINDOW_MAX_COLUMNS` on, the rest of the row is one cell */
 static void each_cell( const char* text, void (*f)( void* data, int row, int col, const char* s, size_t n ),
                        void* data ) {
     int row = 0, col = 0;

@@ -168,7 +168,7 @@ int awl_fuzzy_budget( int n ) {
     return n <= 2 ? 0 : n <= 4 ? 1 : n <= 7 ? 2 : AWL_FUZZY_MAX_ERRORS;
 }
 
-/** the next code point of *s, advancing it; a stray byte stands for itself */
+/** the next code point of ``*s``, advancing it; a stray byte stands for itself */
 static uint32_t utf8_next( const char** s ) {
     const unsigned char* p = (const unsigned char*)*s;
     uint32_t c = p[0];

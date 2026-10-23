@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 
 from hawkmoth import docstring as _hm_docstring
 
@@ -12,7 +13,10 @@ project = 'awl'
 author = 'alcubierre-drive'
 copyright = '2026, ' + author
 
-extensions = ['hawkmoth', 'sphinxcontrib.mermaid']
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '_ext'))
+
+extensions = ['hawkmoth', 'hawkmoth_inline', 'sphinxcontrib.mermaid']
+# (hawkmoth_inline: members declared with an inline struct, see there)
 # (sphinxcontrib.mermaid: the diagrams are drawn in the browser, by
 # mermaid.js from its CDN, so viewing them needs a network connection)
 
@@ -43,14 +47,28 @@ hawkmoth_clang = [
 # so take the include paths from the compiler meson.build uses.
 hawkmoth_compiler = 'gcc'
 
-# Doc comments are reStructuredText. `name` in a comment is a C expression
-# whose names link to their documentation, e.g. `awl_redraw_request()` or
-# `awl_host_t.actions`.
+# Doc comments are reStructuredText, naming what is documented with the C
+# domain's roles, e.g. :c:func:`awl_redraw_request` or
+# :c:member:`awl_host_t.actions` (see writing-docs.rst). A bare `name` is a C
+# expression whose names link to their documentation.
 primary_domain = 'c'
 default_role = 'c:expr'
 
 # Sphinx's C parser doesn't know _Atomic; as an attribute it renders as written
 c_id_attributes = ['_Atomic']
+
+# every reference must resolve: a broken one is a warning
+nitpicky = True
+
+# What isn't documented here, the
+# C library's and the other libraries' types in the declarations, is no
+# missing reference
+nitpick_ignore_regex = [
+    ('c:identifier', r'u?int(8|16|32|64)_t|size_t|pid_t|time_t|pthread_\w+|va_list|FILE|timeval|atomic_\w+'),
+    ('c:identifier', r'(wlr|wl|pixman|fcft|sd|pa|libinput|wuffs_base)_\w+'),
+    # an inline struct's type (hawkmoth_inline), shown as [anonymous]
+    ('c:identifier', r'@\w+'),
+]
 
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']

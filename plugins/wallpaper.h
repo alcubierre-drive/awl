@@ -10,10 +10,10 @@
 #include "../awl.h" /* awl_image_t */
 
 /** Starts the thread on the config dictionary's ``wallpaper_dir``, if it's set; awl sets it from
- * its default ``awl_config_t.wallpaper.dir``, a plugin may change it before this. The thread starts with the
+ * its default :c:member:`awl_config_t.wallpaper.dir <awl_wallpaper_config_t.dir>`, a plugin may change it before this. The thread starts with the
  * wallpaper the config dictionary's ``wallpaper_index`` names; at awl's start, before anything
  * set that, the one persistent.h's file names; then, also once per awl run, the file's
- * ``wallpaper_mode`` replaces the dictionary's (`awl_persistent_load_str()`). Logs if it
+ * ``wallpaper_mode`` replaces the dictionary's (:c:func:`awl_persistent_load_str`). Logs if it
  * can't start. */
 void awl_wallpaper_start( void );
 /** Stops the thread, which first writes the index and ``wallpaper_mode`` to persistent.h's
@@ -31,7 +31,7 @@ void awl_wallpaper_back( void );
  * and the index the next random change goes to. 0 if not known yet. Main
  * thread. */
 int awl_wallpaper_position( int* cur, int* n, int* rand_next );
-/** like `awl_wallpaper_position()`, but 0 also while a step or random change
+/** like :c:func:`awl_wallpaper_position`, but 0 also while a step or random change
  * asked for isn't done yet. Main thread. */
 int awl_wallpaper_settled( int* cur, int* n );
 /** the newest decoded wallpaper not taken yet, or NULL; the caller owns it.

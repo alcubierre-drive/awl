@@ -23,8 +23,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-/** `awl_host_t.timer_add()`'s timers, ``link`` in timers: the plugins',
- * reaped after they stop (pluginsreap()) */
+/** :c:member:`awl_host_t.timer_add() <awl_host_t.timer_add>`'s timers, ``link`` in timers: the plugins',
+ * reaped after they stop (:c:func:`pluginsreap`) */
 struct awl_timer {
     struct wl_event_source* source;
     void (*fn)( void* data );
@@ -62,6 +62,12 @@ static void timer_remove( awl_timer_t* t ) {
     wl_list_remove( &t->link );
     wl_event_source_remove( t->source );
     free( t );
+}
+
+/** :c:member:`awl_host_t.notif_invoke`: with a token of awl's, so the client may
+ * bring its window up */
+static void notifinvoke( uint32_t id, const char* key ) {
+    awl_notifications_invoke( id, key, activationtoken() );
 }
 
 /** after the library's fini, before it is unloaded: destroys the popups and
@@ -141,7 +147,7 @@ static awl_host_t host = {
 
     .notif_list = awl_notifications_list,
     .notif_close = awl_notifications_close,
-    .notif_invoke = awl_notifications_invoke,
+    .notif_invoke = notifinvoke,
     .notif_hold = awl_notifications_hold,
     .notif_send = awl_notifications_send,
     .notif_history = awl_notifications_history,
@@ -154,7 +160,7 @@ static awl_host_t host = {
 };
 
 static void* handle = NULL;
-/** the memfd handle was loaded from, see `libopen()` */
+/** the memfd handle was loaded from, see :c:func:`libopen` */
 static int handle_fd = -1;
 static const awl_plugin_api_t* api = NULL;
 static int paused = 0;
@@ -254,7 +260,7 @@ int awl_plugins_load( int p, awl_dict_t* cfg ) {
     return 0;
 }
 
-/** stops the plugins and removes what they left (pluginsreap()); unloads
+/** stops the plugins and removes what they left (:c:func:`pluginsreap`); unloads
  * the library unless a thread of it is still running, which would then
  * crash */
 static void stop( void* h, int fd ) {
@@ -319,6 +325,10 @@ void awl_plugins_set_covered( int c ) {
 
 void awl_plugins_notifications_changed( void ) {
     if (api) api->notifications_changed();
+}
+
+void awl_plugins_redraw( void ) {
+    if (api) api->redraw();
 }
 
 void awl_plugins_bar_widgets( awl_bar_t* bar ) {

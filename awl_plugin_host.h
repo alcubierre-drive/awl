@@ -13,18 +13,18 @@
 #include "awl_bar_type.h"
 #include "awl_dict_type.h"
 
-/** Loads the library and starts the plugins. cfg becomes `awl_host_t.cfg`'s
- * dictionary; it stays awl's and must outlive `awl_plugins_unload()`. Returns
+/** Loads the library and starts the plugins. cfg becomes :c:member:`awl_host_t.cfg`'s
+ * dictionary; it stays awl's and must outlive :c:func:`awl_plugins_unload`. Returns
  * 0 on success; on failure awl runs on with empty bars until a reload
  * succeeds. */
 int awl_plugins_load( int paused, awl_dict_t* cfg );
 
 /**
- * Loads the library from disk again and swaps it in. `detach()` must clear
+ * Loads the library from disk again and swaps it in. :c:var:`detach() <awl_plugins_reload.detach>` must clear
  * every bar's widgets and drop any pointer to them (hover state); it runs
  * while the old library is still loaded, so widget callbacks may still be
- * called from it. `attach()` must give every bar its widgets again via
- * `awl_plugins_bar_widgets()`. If the new library doesn't load, the old one
+ * called from it. :c:var:`attach() <awl_plugins_reload.attach>` must give every bar its widgets again via
+ * :c:func:`awl_plugins_bar_widgets`. If the new library doesn't load, the old one
  * stays and its plugins are just restarted. Returns 0 if the new library
  * was swapped in.
  */
@@ -34,15 +34,18 @@ int awl_plugins_reload( void (*detach)( void ), void (*attach)( void ) );
  * been cleared before. */
 void awl_plugins_unload( void );
 
-/** `awl_plugin_api_t.set_paused`, if a library is loaded */
+/** :c:member:`awl_plugin_api_t.set_paused`, if a library is loaded */
 void awl_plugins_set_paused( int paused );
 
-/** `awl_plugin_api_t.session_covered`, if a library is loaded; also given
+/** :c:member:`awl_plugin_api_t.session_covered`, if a library is loaded; also given
  * to every library started later */
 void awl_plugins_set_covered( int covered );
 
-/** `awl_plugin_api_t.notifications_changed`, if a library is loaded */
+/** :c:member:`awl_plugin_api_t.notifications_changed`, if a library is loaded */
 void awl_plugins_notifications_changed( void );
+
+/** :c:member:`awl_plugin_api_t.redraw`, if a library is loaded */
+void awl_plugins_redraw( void );
 
 /** Fills an empty bar's widget lists; no-op without a loaded library. */
 void awl_plugins_bar_widgets( awl_bar_t* bar );

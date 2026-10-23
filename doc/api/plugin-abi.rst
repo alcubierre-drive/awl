@@ -13,6 +13,17 @@ awl_host.h
 ----------
 
 .. c:autodoc:: awl_host.h
+   :clang: -DAWL_HOSTED
+
+awl_dict_type.h
+---------------
+
+.. c:autodoc:: awl_dict_type.h
+
+awl_dict.h
+----------
+
+.. c:autodoc:: awl_dict.h
 
 awl_plugin_host.h
 -----------------
@@ -39,7 +50,7 @@ plugins_config.c
 
 .. c:autodoc:: plugins_config.c
 
-plugin_config_defaults.h
-------------------------
+plugins_config_defaults.h
+-------------------------
 
-.. c:autodoc:: plugin_config_defaults.h
+.. c:autodoc:: plugins_config_defaults.h

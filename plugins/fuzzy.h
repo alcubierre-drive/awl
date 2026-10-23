@@ -15,7 +15,7 @@
  * - one left out ("frefox") is just a gap, as in fzf.
  *
  * The first three cost an error each, from a budget by the query's length
- * (`awl_fuzzy_budget()`), and a penalty in the score, so a match without
+ * (:c:func:`awl_fuzzy_budget`), and a penalty in the score, so a match without
  * one ranks first. A wrong or extra character only counts inside a run of
  * matched ones: right after the one before (a wrong first character at the
  * start of a word), and right before the next, unless it is the last, in
@@ -29,6 +29,7 @@
 
 #include <stdint.h>
 
+/** the matcher's limits */
 enum {
     /** characters of a query that count, the rest is left out */
     AWL_FUZZY_MAX_QUERY = 64,
@@ -42,20 +43,20 @@ enum {
 typedef struct awl_fuzzy_query_t {
     uint32_t cp[AWL_FUZZY_MAX_QUERY];
     int n;
-    /** errors allowed (`awl_fuzzy_budget()`) */
+    /** errors allowed (:c:func:`awl_fuzzy_budget`) */
     int budget;
 } awl_fuzzy_query_t;
 
 /** the errors a query of n characters may have: none up to 2, one up to 4,
- * two up to 7, then `AWL_FUZZY_MAX_ERRORS` */
+ * two up to 7, then :c:enumerator:`AWL_FUZZY_MAX_ERRORS` */
 int awl_fuzzy_budget( int n );
 
 /** Folds text (UTF-8) into q, its budget by its length. */
 void awl_fuzzy_query( awl_fuzzy_query_t* q, const char* text );
 
 /** Matches q against text (UTF-8). Returns 0 if it doesn't match, else 1
- * with its score in \*score (higher is better; the errors' penalty already
- * in it) and the errors in \*errors (either may be NULL). An empty query
+ * with its score in ``*score`` (higher is better; the errors' penalty already
+ * in it) and the errors in ``*errors`` (either may be NULL). An empty query
  * matches everything with score 0. pos (NULL: not wanted) gets, for each
  * of q's characters, the byte offset in text of the character it matched,
  * -1 for one that is an error (wrong or extra); a swapped pair matched

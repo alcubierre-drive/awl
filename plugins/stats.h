@@ -8,8 +8,8 @@
 
 /**
  * The CPU, memory and swap graphs. They are ring buffers, read with
- * `stats_sample()`: the newest sample of a graph with n samples is at index
- * `samples % n`. It is stored before `samples` moves on, so a reader racing
+ * :c:func:`stats_sample`: the newest sample of a graph with n samples is at index
+ * ``samples % n``. It is stored before :c:member:`~awl_stats_t.samples` moves on, so a reader racing
  * an update can at most see the oldest sample replaced by the newest.
  */
 typedef struct awl_stats_t {
@@ -22,14 +22,14 @@ typedef struct awl_stats_t {
      * the swap graph. 1 until the first update. */
     atomic_int has_swap;
     /** ncpu, nmem and nswp: the graphs' numbers of samples; set by
-     * `stats_init()`, then read-only */
+     * :c:func:`stats_init`, then read-only */
     int ncpu, nmem, nswp;
 
     /** poller thread only */
     uint64_t* sizes_table;
 } awl_stats_t;
 
-/** Graphs of the given numbers of samples, at most `AWL_STATS_MAX` each. */
+/** Graphs of the given numbers of samples, at most :c:macro:`AWL_STATS_MAX` each. */
 awl_stats_t* stats_init( int nval_cpu, int nval_mem, int nval_swp );
 /** Adds a sample to each graph. Always changes what the bar shows. */
 void stats_update( awl_stats_t* st );

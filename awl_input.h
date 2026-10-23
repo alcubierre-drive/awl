@@ -11,7 +11,7 @@
 
 /** the modifier mask without Caps Lock, as keys and buttons are matched */
 #define CLEANMASK(mask)         (mask & ~WLR_MODIFIER_CAPS)
-/** a binding's mod (`Key.mod`, `Button.mod`) with MODKEY as cfg->modkey */
+/** a binding's mod (:c:member:`Key.mod`, :c:member:`Button.mod`) with :c:macro:`MODKEY` as cfg->modkey */
 uint32_t bindmods(uint32_t mod);
 
 extern struct wlr_idle_inhibit_manager_v1 *idle_inhibit_mgr;

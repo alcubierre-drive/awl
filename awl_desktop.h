@@ -9,9 +9,9 @@
  * and what clicks do -- is plugins_desktop_panel.c in ``libawlplugins.so``,
  * so it reloads with the plugins. Without the library, no panel. Main thread only.
  *
- * The panels live in their own scene tree right above ``LyrBg``, so they
+ * The panels live in their own scene tree right above :c:enumerator:`LyrBg`, so they
  * cover the wallpaper (awl_background.h) and background layer surfaces but
- * nothing else, and they're not part of ``layers[]``, so ``xytonode()`` and
+ * nothing else, and they're not part of ``layers[]``, so :c:func:`xytonode` and
  * clicks go right through them.
  */
 
@@ -44,11 +44,11 @@ void desktop_removemon( Monitor* m );
 void desktop_update( Monitor* m );
 /** m's bar font (m->bar.font) or m->desktopfont was reloaded (scale or
  * config change). Not part of
- * `desktop_update()`'s check: a new font can land at the old one's address,
- * and on a scale change the layout is arranged before ``updatebar()``
+ * :c:func:`desktop_update`'s check: a new font can land at the old one's address,
+ * and on a scale change the layout is arranged before :c:func:`updatebar`
  * reloads it */
 void desktop_fontchanged( Monitor* m );
-/** `desktop_update()` for every monitor; on each redraw request, which is
+/** :c:func:`desktop_update` for every monitor; on each redraw request, which is
  * also how the library reports changed files */
 void desktop_update_all( void );
 /** after the library was (re)loaded */
@@ -56,5 +56,5 @@ void desktop_reloaded( void );
 
 /** a click on the bare desktop, mods as ``WLR_MODIFIER_*`` without the
  * ignored ones; returns whether it was taken (forwards to
- * `awl_plugin_api_t.desktop_click`) */
+ * :c:member:`awl_plugin_api_t.desktop_click`) */
 int desktop_click( int button, uint32_t mods );

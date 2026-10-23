@@ -88,7 +88,12 @@
 /** client types */
 enum ClientType { XDGShell, LayerShell, X11 };
 /** scene layers, bottom to top */
-enum SceneLayer { LyrBg, LyrBottom, LyrTile, LyrFloat, LyrTop, LyrFS, LyrOverlay, LyrBlock, NUM_LAYERS };
+enum SceneLayer {
+    /** the background layer surfaces */
+    LyrBg,
+    LyrBottom, LyrTile, LyrFloat, LyrTop, LyrFS, LyrOverlay, LyrBlock,
+    /** how many there are */
+    NUM_LAYERS };
 
 /** A layer-shell surface: panels, notifications, the launcher. */
 typedef struct {

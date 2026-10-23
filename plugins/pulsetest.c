@@ -23,7 +23,7 @@
 
 #define RETRY_USEC (3 * PA_USEC_PER_SEC)
 
-/** pulse_test_t.requests; a second toggle before the loop got to the first
+/** :c:member:`pulse_test_t.requests`; a second toggle before the loop got to the first
  * one cancels it */
 enum { REQ_MUTE = 1, REQ_MIC_MUTE = 2, REQ_SPEAKER_MUTE = 4 };
 

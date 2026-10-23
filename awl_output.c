@@ -9,6 +9,8 @@
 #include "awl_layer.h"
 #include "awl_layout.h"
 #include "awl_lockscreen.h"
+#include "awl_log.h"
+#include "awl_notifications.h"
 #include "awl_popup.h"
 
 static void cleanupmon(struct wl_listener *listener, void *data);
@@ -330,6 +332,113 @@ outputmgrtest(struct wl_listener *listener, void *data)
 {
     struct wlr_output_configuration_v1 *config = data;
     outputmgrapplyortest(config, 1);
+}
+
+static int
+outputmatches(struct wlr_output *o, const char *match)
+{
+    return match && (strstr(o->name, match)
+            || (o->description && strstr(o->description, match)));
+}
+
+/** the first of p's settings that matches o, NULL if none */
+static const OutputSetting *
+profilesetting(const OutputProfile *p, struct wlr_output *o)
+{
+    const OutputSetting *s;
+    for (s = p->outputs.v; s < p->outputs.v + p->outputs.n; s++)
+        if (outputmatches(o, s->match))
+            return s;
+    return NULL;
+}
+
+static void
+profilerefused(const char *name, const char *why, const char *what)
+{
+    char body[256];
+    awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
+    snprintf(body, sizeof(body), why, what);
+    awl_wrn_printf("outputprofile %s: %s\n", name ? name : "(none)", body);
+    n.summary = "Output profile not applied";
+    n.body = body;
+    n.tag = "awl-outputprofile";
+    awl_notifications_send(&n);
+}
+
+/** The outputprofile action: applies the :c:type:`OutputProfile` named arg->v. */
+void
+outputprofile(const Arg *arg)
+{
+    const char *name = arg->v;
+    const OutputProfile *p = NULL;
+    const OutputSetting *s;
+    Monitor *m;
+    size_t i;
+    int on = 0, found;
+
+    for (i = 0; name && i < cfg->outputprofiles.n; i++)
+        if (cfg->outputprofiles.v[i].name && !strcmp(cfg->outputprofiles.v[i].name, name))
+            p = &cfg->outputprofiles.v[i];
+    if (!p) {
+        profilerefused(name, "there is no profile \"%s\"", name ? name : "");
+        return;
+    }
+    /* everything it turns on has to be there */
+    for (s = p->outputs.v; s < p->outputs.v + p->outputs.n; s++) {
+        if (!s->on)
+            continue;
+        found = 0;
+        wl_list_for_each(m, &mons, link)
+            found |= outputmatches(m->wlr_output, s->match);
+        if (!found) {
+            profilerefused(name, "no output matches \"%s\"", s->match ? s->match : "");
+            return;
+        }
+    }
+    wl_list_for_each(m, &mons, link) {
+        s = profilesetting(p, m->wlr_output);
+        on += s ? s->on : m->wlr_output->enabled || m->asleep;
+    }
+    if (!on) {
+        profilerefused(name, "%s", "it would turn every output off");
+        return;
+    }
+
+    /* the ones going off first: they free what the others may need */
+    wl_list_for_each(m, &mons, link) {
+        struct wlr_output_state state;
+        if (!(s = profilesetting(p, m->wlr_output)) || s->on)
+            continue;
+        m->asleep = 0;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_enabled(&state, 0);
+        if (!wlr_output_commit_state(m->wlr_output, &state))
+            awl_wrn_printf("outputprofile %s: can't turn %s off\n", name, m->wlr_output->name);
+        wlr_output_state_finish(&state);
+    }
+    wl_list_for_each(m, &mons, link) {
+        struct wlr_output_state state;
+        struct wlr_output_layout_output *lo;
+        if (!(s = profilesetting(p, m->wlr_output)) || !s->on)
+            continue;
+        m->asleep = 0;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_enabled(&state, 1);
+        if (!m->wlr_output->enabled)
+            wlr_output_state_set_mode(&state, wlr_output_preferred_mode(m->wlr_output));
+        if (s->scale > 0)
+            wlr_output_state_set_scale(&state, s->scale);
+        wlr_output_state_set_transform(&state, s->rr);
+        if (!wlr_output_commit_state(m->wlr_output, &state)) {
+            awl_wrn_printf("outputprofile %s: can't turn %s on\n", name, m->wlr_output->name);
+        } else if (!(lo = wlr_output_layout_get(output_layout, m->wlr_output))
+                || lo->x != s->x || lo->y != s->y) {
+            /* moves it if it is in the layout already */
+            wlr_output_layout_add(output_layout, m->wlr_output, s->x, s->y);
+        }
+        wlr_output_state_finish(&state);
+    }
+    updatemons(NULL, NULL);
 }
 
 void

@@ -36,7 +36,7 @@ static const uint32_t max_side = 16384;
 /** the decoder gets the file this much at a time, and in between a stop
  * request doesn't have to wait for the rest */
 static const size_t feed = 1 << 20;
-/** how many wallpapers back `awl_wallpaper_back()` can go */
+/** how many wallpapers back :c:func:`awl_wallpaper_back` can go */
 #define HISTORY 32
 
 /** One per thread; a stuck one is left behind with its thread, never freed. */

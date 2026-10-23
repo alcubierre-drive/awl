@@ -3,14 +3,14 @@
 /**
  * awl's logging: every message goes to stderr as ``[awl:level] message`` (the
  * prefix colored if stderr is a terminal) and, uncolored, to the log file
- * (``-l``, by default `AWL_LOGFILE`). Messages above the log level (`awl_log_set_level()`; ``-d``
+ * (``-l``, by default :c:macro:`AWL_LOGFILE`). Messages above the log level (:c:func:`awl_log_set_level`; ``-d``
  * raises it to verbose) are dropped. Any thread may log; each message is one
  * ``write()`` per output.
  *
  * The implementation (awl_log.c) lives in awl. libawlplugins.so (built with
  * ``AWL_HOSTED``) reaches awl only through its host table, so there
- * `awl_dbg_printf()` is a macro for `awl_host_t.log` (awl_host.h), which is
- * awl's `awl_dbg_printf()`. wlroots' messages come here too (awl.c's
+ * :c:func:`awl_dbg_printf` is a macro for :c:member:`awl_host_t.log` (awl_host.h), which is
+ * awl's :c:func:`awl_dbg_printf`. wlroots' messages come here too (awl.c's
  * wlrlog(), as "wlr: ").
  */
 
@@ -20,10 +20,15 @@ extern "C" {
 
 #include <stdarg.h>
 
+/** a message's level; one is logged if the log's is as high or higher */
 typedef enum {
+    /** errors */
     awl_loglevel_err = 0,
+    /** warnings */
     awl_loglevel_wrn = 1,
+    /** what goes on */
     awl_loglevel_log = 2,
+    /** the details (-d) */
     awl_loglevel_vrb = 3,
 } awl_loglevel_t;
 
@@ -38,13 +43,13 @@ typedef enum {
 void awl_log_init( const char* path );
 /** discards every message above loglevel */
 void awl_log_set_level( awl_loglevel_t loglevel );
-/** what `awl_log_set_level()` set */
+/** what :c:func:`awl_log_set_level` set */
 awl_loglevel_t awl_log_level( void );
 
 /** prints fmt with the prefix of loglevel; fmt ends in its own newline */
 void awl_dbg_printf( awl_loglevel_t loglevel, const char* fmt, ... )
     __attribute__(( format( printf, 2, 3 ) ));
-/** `awl_dbg_printf()` with a va_list */
+/** :c:func:`awl_dbg_printf` with a va_list */
 void awl_dbg_vprintf( awl_loglevel_t loglevel, const char* fmt, va_list ap );
 #else
 #include "awl_host.h" /* awl_host */

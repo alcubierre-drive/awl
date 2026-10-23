@@ -2,7 +2,7 @@
 
 /**
  * Layer-shell surfaces, part of awl: panels, notifications, launchers. Each
- * monitor keeps its own in ``Monitor.layers``; arrangelayers() places them,
+ * monitor keeps its own in :c:member:`Monitor.layers`; :c:func:`arrangelayers` places them,
  * gives what is left to the windows, and hands the keyboard to a keyboard
  * interactive one (awl_layer.c). Main thread only.
  */

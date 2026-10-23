@@ -2,21 +2,21 @@
 
 /**
  * The notifications' menu: a popup with a row each for do-not-disturb
- * (`awl_notify_dnd()`), "Dismiss all", and every notification the server
+ * (:c:func:`awl_notify_dnd`), "Dismiss all", and every notification the server
  * keeps open, newest first, its title followed by its actions, indented.
- * Then the server's history (`awl_notif_past_t`), dimmed, each with the
+ * Then the server's history (:c:type:`awl_notif_past_t`), dimmed, each with the
  * time it closed, under "Clear history" and its count. It is as wide as
- * `awl_plugin_config_t.notify`'s menu_width, whatever it lists: a title is
+ * :c:member:`awl_plugin_config_t.notify`'s menu_width, whatever it lists: a title is
  * cut with an ellipsis, its summary first, as the windows', left of its
  * "Show" button and time, which stay at the right; the other rows' text
  * too.
  * On a title, left click: its default action, else dismiss; right click:
  * dismiss; its "Show" button, while do-not-disturb hides it
- * (`awl_notify_hidden()`): shows its window (`awl_notify_reveal()`) and
+ * (:c:func:`awl_notify_hidden`): shows its window (:c:func:`awl_notify_reveal`) and
  * closes the menu. On an action: that action, which closes the menu; the rest leave
  * it open, and it follows what changes. "Clear history", left: clears it;
  * a past one, left or right: forgets it; its "Show" button: shows it again
- * (`awl_host_t.notif_show`) and closes the menu. Rows that don't fit the window area
+ * (:c:member:`awl_host_t.notif_show`) and closes the menu. Rows that don't fit the window area
  * end in one that says how many more there are. LEAVE_DELAY after the
  * pointer left the menu and what opened it (the widget; for "+k more",
  * once the pointer was in the menu), it closes.

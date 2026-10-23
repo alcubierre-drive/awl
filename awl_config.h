@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * The configuration, part of awl: `awl_config_t` (awl.h), awl's defaults (awl_config_defaults.h) as
+ * The configuration, part of awl: :c:type:`awl_config_t` (awl.h), awl's defaults (awl_config_defaults.h) as
  * plugins_config.c changes them in the plugin library, anew on every reload
  * (awl_config.c). Main thread only.
  */
@@ -13,10 +13,10 @@
 /** The config in effect: the library's (awl's defaults with
  * plugins_config.c's changes), or while none is loaded the defaults. The
  * library's points into it, so it's only good until the next reload;
- * `pluginsdetach()` falls back to the defaults. */
+ * :c:func:`pluginsdetach` falls back to the defaults. */
 extern const awl_config_t *cfg;
 /** The config values that can change while awl runs, by name, for awl and the
- * library (`awl_host_t.cfg`). Lives from setup() to cleanup(), across reloads. */
+ * library (:c:member:`awl_host_t.cfg`). Lives from setup() to cleanup(), across reloads. */
 extern awl_dict_t *cfgdict;
 
 /** fills in c with awl's defaults (awl_config_defaults.h) */
@@ -30,6 +30,11 @@ void configfini(void);
 /** switches to the loaded library's config, or awl's defaults,
  * and brings everything set up from it up to date */
 void configuse(void);
+/** Hands DISPLAY, WAYLAND_DISPLAY and XDG_CURRENT_DESKTOP to systemd's and
+ * the session bus' environment (:c:func:`awl_bus_import_environment`), once they
+ * are set at the start; after that, every reload that changes one of them
+ * does it again. Blocks for up to a few seconds. */
+void environmentimport(void);
 /** wlroots' log level: cfg->wlr_log_level, WLR_DEBUG with awl -d; at
  * startup and after every config change */
 void wlrloginit(void);

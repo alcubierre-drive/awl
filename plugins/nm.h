@@ -26,12 +26,13 @@ typedef struct {
     char ifname[16];
 } awl_nm_state_t;
 
+/** the NetworkManager connection, on the poller's loop; opaque */
 typedef struct awl_nm_t awl_nm_t;
 
-/** Follows NetworkManager on the system bus from the loop of `api`, if it
+/** Follows NetworkManager on the system bus from the loop of ``api``, if it
  * is there: its owner, connectivity and primary connection, all by signals
  * and asynchronous calls. changed(userdata) runs on that loop whenever
- * `nm_state()` changes. NetworkManager is optional: without it (or without
+ * :c:func:`nm_state` changes. NetworkManager is optional: without it (or without
  * a system bus) the state stays not present, and a reconnect is tried now
  * and then. Created and freed while the loop isn't running; the first
  * connection is made from the loop. */
