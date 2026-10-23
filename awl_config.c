@@ -281,6 +281,8 @@ configuse(void)
         /* the old one's lists point into the library, so only its layouts'
          * address survives this, for layoutsmoved() */
         api->config(&loaded);
+        /* the library fills it in itself; filling it twice changes nothing */
+        awl_config_fill_defaults(&loaded);
         cfg = &loaded;
     } else {
         cfg = builtinconfig();
@@ -350,5 +352,12 @@ configdefaults(awl_config_t *c)
 const awl_config_t *
 builtinconfig(void)
 {
-    return &awl_config_defaults;
+    static awl_config_t filled;
+    static int done;
+    if (!done) {
+        filled = awl_config_defaults;
+        awl_config_fill_defaults(&filled);
+        done = 1;
+    }
+    return &filled;
 }

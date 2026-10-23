@@ -311,7 +311,7 @@ void awl_brightness_adjust( float delta ) {
     awl_plugin_data_t* p = awl_plugin_get();
     if (!p || !p->backlight) return;
     backlight_adjust( p->backlight, delta );
-    awl_osd_brightness();
+    awl_osd_brightness( delta );
 }
 
 void awl_notify_config( void ) {
@@ -339,7 +339,7 @@ void awl_notify_config( void ) {
     awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
     n.summary = head;
     n.body = body[0] ? body : "(empty)";
-    n.look.max_lines = -1; /* every entry, up to the screen's height */
+    AWL_SET( n.look.max_lines, 0 ); /* every entry, up to the screen's height */
     awl_notify_send( &n );
     free( body );
 }

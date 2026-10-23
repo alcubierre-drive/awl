@@ -97,7 +97,8 @@ static void AWL_ACTION( tagmonf )( const Arg* arg ) {
  * what AWL_ACTIONS lists (awl_plugin_abi.h) and of the library's actions
  * above (notifyconfig, launcher, backlighttoggle), and functions defined here by
  * their own name; layouts AWL_LAYOUT(name) of what AWL_ARRANGES lists. The
- * molokai_* colors are in awl.h.
+ * molokai_* colors are in awl.h. A setting that may be left unset (an
+ * awl_opt_int_t or awl_opt_color_t) is set with AWL_SET(setting, value).
  * ====================================================================== */
 
 static const Rule rules[] = {
@@ -312,17 +313,17 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     // c->colors.popup_border = molokai_light_gray;
     c->colors.popup_border    = 0x657374ff;
     /* the tray's menus */
-    c->colors.menu_bg         = 0x3c3c3c4d;
-    c->colors.menu_fg         = 0xf8f8f2ff;
-    c->colors.menu_border     = 0x859394ff;
-    c->colors.menu_highlight  = 0xffffff26;
-    c->colors.menu_dim        = 0xf8f8f259;
+    AWL_SET(c->colors.menu_bg,         0x3c3c3c4d);
+    AWL_SET(c->colors.menu_fg,         0xf8f8f2ff);
+    AWL_SET(c->colors.menu_border,     0x859394ff);
+    AWL_SET(c->colors.menu_highlight,  0xffffff26);
+    AWL_SET(c->colors.menu_dim,        0xf8f8f259);
     p->colors.tray_bg         = molokai_light_gray;
-    p->colors.launcher_prompt = molokai_red;
-    p->colors.launcher_query  = molokai_orange;
+    AWL_SET(p->colors.launcher_prompt, color_mix_8(molokai_red, molokai_orange, 0.5));
+    AWL_SET(p->colors.launcher_query,  molokai_orange);
 
-    // TODO
-    p->launcher.prompt = "<b>&lt; </b>";
+    p->launcher.prompt = "<b>launch &gt; </b>";
+    p->launcher.run_prompt = "<b>run $ </b>";
 
     /* appearance */
     c->borderpx = 2;
@@ -340,16 +341,16 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the popups */
     c->popup.border_width   = c->borderpx;
     c->popup.font           = "sans:size=";
-    c->popup.fontsize       = 10;
+    AWL_SET(c->popup.fontsize,       10);
 
     /* the tray's menus */
-    c->popup.menu.border_width = 2;
-    c->popup.menu.radius       = 4;
-    c->popup.menu.blur         = 1;
+    AWL_SET(c->popup.menu.border_width, 2);
+    AWL_SET(c->popup.menu.radius,       4);
+    AWL_SET(c->popup.menu.blur,         1);
 
     /* the desktop file list */
     c->desktop.font         = "sans:size=";
-    c->desktop.fontsize     = 10;
+    AWL_SET(c->desktop.fontsize,     10);
     c->desktop.margin       = 20;
     c->desktop.columns      = 2;
 
@@ -383,6 +384,28 @@ void awl_config_init( void ) {
     awl_host->config_defaults( &cfg );
     plugin_cfg = awl_plugin_config_defaults;
     configure( &cfg, &plugin_cfg );
+    awl_config_fill_defaults( &cfg );
+    awl_plugin_config_fill_defaults( &plugin_cfg, &cfg );
+}
+
+void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t* c ) {
+    awl_plugin_colors_t* k = &p->colors;
+    const awl_colors_t* ak = &c->colors;
+    AWL_FILL( k->launcher_match, ak->popup_fg );
+    AWL_FILL( k->launcher_dim, ak->popup_dim );
+    AWL_FILL( k->launcher_prompt, k->launcher_dim.v );
+    AWL_FILL( k->launcher_query, ak->popup_fg );
+    AWL_FILL( k->notify_low_fg, ak->popup_fg );
+    AWL_FILL( k->notify_low_bg, ak->popup_bg );
+    AWL_FILL( k->notify_low_frame, ak->popup_border );
+    AWL_FILL( k->notify_normal_fg, ak->popup_fg );
+    AWL_FILL( k->notify_normal_bg, ak->popup_bg );
+    AWL_FILL( k->notify_normal_frame, ak->popup_border );
+    AWL_FILL( k->notify_critical_fg, ak->popup_fg );
+    AWL_FILL( k->notify_critical_bg, ak->popup_bg );
+    AWL_FILL( k->notify_critical_frame, ak->popup_border );
+    AWL_FILL( p->osd.width, p->notify.width );
+    AWL_FILL( p->osd.image_size, p->notify.image_size );
 }
 
 const awl_config_t* awl_config( void ) {

@@ -248,9 +248,15 @@ testwincmd(char *line)
     } else if (!strcmp(cmd, "nsend")) {
         awl_notif_send_t s = AWL_NOTIF_SEND_INIT;
         char *body;
-        if (sscanf(line, "%d %d %d %d %63s%n", &x, &s.timeout, &s.look.max_lines, &s.look.width, key,
+        int max_lines, width;
+        if (sscanf(line, "%d %d %d %d %63s%n", &x, &s.timeout, &max_lines, &width, key,
                     &args) != 5)
             goto bad;
+        /* 0: the config's */
+        if (max_lines)
+            AWL_SET(s.look.max_lines, max_lines);
+        if (width)
+            AWL_SET(s.look.width, width);
         s.urgency = x;
         s.tag = strcmp(key, "-") ? key : NULL;
         s.summary = line + args + (line[args] == ' ');

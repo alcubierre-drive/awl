@@ -1058,11 +1058,10 @@ static int text_marked( pixman_image_t* pix, struct fcft_font* font, const char*
 
 /** the prompt and the query from x to right in a line h high at y, the
  * query's tail if it is too long, and the cursor after it (in the query's
- * color); fg, dim: the colors for those that aren't configured */
-static void paint_query( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg,
-                         uint32_t dim ) {
-    if (COLORS->launcher_query) fg = COLORS->launcher_query;
-    x += prompt_draw( pix, font, x, right, y, h, COLORS->launcher_prompt ? COLORS->launcher_prompt : dim );
+ * color) */
+static void paint_query( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h ) {
+    const uint32_t fg = COLORS->launcher_query.v;
+    x += prompt_draw( pix, font, x, right, y, h, COLORS->launcher_prompt.v );
     const int cursor_w = px( 1.5f ) > 1 ? px( 1.5f ) : 1;
     const char* q = L.query;
     while (*q && x + (int)awl_host->text_width( font, q ) + cursor_w > right) {
@@ -1094,7 +1093,7 @@ static int marks( const awl_fuzzy_query_t* fq, const char* text, int* pos ) {
 static void paint_bar( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, uint32_t fg, uint32_t dim,
                        uint32_t match ) {
     const awl_popup_config_t* pc = &awl_config()->popup;
-    paint_query( pix, font, x0 + L.pad, x0 + L.input_w - L.pad, y0, L.h, fg, dim );
+    paint_query( pix, font, x0 + L.pad, x0 + L.input_w - L.pad, y0, L.h );
     if (!L.nres) {
         awl_host->text_over( pix, font, x0 + L.input_w + L.pad, y0, (unsigned)(L.w - L.input_w - L.pad),
                              (unsigned)L.h, empty_text(), dim );
@@ -1123,15 +1122,14 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     const awl_popup_config_t* pc = &awl_config()->popup;
     const awl_colors_t* ak = &awl_config()->colors;
     const awl_plugin_colors_t* k = COLORS;
-    const uint32_t fg = ak->popup_fg, dim = k->launcher_dim ? k->launcher_dim : ak->popup_dim,
-                   match = k->launcher_match ? k->launcher_match : fg;
+    const uint32_t fg = ak->popup_fg, dim = k->launcher_dim.v, match = k->launcher_match.v;
     if (bar()) {
         paint_bar( pix, font, x0, y0, fg, dim, match );
         return;
     }
 
     int x, right;
-    paint_query( pix, font, x0 + L.pad, x0 + L.w - L.pad, y0, L.input_h, fg, dim );
+    paint_query( pix, font, x0 + L.pad, x0 + L.w - L.pad, y0, L.input_h );
 
     const float t = fmaxf( 1, (float)px( 1 ) );
     awl_fill_shape( pix, (float)x0, (float)(y0 + L.input_h) + ((float)L.sep_h - t) / 2, (float)L.w, t, 0, 0, dim );

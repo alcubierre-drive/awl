@@ -24,10 +24,19 @@ typedef struct awl_backlight_t {
     atomic_int screen;
     /** last webcam reading (``WebcamValue``) in per mille, likewise */
     atomic_int webcam;
+    /** the lowest brightness ``Adjust()`` goes to (``ScreenMin``) in per
+     * mille; 0 if not known */
+    atomic_int screen_min;
     /** requests for the loop thread, from any thread (backlight.c) */
     atomic_int requests;
     /** the brightness changes asked for and not yet sent, in per mille */
     atomic_int adjust;
+    /** how many asks (:c:func:`backlight_adjust`) went into adjust */
+    atomic_int adjust_asks;
+    /** asks the daemon hasn't answered yet: those not yet sent, plus one
+     * for each ``Adjust()`` under way. 0: :c:member:`screen` is the daemon's
+     * word on all of them, and a redraw is requested when it gets there */
+    atomic_int unanswered;
     /** an eventfd that wakes the loop for them */
     int wake_fd;
     /** loop thread only */
@@ -51,5 +60,7 @@ void backlight_toggle( awl_backlight_t* b );
 void backlight_update( awl_backlight_t* b );
 /** Has the daemon change the screen brightness by delta (1 is all of it,
  * ``Adjust()``); starts its user unit if it isn't running and sends it once
- * the daemon is there. Any thread, returns at once. No-op for NULL. */
+ * the daemon is there. Any thread, returns at once; counted in
+ * :c:member:`awl_backlight_t.unanswered` until the daemon answers (or the
+ * ask is dropped). No-op for NULL. */
 void backlight_adjust( awl_backlight_t* b, float delta );

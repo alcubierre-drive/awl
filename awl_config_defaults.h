@@ -148,7 +148,7 @@ static const awl_config_t awl_config_defaults = {
         .popup_border   = 0xa6e22eff,
         .popup_hover    = 0xffffff26, /* the row under the pointer, the buttons */
         .popup_dim      = 0xf8f8f259,
-        /* .menu_*: all 0, the popups' */
+        /* .menu_*: all unset, the popups' */
         .alert_fg       = 0xffffffff,
         .alert_bg       = 0xc00000ff,
     },
@@ -213,21 +213,18 @@ static const awl_config_t awl_config_defaults = {
         .margin       = 6,
         .column_spacing = AWL_WINDOW_COLUMN_SPACING,
         .row_spacing  = AWL_WINDOW_ROW_SPACING,
-        .font         = NULL, /* the bar's */
-        .fontsize     = 0,    /* the bar's */
+        /* .font, .fontsize: unset, the bar's */
         .calendar = {
             .list_min_height = 120,
             .list_max_height = 200,
         },
-        /* the tray's and the notifications' menus: all 0, so the popups'
-         * .border_width, .radius; .blur blur.popups */
-        .menu = { 0 },
+        /* .menu: the tray's and the notifications' menus, all unset, so
+         * the popups' .border_width, .radius; .blur blur.popups */
         /* the notifications over fullscreen clients too */
         .persistent_overlay = 1,
     },
     .desktop = {
-        .font = NULL,  /* the bar's */
-        .fontsize = 0, /* the bar's */
+        /* .font, .fontsize: unset, the bar's */
         .hidden_alpha = 0xa0,
         .margin = 10,
         .radius = 15,

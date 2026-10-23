@@ -54,13 +54,13 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
 
         .calendar_today    = 0xb6ec52ff,
         .calendar_selected = 0xffffff33,
-        .launcher_match = molokai_orange,
-        /* .launcher_dim: 0, popup_dim; .launcher_prompt: 0, launcher_dim;
-         * .launcher_query: 0, popup_fg (the cursor's too) */
-        /* .notify_*: low and normal 0, the popups' */
-        .notify_low_frame      = molokai_dark_gray,
-        .notify_critical_frame = molokai_red,
-        .notify_progress       = 0, /* the frame's */
+        .launcher_match = AWL_SOME( molokai_orange ),
+        /* .launcher_dim: unset, popup_dim; .launcher_prompt: unset,
+         * launcher_dim; .launcher_query: unset, popup_fg (the cursor's too) */
+        /* .notify_*: low and normal unset, the popups' */
+        .notify_low_frame      = AWL_SOME( molokai_dark_gray ),
+        .notify_critical_frame = AWL_SOME( molokai_red ),
+        /* .notify_progress: unset, the frame's */
         .desktop_bg     = 0x3c3c3c4c,
         .desktop_file   = 0xf8f8f2ff,
         .desktop_dir    = molokai_blue,
@@ -116,7 +116,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .bell_icon_dnd = "notifications-disabled-symbolic",
     },
     .osd = {
-        .timeout = 1500, .width = 200, .image_size = 32,
+        .timeout = 1500, .width = AWL_SOME( 200 ), .image_size = AWL_SOME( 32 ),
         /* Adwaita, Breeze, Papirus have the volume's; the brightness's are
          * Papirus', then Adwaita's and Breeze's single one */
         .volume_icons = {
@@ -125,6 +125,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
             .medium = "audio-volume-medium-symbolic",
             .high = "audio-volume-high-symbolic",
             .over = "audio-volume-overamplified-symbolic;audio-volume-high-danger-symbolic;audio-volume-high-symbolic",
+            .headphones = "audio-headphones-symbolic;audio-headphones",
         },
         .brightness_icons = {
             .off = "display-brightness-off-symbolic;display-brightness-symbolic;video-display-brightness-symbolic",

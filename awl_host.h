@@ -16,6 +16,7 @@
 #include <pixman-1/pixman.h>
 #include "awl_dict_type.h"
 #include "awl_log.h"
+#include "awl_opt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,16 +82,25 @@ typedef enum {
 
 /**
  * How a notification looks beyond :c:member:`awl_plugin_config_t.notify`, for awl's
- * own (:c:type:`awl_notif_send_t`); D-Bus has no say in it, a D-Bus one's is all 0.
- * 0 is the config's everywhere.
+ * own (:c:type:`awl_notif_send_t`); D-Bus has no say in it, a D-Bus one's is all
+ * the config's. What is unset (:c:type:`awl_opt_int_t`, all of it zeroed) is
+ * the config's, filled in when it is shown.
  */
 typedef struct awl_notif_look_t {
-    /** the body's lines shown at most, < 0 any */
-    int max_lines;
+    /** the body's lines shown at most, <= 0 any */
+    awl_opt_int_t max_lines;
     /** logical pixels: the window's content width, the image's side */
-    int width, image_size;
-    /** 0xRRGGBBAA: text, background, frame, the progress bar's fill */
-    uint32_t fg, bg, frame, progress;
+    awl_opt_int_t width, image_size;
+    /** text, background, frame (unset: its urgency's colors.notify_*), the
+     * progress bar's fill (unset: colors.notify_progress, else the frame's) */
+    awl_opt_color_t fg, bg, frame, progress;
+    /** 0 to 100: a second fill from the left, over the first, in
+     * over_color (unset: the library's colors.bad); 0 none */
+    int over;
+    awl_opt_color_t over_color;
+    /** logical pixels: the frame's width (0: none; unset: the popups',
+     * :c:member:`awl_config_t.popup`) */
+    awl_opt_int_t frame_width;
 } awl_notif_look_t;
 
 /**
@@ -285,7 +295,7 @@ typedef struct awl_host_t {
     /** :c:func:`popupdestroy` */
     void (*window_destroy)( awl_window_t* win );
     /** :c:func:`popupsetmenustyle`: the window looks like a menu,
-     * :c:func:`awl_menu_style`, from now on */
+     * :c:type:`awl_colors_t`'s menu_* and :c:member:`awl_popup_config_t.menu`, from now on */
     void (*window_set_menu_style)( awl_window_t* win );
     /** :c:func:`popupsetpersistent`: the window stays until it is hidden (a
      * notification): a press elsewhere and other popups shown leave it,
@@ -298,6 +308,9 @@ typedef struct awl_host_t {
      * colors (0xRRGGBBAA; a painter's content is its own), 0 for the
      * popups' (:c:member:`awl_config_t.popup`) */
     void (*window_set_colors)( awl_window_t* win, uint32_t bg, uint32_t fg, uint32_t border );
+    /** :c:func:`popupsetborderwidth`: the window's own border width, logical
+     * pixels (0: none), < 0 for the popups' (:c:member:`awl_config_t.popup`) */
+    void (*window_set_border_width)( awl_window_t* win, int width );
     /** :c:func:`popuproom`: the room the window has on m at a spot
      * (window_show_at): m's window area less the window's margins, layout
      * coordinates */

@@ -56,8 +56,10 @@ struct awl_backlight_bus_t {
      * last set by a toggle until the daemon tells otherwise */
     uint64_t interval, config_interval;
     /* brightness changes (per mille) asked for while the daemon wasn't
-     * running, sent when it is */
-    int pending_adjust;
+     * running, sent when it is, and how many asks they are */
+    int pending_adjust, pending_asks;
+    /* Adjust() calls under way */
+    int adjust_calls;
 };
 
 static void bus_update( awl_backlight_bus_t* s );
@@ -78,6 +80,12 @@ static struct timeval in_usec( uint64_t usec ) {
 
 static int set_int( atomic_int* a, int v ) {
     return atomic_exchange( a, v ) != v;
+}
+
+/** n of :c:member:`awl_backlight_t.unanswered` are answered, or dropped; the last
+ * one asks for a redraw, the OSD's cue to check its guess */
+static void answered( awl_backlight_t* b, int n ) {
+    if (n && atomic_fetch_sub( &b->unanswered, n ) == n) awl_host->redraw_request();
 }
 
 /** brightness in [0,1] as per mille; the daemon's -1 (none yet) as
@@ -125,6 +133,12 @@ static void read_properties( awl_backlight_bus_t* s, sd_bus_message* m, int runn
             }
         } else if (!strcmp( key, "ConfigInterval" )) {
             r = sd_bus_message_read( m, "v", "t", &s->config_interval );
+        } else if (!strcmp( key, "ScreenMin" )) {
+            double v;
+            if ((r = sd_bus_message_read( m, "v", "d", &v )) >= 0) {
+                const int min = to_permille( v );
+                atomic_store( &b->screen_min, min < 0 ? 0 : min );
+            }
         } else if (!strcmp( key, "ScreenBrightness" ) || !strcmp( key, "WebcamValue" )) {
             double v;
             if ((r = sd_bus_message_read( m, "v", "d", &v )) >= 0)
@@ -239,7 +253,9 @@ static void drop_bus( awl_backlight_bus_t* s ) {
     if (s->bus) sd_bus_close( s->bus );
     s->bus = sd_bus_unref( s->bus );
     s->failed = 0;
-    s->pending_adjust = 0;
+    /* the calls' replies won't come anymore */
+    answered( s->b, s->pending_asks + s->adjust_calls );
+    s->pending_adjust = s->pending_asks = s->adjust_calls = 0;
 }
 
 static void bus_io( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
@@ -367,17 +383,37 @@ static void do_update( awl_backlight_bus_t* s ) {
         start_unit( s );
 }
 
-/** sends pending_adjust, if any; the daemon takes [-1,1] */
-static void send_adjust( awl_backlight_bus_t* s ) {
-    int d = s->pending_adjust;
-    s->pending_adjust = 0;
-    if (d < -1000) d = -1000;
-    if (d > 1000) d = 1000;
-    if (d) call_daemon( s, BUS_IFACE, "Adjust", NULL, "d", d / 1000.0 );
+/** Adjust() is done, or failed: the daemon said what it had to */
+static int on_adjusted( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
+    (void)m; (void)ret_error;
+    awl_backlight_bus_t* s = userdata;
+    if (s->adjust_calls > 0) {
+        s->adjust_calls--;
+        answered( s->b, 1 );
+    }
+    return 0;
 }
 
-static void do_adjust( awl_backlight_bus_t* s, int permille ) {
+/** sends pending_adjust, if any; the daemon takes [-1,1]. Its asks are
+ * answered now if they came to nothing, else by the call's reply. */
+static void send_adjust( awl_backlight_bus_t* s ) {
+    int d = s->pending_adjust, asks = s->pending_asks;
+    s->pending_adjust = s->pending_asks = 0;
+    if (d < -1000) d = -1000;
+    if (d > 1000) d = 1000;
+    if (d) {
+        /* counted before the asks are let go, so that unanswered can't
+         * touch 0 in between; a failed call is let go with the bus */
+        s->adjust_calls++;
+        atomic_fetch_add( &s->b->unanswered, 1 );
+        call_daemon( s, BUS_IFACE, "Adjust", on_adjusted, "d", d / 1000.0 );
+    }
+    answered( s->b, asks );
+}
+
+static void do_adjust( awl_backlight_bus_t* s, int permille, int asks ) {
     s->pending_adjust += permille;
+    s->pending_asks += asks;
     if (atomic_load( &s->b->running ))
         send_adjust( s );
     else
@@ -391,10 +427,15 @@ static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_eve
     if (read( fd, &count, sizeof count ) < 0) {}
     int req = atomic_exchange( &s->b->requests, 0 );
     int adjust = atomic_exchange( &s->b->adjust, 0 );
-    if (!req || !s->bus) return;
+    int asks = atomic_exchange( &s->b->adjust_asks, 0 );
+    if (!s->bus) {
+        answered( s->b, asks );
+        return;
+    }
+    /* no return for !req: asks can come a wake after their request */
     if (req & REQ_TOGGLE) do_toggle( s );
     if (req & REQ_UPDATE) do_update( s );
-    if (adjust) do_adjust( s, adjust );
+    if (adjust || asks) do_adjust( s, adjust, asks );
     bus_update( s );
 }
 
@@ -419,7 +460,9 @@ void backlight_update( awl_backlight_t* b ) {
 
 void backlight_adjust( awl_backlight_t* b, float delta ) {
     if (!b || !(delta >= -1.0f && delta <= 1.0f)) return;
+    atomic_fetch_add( &b->unanswered, 1 );
     atomic_fetch_add( &b->adjust, (int)lroundf( delta * 1000.0f ) );
+    atomic_fetch_add( &b->adjust_asks, 1 );
     request( b, REQ_ADJUST );
 }
 
@@ -430,8 +473,11 @@ awl_backlight_t* backlight_init( pa_mainloop_api* api ) {
     atomic_init( &b->enabled, 0 );
     atomic_init( &b->screen, BACKLIGHT_UNKNOWN );
     atomic_init( &b->webcam, BACKLIGHT_UNKNOWN );
+    atomic_init( &b->screen_min, 0 );
     atomic_init( &b->requests, 0 );
     atomic_init( &b->adjust, 0 );
+    atomic_init( &b->adjust_asks, 0 );
+    atomic_init( &b->unanswered, 0 );
     b->wake_fd = eventfd( 0, EFD_CLOEXEC | EFD_NONBLOCK );
     if (b->wake_fd < 0 || !(b->bus = calloc(1, sizeof *b->bus)))
         goto fail;

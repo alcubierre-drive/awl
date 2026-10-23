@@ -9,7 +9,9 @@
  * The daemons answer on their own threads, which wake awl for a redraw
  * (:c:func:`awl_osd_redraw`): for a while after a change is asked for, what the
  * value changes to goes out then, and if it doesn't change (at its limit,
- * say) it goes out as it is after a moment.
+ * say) it goes out as it is after a moment. The brightness doesn't wait:
+ * its daemon can be slow, so the value an ask should come to goes out at
+ * once, and is corrected when all asks are answered.
  * :c:enumerator:`AWL_NOTIF_OSD`: through do-not-disturb, not in the history, the menu or
  * the bar widget's counts.
  */
@@ -20,7 +22,12 @@ int awl_osd_start( void );
 void awl_osd_stop( void );
 /** the volume, or a mute, was just asked to change */
 void awl_osd_volume( void );
-/** the brightness was just asked to change */
-void awl_osd_brightness( void );
-/** :c:member:`awl_plugin_api_t.redraw`: sends what changed in answer to the asks */
+/** the brightness was just asked to change by delta (1 is all of it,
+ * :c:func:`backlight_adjust`): shows what that should come to right away,
+ * and once the daemon has answered all such asks, what it came to if that
+ * looks different. Without a value to start from, it waits for the daemon
+ * as the volume does. */
+void awl_osd_brightness( float delta );
+/** :c:member:`awl_plugin_api_t.redraw`: sends what changed in answer to the asks,
+ * corrects the brightness's guess */
 void awl_osd_redraw( void );

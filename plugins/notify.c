@@ -55,7 +55,7 @@ typedef struct {
     unsigned flags;
     /** shown on request though do-not-disturb (:c:func:`awl_notify_reveal`) */
     int revealed;
-    /** awl's own look for it (all 0: the config's) */
+    /** its look, filled in (look_filled()) */
     awl_notif_look_t look;
     char* summary;
     /** "{app}" after the summary (show_app), NULL none */
@@ -137,10 +137,6 @@ static const awl_notif_t* record( uint32_t id ) {
     return NULL;
 }
 
-static uint32_t or_( uint32_t c, uint32_t dflt ) {
-    return c ? c : dflt;
-}
-
 /** :c:type:`awl_plugin_colors_t`'s notify_* of an urgency */
 typedef struct { uint32_t fg, bg, frame; } urgency_colors_t;
 
@@ -148,25 +144,28 @@ static urgency_colors_t urgency_colors( int urgency ) {
     const awl_plugin_colors_t* k = &awl_plugin_config()->colors;
     switch (urgency) {
     case AWL_NOTIF_LOW:
-        return (urgency_colors_t){ k->notify_low_fg, k->notify_low_bg, k->notify_low_frame };
+        return (urgency_colors_t){ k->notify_low_fg.v, k->notify_low_bg.v, k->notify_low_frame.v };
     case AWL_NOTIF_CRITICAL:
-        return (urgency_colors_t){ k->notify_critical_fg, k->notify_critical_bg, k->notify_critical_frame };
+        return (urgency_colors_t){ k->notify_critical_fg.v, k->notify_critical_bg.v, k->notify_critical_frame.v };
     default:
-        return (urgency_colors_t){ k->notify_normal_fg, k->notify_normal_bg, k->notify_normal_frame };
+        return (urgency_colors_t){ k->notify_normal_fg.v, k->notify_normal_bg.v, k->notify_normal_frame.v };
     }
 }
 
-static uint32_t fg_of( const note_t* n ) {
-    return or_( n->look.fg, or_( urgency_colors( n->urgency ).fg, awl_config()->colors.popup_fg ) );
-}
-
-static uint32_t frame_of( const note_t* n ) {
-    return or_( n->look.frame, or_( urgency_colors( n->urgency ).frame, awl_config()->colors.popup_border ) );
-}
-
-/** the body's lines at most, 0 any */
-static int max_lines_of( const note_t* n ) {
-    return n->look.max_lines < 0 ? 0 : n->look.max_lines ? n->look.max_lines : CFG->max_lines;
+/** l with what it leaves unset filled in from the config, for urgency */
+static awl_notif_look_t look_filled( awl_notif_look_t l, int urgency ) {
+    const awl_plugin_colors_t* k = &awl_plugin_config()->colors;
+    const urgency_colors_t u = urgency_colors( urgency );
+    AWL_FILL( l.max_lines, CFG->max_lines );
+    AWL_FILL( l.width, CFG->width );
+    AWL_FILL( l.image_size, CFG->image_size );
+    AWL_FILL( l.fg, u.fg );
+    AWL_FILL( l.bg, u.bg );
+    AWL_FILL( l.frame, u.frame );
+    AWL_FILL( l.progress, AWL_OR( k->notify_progress, l.frame.v ) );
+    AWL_FILL( l.over_color, k->bad );
+    AWL_FILL( l.frame_width, awl_config()->popup.border_width );
+    return l;
 }
 
 /* ---- fonts and the layout ---- */
@@ -297,10 +296,10 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     const int pad = px( n, (float)awl_config()->popup.padding );
     if (n->max_h > 0 && n->max_h < max_h) max_h = n->max_h;
 
-    n->w = px( n, (float)or_( (uint32_t)n->look.width, (uint32_t)CFG->width ) );
+    n->w = px( n, (float)n->look.width.v );
     if (n->w > max_w) n->w = max_w;
     const int full =
-        n->has_image ? px( n, (float)or_( (uint32_t)n->look.image_size, (uint32_t)CFG->image_size ) ) : 0;
+        n->has_image ? px( n, (float)n->look.image_size.v ) : 0;
     n->img_sz = full > max_h ? max_h : full;
     image_for( n, full );
     if (!n->img) n->img_sz = 0;
@@ -311,7 +310,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     n->sum_h = *n->summary ? bold( n )->height : 0;
     if (n->app && italic( n )->height > n->sum_h) n->sum_h = italic( n )->height;
 
-    int y = stack( n, font, max_lines_of( n ) );
+    int y = stack( n, font, n->look.max_lines.v > 0 ? n->look.max_lines.v : 0 );
     if (y > max_h && n->layout.nlines) {
         /* too high: the body's lines that fit, the last ending in "…" */
         const int keep = n->layout.h - (y - max_h);
@@ -436,7 +435,7 @@ static void paint_image( const note_t* n, pixman_image_t* pix, int x0, int y0, u
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     note_t* n = data;
     const awl_config_t* c = awl_config();
-    const uint32_t fg = fg_of( n );
+    const uint32_t fg = n->look.fg.v;
     if (n->img) paint_image( n, pix, x0, y0, fg );
     if (n->sum_h) paint_title( n, pix, x0, y0, fg );
     if (n->body.len) paint_body( n, pix, x0, y0, fg );
@@ -445,7 +444,10 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         awl_fill_shape( pix, x, y, (float)n->text_w, (float)n->bar_h, r, 0, c->colors.popup_dim );
         if (n->value > 0)
             awl_fill_shape( pix, x, y, (float)n->text_w * (float)n->value / 100.f, (float)n->bar_h, r, 0,
-                            or_( n->look.progress, or_( awl_plugin_config()->colors.notify_progress, frame_of( n ) ) ) );
+                            n->look.progress.v );
+        if (n->look.over > 0)
+            awl_fill_shape( pix, x, y, (float)n->text_w * (float)MIN( n->look.over, 100 ) / 100.f, (float)n->bar_h,
+                            r, 0, n->look.over_color.v );
     }
     for (int i = 0; i < n->nactions; i++) {
         const box_t b = n->act[i];
@@ -589,7 +591,7 @@ static void sources( note_t* n, const awl_notif_t* r ) {
     }
     /* at the size measure() will want on the selected monitor */
     const float scale = awl_host->monitor_scale( awl_host->monitor_selected() );
-    image_want( n, (int)lroundf( (float)or_( (uint32_t)n->look.image_size, (uint32_t)CFG->image_size ) * scale ) );
+    image_want( n, (int)lroundf( (float)n->look.image_size.v * scale ) );
     if (!n->img_want) n->ready = 1;
     else if (!n->ready) n->ready_by = now_ms() + IMAGE_WAIT_MS;
 }
@@ -637,12 +639,12 @@ static int fill( note_t* n, const awl_notif_t* r ) {
     n->generation = r->generation;
     n->urgency = r->urgency <= AWL_NOTIF_CRITICAL ? r->urgency : AWL_NOTIF_NORMAL;
     n->value = r->value;
-    n->look = r->look;
+    n->look = look_filled( r->look, n->urgency );
     n->flags = r->flags;
     sources( n, r );
     n->laid = 0;
-    const urgency_colors_t u = urgency_colors( n->urgency );
-    awl_host->window_set_colors( n->win, or_( n->look.bg, u.bg ), fg_of( n ), or_( n->look.frame, u.frame ) );
+    awl_host->window_set_colors( n->win, n->look.bg.v, n->look.fg.v, n->look.frame.v );
+    awl_host->window_set_border_width( n->win, n->look.frame_width.v );
     return 1;
 }
 

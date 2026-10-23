@@ -19,9 +19,11 @@ extern const awl_config_t *cfg;
  * library (:c:member:`awl_host_t.cfg`). Lives from setup() to cleanup(), across reloads. */
 extern awl_dict_t *cfgdict;
 
-/** fills in c with awl's defaults (awl_config_defaults.h) */
+/** fills in c with awl's defaults (awl_config_defaults.h), what they leave
+ * unset still unset (:c:func:`awl_config_fill_defaults`) */
 void configdefaults(awl_config_t *c);
-/** awl's defaults themselves, constant (awl_config_defaults.h) */
+/** awl's defaults (awl_config_defaults.h), filled in
+ * (:c:func:`awl_config_fill_defaults`), constant */
 const awl_config_t *builtinconfig(void);
 /** creates cfgdict with its defaults (see there); NULL out of memory, then
  * every lookup fails */

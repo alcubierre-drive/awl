@@ -519,20 +519,17 @@ void togglebar_mon(Monitor* m) {
 }
 
 /** (re)loads ``*f``, a font of m's other than the bar's, at m's scale: font
- * and size (NULL, 0: the bar's, cfg->font and ->fontsize); NULL if both are
- * the bar's, or it doesn't load (what says whose, for the warning) */
+ * and size (filled in, :c:func:`awl_config_fill_defaults`); NULL if it doesn't
+ * load (what says whose, for the warning) */
 static void
 updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const char *what)
 {
-    const char *name = font ? font : cfg->font;
-
     awl_font_release(*f);
     *f = NULL;
-    if ((!font && size <= 0) || !name)
+    if (!font)
         return;
-    if (!(*f = awl_font_get_exact(name, (float)(size > 0 ? size : cfg->fontsize),
-                m->wlr_output->scale)))
-        awl_wrn_printf("%s font %s not found, using the bar's\n", what, name);
+    if (!(*f = awl_font_get_exact(font, (float)size, m->wlr_output->scale)))
+        awl_wrn_printf("%s font %s not found, using the bar's\n", what, font);
 }
 
 /** (re)loads m's bar's emoji font (:c:member:`awl_bar_t.emojifont`), at the bar's size */
@@ -555,8 +552,8 @@ static void
 updatefonts(Monitor *m)
 {
     updateemojifont(m);
-    updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize, "popup");
-    updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize, "desktop");
+    updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize.v, "popup");
+    updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize.v, "desktop");
 }
 
 void
@@ -736,27 +733,27 @@ barconfigure(void)
     }
     /* the popups' (updatebar() above reloaded it too, no harm) */
     if (!streqnull(cfg->popup.font, applied.popupfont)
-            || cfg->popup.fontsize != applied.popupfontsize) {
+            || cfg->popup.fontsize.v != applied.popupfontsize) {
         free(applied.popupfont);
         applied.popupfont = strdupnull(cfg->popup.font);
-        applied.popupfontsize = cfg->popup.fontsize;
+        applied.popupfontsize = cfg->popup.fontsize.v;
         wl_list_for_each(m, &mons, link) {
             if (!m->bar.m || !m->bar.font)
                 continue;
-            updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize, "popup");
+            updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize.v, "popup");
             popupsupdate(m);
         }
     }
     /* the desktop file list's, the same way */
     if (!streqnull(cfg->desktop.font, applied.desktopfont)
-            || cfg->desktop.fontsize != applied.desktopfontsize) {
+            || cfg->desktop.fontsize.v != applied.desktopfontsize) {
         free(applied.desktopfont);
         applied.desktopfont = strdupnull(cfg->desktop.font);
-        applied.desktopfontsize = cfg->desktop.fontsize;
+        applied.desktopfontsize = cfg->desktop.fontsize.v;
         wl_list_for_each(m, &mons, link) {
             if (!m->bar.m || !m->bar.font)
                 continue;
-            updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize, "desktop");
+            updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize.v, "desktop");
             desktop_fontchanged(m);
         }
     }

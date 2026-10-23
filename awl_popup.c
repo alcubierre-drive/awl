@@ -28,7 +28,7 @@ pointerinpopup(awl_window_t *win)
 }
 
 /** p's look, from cfg->popup and cfg->colors' popup_*; a menu's its own
- * (:c:func:`awl_menu_style`); p's colors over either (NULL: none) */
+ * (cfg->colors' menu_*, cfg->popup.menu); p's colors over either (NULL: none) */
 static awl_window_style_t
 popupstyle(const Popup *p)
 {
@@ -45,14 +45,13 @@ popupstyle(const Popup *p)
             .blur = cfg->blur.popups,
             .blur_strength = cfg->blur.strength, .blur_alpha = cfg->blur.alpha };
     if (menu) {
-        awl_menu_style_t c = awl_menu_style(&cfg->colors, &cfg->popup, cfg->blur.popups);
-        s.bg = c.bg;
-        s.fg = c.fg;
-        s.border = c.border;
-        s.highlight = c.highlight;
-        s.border_width = c.border_width;
-        s.radius = c.radius;
-        s.blur = c.blur;
+        s.bg = cfg->colors.menu_bg.v;
+        s.fg = cfg->colors.menu_fg.v;
+        s.border = cfg->colors.menu_border.v;
+        s.highlight = cfg->colors.menu_highlight.v;
+        s.border_width = cfg->popup.menu.border_width.v;
+        s.radius = cfg->popup.menu.radius.v;
+        s.blur = cfg->popup.menu.blur.v;
     }
     if (p && p->bg)
         s.bg = p->bg;
@@ -60,6 +59,8 @@ popupstyle(const Popup *p)
         s.fg = p->fg;
     if (p && p->border)
         s.border = p->border;
+    if (p && p->border_width >= 0)
+        s.border_width = p->border_width;
     return s;
 }
 
@@ -124,6 +125,7 @@ popupnew(int plugin)
     p = ecalloc(1, sizeof(*p));
     p->win = awl_window_create(popup_tree, &style);
     p->plugin = plugin;
+    p->border_width = -1;
     wl_list_insert(popups.prev, &p->link);
     return p->win;
 }
@@ -361,6 +363,20 @@ popupsetcolors(awl_window_t *win, uint32_t bg, uint32_t fg, uint32_t border)
     p->bg = bg;
     p->fg = fg;
     p->border = border;
+    style = popupstyle(p);
+    awl_window_set_style(win, &style);
+}
+
+void
+popupsetborderwidth(awl_window_t *win, int width)
+{
+    Popup *p = popupfind(win);
+    awl_window_style_t style;
+    if (width < 0)
+        width = -1;
+    if (!p || p->border_width == width)
+        return;
+    p->border_width = width;
     style = popupstyle(p);
     awl_window_set_style(win, &style);
 }

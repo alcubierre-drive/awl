@@ -128,6 +128,7 @@ static awl_host_t host = {
     .window_set_menu_style = popupsetmenustyle,
     .window_set_persistent = popupsetpersistent,
     .window_set_colors = popupsetcolors,
+    .window_set_border_width = popupsetborderwidth,
     .window_room = popuproom,
     .window_box = popupbox,
     .window_set_text = awl_window_set_text,

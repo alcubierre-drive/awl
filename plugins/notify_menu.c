@@ -18,7 +18,7 @@
 /** what the server keeps open at most (awl_notifications.c); how long the
  * pointer may be off the menu and what opened it before it closes, ms (as
  * the tray's menus) */
-enum { MAX_OPEN = 256, MAX_PAST = 100, LEAVE_DELAY = 300 };
+enum { MAX_OPEN = 24, MAX_PAST = 24, LEAVE_DELAY = 300 };
 
 typedef enum { ROW_DND, ROW_ALL, ROW_TITLE, ROW_ACTION, ROW_EMPTY, ROW_HISTORY, ROW_PAST } kind_t;
 
@@ -304,14 +304,14 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     (void)data;
     (void)scale;
     const awl_config_t* c = awl_config();
-    const awl_menu_style_t mc = awl_menu_style( &c->colors, &c->popup, c->blur.popups );
+    const awl_colors_t* mc = &c->colors;
     for (int i = 0; i < M.shown; i++) {
         const row_t* r = &M.rows[i];
-        uint32_t fg = mc.fg;
+        uint32_t fg = mc->menu_fg.v;
         if (i == hover) {
             awl_fill_shape( pix, (float)x0, (float)(y0 + r->y), (float)M.w, (float)r->h, (float)r->h / 4, 0,
-                            mc.highlight );
-            fg = mc.highlight_fg;
+                            mc->menu_highlight.v );
+            fg = mc->menu_highlight_fg.v;
         }
         const int x = M.pad;
         switch (r->kind) {
@@ -320,7 +320,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             /* the label cut short of the value at the right */
             const char* s = r->kind == ROW_DND ? dnd_text() : past_count;
             const int sw = (int)awl_host->text_width( font, s );
-            text_at( pix, font, x0, y0, M.w - M.pad - sw, r->y, r->h, s, i == hover ? fg : mc.dim );
+            text_at( pix, font, x0, y0, M.w - M.pad - sw, r->y, r->h, s, i == hover ? fg : mc->menu_dim.v );
             M.right = M.w - M.pad - sw - M.colsp;
             if (M.right > x)
                 text_at( pix, font, x0, y0, x, r->y, r->h, r->kind == ROW_DND ? "Do not disturb" : "Clear history",
@@ -329,14 +329,14 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             break;
         }
         case ROW_ALL: text_at( pix, font, x0, y0, x, r->y, r->h, "Dismiss all", fg ); break;
-        case ROW_EMPTY: text_at( pix, font, x0, y0, x, r->y, r->h, "No notifications", mc.dim ); break;
+        case ROW_EMPTY: text_at( pix, font, x0, y0, x, r->y, r->h, "No notifications", mc->menu_dim.v ); break;
         case ROW_ACTION: text_at( pix, font, x0, y0, x + M.indent, r->y, r->h, r->text, fg ); break;
         case ROW_TITLE:
         case ROW_PAST: {
             /* the history's dim, its time at the right */
             int room = M.w - 2 * M.pad;
             if (r->kind == ROW_PAST) {
-                if (i != hover) fg = mc.dim;
+                if (i != hover) fg = mc->menu_dim.v;
                 const int tw = (int)awl_host->text_width( font, r->when );
                 text_at( pix, font, x0, y0, M.w - M.pad - tw, r->y, r->h, r->when, fg );
             }
@@ -346,9 +346,9 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
                 show_box( i, &bx, &by, &bw, &bh );
                 const int on = hover == M.n + i;
                 awl_fill_shape( pix, (float)(x0 + bx), (float)(y0 + by), (float)bw, (float)bh, (float)bh / 4,
-                                on ? 0 : (float)px( 1 ), on ? mc.highlight : fg );
+                                on ? 0 : (float)px( 1 ), on ? mc->menu_highlight.v : fg );
                 const int sw = (int)awl_host->text_width( font, SHOW );
-                text_at( pix, font, x0, y0, bx + (bw - sw) / 2, r->y, r->h, SHOW, on ? mc.highlight_fg : fg );
+                text_at( pix, font, x0, y0, bx + (bw - sw) / 2, r->y, r->h, SHOW, on ? mc->menu_highlight_fg.v : fg );
                 room -= row_extra( r );
                 M.right = M.pad + (room > 0 ? room : 0);
             }
@@ -360,7 +360,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
                 if (sw > room - aw) sw = room - aw > room / 2 ? room - aw : room / 2;
                 if (sw < 0) sw = 0;
                 text_at( pix, M.italic, x0, y0, x + sw + (int)awl_host->text_width( M.italic, " " ), r->y, r->h,
-                         r->app, i == hover ? fg : mc.dim );
+                         r->app, i == hover ? fg : mc->menu_dim.v );
             } else if (sw > room) {
                 sw = room;
             }
@@ -378,7 +378,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         char text[32];
         if (M.more) snprintf( text, sizeof text, "+%d more", M.more );
         else snprintf( text, sizeof text, "%s", AWL_WINDOW_ELLIPSIS );
-        text_at( pix, font, x0, y0, M.pad, M.more_y, M.rowh, text, mc.dim );
+        text_at( pix, font, x0, y0, M.pad, M.more_y, M.rowh, text, mc->menu_dim.v );
     }
 }
 

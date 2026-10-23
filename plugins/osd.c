@@ -29,6 +29,9 @@ typedef struct {
 static struct {
     awl_timer_t* timer;
     watch_t w[OSD_N];
+    /** what the brightness asks under way should come to, per mille, as
+     * shown already; -1: none under way, or no guess */
+    long long guess;
 } O;
 
 static long long now_ms( void ) {
@@ -57,6 +60,18 @@ static int percent( float f ) {
     return v < 0 ? 0 : v > 100 ? 100 : (int)v;
 }
 
+/** the brightness's icon for b in [0,1]: off, low, medium, high */
+static int brightness_level( float b ) {
+    return b <= 0 ? 0 : b <= 1.0f / 3 ? 1 : b <= 2.0f / 3 ? 2 : 3;
+}
+
+/** what the brightness's notification shows for state s, in one number: a
+ * guess off by less than that isn't worth a correction */
+static long long brightness_looks( long long s ) {
+    const float b = (float)s / 1000.0f;
+    return percent( b ) * 4 + brightness_level( b );
+}
+
 /** k's notification for state s (known) */
 static void send( kind_t k, long long s ) {
     const awl_plugin_config_t* pc = awl_plugin_config();
@@ -64,32 +79,29 @@ static void send( kind_t k, long long s ) {
     n.urgency = AWL_NOTIF_LOW;
     n.flags = AWL_NOTIF_OSD;
     n.timeout = CFG->timeout;
-    n.look.width = CFG->width;
-    n.look.image_size = CFG->image_size;
+    AWL_SET( n.look.width, CFG->width.v );
+    AWL_SET( n.look.image_size, CFG->image_size.v );
+    AWL_SET( n.look.frame_width, 0 );
     /* the low urgency's frame is too dim for the bar's fill: the text's */
-    n.look.progress = pc->colors.notify_progress ? pc->colors.notify_progress
-                    : pc->colors.notify_low_fg ? pc->colors.notify_low_fg : awl_config()->colors.popup_fg;
+    AWL_SET( n.look.progress, AWL_OR( pc->colors.notify_progress, pc->colors.notify_low_fg.v ) );
     if (k == OSD_VOLUME) {
         const float v = (float)(s / 4) / 1000.0f, max = pc->volume.max;
-        const int muted = (int)(s & 3);
+        const int muted = (int)(s & 2), speaker_muted = (int)(s & 1);
         n.tag = "osd-volume";
         n.image = muted || v <= 0 ? pc->osd.volume_icons.muted
+                : speaker_muted ? pc->osd.volume_icons.headphones
                 : v <= 1.0f / 3 ? pc->osd.volume_icons.low
                 : v <= 2.0f / 3 ? pc->osd.volume_icons.medium
                 : v <= 1 ? pc->osd.volume_icons.high : pc->osd.volume_icons.over;
-        if (v <= 1) {
-            n.value = percent( v );
-        } else {
-            /* above 100% the bar starts over, up to max */
-            n.value = max > 1 ? percent( (v - 1) / (max - 1) ) : 100;
-            n.look.progress = pc->colors.bad;
-        }
+        n.value = percent( v );
+        /* above 100% the full bar fills again, up to max */
+        if (v > 1) n.look.over = max > 1 ? percent( (v - 1) / (max - 1) ) : 100;
     } else {
         const float b = (float)s / 1000.0f;
+        const char* const icons[] = { pc->osd.brightness_icons.off, pc->osd.brightness_icons.low,
+                pc->osd.brightness_icons.medium, pc->osd.brightness_icons.high };
         n.tag = "osd-brightness";
-        n.image = b <= 0 ? pc->osd.brightness_icons.off
-                : b <= 1.0f / 3 ? pc->osd.brightness_icons.low
-                : b <= 2.0f / 3 ? pc->osd.brightness_icons.medium : pc->osd.brightness_icons.high;
+        n.image = icons[brightness_level( b )];
         n.value = percent( b );
     }
     if (n.image && !*n.image) n.image = NULL;
@@ -101,10 +113,26 @@ static int watching( const watch_t* w, long long now ) {
     return w->asked && now - w->asked < WATCH_MS;
 }
 
+/** the brightness asks under way are all answered: the daemon's word
+ * replaces the guess, shown only if it looks different */
+static void settle( void ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    if (!P || !P->backlight || atomic_load( &P->backlight->unanswered ) > 0) return;
+    watch_t* w = &O.w[OSD_BRIGHTNESS];
+    const long long s = state( OSD_BRIGHTNESS );
+    O.guess = -1;
+    if (s < 0) return;
+    if (brightness_looks( s ) != brightness_looks( w->shown )) send( OSD_BRIGHTNESS, s );
+    w->shown = s;
+}
+
 void awl_osd_redraw( void ) {
     const long long now = now_ms();
+    if (O.guess >= 0) settle();
     for (int k = 0; k < OSD_N; k++) {
         watch_t* w = &O.w[k];
+        /* a guess stands until it's settled */
+        if (k == OSD_BRIGHTNESS && O.guess >= 0) continue;
         if (!watching( w, now )) continue;
         const long long s = state( (kind_t)k );
         if (s < 0 || s == w->shown) continue;
@@ -143,12 +171,31 @@ void awl_osd_volume( void ) {
     ask( OSD_VOLUME );
 }
 
-void awl_osd_brightness( void ) {
-    ask( OSD_BRIGHTNESS );
+void awl_osd_brightness( float delta ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    watch_t* w = &O.w[OSD_BRIGHTNESS];
+    /* on top of the asks under way, if any, else of what it is */
+    const long long base = O.guess >= 0 ? O.guess : state( OSD_BRIGHTNESS );
+    if (!O.timer || !P || !P->backlight || base < 0) {
+        /* nothing to guess from: wait for the daemon */
+        ask( OSD_BRIGHTNESS );
+        return;
+    }
+    /* clamped as the daemon does */
+    const long long min = atomic_load( &P->backlight->screen_min );
+    long long g = base + lroundf( delta * 1000.0f );
+    if (g < min) g = min;
+    if (g > 1000) g = 1000;
+    send( OSD_BRIGHTNESS, g );
+    O.guess = g;
+    w->asked = now_ms();
+    w->shown = g;
+    w->due = 0;
 }
 
 int awl_osd_start( void ) {
     memset( &O, 0, sizeof O );
+    O.guess = -1;
     O.timer = awl_host->timer_add( quiet, NULL );
     return 0;
 }
@@ -156,4 +203,5 @@ int awl_osd_start( void ) {
 void awl_osd_stop( void ) {
     awl_host->timer_remove( O.timer );
     memset( &O, 0, sizeof O );
+    O.guess = -1;
 }

@@ -37,7 +37,8 @@ enum {
 
 /** :c:member:`awl_plugin_config_t.colors`: the colors only the plugins draw with,
  * 0xRRGGBBAA (awl's are :c:type:`awl_colors_t`, awl.h, whose popup_* the plugins'
- * popups use too). Where one says "0: ...", 0 takes that instead. */
+ * popups use too). The optional ones (:c:type:`awl_opt_color_t`) say what they
+ * are unset; :c:func:`awl_plugin_config_fill_defaults` fills that in. */
 typedef struct awl_plugin_colors_t {
     /** the bar: the layout symbol's, the clock's and the status widgets'
      * background and text */
@@ -68,16 +69,18 @@ typedef struct awl_plugin_colors_t {
     /** the clock's calendar: today's date, the selected day's background */
     uint32_t calendar_today, calendar_selected;
     /** the launcher (plugins/launcher.h): the characters the query
-     * matched, 0: popup_fg; the description (GenericName), 0: popup_dim;
-     * the prompt, 0: launcher_dim; the query and the cursor, 0: popup_fg */
-    uint32_t launcher_match, launcher_dim, launcher_prompt, launcher_query;
+     * matched, unset: popup_fg; the description (GenericName), unset:
+     * popup_dim; the prompt, unset: launcher_dim; the query and the cursor,
+     * unset: popup_fg */
+    awl_opt_color_t launcher_match, launcher_dim, launcher_prompt, launcher_query;
     /** the notifications' windows (plugins/notify.h) by urgency: text,
-     * background and frame, each 0: the popups'; the bar of one with a
-     * value, its filled part, 0: its frame's */
-    uint32_t notify_low_fg, notify_low_bg, notify_low_frame;
-    uint32_t notify_normal_fg, notify_normal_bg, notify_normal_frame;
-    uint32_t notify_critical_fg, notify_critical_bg, notify_critical_frame;
-    uint32_t notify_progress;
+     * background and frame, each unset: the popups' */
+    awl_opt_color_t notify_low_fg, notify_low_bg, notify_low_frame;
+    awl_opt_color_t notify_normal_fg, notify_normal_bg, notify_normal_frame;
+    awl_opt_color_t notify_critical_fg, notify_critical_bg, notify_critical_frame;
+    /** the bar of a notification with a value, its filled part; unset: its
+     * frame's, which only the notification knows, so it stays unset here */
+    awl_opt_color_t notify_progress;
     /** the desktop file list (awl_desktop.h): its background, the names of
      * files, folders and broken links */
     uint32_t desktop_bg, desktop_file, desktop_dir, desktop_broken;
@@ -221,16 +224,19 @@ typedef struct awl_plugin_config_t {
     /** the notification a volume or brightness change brings
      * (plugins/osd.h): the new value as a bar beside an icon, no text,
      * replaced in place while the changes go on; in colors.notify_low_*,
-     * the bar in colors.notify_progress (0: notify_low_fg's); above 100%
-     * the volume's bar starts over in colors.bad */
+     * the bar in colors.notify_progress (unset: notify_low_fg's); above 100%
+     * the volume's bar stays full and fills again over it in colors.bad */
     struct {
-        /** ms it stays after the last change; its window's content width
-         * and its icon's size, logical pixels (0: notify's) */
-        int timeout, width, image_size;
+        /** ms it stays after the last change */
+        int timeout;
+        /** its window's content width and its icon's size, logical pixels
+         * (unset: notify's) */
+        awl_opt_int_t width, image_size;
         /** the icons by the volume (muted or 0, up to a third, two thirds,
-         * 100%, above) and by the brightness (0, up to a third, two
-         * thirds, more), as notify's bell_icon; none found: no icon */
-        struct { const char* muted, * low, * medium, * high, * over; } volume_icons;
+         * 100%, above; only the built-in speaker muted) and by the
+         * brightness (0, up to a third, two thirds, more), as notify's
+         * bell_icon; none found: no icon */
+        struct { const char* muted, * low, * medium, * high, * over, * headphones; } volume_icons;
         struct { const char* off, * low, * medium, * high; } brightness_icons;
     } osd;
 } awl_plugin_config_t;
@@ -308,8 +314,8 @@ void awl_mic_mute_toggle( void );
 void awl_speaker_mute_toggle( void );
 /** plugins.c: the screen brightness up or down by delta (1 is all of it),
  * through the backlight daemon (:c:func:`backlight_adjust`), which this starts if
- * it isn't running; the osd's notification follows. Main thread, returns
- * at once. */
+ * it isn't running; the osd's notification shows the expected value at once
+ * and corrects it if the daemon's differs. Main thread, returns at once. */
 void awl_brightness_adjust( float delta );
 
 /** plugins_widgets.c: :c:member:`awl_plugin_api_t.bar_widgets` */
@@ -351,5 +357,9 @@ void awl_config_init( void );
 const awl_config_t* awl_config( void );
 /** plugins_config.c: the plugins' config :c:func:`awl_config_init` made */
 const awl_plugin_config_t* awl_plugin_config( void );
+/** plugins_config.c: fills in what p leaves unset (:c:type:`awl_opt_color_t`,
+ * :c:type:`awl_opt_int_t`) with what it defaults to, from p and c, c filled in
+ * already (:c:func:`awl_config_fill_defaults`); once, in :c:func:`awl_config_init` */
+void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t* c );
 /** plugins_config.c: :c:member:`awl_plugin_api_t.config`, a copy of :c:func:`awl_config` */
 void awl_config_fill( awl_config_t* c );

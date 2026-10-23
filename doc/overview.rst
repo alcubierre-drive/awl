@@ -26,7 +26,7 @@ its parts (see :doc:`api/awl`), ``plugins_*`` and plugins/ (and plugins.c, plugi
 ``libawlplugins.so``; tray/ is awl's, the icon theme of the programs it
 starts with :c:macro:`TRAY_ICONS`. Every type the library shares with awl is in
 awl.h; the headers that make up awl's side of the interface (awl.h,
-awl_host.h, awl_plugin_abi.h, awl_draw.h, awl_log.h, awl_dict_type.h) are
+awl_host.h, awl_plugin_abi.h, awl_draw.h, awl_log.h, awl_opt.h, awl_dict_type.h) are
 included by the libraries too, awl's own types are in awl_core.h.
 meson.options' compile-time switches belong to ``awl``, plugins_config.c to the library, which
 changes awl's defaults (awl_config_defaults.h) and its own (plugins_config_defaults.h)

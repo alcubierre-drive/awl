@@ -15,6 +15,11 @@ awl_host.h
 .. c:autodoc:: awl_host.h
    :clang: -DAWL_HOSTED
 
+awl_opt.h
+---------
+
+.. c:autodoc:: awl_opt.h
+
 awl_dict_type.h
 ---------------
 

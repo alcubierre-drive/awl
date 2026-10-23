@@ -36,3 +36,7 @@ pixman_color_t alpha_blend_16( pixman_color_t B, pixman_color_t A );
 /** A at t = 0 to B at t = 1, linearly in each channel; t is clipped to 0..1 */
 pixman_color_t color_mix_16( pixman_color_t A, pixman_color_t B, float t );
 
+/** same as :c:func:`color_mix_16` but for 8bit colors (uint32_t) */
+static inline uint32_t color_mix_8( uint32_t A, uint32_t B, float t ) {
+    return color_16bit_to_8bit(color_mix_16(color_8bit_to_16bit(A), color_8bit_to_16bit(B), t));
+}

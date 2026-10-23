@@ -32,6 +32,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "awl_bar_type.h"
+#include "awl_opt.h"
 
 /* macros */
 #ifndef MAX
@@ -211,10 +212,10 @@ struct Monitor {
     awl_bar_t bar;
     /** the popups' font at this monitor's scale (awl_window.h,
      * cfg->popup.font and .fontsize), from the font registry; NULL while
-     * they use the bar's */
+     * it isn't found, then they use the bar's */
     struct fcft_font *popupfont;
     /** the desktop file list's (awl_desktop.h, cfg->desktop.font and
-     * .fontsize), the same way; NULL while it uses the bar's */
+     * .fontsize), the same way */
     struct fcft_font *desktopfont;
 };
 
@@ -359,8 +360,9 @@ enum {
 #define molokai_light_gray 0x455354ffu
 
 /** :c:member:`awl_config_t.colors`: the colors awl itself draws with, 0xRRGGBBAA
- * (the plugins' own are :c:type:`awl_plugin_colors_t`, plugins.h). Where one says
- * "0: ...", 0 takes that instead. */
+ * (the plugins' own are :c:type:`awl_plugin_colors_t`, plugins.h). The optional
+ * ones (:c:type:`awl_opt_color_t`) say what they are unset;
+ * :c:func:`awl_config_fill_defaults` fills that in. */
 typedef struct awl_colors_t {
     /** behind everything, and behind fullscreen windows (an alpha of 0
      * shows what is below) */
@@ -373,11 +375,11 @@ typedef struct awl_colors_t {
      * (the calendar's neighbouring months' days, the IP popup's missing
      * routes) */
     uint32_t popup_bg, popup_fg, popup_border, popup_hover, popup_dim;
-    /** the tray's and the notifications' menus, each 0: the popups'
+    /** the tray's and the notifications' menus, each unset the popups'
      * (highlight: popup_hover, highlight_fg: menu_fg): background, text,
      * border; the entry under the pointer (and the one whose submenu is
      * open) and its text; disabled entries, shortcuts and separators */
-    uint32_t menu_bg, menu_fg, menu_border, menu_highlight, menu_highlight_fg, menu_dim;
+    awl_opt_color_t menu_bg, menu_fg, menu_border, menu_highlight, menu_highlight_fg, menu_dim;
     /** the alert (awl_alert.h): its text and background */
     uint32_t alert_fg, alert_bg;
 } awl_colors_t;
@@ -392,51 +394,25 @@ typedef struct awl_popup_config_t {
     /** between a text popup's columns and rows */
     int column_spacing, row_spacing;
     /** the font, as :c:member:`awl_config_t.font` and fontsize (size appended to
-     * font); NULL and 0 each take the bar's */
+     * font); NULL and unset each take the bar's */
     const char *font;
-    int fontsize;
+    awl_opt_int_t fontsize;
     /** the clock's calendar's event list, which scrolls beyond the
      * maximum (0: none) */
     struct {
         int list_min_height, list_max_height;
     } calendar;
     /** the tray's and the notifications' menus, their own look (colors:
-     * :c:type:`awl_colors_t`'s menu_*); what is 0 (left out) is the popups':
-     * border_width, radius and blur (blur.popups, blur what is behind
-     * them). A negative one is none. */
+     * :c:type:`awl_colors_t`'s menu_*); what is unset is the popups':
+     * border_width, radius and blur (:c:member:`awl_config_t.blur`'s popups,
+     * blur what is behind them) */
     struct {
-        int border_width, radius, blur;
+        awl_opt_int_t border_width, radius, blur;
     } menu;
     /** the persistent popups (the notifications) over fullscreen clients
      * too, in the overlay layer; 0: under them, as the other popups */
     int persistent_overlay;
 } awl_popup_config_t;
-
-/** a menu's look, :c:func:`awl_menu_style` */
-typedef struct awl_menu_style_t {
-    uint32_t bg, fg, border, highlight, highlight_fg, dim;
-    int border_width, radius, blur;
-} awl_menu_style_t;
-
-/** the menus' look (:c:type:`awl_colors_t`'s menu_*, :c:member:`awl_popup_config_t.menu`)
- * with what is left out filled in from the popups', negative sizes and blur
- * as 0; blur_popups is the popups' blur (:c:member:`awl_config_t.blur`'s
- * popups) */
-static inline awl_menu_style_t awl_menu_style( const awl_colors_t* k, const awl_popup_config_t* c,
-                                               int blur_popups ) {
-    awl_menu_style_t m = {
-        .bg = k->menu_bg ? k->menu_bg : k->popup_bg,
-        .fg = k->menu_fg ? k->menu_fg : k->popup_fg,
-        .border = k->menu_border ? k->menu_border : k->popup_border,
-        .highlight = k->menu_highlight ? k->menu_highlight : k->popup_hover,
-        .dim = k->menu_dim ? k->menu_dim : k->popup_dim,
-        .border_width = c->menu.border_width < 0 ? 0 : c->menu.border_width ? c->menu.border_width : c->border_width,
-        .radius = c->menu.radius < 0 ? 0 : c->menu.radius ? c->menu.radius : c->radius,
-        .blur = c->menu.blur < 0 ? 0 : c->menu.blur ? c->menu.blur : blur_popups,
-    };
-    m.highlight_fg = k->menu_highlight_fg ? k->menu_highlight_fg : m.fg;
-    return m;
-}
 
 /** :c:member:`awl_config_t.tray`, the tray widget and its programs */
 typedef struct awl_tray_config_t {
@@ -457,9 +433,9 @@ typedef struct awl_tray_config_t {
  * blurred like the popups (:c:member:`awl_config_t.blur`) */
 typedef struct awl_desktop_config_t {
     /** the font, as :c:member:`awl_config_t.font` and fontsize (size appended to
-     * font); NULL and 0 each take the bar's */
+     * font); NULL and unset each take the bar's */
     const char *font;
-    int fontsize;
+    awl_opt_int_t fontsize;
     /** the alpha of hidden files' names (the colors are :c:type:`awl_plugin_colors_t`'s
      * desktop_*), its distance from the usable area's corner */
     uint8_t hidden_alpha;
@@ -648,6 +624,25 @@ typedef struct awl_config_t {
         int idle_pause;
     } notifications;
 } awl_config_t;
+
+/** fills in what c leaves unset (:c:type:`awl_opt_int_t`, the NULL fonts) with
+ * what it defaults to; once, after it is configured, before anything reads it */
+static inline void awl_config_fill_defaults( awl_config_t* c ) {
+    awl_colors_t* k = &c->colors;
+    AWL_FILL( k->menu_bg, k->popup_bg );
+    AWL_FILL( k->menu_fg, k->popup_fg );
+    AWL_FILL( k->menu_border, k->popup_border );
+    AWL_FILL( k->menu_highlight, k->popup_hover );
+    AWL_FILL( k->menu_highlight_fg, k->menu_fg.v );
+    AWL_FILL( k->menu_dim, k->popup_dim );
+    if (!c->popup.font) c->popup.font = c->font;
+    AWL_FILL( c->popup.fontsize, c->fontsize );
+    AWL_FILL( c->popup.menu.border_width, c->popup.border_width );
+    AWL_FILL( c->popup.menu.radius, c->popup.radius );
+    AWL_FILL( c->popup.menu.blur, c->blur.popups );
+    if (!c->desktop.font) c->desktop.font = c->font;
+    AWL_FILL( c->desktop.fontsize, c->fontsize );
+}
 
 /** an argv's first word (an autostart's, a spawn binding's) that starts
  * the rest in the tray's icon theme instead of the desktop's: for GTK

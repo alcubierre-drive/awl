@@ -231,9 +231,9 @@ static const level_t* child_of( const level_t* L ) {
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
                    int hover ) {
     level_t* L = data;
-    /* the blur is the window's (window_set_menu_style) */
-    const awl_menu_style_t c = awl_menu_style( &awl_config()->colors, &awl_config()->popup, 0 );
-    const uint32_t dim = c.dim, highlight_fg = c.highlight_fg;
+    const awl_colors_t* k = &awl_config()->colors;
+    const uint32_t dim = k->menu_dim.v, highlight_fg = k->menu_highlight_fg.v;
+    const int radius = MIN( awl_config()->popup.menu.radius.v, 4 );
     const level_t* sub = child_of( L );
     L->x0 = x0;
     for (int i = L->top; i < L->top + L->shown; i++) {
@@ -251,9 +251,9 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         const int lit = i == L->sel || (sub && sub->node == r->node);
         /* rounded as the frame, at most 4 */
         if (lit)
-            awl_fill_shape( pix, (float)x0, (float)y, (float)L->w, (float)r->h, (float)px( L, c.radius < 4 ? c.radius : 4 ),
-                        0, c.highlight );
-        const uint32_t fg = (flags & AWL_TRAY_MENU_DISABLED) ? dim : lit ? highlight_fg : c.fg;
+            awl_fill_shape( pix, (float)x0, (float)y, (float)L->w, (float)r->h, (float)px( L, radius ),
+                        0, k->menu_highlight.v );
+        const uint32_t fg = (flags & AWL_TRAY_MENU_DISABLED) ? dim : lit ? highlight_fg : k->menu_fg.v;
         int x = x0 + L->pad;
         if (L->check_w && (flags & (AWL_TRAY_MENU_CHECK | AWL_TRAY_MENU_RADIO))) {
             float s = (float)(L->check_w - L->gap);

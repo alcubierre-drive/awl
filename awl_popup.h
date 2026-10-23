@@ -33,6 +33,8 @@ typedef struct {
     int persistent;
     /** :c:func:`popupsetcolors`, 0: the style's */
     uint32_t bg, fg, border;
+    /** :c:func:`popupsetborderwidth`, < 0: the style's */
+    int border_width;
 } Popup;
 /** every popup, Popup.link, the newest last (on top) */
 extern struct wl_list popups;
@@ -70,13 +72,16 @@ void popupsgrabupdate(void);
 /** shows win on m beside the box x, y, w, h, a row of another popup, on
  * its right unless left (:c:func:`awl_window_show_beside`) */
 void popupshowbeside(awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
-/** makes win look like a menu, :c:func:`awl_menu_style`, from now on */
+/** makes win look like a menu (:c:type:`awl_colors_t`'s menu_*,
+ * :c:member:`awl_popup_config_t.menu`) from now on */
 void popupsetmenustyle(awl_window_t *win);
 /** makes win persistent, or not (see above), from now on */
 void popupsetpersistent(awl_window_t *win, int persistent);
 /** win's own background, text and border colors (0xRRGGBBAA) over the
  * style's, 0 keeps the style's */
 void popupsetcolors(awl_window_t *win, uint32_t bg, uint32_t fg, uint32_t border);
+/** win's own border width, logical pixels (0: none), < 0 for the style's */
+void popupsetborderwidth(awl_window_t *win, int width);
 /** win's last placement (:c:func:`awl_window_box`) into x, y, w, h; returns
  * whether it is visible */
 int popupbox(awl_window_t *win, int *x, int *y, int *w, int *h);
