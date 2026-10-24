@@ -143,7 +143,7 @@ static pixman_image_t* icon( int i ) {
     }
     if (!M.tried[i]) {
         M.tried[i] = 1;
-        /* an SVG only from a file: icon-data is a PNG */
+        /* an SVG or XPM only from a file: icon-data is a PNG */
         char source[128];
         snprintf( source, sizeof source, "tray menu entry '%s' (its %s)", n->label,
                   n->flags & AWL_TRAY_MENU_FILE ? "icon-name's file" : "icon-data" );

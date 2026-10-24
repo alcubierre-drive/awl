@@ -2,8 +2,8 @@
 
 /**
  * Icons without GTK: freedesktop icon theme lookup (the Icon Theme
- * Specification, as GTK does it) and decoding into pixman images, PNG
- * and JPEG through Wuffs (vendor/wuffs/), SVG through PlutoSVG
+ * Specification, as GTK does it) and decoding into pixman images, PNG,
+ * JPEG and GIF (its first frame) through Wuffs, XPM by icons/xpm.c (vendor/wuffs/), SVG through PlutoSVG
  * (vendor/plutosvg/svg.h), right into the image's pixels. PlutoSVG has no
  * stylesheets, but the icon themes' color scheme (KDE's, which Papirus and
  * Breeze follow: <style> rules
@@ -29,10 +29,10 @@ extern "C" {
 enum {
     /** files and data larger than this aren't read or decoded */
     AWL_ICON_MAX_BYTES = 2 << 20,
-    /** nor PNGs, JPEGs and pixmaps wider or higher than this, nor any icon
+    /** nor PNGs, JPEGs, GIFs and pixmaps wider or higher than this, nor any icon
      * asked for at more */
     AWL_ICON_MAX_DIM = 1024,
-    /** nor PNGs and JPEGs whose decoder needs more memory than this besides
+    /** nor PNGs, JPEGs and GIFs whose decoder needs more memory than this besides
      * the pixels: Wuffs' JPEG decoder takes up to 3 bytes a sample (a
      * progressive one's coefficients and the samples), so this is a CMYK
      * one of AWL_ICON_MAX_DIM² (12 MiB; YCbCr 4:4:4 is 9, 4:2:0 4.5,
@@ -47,6 +47,8 @@ enum {
     AWL_ICON_SYMBOLIC = 1 << 0,
     /** an SVG file (by its name; :c:func:`awl_icon_decode` goes by the content) */
     AWL_ICON_SVG = 1 << 1,
+    /** an XPM file (by its name, as AWL_ICON_SVG) */
+    AWL_ICON_XPM = 1 << 2,
 };
 
 /** icon lookup in a theme and the ones it inherits (icons/icon.c); opaque */
@@ -80,15 +82,16 @@ char* awl_icons_lookup( awl_icons_t* icons, const char* name, int px, const char
  * or is larger than :c:enumerator:`AWL_ICON_MAX_BYTES`. */
 void* awl_icon_read( const char* path, size_t* len );
 
-/** A PNG or JPEG (by their magic bytes), or an SVG if svg, fitted into max_w x max_h keeping its aspect
+/** A PNG, JPEG or GIF (its first frame; by their magic bytes), or an SVG or XPM if file (text formats, a
+ * file's, not pixels a client sent), fitted into max_w x max_h keeping its aspect
  * ratio (scaled up as well as down) as premultiplied PIXMAN_a8r8g8b8,
  * turned and mirrored as its EXIF orientation says (a JPEG's APP1, a PNG's
  * eXIf; fitted as shown); NULL
  * if it can't be decoded or is too large. source names the data in the
  * verbose log line each decode writes (its path, or e.g. "tray item 'x'";
  * NULL: "data"). */
-pixman_image_t* awl_icon_decode( const void* data, size_t len, int svg, int max_w, int max_h, const char* source );
-/** :c:func:`awl_icon_read` and :c:func:`awl_icon_decode` of path, SVG allowed */
+pixman_image_t* awl_icon_decode( const void* data, size_t len, int file, int max_w, int max_h, const char* source );
+/** :c:func:`awl_icon_read` and :c:func:`awl_icon_decode` of path, SVG and XPM allowed */
 pixman_image_t* awl_icon_load( const char* path, int max_w, int max_h );
 
 /** What a decode refuses beyond, for larger images than icons (a
@@ -99,7 +102,7 @@ typedef struct awl_icon_limits_t {
     /** the file's or data's bytes; an SVG's are AWL_ICON_MAX_BYTES at most
      * regardless (its parsing and rendering grow with them) */
     size_t bytes;
-    /** a PNG's or JPEG's width and height each, and both multiplied */
+    /** a PNG's, JPEG's or GIF's width and height each, and both multiplied */
     int dim;
     uint64_t pixels;
     /** the decoder's memory besides the pixels (see AWL_ICON_MAX_WORK) */
@@ -111,7 +114,7 @@ extern const awl_icon_limits_t awl_icon_limits;
 
 /** :c:func:`awl_icon_decode` within lim (NULL: :c:var:`awl_icon_limits`); what it is
  * fitted into is AWL_ICON_MAX_DIM at most still */
-pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int svg, int max_w, int max_h,
+pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int file, int max_w, int max_h,
                                          const char* source, const awl_icon_limits_t* lim );
 /** :c:func:`awl_icon_load` within lim (NULL: :c:var:`awl_icon_limits`) */
 pixman_image_t* awl_icon_load_limited( const char* path, int max_w, int max_h, const awl_icon_limits_t* lim );

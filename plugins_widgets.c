@@ -508,7 +508,7 @@ static pixman_image_t* sniwidget_icon( sniwidget_t* u, const awl_sni_item_t* it,
     if (it->file) {
         char source[128];
         snprintf( source, sizeof source, "tray item '%s' (its file)", it->name );
-        return awl_icon_decode( it->file->data, it->file->len, !!(it->file_flags & AWL_ICON_SVG), u->px, u->px, source );
+        return awl_icon_decode( it->file->data, it->file->len, !!(it->file_flags & (AWL_ICON_SVG | AWL_ICON_XPM)), u->px, u->px, source );
     }
     if (it->pixmaps)
         return awl_icon_from_pixmaps( (const awl_icon_pixmap_t*)it->pixmaps->data, it->npixmaps, u->px, u->px );

@@ -53,7 +53,8 @@ typedef struct awl_sni_item_t {
     char* name;
     /** changes whenever the icon does */
     uint32_t icon_gen;
-    /** the icon's file (a PNG, or an SVG with :c:enumerator:`AWL_ICON_SVG` in file_flags,
+    /** the icon's file (a PNG, or an SVG or XPM with :c:enumerator:`AWL_ICON_SVG` or
+     * :c:enumerator:`AWL_ICON_XPM` in file_flags,
      * :c:enumerator:`AWL_ICON_SYMBOLIC` too if it is one), else its pixmaps: the blob starts
      * with npixmaps :c:type:`awl_icon_pixmap_t`, whose data points behind them; both
      * NULL: none */

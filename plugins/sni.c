@@ -414,7 +414,7 @@ static void resolve( awl_sni_t* s, item_t* it ) {
             void* data = path ? awl_icon_read( path, &len ) : NULL;
             if (data && (file = blob_new( len ))) {
                 memcpy( file->data, data, len );
-                flags = f & (AWL_ICON_SVG | AWL_ICON_SYMBOLIC);
+                flags = f & (AWL_ICON_SVG | AWL_ICON_XPM | AWL_ICON_SYMBOLIC);
             }
             if (!data) awl_vrb_printf( "sni: item %s: icon '%s' not found\n", it->id, name );
             free( data );

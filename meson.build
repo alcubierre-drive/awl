@@ -208,7 +208,7 @@ plugins_sources = files(
   'plugins/readdir.c', 'plugins/sni.c', 'plugins/sni_menu.c', 'plugins/stats.c',
   'plugins/temp.c', 'plugins/thread.c', 'plugins/tray_menu_window.c',
   'plugins/tray_tooltip.c', 'plugins/wallpaper.c',
-  'vendor/wuffs/wuffs.c', 'icons/icon.c',
+  'vendor/wuffs/wuffs.c', 'icons/icon.c', 'icons/xpm.c',
 )
 # linked under a temporary name and copied into place by a rename, so a
 # running awl that reloads mid-build reads either the old or the new library,

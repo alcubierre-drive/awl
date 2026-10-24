@@ -1,0 +1,16 @@
+/* XPM */
+/* a comment with a "quote" */
+static const char* cases[] = {
+"8 2 8 2 3 4",
+"  c None",
+"a c #fff",
+"b c #FFFF00000000",
+"c c dark slate gray",
+"d s sym c #00ff00",
+"e m white c Red",
+"f g4 black g #808080",
+"g c NoSuchColor",
+/* pixels */
+"  a b c d e f g ",
+"  a b c d e f g extra"
+};

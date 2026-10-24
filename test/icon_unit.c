@@ -1,4 +1,5 @@
-/* Unit test of icons/icon.c's decoding: PNG and JPEG through Wuffs, from
+/* Unit test of icons/icon.c's decoding: PNG, JPEG and GIF through Wuffs,
+ * XPM through icons/xpm.c, from
  * the files in test/data (the first argument): their pixels, what is
  * refused, and truncated and mutated copies, which must fail or decode but
  * never crash (best run under ASan); and notifications' raw RGB(A) image
@@ -46,10 +47,16 @@ static uint8_t* load( const char* name, size_t* len ) {
     return data;
 }
 
+static int is_xpm( const char* name ) {
+    size_t n = strlen( name );
+    return n > 4 && !strcmp( name + n - 4, ".xpm" );
+}
+
+/* an XPM as a file's (it's text, as an SVG); the others as pixels a client sent */
 static pixman_image_t* decode( const char* name, int max_w, int max_h ) {
     size_t len;
     uint8_t* data = load( name, &len );
-    pixman_image_t* img = data ? awl_icon_decode( data, len, 0, max_w, max_h, name ) : NULL;
+    pixman_image_t* img = data ? awl_icon_decode( data, len, is_xpm( name ), max_w, max_h, name ) : NULL;
     free( data );
     return img;
 }
@@ -92,6 +99,12 @@ static void test_decode( void ) {
     img = decode( "rb.png", 64, 48 );
     CHECK( img && pixel( img, 8, 24 ) == 0xffff0000 && near( pixel( img, 56, 24 ), 0x80000080, 1 ) );
     if (img) pixman_image_unref( img );
+    /* GIF: its palette; animated, the first frame only, transparent where
+     * it is */
+    CHECK( red_blue( "rb.gif" ) );
+    img = decode( "anim.gif", 64, 48 );
+    CHECK( img && pixel( img, 8, 24 ) == 0xffff0000 && pixel( img, 56, 24 ) == 0 );
+    if (img) pixman_image_unref( img );
     /* fitted: scaled down keeping the aspect */
     img = decode( "baseline.jpg", 32, 32 );
     CHECK( img && pixman_image_get_width( img ) == 32 && pixman_image_get_height( img ) == 24 );
@@ -129,10 +142,75 @@ static void test_refused( void ) {
     free( data );
 }
 
+/* an inline XPM, as a file's or as pixels a client sent; 1 if it decodes */
+static int xpm_decodes( const char* s, int file ) {
+    pixman_image_t* img = awl_icon_decode( s, strlen( s ), file, 64, 64, "inline" );
+    if (img) pixman_image_unref( img );
+    return img != NULL;
+}
+
+#define XPM "/* XPM */\nstatic char* x[] = {\n"
+
+static void test_xpm( void ) {
+    pixman_image_t* img;
+    size_t len;
+    printf( "-- xpm\n" );
+    CHECK( red_blue( "rb.xpm" ) );
+    /* 2 characters a pixel, one key with a space: None, #rgb, 16 bits a
+     * channel, a name with spaces, "c" after "s", "c" over "m", "g" over
+     * "g4", an unknown name black; the hotspot ignored, a longer row too */
+    img = decode( "cases.xpm", 8, 2 );
+    static const uint32_t want[8] = { 0, 0xffffffff, 0xffff0000, 0xff2f4f4f,
+                                      0xff00ff00, 0xffff0000, 0xff808080, 0xff000000 };
+    int ok = img && pixman_image_get_width( img ) == 8 && pixman_image_get_height( img ) == 2;
+    for (int x = 0; ok && x < 8; x++) ok = pixel( img, x, 0 ) == want[x] && pixel( img, x, 1 ) == want[x];
+    for (int x = 0; img && !ok && x < 8; x++) printf( "      %d: %08x %08x\n", x, pixel( img, x, 0 ), want[x] );
+    CHECK( ok );
+    if (img) pixman_image_unref( img );
+
+    CHECK( xpm_decodes( XPM "\"2 1 1 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    /* from pixel data, as an SVG isn't */
+    CHECK( !xpm_decodes( XPM "\"2 1 1 1\",\n\"a c red\",\n\"aa\"};", 0 ) );
+    /* not one */
+    CHECK( !xpm_decodes( "/* XPN */ {\"2 1 1 1\",\"a c red\",\"aa\"};", 1 ) );
+    /* a row short, missing, a pixel of no color */
+    CHECK( !xpm_decodes( XPM "\"2 1 1 1\",\n\"a c red\",\n\"a\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"2 2 1 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"2 1 1 1\",\n\"a c red\",\n\"ab\"};", 1 ) );
+    /* a string not closed, across a line, a comment not closed */
+    CHECK( !xpm_decodes( XPM "\"2 1 1 1\",\n\"a c red\",\n\"aa", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"2 1 1 1\",\n\"a c red\",\n\"a\na\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "/* \"2 1 1 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    /* the values: broken, too many digits, too large, too many characters
+     * a pixel or colors, a color without a value; colors missing */
+    CHECK( !xpm_decodes( XPM "\"x 1 1 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"2 1 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"99999999999 1 1 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"1025 1 1 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"1 1 1 5\",\n\"aaaaa c red\",\n\"aaaaa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"2 1 999999 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"2 1 300 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"2 1 1 1\",\n\"a c\",\n\"aa\"};", 1 ) );
+    CHECK( !xpm_decodes( XPM "\"2 1 2 1\",\n\"a c red\",\n\"aa\"};", 1 ) );
+    /* every truncation fails, but those past the last row's quote */
+    uint8_t* data = load( "rb.xpm", &len );
+    int decoded = 0;
+    for (size_t n = 0; data && n < len; n++) {
+        img = awl_icon_decode( data, n, 1, 64, 48, "truncated" );
+        if (img) {
+            decoded++;
+            pixman_image_unref( img );
+        }
+    }
+    CHECK( data && decoded == 4 );
+    free( data );
+}
+
 /* each file with random bytes changed: decodes or not, never a crash */
 static void test_mutated( void ) {
     static const char* names[] = { "baseline.jpg", "progressive.jpg", "cmyk.jpg", "gray.jpg", "rb.png",
-                                   "exif6.jpg",    "exif8.png",       "quad.jpg" };
+                                   "exif6.jpg",    "exif8.png",       "quad.jpg", "rb.gif", "anim.gif",
+                                   "rb.xpm",       "cases.xpm" };
     int runs = 0;
     printf( "-- mutated\n" );
     srand( 1 );
@@ -151,14 +229,14 @@ static void test_mutated( void ) {
                 default: data[at] = rand() % 2 ? 0xff : 0x00; break;
                 }
             }
-            pixman_image_t* img = awl_icon_decode( data, len, 0, 64, 48, "mutated" );
+            pixman_image_t* img = awl_icon_decode( data, len, is_xpm( names[f] ), 64, 48, "mutated" );
             if (img) pixman_image_unref( img );
             runs++;
         }
         free( data );
         free( orig );
     }
-    CHECK( runs == 8 * 2000 );
+    CHECK( runs == (int)(sizeof( names ) / sizeof( names[0] )) * 2000 );
 }
 
 /* awl_icon_from_rgba(): the image-data hint's pixels, and what is refused */
@@ -349,6 +427,7 @@ int main( int argc, char** argv ) {
     verbose = getenv( "VERBOSE" ) != NULL;
     test_decode();
     test_refused();
+    test_xpm();
     test_mutated();
     test_rgba();
     test_large();

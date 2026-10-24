@@ -9,6 +9,7 @@
 #include "../awl_log.h"
 #include "../vendor/wuffs/wuffs.h"
 #include "../vendor/plutosvg/svg.h"
+#include "xpm.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -347,14 +348,15 @@ static int by_distance( const void* a_, const void* b_ ) {
 }
 
 /** name's files in folder, ``*flags`` what was found: at the exact size a PNG
- * first (drawn for it), else an SVG */
+ * first (drawn for it), else an SVG; an XPM last */
 static char* try_files( const char* folder, const char* name, int png_first, unsigned* flags ) {
     char path[PATH_MAX];
-    const char* exts[2] = { png_first ? ".png" : ".svg", png_first ? ".svg" : ".png" };
-    for (int i = 0; i < 2; i++) {
+    const char* exts[3] = { png_first ? ".png" : ".svg", png_first ? ".svg" : ".png", ".xpm" };
+    for (int i = 0; i < 3; i++) {
         if (snprintf( path, sizeof path, "%s/%s%s", folder, name, exts[i] ) >= (int)sizeof path) return NULL;
         if (!access( path, R_OK )) {
-            *flags = (exts[i][1] == 's' ? AWL_ICON_SVG : 0) | (has_suffix( path, "-symbolic.svg" ) ? AWL_ICON_SYMBOLIC : 0);
+            *flags = (exts[i][1] == 's' ? AWL_ICON_SVG : 0) | (exts[i][1] == 'x' ? AWL_ICON_XPM : 0) |
+                     (has_suffix( path, "-symbolic.svg" ) ? AWL_ICON_SYMBOLIC : 0);
             return strdup( path );
         }
     }
@@ -413,7 +415,7 @@ char* awl_icons_lookup( awl_icons_t* ic, const char* name, int px, const char* c
     if (!ic || !name || !*name) return NULL;
     if (name[0] == '/') {
         if (access( name, R_OK )) return NULL;
-        if (flags) *flags = (has_suffix( name, ".svg" ) ? AWL_ICON_SVG : 0) |
+        if (flags) *flags = (has_suffix( name, ".svg" ) ? AWL_ICON_SVG : 0) | (has_suffix( name, ".xpm" ) ? AWL_ICON_XPM : 0) |
                             (has_suffix( name, "-symbolic.svg" ) || has_suffix( name, ".symbolic.png" ) ? AWL_ICON_SYMBOLIC : 0);
         return strdup( name );
     }
@@ -706,8 +708,8 @@ static pixman_image_t* oriented( pixman_image_t* img, int o ) {
     return out;
 }
 
-/** a PNG's or JPEG's pixels through dec, a Wuffs decoder made for it, within
- * lim; kind names it in the log */
+/** a PNG's, JPEG's or GIF's (first frame) pixels through dec, a Wuffs
+ * decoder made for it, within lim; kind names it in the log */
 static pixman_image_t* wuffs_image( wuffs_base__image_decoder* dec, const uint8_t* data, size_t len, const char* kind,
                                     const awl_icon_limits_t* lim ) {
     const char* err = NULL;
@@ -779,6 +781,20 @@ static pixman_image_t* jpeg( const uint8_t* data, size_t len, const awl_icon_lim
                                                              WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
     if (wuffs_base__status__is_ok( &st ))
         img = wuffs_image( wuffs_jpeg__decoder__upcast_as__wuffs_base__image_decoder( dec ), data, len, "JPEG", lim );
+    free( dec );
+    return img;
+}
+
+/** the first frame only, no animation: over transparency where it doesn't
+ * cover the canvas */
+static pixman_image_t* gif( const uint8_t* data, size_t len, const awl_icon_limits_t* lim ) {
+    pixman_image_t* img = NULL;
+    wuffs_gif__decoder* dec = malloc( sizeof__wuffs_gif__decoder() );
+    if (!dec) return NULL;
+    wuffs_base__status st = wuffs_gif__decoder__initialize( dec, sizeof__wuffs_gif__decoder(), WUFFS_VERSION,
+                                                            WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
+    if (wuffs_base__status__is_ok( &st ))
+        img = wuffs_image( wuffs_gif__decoder__upcast_as__wuffs_base__image_decoder( dec ), data, len, "GIF", lim );
     free( dec );
     return img;
 }
@@ -956,11 +972,11 @@ static int sane( int max_w, int max_h ) {
     return max_w > 0 && max_h > 0 && max_w <= AWL_ICON_MAX_DIM && max_h <= AWL_ICON_MAX_DIM;
 }
 
-pixman_image_t* awl_icon_decode( const void* data, size_t len, int allow_svg, int max_w, int max_h, const char* source ) {
-    return awl_icon_decode_limited( data, len, allow_svg, max_w, max_h, source, NULL );
+pixman_image_t* awl_icon_decode( const void* data, size_t len, int file, int max_w, int max_h, const char* source ) {
+    return awl_icon_decode_limited( data, len, file, max_w, max_h, source, NULL );
 }
 
-pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int allow_svg, int max_w, int max_h,
+pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int file, int max_w, int max_h,
                                          const char* source, const awl_icon_limits_t* lim ) {
     static const uint8_t magic[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
     lim = limits_or_default( lim );
@@ -973,25 +989,41 @@ pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int allow
     int is_png = len >= sizeof magic && !memcmp( data, magic, sizeof magic );
     /* SOI, then a marker */
     int is_jpeg = len >= 3 && !memcmp( data, "\xff\xd8\xff", 3 );
-    if (is_png || is_jpeg) {
-        pixman_image_t* img = is_png ? png( data, len, lim ) : jpeg( data, len, lim );
+    int is_gif = len >= 6 && (!memcmp( data, "GIF87a", 6 ) || !memcmp( data, "GIF89a", 6 ));
+    if (is_png || is_jpeg || is_gif) {
+        pixman_image_t* img = is_png ? png( data, len, lim ) : is_jpeg ? jpeg( data, len, lim ) : gif( data, len, lim );
         if (!img) return NULL;
         int w = pixman_image_get_width( img ), h = pixman_image_get_height( img );
-        const int o = is_png ? png_orientation( data, len ) : jpeg_orientation( data, len );
+        /* a GIF has none */
+        const int o = is_png ? png_orientation( data, len ) : is_jpeg ? jpeg_orientation( data, len ) : 1;
         /* turned after scaling, where it's cheap: fitted on its side then */
         img = transposed( o ) ? scaled( img, max_h, max_w ) : scaled( img, max_w, max_h );
         if (img) img = oriented( img, o );
         if (img)
             awl_vrb_printf( "icon: decoded %s %s (%zu bytes): %dx%d, orientation %d, fitted to %dx%d into %dx%d\n",
-                            is_png ? "PNG" : "JPEG", source, len, w, h, o, pixman_image_get_width( img ),
+                            is_png ? "PNG" : is_jpeg ? "JPEG" : "GIF", source, len, w, h, o, pixman_image_get_width( img ),
                             pixman_image_get_height( img ), max_w, max_h );
         return img;
     }
-    if (allow_svg && len > AWL_ICON_MAX_BYTES) {
+    if (file && awl_xpm_is( data, len )) {
+        const char* err;
+        pixman_image_t* img = awl_xpm_decode( data, len, lim, &err );
+        if (!img) {
+            awl_vrb_printf( "icon: XPM %s: %s\n", source, err );
+            return NULL;
+        }
+        int w = pixman_image_get_width( img ), h = pixman_image_get_height( img );
+        img = scaled( img, max_w, max_h );
+        if (img)
+            awl_vrb_printf( "icon: decoded XPM %s (%zu bytes): %dx%d, fitted to %dx%d into %dx%d\n", source, len, w, h,
+                            pixman_image_get_width( img ), pixman_image_get_height( img ), max_w, max_h );
+        return img;
+    }
+    if (file && len > AWL_ICON_MAX_BYTES) {
         awl_vrb_printf( "icon: %s: too large for an SVG (%zu bytes)\n", source, len );
         return NULL;
     }
-    return allow_svg ? svg( data, len, max_w, max_h, source ) : NULL;
+    return file ? svg( data, len, max_w, max_h, source ) : NULL;
 }
 
 pixman_image_t* awl_icon_load( const char* path, int max_w, int max_h ) {

@@ -50,7 +50,7 @@ typedef struct awl_tray_menu_node_t {
     /** plain text without mnemonics (never NULL); shortcut e.g. "Ctrl+Q", or
      * NULL */
     char *label, *shortcut;
-    /** the icon's PNG, or SVG if :c:enumerator:`AWL_TRAY_MENU_FILE`, icon_len bytes (at
+    /** the icon's PNG, or SVG or XPM if :c:enumerator:`AWL_TRAY_MENU_FILE`, icon_len bytes (at
      * most AWL_ICON_MAX_BYTES, icons/icon.h), or NULL */
     uint8_t* icon;
     size_t icon_len;
