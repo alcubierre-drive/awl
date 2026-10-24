@@ -234,6 +234,7 @@ static const awl_config_t awl_config_defaults = {
         .timeout_low = 10000,
         .timeout_normal = 20000,
         .idle_pause = 10000,
+        .activate_urgent = 0,
     },
     .wallpaper = {
         .dir = "Wallpapers", .fade_ms = 500, .interval = 7200, .mode = WallpaperRand,

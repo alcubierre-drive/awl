@@ -622,6 +622,11 @@ typedef struct awl_config_t {
          * the last one, at least half the timeout: only time the user is
          * there counts (0: never pause) */
         int idle_pause;
+        /** a click on a notification (its ActivationToken,
+         * :c:func:`activationtoken`) only makes the client's window urgent,
+         * like any other client's xdg-activation, instead of showing and
+         * focusing it */
+        int activate_urgent;
     } notifications;
 } awl_config_t;
 

@@ -803,8 +803,10 @@ urgent(struct wl_listener *listener, void *data)
         return;
 
     /* the user asked for it (activationtoken()): to the window, on its
-     * monitor's view of its tags, back if it was minimized */
-    if (event->token->data == &activationmark && c->mon && !locked) {
+     * monitor's view of its tags, back if it was minimized; unless the
+     * config has it only urgent */
+    if (event->token->data == &activationmark && c->mon && !locked
+            && !cfg->notifications.activate_urgent) {
         if (!VISIBLEON(c, c->mon) && (c->tags & TAGMASK)) {
             c->mon->seltags ^= 1;
             c->mon->tagset[c->mon->seltags] = c->tags & TAGMASK;

@@ -228,7 +228,6 @@ static const Key keys[] = {
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_r,          AWL_ACTION(plugin_restart),   {0} },
     { MODKEY,                    XKB_KEY_w,          AWL_ACTION(wallpaper),        {.i = WallpaperTimerNext} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_W,          AWL_ACTION(wallpaper),        {.i = WallpaperTimerBack} },
-    // { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_N,          AWL_ACTION(spawn),            {.v = notification_action} }, // TODO this is not working
     { MODKEY,                    XKB_KEY_b,          AWL_ACTION(togglebw),         {0} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_B,          AWL_ACTION(changebw),         {.i=+1} },
     { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_B, AWL_ACTION(changebw), {.i=-1} },
@@ -337,6 +336,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the notifications' bell, from the icon theme */
     p->notify.bell_icon = "notifications-symbolic;preferences-system-notifications-symbolic";
     p->notify.bell_icon_dnd = "notifications-disabled-symbolic";
+    c->notifications.activate_urgent = 1;
 
     /* the popups */
     c->popup.border_width   = c->borderpx;

@@ -33,8 +33,8 @@ void urgent(struct wl_listener *listener, void *data);
 extern struct wlr_xdg_activation_v1 *activation;
 /** a new xdg-activation token of awl's own, for a client to activate a
  * window with because the user asked (a notification's action): such a
- * request gets the focus, switching to its tags; others only mark the
- * window urgent. Valid for xdg-activation's timeout or until used; NULL
+ * request gets the focus, switching to its tags (unless
+ * cfg->notifications.activate_urgent); others only mark the window urgent. Valid for xdg-activation's timeout or until used; NULL
  * if it couldn't be made. */
 const char *activationtoken(void);
 /* a client's events, XWayland's too */

@@ -395,7 +395,8 @@ typedef struct awl_host_t {
     void (*notif_close)( uint32_t id, awl_notif_reason_t reason );
     /** the user chose action key of notification id: ActionInvoked, after
      * ActivationToken with a new xdg-activation token of awl's, which the
-     * client may focus a window with (:c:func:`activationtoken`); then it closes,
+     * client may focus a window with (:c:func:`activationtoken`; or only make it
+     * urgent: :c:member:`awl_config_t.notifications.activate_urgent`); then it closes,
      * unless it is resident */
     void (*notif_invoke)( uint32_t id, const char* key );
     /** held: id doesn't expire (the pointer is over it); released, its
