@@ -261,7 +261,11 @@ the same way, through the backlight-tooler daemon's ``Adjust()`` and its
 Presses faster than PulseAudio answers add up in ``volume_delta``; each
 change that comes back differs from what was shown and replaces the
 notification in place. A change from elsewhere (a mixer) more than 1.5 s
-after the last press brings none.
+after the last press brings none: a mixer shows its own. A change none of
+awl's asks accounts for goes out only by its cause, labelled and in
+``colors.osd_unasked``: another output or port (pulsetest.c tells), or for
+the brightness the daemon's automatic update, an ``Update()`` or another
+client's ``Adjust()`` (the daemon's ``LastSource``).
 
 A wallpaper change
 ------------------

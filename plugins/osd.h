@@ -11,7 +11,11 @@
  * value changes to goes out then, and if it doesn't change (at its limit,
  * say) it goes out as it is after a moment. The brightness doesn't wait:
  * its daemon can be slow, so the value an ask should come to goes out at
- * once, and is corrected when all asks are answered.
+ * once, and is corrected when all asks are answered. A change that wasn't
+ * asked for goes out by its cause, with it as the summary and the bar in
+ * colors.osd_unasked: the daemon's automatic brightness, an ``Update()``
+ * or another client's ``Adjust()`` (the daemon's ``LastSource``), another
+ * output or port; not a mixer's change, nor a (re)connection's.
  * :c:enumerator:`AWL_NOTIF_OSD`: through do-not-disturb, not in the history, the menu or
  * the bar widget's counts.
  */
@@ -29,5 +33,6 @@ void awl_osd_volume( void );
  * as the volume does. */
 void awl_osd_brightness( float delta );
 /** :c:member:`awl_plugin_api_t.redraw`: sends what changed in answer to the asks,
- * corrects the brightness's guess */
+ * corrects the brightness's guess, and sends a change nobody here asked for
+ * by its cause */
 void awl_osd_redraw( void );

@@ -103,6 +103,7 @@ static void set_gone( awl_backlight_bus_t* s ) {
     changed |= set_int( &b->enabled, 0 );
     changed |= set_int( &b->screen, BACKLIGHT_UNKNOWN );
     changed |= set_int( &b->webcam, BACKLIGHT_UNKNOWN );
+    atomic_store( &b->source, BACKLIGHT_SOURCE_UNKNOWN );
     if (changed) awl_host->redraw_request();
 }
 
@@ -112,6 +113,15 @@ static int reply_ok( sd_bus_message* m, awl_backlight_bus_t* s ) {
     if (!sd_bus_message_is_method_error( m, NULL )) return 1;
     s->failed = 1;
     return 0;
+}
+
+/** ``LastSource``'s value as a :c:type:`backlight_source_t` */
+static int source_of( const char* v ) {
+    return !strcmp( v, "start" ) ? BACKLIGHT_SOURCE_START
+         : !strcmp( v, "timer" ) ? BACKLIGHT_SOURCE_TIMER
+         : !strcmp( v, "update" ) ? BACKLIGHT_SOURCE_UPDATE
+         : !strcmp( v, "adjust" ) ? BACKLIGHT_SOURCE_ADJUST
+         : BACKLIGHT_SOURCE_UNKNOWN;
 }
 
 /** Reads an a{sv} of the daemon's properties, keeps those we track and
@@ -139,6 +149,10 @@ static void read_properties( awl_backlight_bus_t* s, sd_bus_message* m, int runn
                 const int min = to_permille( v );
                 atomic_store( &b->screen_min, min < 0 ? 0 : min );
             }
+        } else if (!strcmp( key, "LastSource" )) {
+            const char* v = NULL;
+            if ((r = sd_bus_message_read( m, "v", "s", &v )) >= 0)
+                atomic_store( &b->source, source_of( v ) );
         } else if (!strcmp( key, "ScreenBrightness" ) || !strcmp( key, "WebcamValue" )) {
             double v;
             if ((r = sd_bus_message_read( m, "v", "d", &v )) >= 0)
@@ -473,6 +487,7 @@ awl_backlight_t* backlight_init( pa_mainloop_api* api ) {
     atomic_init( &b->enabled, 0 );
     atomic_init( &b->screen, BACKLIGHT_UNKNOWN );
     atomic_init( &b->webcam, BACKLIGHT_UNKNOWN );
+    atomic_init( &b->source, BACKLIGHT_SOURCE_UNKNOWN );
     atomic_init( &b->screen_min, 0 );
     atomic_init( &b->requests, 0 );
     atomic_init( &b->adjust, 0 );

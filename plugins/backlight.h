@@ -13,6 +13,21 @@ typedef struct awl_backlight_bus_t awl_backlight_bus_t;
  * isn't a brightness (NaN, out of [0,1]) */
 #define BACKLIGHT_INVALID (-2)
 
+/** :c:member:`awl_backlight_t.source`: what made the daemon's last change
+ * (``LastSource``) */
+typedef enum {
+    /** not known: none yet, or a daemon without ``LastSource`` */
+    BACKLIGHT_SOURCE_UNKNOWN,
+    /** the update at the daemon's start */
+    BACKLIGHT_SOURCE_START,
+    /** an automatic update, its timer */
+    BACKLIGHT_SOURCE_TIMER,
+    /** an ``Update()``, from anyone */
+    BACKLIGHT_SOURCE_UPDATE,
+    /** an ``Adjust()``, from anyone */
+    BACKLIGHT_SOURCE_ADJUST,
+} backlight_source_t;
+
 /** The backlight-tooler daemon, as seen on the user bus (backlight.c). */
 typedef struct awl_backlight_t {
     /** whether the daemon runs (owns ``org.BacklightTooler``) */
@@ -24,6 +39,9 @@ typedef struct awl_backlight_t {
     atomic_int screen;
     /** last webcam reading (``WebcamValue``) in per mille, likewise */
     atomic_int webcam;
+    /** what made the last change, a :c:type:`backlight_source_t`; set
+     * before the values that change with it */
+    atomic_int source;
     /** the lowest brightness ``Adjust()`` goes to (``ScreenMin``) in per
      * mille; 0 if not known */
     atomic_int screen_min;

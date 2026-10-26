@@ -81,6 +81,12 @@ typedef struct awl_plugin_colors_t {
     /** the bar of a notification with a value, its filled part; unset: its
      * frame's, which only the notification knows, so it stays unset here */
     awl_opt_color_t notify_progress;
+    /** the OSD's bar (plugins/osd.h); unset: notify_progress, else
+     * notify_low_fg (the OSD's urgency's text) */
+    awl_opt_color_t osd_progress;
+    /** the OSD's bar for a change awl didn't ask for, in place of
+     * osd_progress */
+    uint32_t osd_unasked;
     /** the desktop file list (awl_desktop.h): its background, the names of
      * files, folders and broken links */
     uint32_t desktop_bg, desktop_file, desktop_dir, desktop_broken;
@@ -224,7 +230,8 @@ typedef struct awl_plugin_config_t {
     /** the notification a volume or brightness change brings
      * (plugins/osd.h): the new value as a bar beside an icon, no text,
      * replaced in place while the changes go on; in colors.notify_low_*,
-     * the bar in colors.notify_progress (unset: notify_low_fg's); above 100%
+     * the bar in colors.osd_progress, or for a change awl didn't ask for
+     * in colors.osd_unasked with its cause as the summary; above 100%
      * the volume's bar stays full and fills again over it in colors.bad */
     struct {
         /** ms it stays after the last change */
@@ -238,6 +245,13 @@ typedef struct awl_plugin_config_t {
          * bell_icon; none found: no icon */
         struct { const char* muted, * low, * medium, * high, * over, * headphones; } volume_icons;
         struct { const char* off, * low, * medium, * high; } brightness_icons;
+        /** the summary of a change awl didn't ask for, by its cause; NULL:
+         * such a change doesn't show. The brightness's by the daemon's
+         * ``LastSource`` (unknown: a daemon without it; start: the update
+         * at its start, which shows only if awl knew the brightness
+         * before), the volume's by :c:type:`pulse_cause_t` */
+        struct { const char* unknown, * start, * timer, * update, * adjust; } brightness_unasked;
+        struct { const char* connect, * other, * sink, * port; } volume_unasked;
     } osd;
 } awl_plugin_config_t;
 

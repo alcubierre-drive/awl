@@ -34,6 +34,9 @@ struct PulseAudio {
     pa_io_event* _wake; // pulse_test_t.wake_fd
     char name[256]; // the default sink's
     char speaker[256]; // pulse_init()'s, "" if none
+    char port[256]; // the default sink's active port, as last seen
+    // the default sink changed from one to another, its first reading is due
+    int switched;
     pa_volume_t max; // pulse_init()'s
     // the default sink's as last seen, or as last set
     pa_cvolume volume;
@@ -69,6 +72,9 @@ pulse_test_t* pulse_init( pa_mainloop_api* api, float max, const char* speaker )
     atomic_init( &p->value, 0 );
     atomic_init( &p->muted, 0 );
     atomic_init( &p->speaker_muted, 0 );
+    atomic_init( &p->cause, PULSE_CAUSE_CONNECT );
+    atomic_init( &p->switches, 0 );
+    atomic_init( &p->switch_cause, PULSE_CAUSE_CONNECT );
     atomic_init( &p->requests, 0 );
     atomic_init( &p->volume_delta, 0 );
     p->wake_fd = eventfd( 0, EFD_CLOEXEC | EFD_NONBLOCK );
@@ -160,15 +166,31 @@ static void sink_info_callback( pa_context* c, const pa_sink_info* i, int eol, v
     PulseAudio* pa = userdata;
     pulse_test_t* t = pa->t;
     if (i && i->name && pa->speaker[0] && !strcmp( i->name, pa->speaker ) &&
-        atomic_exchange( &t->speaker_muted, !!i->mute ) != !!i->mute)
+        atomic_load( &t->speaker_muted ) != !!i->mute) {
+        atomic_store( &t->cause, PULSE_CAUSE_OTHER );
+        atomic_store( &t->speaker_muted, !!i->mute );
         awl_host->redraw_request();
+    }
     if (i && i->name && !strcmp( i->name, pa->name )) {
         float value = (float)pa_cvolume_avg(&(i->volume)) / (float)PA_VOLUME_NORM;
         int muted = i->mute;
+        const char* port = i->active_port && i->active_port->name ? i->active_port->name : "";
+        // the first reading of a sink is a switch only if there was one before
+        const int cause = !pa->volume_known ? (pa->switched ? PULSE_CAUSE_SINK : PULSE_CAUSE_CONNECT)
+                        : strcmp( pa->port, port ) ? PULSE_CAUSE_PORT : PULSE_CAUSE_OTHER;
+        const int switched = cause == PULSE_CAUSE_SINK || cause == PULSE_CAUSE_PORT;
+        snprintf( pa->port, sizeof(pa->port), "%s", port );
+        pa->switched = 0;
         pa->volume = i->volume;
         pa->volume_known = 1;
         pa->muted = muted;
-        int changed = atomic_exchange( &t->value, value ) != value;
+        atomic_store( &t->cause, cause );
+        if (switched) {
+            atomic_store( &t->switch_cause, cause );
+            atomic_fetch_add( &t->switches, 1 );
+        }
+        int changed = switched;
+        changed |= atomic_exchange( &t->value, value ) != value;
         changed |= atomic_exchange( &t->muted, muted ) != muted;
         if (changed) awl_host->redraw_request();
     }
@@ -181,6 +203,7 @@ static void server_info_callback( pa_context* c, const pa_server_info* i, void* 
     /*P_awl_log_printf( "pulse sink name = %s", name );*/
     int same = !strcmp( pa->name, name );
     if (!same) {
+        pa->switched = pa->name[0] != 0;
         snprintf( pa->name, sizeof(pa->name), "%s", name );
         pa->volume_known = 0;
     }
@@ -216,6 +239,8 @@ static void PulseAudio_drop_context( PulseAudio* p ) {
     pa_context_unref( c );
     // force a fresh sink lookup after reconnecting
     p->name[0] = 0;
+    p->port[0] = 0;
+    p->switched = 0;
     p->volume_known = 0;
 }
 

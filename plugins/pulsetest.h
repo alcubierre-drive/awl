@@ -6,12 +6,33 @@
 /** the PulseAudio connection, on the poller thread; opaque */
 typedef struct PulseAudio PulseAudio;
 
+/** :c:member:`pulse_test_t.cause`: what made a change, as far as awl can
+ * tell; PulseAudio doesn't say who changed a volume */
+typedef enum {
+    /** the first reading after a (re)connection */
+    PULSE_CAUSE_CONNECT,
+    /** a change to the same sink on the same port: a mixer, another
+     * program, or our own asks (which only the asker knows) */
+    PULSE_CAUSE_OTHER,
+    /** the default sink switched to another one */
+    PULSE_CAUSE_SINK,
+    /** the default sink switched its port (headphones plugged, say) */
+    PULSE_CAUSE_PORT,
+} pulse_cause_t;
+
 /** The default sink's volume. */
 typedef struct pulse_test_t {
     _Atomic float value;
     atomic_int muted;
     /** whether the speaker sink (:c:func:`pulse_init`) is muted; 0 without one */
     atomic_int speaker_muted;
+    /** what made the last change to them, a :c:type:`pulse_cause_t`; set
+     * before them */
+    atomic_int cause;
+    /** counts the default sink's switches (:c:enumerator:`PULSE_CAUSE_SINK`,
+     * :c:enumerator:`PULSE_CAUSE_PORT`), news even if they leave the volume
+     * as it was; switch_cause is the last one's cause */
+    atomic_int switches, switch_cause;
 
     /** requests for the loop thread, from any thread (pulsetest.c) */
     atomic_int requests;

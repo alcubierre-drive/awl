@@ -61,6 +61,8 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .notify_low_frame      = AWL_SOME( molokai_dark_gray ),
         .notify_critical_frame = AWL_SOME( molokai_red ),
         /* .notify_progress: unset, the frame's */
+        /* .osd_progress: unset, notify_progress, else notify_low_fg */
+        .osd_unasked    = molokai_green,
         .desktop_bg     = 0x3c3c3c4c,
         .desktop_file   = 0xf8f8f2ff,
         .desktop_dir    = molokai_blue,
@@ -132,6 +134,17 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
             .low = "display-brightness-low-symbolic;display-brightness-symbolic;video-display-brightness-symbolic",
             .medium = "display-brightness-medium-symbolic;display-brightness-symbolic;video-display-brightness-symbolic",
             .high = "display-brightness-high-symbolic;display-brightness-symbolic;video-display-brightness-symbolic",
+        },
+        .brightness_unasked = {
+            .unknown = "Brightness",
+            .timer = "Automatic",
+            .update = "Measured",
+            .adjust = "Adjusted elsewhere",
+        },
+        /* a mixer's (other) shows its own */
+        .volume_unasked = {
+            .sink = "Output switched",
+            .port = "Port switched",
         },
     },
 };

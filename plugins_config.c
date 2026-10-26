@@ -404,6 +404,7 @@ void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t
     AWL_FILL( k->notify_critical_fg, ak->popup_fg );
     AWL_FILL( k->notify_critical_bg, ak->popup_bg );
     AWL_FILL( k->notify_critical_frame, ak->popup_border );
+    AWL_FILL( k->osd_progress, AWL_OR( k->notify_progress, k->notify_low_fg.v ) );
     AWL_FILL( p->osd.width, p->notify.width );
     AWL_FILL( p->osd.image_size, p->notify.image_size );
 }

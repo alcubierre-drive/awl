@@ -24,6 +24,12 @@ typedef struct {
     int due;
     /** the state last sent (:c:func:`state`), or found when the watch began */
     long long shown;
+    /** NULL: the watch is for our asks; else it began with a change we
+     * didn't ask for (:c:func:`unasked`), which its changes go out as */
+    const char* label;
+    /** the state and :c:func:`switches` the last redraw found; -1 not known */
+    long long seen;
+    int switches;
 } watch_t;
 
 static struct {
@@ -72,8 +78,10 @@ static long long brightness_looks( long long s ) {
     return percent( b ) * 4 + brightness_level( b );
 }
 
-/** k's notification for state s (known) */
-static void send( kind_t k, long long s ) {
+/** k's notification for state s (known); label: NULL for an answer to our
+ * asks, else the summary of a change we didn't ask for, which also gets
+ * the bar in colors.osd_unasked */
+static void send( kind_t k, long long s, const char* label ) {
     const awl_plugin_config_t* pc = awl_plugin_config();
     awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
     n.urgency = AWL_NOTIF_LOW;
@@ -82,8 +90,10 @@ static void send( kind_t k, long long s ) {
     AWL_SET( n.look.width, CFG->width.v );
     AWL_SET( n.look.image_size, CFG->image_size.v );
     AWL_SET( n.look.frame_width, 0 );
-    /* the low urgency's frame is too dim for the bar's fill: the text's */
-    AWL_SET( n.look.progress, AWL_OR( pc->colors.notify_progress, pc->colors.notify_low_fg.v ) );
+    /* the low urgency's frame is too dim for the bar's fill: osd_progress
+     * falls back on the text's */
+    AWL_SET( n.look.progress, label ? pc->colors.osd_unasked : pc->colors.osd_progress.v );
+    n.summary = label;
     if (k == OSD_VOLUME) {
         const float v = (float)(s / 4) / 1000.0f, max = pc->volume.max;
         const int muted = (int)(s & 2), speaker_muted = (int)(s & 1);
@@ -122,8 +132,67 @@ static void settle( void ) {
     const long long s = state( OSD_BRIGHTNESS );
     O.guess = -1;
     if (s < 0) return;
-    if (brightness_looks( s ) != brightness_looks( w->shown )) send( OSD_BRIGHTNESS, s );
+    if (brightness_looks( s ) != brightness_looks( w->shown )) send( OSD_BRIGHTNESS, s, w->label );
     w->shown = s;
+}
+
+/** k's switches of device (pulsetest.h), news even with the same state; 0
+ * for the brightness */
+static int switches( kind_t k ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    return k == OSD_VOLUME && P && P->pulse ? atomic_load( &P->pulse->switches ) : 0;
+}
+
+/** the label of k's last change, as a change we didn't ask for
+ * (:c:member:`awl_plugin_config_t.osd`'s brightness_unasked and
+ * volume_unasked); switched: whether the device switched since the last
+ * redraw, which it was then even if a change of the other kind came after */
+static const char* label( kind_t k, int switched ) {
+    awl_plugin_data_t* P = awl_plugin_get();
+    if (!P) return NULL;
+    if (k == OSD_BRIGHTNESS) {
+        if (!P->backlight) return NULL;
+        switch (atomic_load( &P->backlight->source )) {
+            case BACKLIGHT_SOURCE_UNKNOWN: return CFG->brightness_unasked.unknown;
+            case BACKLIGHT_SOURCE_START: return CFG->brightness_unasked.start;
+            case BACKLIGHT_SOURCE_TIMER: return CFG->brightness_unasked.timer;
+            case BACKLIGHT_SOURCE_UPDATE: return CFG->brightness_unasked.update;
+            case BACKLIGHT_SOURCE_ADJUST: return CFG->brightness_unasked.adjust;
+            default: return NULL;
+        }
+    }
+    if (!P->pulse) return NULL;
+    switch (atomic_load( switched ? &P->pulse->switch_cause : &P->pulse->cause )) {
+        case PULSE_CAUSE_CONNECT: return CFG->volume_unasked.connect;
+        case PULSE_CAUSE_OTHER: return CFG->volume_unasked.other;
+        case PULSE_CAUSE_SINK: return CFG->volume_unasked.sink;
+        case PULSE_CAUSE_PORT: return CFG->volume_unasked.port;
+        default: return NULL;
+    }
+}
+
+/** A change to k none of our asks accounts for: the daemon's automatic
+ * brightness, an Update() or another client's Adjust(), another output or
+ * port. Not from not known (the daemon or PulseAudio (re)connects, a
+ * reload), the brightness only if it looks different, and only if its
+ * cause has a label (:c:func:`label`). Its watch begins: what follows within WATCH_MS (a
+ * new sink's volume after its port, say) goes out the same way. */
+static void unasked( kind_t k, long long now ) {
+    watch_t* w = &O.w[k];
+    const long long s = state( k ), seen = w->seen;
+    const int sw = switches( k ), switched = sw != w->switches;
+    w->seen = s;
+    w->switches = sw;
+    if (watching( w, now ) || s < 0 || seen < 0) return;
+    if (k == OSD_BRIGHTNESS && (O.guess >= 0 || brightness_looks( s ) == brightness_looks( seen ))) return;
+    if (s == seen && !switched) return;
+    const char* l = label( k, switched );
+    if (!l) return;
+    send( k, s, l );
+    w->shown = s;
+    w->asked = now;
+    w->label = l;
+    w->due = 0;
 }
 
 void awl_osd_redraw( void ) {
@@ -136,10 +205,11 @@ void awl_osd_redraw( void ) {
         if (!watching( w, now )) continue;
         const long long s = state( (kind_t)k );
         if (s < 0 || s == w->shown) continue;
-        send( (kind_t)k, s );
+        send( (kind_t)k, s, w->label );
         w->shown = s;
         w->due = 0;
     }
+    for (int k = 0; k < OSD_N; k++) unasked( (kind_t)k, now );
 }
 
 /** no change came in QUIET_MS: what is asked for goes out as it is (at its
@@ -150,7 +220,7 @@ static void quiet( void* data ) {
         watch_t* w = &O.w[k];
         const long long s = state( (kind_t)k );
         if (!w->due || s < 0) continue;
-        send( (kind_t)k, s );
+        send( (kind_t)k, s, w->label );
         w->shown = s;
         w->due = 0;
     }
@@ -163,6 +233,7 @@ static void ask( kind_t k ) {
     /* what it is now isn't news; what it changes to is */
     if (!watching( w, now )) w->shown = state( k );
     w->asked = now;
+    w->label = NULL;
     w->due = 1;
     awl_host->timer_set( O.timer, QUIET_MS );
 }
@@ -186,9 +257,10 @@ void awl_osd_brightness( float delta ) {
     long long g = base + lroundf( delta * 1000.0f );
     if (g < min) g = min;
     if (g > 1000) g = 1000;
-    send( OSD_BRIGHTNESS, g );
+    send( OSD_BRIGHTNESS, g, NULL );
     O.guess = g;
     w->asked = now_ms();
+    w->label = NULL;
     w->shown = g;
     w->due = 0;
 }
@@ -196,6 +268,7 @@ void awl_osd_brightness( float delta ) {
 int awl_osd_start( void ) {
     memset( &O, 0, sizeof O );
     O.guess = -1;
+    for (int k = 0; k < OSD_N; k++) O.w[k].seen = -1;
     O.timer = awl_host->timer_add( quiet, NULL );
     return 0;
 }
@@ -204,4 +277,5 @@ void awl_osd_stop( void ) {
     awl_host->timer_remove( O.timer );
     memset( &O, 0, sizeof O );
     O.guess = -1;
+    for (int k = 0; k < OSD_N; k++) O.w[k].seen = -1;
 }
