@@ -49,6 +49,12 @@ static void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
     if (p) backlight_toggle( p->backlight );
 }
 
+/** forces an automatic backlight update (:c:func:`backlight_update`) */
+static void AWL_ACTION( backlightupdate )( const Arg* arg ) {
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) backlight_update( p->backlight );
+}
+
 /** changes the screen's brightness by arg->f (:c:func:`awl_brightness_adjust`) */
 static void AWL_ACTION( brightness )( const Arg* arg ) {
     awl_brightness_adjust( arg->f );
@@ -204,7 +210,8 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_r,          AWL_ACTION(launcher),         {.i = AWL_LAUNCHER_RUN} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_P,          AWL_ACTION(notifyconfig),     {0} },
     { MODKEY,                    XKB_KEY_Return,     AWL_ACTION(spawn),            {.v = termcmd} },
-    { MODKEY,                    XKB_KEY_y,          AWL_ACTION(backlighttoggle),  {0} },
+    { MODKEY,                    XKB_KEY_y,          AWL_ACTION(backlightupdate),  {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Y,          AWL_ACTION(backlighttoggle),  {0} },
     { MODKEY,                    XKB_KEY_i,          AWL_ACTION(togglebar),        {0} },
     { MODKEY,                    XKB_KEY_j,          AWL_ACTION(focusstack),       {.i = +1} },
     { MODKEY,                    XKB_KEY_k,          AWL_ACTION(focusstack),       {.i = -1} },
