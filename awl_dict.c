@@ -22,8 +22,9 @@ struct awl_dict_t {
 #define LOCK(d) pthread_mutex_lock(&((awl_dict_t *)(d))->lock)
 #define UNLOCK(d) pthread_mutex_unlock(&((awl_dict_t *)(d))->lock)
 
-static char tombstone_marker;
-#define TOMBSTONE (&tombstone_marker)
+/* a deleted entry's key: only its address counts, nothing writes to it */
+static const char tombstone_marker;
+#define TOMBSTONE ((char *)&tombstone_marker)
 #define LIVE(e) ((e)->key && (e)->key != TOMBSTONE)
 
 /* FNV-1a */

@@ -15,8 +15,8 @@
  *
  * The library still reads awl's structs directly (:c:type:`awl_bar_t`, :c:type:`widget_t`,
  * :c:type:`awl_config_t`, :c:type:`Arg`; all in awl.h), so it has to be built from the same
- * headers as the running awl. :c:type:`Monitor` and :c:type:`Client` are opaque to it: it
- * only hands them back to awl. The entry point refuses a
+ * headers as the running awl. :c:type:`Monitor` and :c:type:`Client` are opaque to it, their bodies
+ * in awl_core.h, which it can't include: it only hands them back to awl. The entry point refuses a
  * host whose ABI version or struct sizes differ from its own. Bump :c:macro:`AWL_PLUGIN_ABI` whenever either table
  * changes.
  */

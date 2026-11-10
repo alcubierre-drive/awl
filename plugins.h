@@ -101,6 +101,12 @@ typedef struct awl_plugin_colors_t {
 
 #define AWL_BAR_COLOR_PIXMAN( name ) pixman_color_t name;
 
+/** how many time zones the calendar shows at most
+ * (:c:member:`awl_plugin_config_t.calendar`'s zones); -D to change */
+#ifndef AWL_PLUGINS_MAX_N_ZONES
+#define AWL_PLUGINS_MAX_N_ZONES 4
+#endif
+
 /**
  * What only the plugin library reads of the configuration: its defaults
  * (plugins_config_defaults.h) with plugins_config.c's changes, next to
@@ -165,9 +171,6 @@ typedef struct awl_plugin_config_t {
          * button. */
         const char* const* app;
         const char* app_label;
-#ifndef AWL_PLUGINS_MAX_N_ZONES
-#define AWL_PLUGINS_MAX_N_ZONES 4
-#endif
         /** other time zones, a row each above the month: the label (id)
          * left, the zone's time right. zone is an IANA identifier
          * (``Europe/Berlin``, as g_time_zone_new_identifier() takes it);
@@ -177,7 +180,7 @@ typedef struct awl_plugin_config_t {
             const char* id;
             const char* zone;
         } zones[AWL_PLUGINS_MAX_N_ZONES];
-        /** how many of zones are set, AWL_PLUGINS_MAX_N_ZONES at most */
+        /** how many of zones are set, :c:macro:`AWL_PLUGINS_MAX_N_ZONES` at most */
         int n_zones;
         /** the zones' times, a g_date_time_format() format; NULL or "":
          * no zones are shown */

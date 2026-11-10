@@ -4,7 +4,7 @@
  * The bar as awl and the plugin library share it: `awl_bar_t`, part of its
  * Monitor (Monitor.bar), with its fonts, its widgets (`widget_t`) and what
  * awl tells them. awl_bar.h is what awl does with it. No wlroots here;
- * awl.h includes this for Monitor.
+ * awl.h includes this; Monitor (awl_core.h) holds one.
  */
 
 #include "awl_draw.h"

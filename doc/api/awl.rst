@@ -4,7 +4,9 @@ awl
 The compositor itself. awl.h holds every type the plugin library shares with
 awl, the configuration :c:type:`awl_config_t` among them; awl_core.h the types only
 awl's modules share; awl_server.h the core objects every part of awl uses
-(the display, the backend, the scene, the seat). awl.c starts awl, runs its
+(the display, the backend, the scene, the seat), made by ``main()`` and
+passed in; awl_process.h the process' state, :c:var:`awl_proc`, the core's
+only global. awl.c starts awl, runs its
 main loop and takes it down again; everything else is a module of its own,
 each with a header: the configuration, its defaults (awl_config_defaults.h) and its
 reloads (awl_config.h), the
@@ -29,6 +31,11 @@ awl_server.h
 ------------
 
 .. c:autodoc:: awl_server.h
+
+awl_process.h
+-------------
+
+.. c:autodoc:: awl_process.h
 
 awl.c
 -----

@@ -6,13 +6,13 @@
 # PNG, JPEG, GIF and XPM decoding (test/data). Each
 # exits with the number of failed checks.
 window_unit = executable('window_unit', 'window_unit.c', protocol_headers,
-  objects: awl.extract_objects('awl_window_draw.c', 'awl_draw.c', 'awl_log.c'),
+  objects: awl.extract_objects('awl_window_draw.c', 'awl_draw.c', 'awl_log.c', 'awl_process.c'),
   c_args: awl_c_args,
   include_directories: root_inc,
   dependencies: awl_deps,
 )
 font_unit = executable('font_unit', 'font_unit.c', protocol_headers,
-  objects: awl.extract_objects('awl_draw.c', 'awl_log.c'),
+  objects: awl.extract_objects('awl_draw.c', 'awl_log.c', 'awl_process.c'),
   c_args: awl_c_args,
   include_directories: root_inc,
   dependencies: awl_deps,

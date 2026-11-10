@@ -1,15 +1,21 @@
 #pragma once
 
 /**
- * The compositor's state, :c:type:`awl_server_t`: made by setup() (awl.c)
- * and shared by all of awl's modules. The display and its event loop, the
+ * The compositor's state, :c:type:`awl_server_t`: made by ``main()``, set
+ * up by setup() (awl.c) and passed to all of awl's modules. The display and its event loop, the
  * backend, the renderer, the scene with its layers, the seat, the config,
  * and as member structs the monitors (awl_output.c), the clients
  * (awl_client.c), the pointer (awl_cursor.c) and the popups (awl_popup.c).
- * For now it's reached through the :c:var:`awl` global, which goes away
- * once the functions take it as a parameter (PLAN-globals.md). Main thread
- * only.
+ * Every function that needs it takes it first (``awl_server_t *srv``);
+ * listeners get it from their object's back pointer or from
+ * ``wl_container_of`` on :c:member:`awl_server_t.listen`. Main thread only:
+ * other threads reach awl through ``awl_host`` and awl_redraw.h. What
+ * belongs to the process rather than the compositor is in awl_process.h.
  */
+
+#ifdef AWL_HOSTED
+#error "awl_server.h is awl's: the library gets awl_server_t only as a pointer to hand back to awl_host"
+#endif
 
 #include "awl_core.h"
 #include "awl_util.h"
@@ -229,9 +235,3 @@ typedef struct awl_server_t {
 #endif
     } listen;
 } awl_server_t;
-
-/** the compositor, for now: goes away once everything takes it as a parameter */
-extern awl_server_t *awl;
-
-
-

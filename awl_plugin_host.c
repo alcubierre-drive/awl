@@ -10,6 +10,7 @@
 #include "awl_notifications.h"
 #include "awl_output.h"
 #include "awl_popup.h"
+#include "awl_process.h"
 #include "awl_redraw.h"
 #include "awl_window.h"
 
@@ -23,7 +24,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-/** :c:member:`awl_host_t.timer_add() <awl_host_t.timer_add>`'s timers, ``link`` in timers: the plugins',
+/** :c:member:`awl_host_t.timer_add() <awl_host_t.timer_add>`'s timers,
+ * ``link`` in :c:member:`awl_process_t.plugins`' timers: the plugins',
  * reaped after they stop (:c:func:`pluginsreap`) */
 struct awl_timer {
     struct wl_event_source* source;
@@ -31,7 +33,6 @@ struct awl_timer {
     void* data;
     struct wl_list link;
 };
-static struct wl_list timers = { &timers, &timers };
 
 static int timer_fire( void* data ) {
     awl_timer_t* t = data;
@@ -47,7 +48,7 @@ static awl_timer_t* timer_add( awl_server_t* srv, void (*fn)( void* data ), void
     t->fn = fn;
     t->data = data;
     t->source = wl_event_loop_add_timer( srv->event_loop, timer_fire, t );
-    wl_list_insert( &timers, &t->link );
+    wl_list_insert( &awl_proc.plugins.timers, &t->link );
     return t;
 }
 
@@ -75,7 +76,7 @@ static void notifinvoke( awl_server_t* srv, uint32_t id, const char* key ) {
 static void pluginsreap( awl_server_t *srv ) {
     awl_timer_t *t, *tmp;
     int np = popupsreap(srv), nt = 0;
-    wl_list_for_each_safe( t, tmp, &timers, link ) {
+    wl_list_for_each_safe( t, tmp, &awl_proc.plugins.timers, link ) {
         nt++;
         timer_remove( t );
     }
@@ -83,7 +84,9 @@ static void pluginsreap( awl_server_t *srv ) {
         awl_wrn_printf( "plugins: the library left %d popup(s) and %d timer(s), removed\n", np, nt );
 }
 
-static awl_host_t host = {
+/** what the library gets as awl_host, copied to :c:member:`awl_process_t.plugins`
+ * on the first load, which sets its srv and cfg.s */
+static const awl_host_t host_template = {
     .abi = AWL_PLUGIN_ABI,
     .sizeof_host = sizeof(awl_host_t),
     .sizeof_draw = sizeof(awl_bar_t),
@@ -160,13 +163,6 @@ static awl_host_t host = {
     .timer_remove = timer_remove,
 };
 
-static void* handle = NULL;
-/** the memfd handle was loaded from, see :c:func:`libopen` */
-static int handle_fd = -1;
-static const awl_plugin_api_t* api = NULL;
-static int paused = 0;
-static int covered = 0;
-
 /** $AWL_PLUGINS, or libawlplugins.so next to the awl binary */
 static int libpath( char* out, size_t n ) {
     const char* env = getenv( "AWL_PLUGINS" );
@@ -235,7 +231,7 @@ static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
     void* sym = dlsym( h, AWL_PLUGIN_ENTRY );
     awl_plugin_entry_t entry;
     memcpy( &entry, &sym, sizeof(entry) );
-    const awl_plugin_api_t* a = entry ? entry( &host ) : NULL;
+    const awl_plugin_api_t* a = entry ? entry( &awl_proc.plugins.host ) : NULL;
     if (!a || a->abi != AWL_PLUGIN_ABI) {
         awl_err_printf( "plugins: %s: %s\n", path, !entry ? "no entry point" :
                  "built against different headers than this awl (rebuild both)" );
@@ -250,14 +246,15 @@ static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
 }
 
 int awl_plugins_load( awl_server_t* srv, int p, awl_dict_t* cfg ) {
-    host.srv = srv;
-    paused = p;
-    host.cfg.s = cfg;
-    if (!(api = libopen( &handle, &handle_fd )))
+    awl_proc.plugins.host = host_template;
+    awl_proc.plugins.host.srv = srv;
+    awl_proc.plugins.paused = p;
+    awl_proc.plugins.host.cfg.s = cfg;
+    if (!(awl_proc.plugins.api = libopen( &awl_proc.plugins.handle, &awl_proc.plugins.handle_fd )))
         return -1;
     awl_log_printf( "plugins: setting up\n" );
-    api->init( paused );
-    api->session_covered( covered );
+    awl_proc.plugins.api->init( awl_proc.plugins.paused );
+    awl_proc.plugins.api->session_covered( awl_proc.plugins.covered );
     awl_log_printf( "plugins: set up\n" );
     return 0;
 }
@@ -267,7 +264,7 @@ int awl_plugins_load( awl_server_t* srv, int p, awl_dict_t* cfg ) {
  * crash */
 static void stop( awl_server_t* srv, void* h, int fd ) {
     awl_log_printf( "plugins: tearing down\n" );
-    int stuck = api && api->fini();
+    int stuck = awl_proc.plugins.api && awl_proc.plugins.api->fini();
     pluginsreap(srv);
     if (stuck) {
         awl_wrn_printf( "plugins: a plugin thread is stuck, keeping its library loaded\n" );
@@ -287,20 +284,20 @@ int awl_plugins_reload( awl_server_t* srv, void (*detach)( awl_server_t* srv ), 
     // nothing may point into the old library past this
     detach( srv );
     if (next) {
-        stop( srv, handle, handle_fd );
-        handle = h;
-        handle_fd = fd;
-        api = next;
-    } else if (api) {
+        stop( srv, awl_proc.plugins.handle, awl_proc.plugins.handle_fd );
+        awl_proc.plugins.handle = h;
+        awl_proc.plugins.handle_fd = fd;
+        awl_proc.plugins.api = next;
+    } else if (awl_proc.plugins.api) {
         awl_wrn_printf( "plugins: no new library, restarting the old one in place\n" );
-        api->fini(); // restart in place; a stuck thread stays stuck either way
+        awl_proc.plugins.api->fini(); // restart in place; a stuck thread stays stuck either way
         pluginsreap(srv);
         awl_log_printf( "plugins: torn down, the library stays loaded\n" );
     }
-    if (api) {
+    if (awl_proc.plugins.api) {
         awl_log_printf( "plugins: setting up\n" );
-        api->init( paused );
-        api->session_covered( covered );
+        awl_proc.plugins.api->init( awl_proc.plugins.paused );
+        awl_proc.plugins.api->session_covered( awl_proc.plugins.covered );
     }
     attach( srv );
     awl_log_printf( "plugins: reload done%s\n", next ? "" : " (the old library)" );
@@ -308,35 +305,35 @@ int awl_plugins_reload( awl_server_t* srv, void (*detach)( awl_server_t* srv ), 
 }
 
 void awl_plugins_unload( awl_server_t *srv ) {
-    stop( srv, handle, handle_fd );
-    api = NULL;
-    handle = NULL;
-    handle_fd = -1;
-    host.cfg.s = NULL;
+    stop( srv, awl_proc.plugins.handle, awl_proc.plugins.handle_fd );
+    awl_proc.plugins.api = NULL;
+    awl_proc.plugins.handle = NULL;
+    awl_proc.plugins.handle_fd = -1;
+    awl_proc.plugins.host.cfg.s = NULL;
 }
 
 void awl_plugins_set_paused( int p ) {
-    paused = p;
-    if (api) api->set_paused( paused );
+    awl_proc.plugins.paused = p;
+    if (awl_proc.plugins.api) awl_proc.plugins.api->set_paused( awl_proc.plugins.paused );
 }
 
 void awl_plugins_set_covered( int c ) {
-    covered = c;
-    if (api) api->session_covered( covered );
+    awl_proc.plugins.covered = c;
+    if (awl_proc.plugins.api) awl_proc.plugins.api->session_covered( awl_proc.plugins.covered );
 }
 
 void awl_plugins_notifications_changed( void ) {
-    if (api) api->notifications_changed();
+    if (awl_proc.plugins.api) awl_proc.plugins.api->notifications_changed();
 }
 
 void awl_plugins_redraw( void ) {
-    if (api) api->redraw();
+    if (awl_proc.plugins.api) awl_proc.plugins.api->redraw();
 }
 
 void awl_plugins_bar_widgets( awl_bar_t* bar ) {
-    if (api) api->bar_widgets( bar );
+    if (awl_proc.plugins.api) awl_proc.plugins.api->bar_widgets( bar );
 }
 
 const awl_plugin_api_t* awl_plugins_api( void ) {
-    return api;
+    return awl_proc.plugins.api;
 }

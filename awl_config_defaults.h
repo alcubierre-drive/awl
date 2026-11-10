@@ -11,10 +11,10 @@
 #include "awl_config.h"
 
 /* commands */
-static const char *termcmd[] = { "foot", NULL };
-static const char *menucmd[] = { "wmenu-run", NULL };
+static const char *const termcmd[] = { "foot", NULL };
+static const char *const menucmd[] = { "wmenu-run", NULL };
 /* the screen lock's locker */
-static const char *locker[] = { "swaylock", "-c", "00000000", NULL };
+static const char *const locker[] = { "swaylock", "-c", "00000000", NULL };
 
 static void tagmonf(awl_server_t *srv, const Arg *arg) { AWL_ACTION(tagmon)(srv, arg); AWL_ACTION(focusmon)(srv, arg); }
 
@@ -189,7 +189,7 @@ static const awl_config_t awl_config_defaults = {
         .on_suspend = 1,
         .blur = 1,
     },
-    /* none; e.g. static const char *autostart[][8] = {
+    /* none; e.g. static const char *const autostart[][8] = {
      * { TRAY_ICONS, "nm-applet", NULL } }; SETLIST(c->autostart, autostart) */
     .autostart = { NULL, 0 },
     .wlr_log_level = WLR_ERROR,

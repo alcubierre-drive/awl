@@ -148,7 +148,26 @@ the host table, its timers, paused/covered), the config's environment
 (setenv is the process'), `builtinconfig()`'s cache, and the log, spawn,
 redraw, draw and dict state listed in 5.
 
-Next: C (`main` makes the server, `awl` goes; `awl_proc`).
+C is done (uncommitted): `main()` allocates the server and frees it after
+`cleanup()`; `serverinit()` gives it its empty popup list and its
+listeners' handlers (the static initializer before). The `awl` global is
+gone. `awl_process_t awl_proc` (awl_process.h, defined in awl_process.c)
+holds the process state, one member per module, each documented with its
+threads: `log`, `spawn`, `redraw_fd`, `lock` (the eventfd and the logind
+atomics), `fonts` (awl_draw.c's ring; its entry type is `awl_font_slot_t`
+now), `plugins` (handle, memfd, api, paused/covered, the timers, and the
+live `awl_host`, copied from awl_plugin_host.c's const `host_template` on
+the first load), `config` (the saved environment, the import flags,
+`builtinconfig()`'s cache), `tray` (tray/app_env.c's `E`) and `warned`,
+the warn-once bits (`AWL_ONCE(bit)`, for awl_draw.c's two function
+statics). Deviations from 5.: the dict's tombstone is only an address, so
+it became a `static const char` instead of a member; tray/app_env.c's state
+went in too (it is awl's only, the shim is tray/env_shim.c). The command
+arrays of awl_config_defaults.h and awl_alert.c's names are `*const` now.
+`objdump -t` shows `awl_proc` as the core's only object in .data/.bss; the
+rest is const (.data.rel.ro). The unit tests link awl_process.c.
+
+Next: 6. (the library), lower priority.
 
 A. **Gather (mechanical):**
    - Add `awl_server_t` and its member structs.

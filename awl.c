@@ -33,43 +33,43 @@ static void cleanuplisteners(awl_server_t *srv);
 static void gpureset(struct wl_listener *listener, void *data);
 static int handlesigquit(int signo, void *data);
 static void run(awl_server_t *srv, char *startup_cmd);
+static void serverinit(awl_server_t *srv);
 static void setup(awl_server_t *srv);
 
-static awl_server_t server = {
-    /* empty from the start: no init in setup() */
-    .popups.list = {&server.popups.list, &server.popups.list},
-    .listen.cursor_axis = {.notify = axisnotify},
-    .listen.cursor_button = {.notify = buttonpress},
-    .listen.cursor_frame = {.notify = cursorframe},
-    .listen.cursor_motion = {.notify = motionrelative},
-    .listen.cursor_motion_absolute = {.notify = motionabsolute},
-    .listen.gpu_reset = {.notify = gpureset},
-    .listen.layout_change = {.notify = updatemons},
-    .listen.new_idle_inhibitor = {.notify = createidleinhibitor},
-    .listen.new_input_device = {.notify = inputdevice},
-    .listen.new_virtual_keyboard = {.notify = virtualkeyboard},
-    .listen.new_virtual_pointer = {.notify = virtualpointer},
-    .listen.new_pointer_constraint = {.notify = createpointerconstraint},
-    .listen.new_output = {.notify = createmon},
-    .listen.new_xdg_toplevel = {.notify = createnotify},
-    .listen.new_xdg_popup = {.notify = createpopup},
-    .listen.new_xdg_decoration = {.notify = createdecoration},
-    .listen.new_layer_surface = {.notify = createlayersurface},
-    .listen.output_mgr_apply = {.notify = outputmgrapply},
-    .listen.output_mgr_test = {.notify = outputmgrtest},
-    .listen.output_power_mgr_set_mode = {.notify = powermgrsetmode},
-    .listen.request_activate = {.notify = urgent},
-    .listen.request_cursor = {.notify = setcursor},
-    .listen.request_set_psel = {.notify = setpsel},
-    .listen.request_set_sel = {.notify = setsel},
-    .listen.request_set_cursor_shape = {.notify = setcursorshape},
-    .listen.request_start_drag = {.notify = requeststartdrag},
-    .listen.start_drag = {.notify = startdrag},
-    .listen.new_session_lock = {.notify = locksession},
-};
-awl_server_t *awl = &server;
-
-
+/** what a new server starts with: its empty lists and its listeners' handlers */
+static void
+serverinit(awl_server_t *srv)
+{
+    wl_list_init(&srv->popups.list);
+    srv->listen.cursor_axis.notify = axisnotify;
+    srv->listen.cursor_button.notify = buttonpress;
+    srv->listen.cursor_frame.notify = cursorframe;
+    srv->listen.cursor_motion.notify = motionrelative;
+    srv->listen.cursor_motion_absolute.notify = motionabsolute;
+    srv->listen.gpu_reset.notify = gpureset;
+    srv->listen.layout_change.notify = updatemons;
+    srv->listen.new_idle_inhibitor.notify = createidleinhibitor;
+    srv->listen.new_input_device.notify = inputdevice;
+    srv->listen.new_virtual_keyboard.notify = virtualkeyboard;
+    srv->listen.new_virtual_pointer.notify = virtualpointer;
+    srv->listen.new_pointer_constraint.notify = createpointerconstraint;
+    srv->listen.new_output.notify = createmon;
+    srv->listen.new_xdg_toplevel.notify = createnotify;
+    srv->listen.new_xdg_popup.notify = createpopup;
+    srv->listen.new_xdg_decoration.notify = createdecoration;
+    srv->listen.new_layer_surface.notify = createlayersurface;
+    srv->listen.output_mgr_apply.notify = outputmgrapply;
+    srv->listen.output_mgr_test.notify = outputmgrtest;
+    srv->listen.output_power_mgr_set_mode.notify = powermgrsetmode;
+    srv->listen.request_activate.notify = urgent;
+    srv->listen.request_cursor.notify = setcursor;
+    srv->listen.request_set_psel.notify = setpsel;
+    srv->listen.request_set_sel.notify = setsel;
+    srv->listen.request_set_cursor_shape.notify = setcursorshape;
+    srv->listen.request_start_drag.notify = requeststartdrag;
+    srv->listen.start_drag.notify = startdrag;
+    srv->listen.new_session_lock.notify = locksession;
+}
 
 /** bars are redrawn on demand: see awl_redraw.h */
 static int redraw_fire( int fd, uint32_t mask, void* data ) {
@@ -559,7 +559,7 @@ setup(awl_server_t *srv)
 int
 main(int argc, char *argv[])
 {
-    awl_server_t *srv = awl;
+    awl_server_t *srv;
     char *startup_cmd = NULL;
     const char *logfile = AWL_LOGFILE;
     int c;
@@ -587,10 +587,13 @@ main(int argc, char *argv[])
     /* only now: awl -v or a usage error must not truncate a running awl's log */
     awl_log_init(logfile);
 
+    srv = ecalloc(1, sizeof *srv);
+    serverinit(srv);
     setup(srv);
 
     run(srv, startup_cmd);
     cleanup(srv);
+    free(srv);
     return EXIT_SUCCESS;
 
 usage:

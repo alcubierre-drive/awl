@@ -11,7 +11,7 @@
 
 static void notify( awl_server_t* srv, const char* text );
 
-static const char* names[AwlAlertLast] = {
+static const char* const names[AwlAlertLast] = {
     [AwlAlertLogind] = "logind",
     [AwlAlertLocker] = "locker",
 };

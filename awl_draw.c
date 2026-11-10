@@ -1,6 +1,7 @@
 #include "awl_draw.h"
 
 #include "awl_log.h"
+#include "awl_process.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -12,32 +13,16 @@
  * free slot, and with none left evicts from the beginning, skipping (and
  * moving to the end) what is still in use. A font given back stays loaded
  * until evicted, so asking again costs nothing. A spec that doesn't load
- * stays as a failed entry (logged once) until awl_font_retry(). */
-typedef struct {
-    char spec[AWL_FONT_SPEC_MAX];
-    /** "dpi=...", then the style's ":weight=bold:slant=italic" */
-    char attrs[48];
-    /** made for emoji: emoji presentation (see :c:func:`awl_font_get_emoji`) */
-    int emoji;
-    /** :c:macro:`AWL_FONT_BOLD`, AWL_FONT_ITALIC (see :c:func:`awl_font_style`) */
-    int style;
-    /** NULL: it didn't load (failed), or :c:func:`awl_font_retry` asked to try again */
-    struct fcft_font *font;
-    int failed;
-    int refs;
-} font_entry_t;
-
-static font_entry_t ring[AWL_FONT_SLOTS];
-static unsigned head, count;
-static int fcft_ready;
+ * stays as a failed entry (logged once) until awl_font_retry(). The ring
+ * is :c:member:`awl_process_t.fonts`. */
 
 /** the i-th oldest entry */
-#define SLOT(i) (&ring[(head + (i)) % AWL_FONT_SLOTS])
+#define SLOT(i) (&awl_proc.fonts.ring[(awl_proc.fonts.head + (i)) % AWL_FONT_SLOTS])
 
 int awl_draw_init(void) {
-    if (!fcft_ready)
-        fcft_ready = fcft_init(FCFT_LOG_COLORIZE_AUTO, 0, FCFT_LOG_CLASS_ERROR);
-    return fcft_ready;
+    if (!awl_proc.fonts.fcft_ready)
+        awl_proc.fonts.fcft_ready = fcft_init(FCFT_LOG_COLORIZE_AUTO, 0, FCFT_LOG_CLASS_ERROR);
+    return awl_proc.fonts.fcft_ready;
 }
 
 /** name with size appended (after its "...size=", else as ":size=") into
@@ -49,30 +34,29 @@ static int font_spec(char spec[static AWL_FONT_SPEC_MAX], const char *name, floa
     return len > 0 && len < AWL_FONT_SPEC_MAX;
 }
 
-static void entry_clear(font_entry_t *e) {
+static void entry_clear(awl_font_slot_t *e) {
     if (e->font)
         fcft_destroy(e->font);
-    *e = (font_entry_t){0};
+    *e = (awl_font_slot_t){0};
 }
 
 /** a slot for a new entry, cleared: a free one, else the oldest one not in
  * use (those in use before it move to the end); NULL if all are in use */
-static font_entry_t *slot_take(void) {
-    static int warned;
-    font_entry_t *e;
+static awl_font_slot_t *slot_take(void) {
+    awl_font_slot_t *e;
 
-    if (count < AWL_FONT_SLOTS)
-        return SLOT(count++);
+    if (awl_proc.fonts.count < AWL_FONT_SLOTS)
+        return SLOT(awl_proc.fonts.count++);
     for (unsigned i = 0; i < AWL_FONT_SLOTS; i++) {
         e = SLOT(0);
         /* the head becomes the tail either way: freed and reused, or kept */
-        head = (head + 1) % AWL_FONT_SLOTS;
+        awl_proc.fonts.head = (awl_proc.fonts.head + 1) % AWL_FONT_SLOTS;
         if (e->refs > 0)
             continue;
         entry_clear(e);
         return e;
     }
-    if (!warned++)
+    if (AWL_ONCE(AwlWarnedFontSlots))
         awl_err_printf("all %d fonts in use, loading no other\n", AWL_FONT_SLOTS);
     return NULL;
 }
@@ -81,14 +65,14 @@ static font_entry_t *slot_take(void) {
  * registry, loading it if new or to be retried; NULL if it doesn't load (now
  * or before). emoji: in emoji presentation. Takes a reference on success. */
 static struct fcft_font *entry_lookup(const char *spec, const char *dpi, int emoji, int style) {
-    char attrs[sizeof(((font_entry_t *)0)->attrs)];
-    font_entry_t *e = NULL;
+    char attrs[sizeof(((awl_font_slot_t *)0)->attrs)];
+    awl_font_slot_t *e = NULL;
     const char *names[1];
 
     snprintf(attrs, sizeof(attrs), "%.*s%s%s", (int)strcspn(dpi, ":"), dpi,
             style & AWL_FONT_BOLD ? ":weight=bold" : "",
             style & AWL_FONT_ITALIC ? ":slant=italic" : "");
-    for (unsigned i = 0; i < count && !e; i++)
+    for (unsigned i = 0; i < awl_proc.fonts.count && !e; i++)
         if (!strcmp(SLOT(i)->spec, spec) && !strcmp(SLOT(i)->attrs, attrs)
                 && SLOT(i)->emoji == emoji)
             e = SLOT(i);
@@ -136,8 +120,8 @@ static struct fcft_font *font_lookup(const char *name, float size, float scale, 
 }
 
 /** font's entry in the registry, NULL if it isn't the registry's */
-static font_entry_t *font_entry(const struct fcft_font *font) {
-    for (unsigned i = 0; font && i < count; i++)
+static awl_font_slot_t *font_entry(const struct fcft_font *font) {
+    for (unsigned i = 0; font && i < awl_proc.fonts.count; i++)
         if (SLOT(i)->font == font)
             return SLOT(i);
     return NULL;
@@ -169,7 +153,6 @@ struct fcft_font *awl_font_get_emoji(const char *name, float size, float scale) 
 }
 
 struct fcft_font *awl_font_get(const char *name, float size, float scale) {
-    static int warned;
     struct fcft_font *font;
 
     size = font_sane(size, AWL_FONT_FALLBACK_SIZE, 200);
@@ -182,14 +165,14 @@ struct fcft_font *awl_font_get(const char *name, float size, float scale) {
         awl_wrn_printf("font %s: using " AWL_FONT_FALLBACK "\n", name ? name : "(none)");
         return font;
     }
-    if (!warned++)
+    if (AWL_ONCE(AwlWarnedFontNone))
         awl_err_printf("no font loads, not even " AWL_FONT_FALLBACK "%d: drawing no text\n",
                 AWL_FONT_FALLBACK_SIZE);
     return NULL;
 }
 
 struct fcft_font *awl_font_style(struct fcft_font *font, int style) {
-    font_entry_t *e = font_entry(font);
+    awl_font_slot_t *e = font_entry(font);
     struct fcft_font *styled;
     char spec[AWL_FONT_SPEC_MAX], dpi[sizeof(e->attrs)];
 
@@ -214,7 +197,7 @@ struct fcft_font *awl_font_style(struct fcft_font *font, int style) {
 }
 
 void awl_font_release(struct fcft_font *font) {
-    font_entry_t *e = font_entry(font);
+    awl_font_slot_t *e = font_entry(font);
 
     if (!font)
         return;
@@ -227,7 +210,7 @@ void awl_font_release(struct fcft_font *font) {
 }
 
 void awl_font_retry(void) {
-    for (unsigned i = 0; i < count; i++)
+    for (unsigned i = 0; i < awl_proc.fonts.count; i++)
         SLOT(i)->failed = 0;
 }
 
@@ -388,14 +371,14 @@ unsigned int awl_draw_text_width(struct fcft_font *font, const char *text) {
 void awl_draw_fini(void) {
     int left = 0;
 
-    for (unsigned i = 0; i < count; i++) {
+    for (unsigned i = 0; i < awl_proc.fonts.count; i++) {
         left += SLOT(i)->refs;
         entry_clear(SLOT(i));
     }
-    head = count = 0;
+    awl_proc.fonts.head = awl_proc.fonts.count = 0;
     if (left)
         awl_wrn_printf("%d font references left at exit\n", left);
-    if (fcft_ready)
+    if (awl_proc.fonts.fcft_ready)
         fcft_fini();
-    fcft_ready = 0;
+    awl_proc.fonts.fcft_ready = 0;
 }

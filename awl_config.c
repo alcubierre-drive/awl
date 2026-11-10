@@ -13,6 +13,7 @@
 #include "awl_output.h"
 #include "awl_plugin_host.h"
 #include "awl_popup.h"
+#include "awl_process.h"
 #include "awl_wallpaper.h"
 #include "tray/awl_tray.h"
 #include <limits.h>
@@ -151,11 +152,8 @@ updatepluginpause(awl_server_t *srv)
     awl_plugins_set_paused(srv->locked || !visible);
 }
 
-/** each variable the config's environment changed, with its value from
- * before (NULL: unset), to go back to once the config drops it; kept for
- * awl's life */
-static struct { char *name, *orig; } *envsaved;
-static size_t nenvsaved;
+/* what the config's environment changed, and builtinconfig(), are
+ * :c:member:`awl_process_t.config`: the environment is the process' */
 
 static int
 envconfigured(awl_server_t *srv, const char *name)
@@ -170,10 +168,6 @@ envconfigured(awl_server_t *srv, const char *name)
 /** what goes to systemd's and the session bus' environment too */
 static const char *const envimported[] = {
     "DISPLAY", "WAYLAND_DISPLAY", "XDG_CURRENT_DESKTOP", NULL };
-/** :c:func:`environmentimport` ran: from then on changes to those go there too */
-static int envimportstarted;
-/** one of them changed since */
-static int envimportdirty;
 
 /** sets name to value (NULL: unsets it), if that changes it: other threads
  * may be reading the environment */
@@ -189,14 +183,14 @@ envset(const char *name, const char *value)
     else
         unsetenv(name);
     for (n = envimported; *n; n++)
-        envimportdirty |= !strcmp(*n, name);
+        awl_proc.config.envimportdirty |= !strcmp(*n, name);
 }
 
 void
 environmentimport(void)
 {
-    envimportstarted = 1;
-    envimportdirty = 0;
+    awl_proc.config.envimportstarted = 1;
+    awl_proc.config.envimportdirty = 0;
     awl_bus_import_environment(envimported);
 }
 
@@ -205,31 +199,31 @@ static void
 environmentapply(awl_server_t *srv)
 {
     size_t i, j;
-    for (i = 0; i < nenvsaved; i++)
-        if (!envconfigured(srv, envsaved[i].name))
-            envset(envsaved[i].name, envsaved[i].orig);
+    for (i = 0; i < awl_proc.config.nenvsaved; i++)
+        if (!envconfigured(srv, awl_proc.config.envsaved[i].name))
+            envset(awl_proc.config.envsaved[i].name, awl_proc.config.envsaved[i].orig);
     for (i = 0; i < srv->cfg->environment.n; i++) {
         const EnvVar *e = &srv->cfg->environment.v[i];
         if (!e->name || !*e->name || strchr(e->name, '=')) {
             awl_wrn_printf("environment: no variable \"%s\"\n", e->name ? e->name : "(null)");
             continue;
         }
-        for (j = 0; j < nenvsaved && strcmp(envsaved[j].name, e->name); j++)
+        for (j = 0; j < awl_proc.config.nenvsaved && strcmp(awl_proc.config.envsaved[j].name, e->name); j++)
             ;
-        if (j == nenvsaved) {
-            void *more = realloc(envsaved, (nenvsaved + 1) * sizeof(*envsaved));
+        if (j == awl_proc.config.nenvsaved) {
+            void *more = realloc(awl_proc.config.envsaved, (awl_proc.config.nenvsaved + 1) * sizeof(*awl_proc.config.envsaved));
             const char *orig = getenv(e->name);
             if (!more)
                 continue;
-            envsaved = more;
-            envsaved[j].name = strdup(e->name);
-            envsaved[j].orig = orig ? strdup(orig) : NULL;
-            if (!envsaved[j].name || (orig && !envsaved[j].orig)) {
-                free(envsaved[j].name);
-                free(envsaved[j].orig);
+            awl_proc.config.envsaved = more;
+            awl_proc.config.envsaved[j].name = strdup(e->name);
+            awl_proc.config.envsaved[j].orig = orig ? strdup(orig) : NULL;
+            if (!awl_proc.config.envsaved[j].name || (orig && !awl_proc.config.envsaved[j].orig)) {
+                free(awl_proc.config.envsaved[j].name);
+                free(awl_proc.config.envsaved[j].orig);
                 continue;
             }
-            nenvsaved++;
+            awl_proc.config.nenvsaved++;
         }
         envset(e->name, e->value);
     }
@@ -245,7 +239,7 @@ environmentapply(awl_server_t *srv)
         if (*path)
             envset("GRIM_DEFAULT_DIR", path);
     }
-    if (envimportstarted && envimportdirty)
+    if (awl_proc.config.envimportstarted && awl_proc.config.envimportdirty)
         environmentimport();
 }
 
@@ -360,12 +354,10 @@ configdefaults(awl_config_t *c)
 const awl_config_t *
 builtinconfig(void)
 {
-    static awl_config_t filled;
-    static int done;
-    if (!done) {
-        filled = awl_config_defaults;
-        awl_config_fill_defaults(&filled);
-        done = 1;
+    if (!awl_proc.config.builtin_filled) {
+        awl_proc.config.builtin = awl_config_defaults;
+        awl_config_fill_defaults(&awl_proc.config.builtin);
+        awl_proc.config.builtin_filled = 1;
     }
-    return &filled;
+    return &awl_proc.config.builtin;
 }

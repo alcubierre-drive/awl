@@ -83,58 +83,10 @@ typedef struct {
     const Arg arg;
 } Button;
 
+/* an output and a window; their bodies are awl's (awl_core.h), the
+ * library only hands them back to awl */
 typedef struct Monitor Monitor;
 typedef struct Client Client;
-/** A window, XDG shell or XWayland. */
-struct Client {
-    /* Must keep these three elements in this order */
-    unsigned int type; /* XDGShell or X11* */
-    struct wlr_box geom; /* layout-relative, includes border */
-    Monitor *mon;
-    struct wlr_scene_tree *scene;
-    /** for its listeners, which only get the client */
-    awl_server_t *srv;
-    struct wlr_scene_rect *border[4]; /* top, bottom, left, right */
-    struct wlr_scene_blur *blur;
-    float one_minus_alpha;
-    struct wlr_scene_tree *scene_surface;
-    struct wl_list link;
-    struct wl_list flink;
-    union {
-        struct wlr_xdg_surface *xdg;
-        struct wlr_xwayland_surface *xwayland;
-    } surface;
-    struct wlr_xdg_toplevel_decoration_v1 *decoration;
-    struct wl_listener commit;
-    struct wl_listener map;
-    struct wl_listener maximize;
-    struct wl_listener unmap;
-    struct wl_listener destroy;
-    struct wl_listener set_title;
-    struct wl_listener fullscreen;
-    struct wl_listener set_decoration_mode;
-    struct wl_listener destroy_decoration;
-    struct wlr_box prev; /* layout-relative, includes border */
-    struct wlr_box bounds;
-#ifdef XWAYLAND
-    struct wl_listener activate;
-    struct wl_listener associate;
-    struct wl_listener dissociate;
-    struct wl_listener configure;
-    struct wl_listener set_hints;
-#endif
-    unsigned int bw;
-    uint32_t tags;
-    struct { uint8_t
-        isfloating:1,
-        isurgent:1,
-        isfullscreen:1,
-        isvisible:1,
-        ismaximized:1,
-        isontop:1;
-    };
-    uint32_t resize; /* configure serial of a pending resize */
-};
 
 /** A key binding, :c:member:`awl_config_t.keys`. */
 typedef struct {
@@ -152,80 +104,6 @@ typedef struct {
     /** NULL: floating */
     void (*arrange)(awl_server_t *, Monitor *);
 } Layout;
-
-/** a view's layout and its settings, :c:member:`Monitor.ptlt` */
-struct PertagLayout {
-    /** the selected layout lt[sellt] and the previous one (:c:func:`setlayout`) */
-    const Layout *lt[2];
-    unsigned int sellt;
-    /** master area share (setmfact()) and number of master clients
-     * (incnmaster()) */
-    float mfact;
-    int nmaster;
-};
-
-typedef struct Buffer Buffer;
-/** An output, with its bar. */
-struct Monitor {
-    struct wl_list link;
-    /** for its listeners, which only get the monitor */
-    awl_server_t *srv;
-    struct wlr_output *wlr_output;
-    struct wlr_scene_output *scene_output;
-    struct wlr_scene_buffer *scene_buffer; /* bar buffer */
-    struct wlr_scene_blur *bar_blur; /* behind the bar's window list */
-    Buffer *bar_bufs[2]; /* bar render targets, reused; see barbuffer() */
-    Buffer *bar_shown; /* the slot scene_buffer shows, NULL if unknown */
-    uint32_t bar_over; /* how far the bar's widgets overflow it, see baroverflow() */
-    struct wlr_scene_rect *fullscreen_bg; /* See createmon() for info */
-    struct wl_listener frame;
-    struct wl_listener destroy;
-    struct wl_listener request_state;
-    /** its lock surface is gone */
-    struct wl_listener destroy_lock_surface;
-    struct wlr_session_lock_surface_v1 *lock_surface;
-    /** a frame showing the lock went out since it began (:c:func:`lockcovered`) */
-    int lock_shown;
-    /** the alert on this output (:c:func:`awl_alert_draw`), and what it was drawn for */
-    struct wlr_scene_buffer *alert;
-    unsigned int alert_version;
-    float alert_scale;
-    struct wlr_box alert_area;
-    struct wlr_box m; /* monitor area, layout-relative */
-    struct {
-        int width, height;
-        int real_width, real_height; /* non-scaled */
-        float scale;
-    } bar_area; /* the bar's size; scale: the one its font was loaded for */
-    struct wlr_box w; /* window area, layout-relative */
-    /** its layer surfaces by layer, background to overlay
-     * (LayerSurface.link) */
-    struct wl_list layers[4];
-    unsigned int seltags;
-    uint32_t tagset[2];
-    int gamma_lut_changed;
-    uint8_t showbar:1;
-    uint8_t closedbar:1;
-    /** whether each view keeps its own layout and its settings in ptlt[]
-     * (:c:member:`MonitorRule.pertag`, togglepertag); if not, all share ptlt[0] */
-    uint8_t pertag:1;
-    char ltsymbol[16];
-    /** the layouts and their settings, read through monlt(): with pertag,
-     * [1+t] for tag t viewed alone and [0] for views of several tags;
-     * without, [0] for all views */
-    struct PertagLayout ptlt[32];
-    int asleep;
-    /** the bar: its font, its widgets and what they show; bar.m is NULL
-     * before createmon() sets it up and after cleanupmon() */
-    awl_bar_t bar;
-    /** the popups' font at this monitor's scale (awl_window.h,
-     * cfg->popup.font and .fontsize), from the font registry; NULL while
-     * it isn't found, then they use the bar's */
-    struct fcft_font *popupfont;
-    /** the desktop file list's (awl_desktop.h, cfg->desktop.font and
-     * .fontsize), the same way */
-    struct fcft_font *desktopfont;
-};
 
 /** A rule for outputs whose name contains name (NULL: any),
  * :c:member:`awl_config_t.monrules`; the first that matches counts. */
@@ -605,7 +483,7 @@ typedef struct awl_config_t {
      * most 7 words), terminated when it exits; only at awl's start, a reload
      * starts none. A first word :c:macro:`TRAY_ICONS` starts the rest in
      * tray.icon_theme instead of the desktop's, see there */
-    struct { const char *(*v)[8]; size_t n; } autostart;
+    struct { const char *const (*v)[8]; size_t n; } autostart;
     /** what wlroots logs: WLR_SILENT, WLR_ERROR, WLR_INFO or WLR_DEBUG
      * (awl -d: WLR_DEBUG anyway) */
     int wlr_log_level;

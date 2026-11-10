@@ -8,6 +8,7 @@
 #include "awl_popup.h"
 #include "awl_output.h"
 #include "awl_plugin_host.h"
+#include "awl_process.h"
 #include "awl_spawn.h"
 
 #include <stdatomic.h>
@@ -51,11 +52,7 @@ static int logindtimeout(void *data);
 static void unlocksession(struct wl_listener *listener, void *data);
 
 /* lock requests and the logind thread's state, from any thread (see
- * awl_lock_request()): the eventfd that wakes the main loop, and what it
- * finds when it does (lockfire()); requests before then coalesce into one */
-static _Atomic int lock_fd = -1;
-static atomic_int lock_requested;
-static atomic_uint lock_logind_flags;
+ * awl_lock_request()), are :c:member:`awl_process_t.lock` */
 
 /** The screen lock's state (:c:member:`awl_server_t.lock`), main thread only */
 struct awl_lock {
@@ -65,7 +62,7 @@ struct awl_lock {
     struct wlr_scene_blur *blur;
     /** the lock in place, or NULL */
     struct wlr_session_lock_v1 *cur;
-    /** lock_fd's event handler */
+    /** awl_proc.lock.fd's event handler */
     struct wl_event_source *source;
     /** the logind alert's grace period, see logindupdate() */
     struct wl_event_source *logind_timer;
@@ -88,7 +85,7 @@ struct awl_lock {
 void
 awl_lock_fini(awl_server_t *srv)
 {
-    int fd = atomic_exchange(&lock_fd, -1);
+    int fd = atomic_exchange(&awl_proc.lock.fd, -1);
     if (fd >= 0) close(fd);
     free(srv->lock);
     srv->lock = NULL;
@@ -97,14 +94,14 @@ awl_lock_fini(awl_server_t *srv)
 void
 awl_lock_logind_state(unsigned flags)
 {
-    atomic_store(&lock_logind_flags, flags);
+    atomic_store(&awl_proc.lock.logind_flags, flags);
     lockwake();
 }
 
 void
 awl_lock_request(void)
 {
-    atomic_store(&lock_requested, 1);
+    atomic_store(&awl_proc.lock.requested, 1);
     lockwake();
 }
 
@@ -229,7 +226,7 @@ coveredtimeout(void *data)
     return 0;
 }
 
-/** lock_fd's event handler: a lock request, a new logind thread state */
+/** awl_proc.lock.fd's event handler: a lock request, a new logind thread state */
 int
 lockfire(int fd, uint32_t mask, void *data)
 {
@@ -238,8 +235,8 @@ lockfire(int fd, uint32_t mask, void *data)
     unsigned flags;
     /* drained first: whatever is stored after this wakes the loop again */
     if (read(fd, &count, sizeof count) < 0) {}
-    flags = atomic_load(&lock_logind_flags);
-    if (atomic_exchange(&lock_requested, 0))
+    flags = atomic_load(&awl_proc.lock.logind_flags);
+    if (atomic_exchange(&awl_proc.lock.requested, 0))
         lockscreen(srv, NULL);
     if (flags != srv->lock->logind_flags) {
         srv->lock->logind_flags = flags;
@@ -276,12 +273,12 @@ lockscreen(awl_server_t *srv, const Arg *arg)
 }
 
 /** what the logind thread has to listen for */
-static /** wakes the main loop, which then looks at lock_requested and
- * lock_logind_flags (lockfire()); any thread */
+static /** wakes the main loop, which then looks at awl_proc.lock's requested
+ * and logind_flags (lockfire()); any thread */
 void
 lockwake(void)
 {
-    int fd = atomic_load(&lock_fd);
+    int fd = atomic_load(&awl_proc.lock.fd);
     uint64_t one = 1;
     /* EAGAIN only happens if the counter would overflow, i.e. the main loop
      * is due to look anyway */
@@ -400,9 +397,9 @@ lockinit(awl_server_t *srv)
         wlr_scene_node_lower_to_bottom(&srv->lock->blur->node);
     }
     /* without it, requests and states are dropped (the logind alert stays) */
-    atomic_store(&lock_fd, eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
-    if (atomic_load(&lock_fd) >= 0)
-        srv->lock->source = wl_event_loop_add_fd(srv->event_loop, atomic_load(&lock_fd),
+    atomic_store(&awl_proc.lock.fd, eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
+    if (atomic_load(&awl_proc.lock.fd) >= 0)
+        srv->lock->source = wl_event_loop_add_fd(srv->event_loop, atomic_load(&awl_proc.lock.fd),
                 WL_EVENT_READABLE, lockfire, srv);
     srv->lock->covered_timer = wl_event_loop_add_timer(srv->event_loop, coveredtimeout, srv);
     /* the logind thread has until then to start listening (logind_missing) */

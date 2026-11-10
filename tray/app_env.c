@@ -18,6 +18,7 @@
 #define _GNU_SOURCE /* memfd_create() */
 #include "awl_tray.h"
 #include "../awl_log.h"
+#include "../awl_process.h"
 
 #include <endian.h>
 #include <errno.h>
@@ -32,17 +33,8 @@
 
 #define KEY "/org/gnome/desktop/interface/icon-theme"
 #define SHIM "libawltray-env.so"
-#define LENGTH(a) (sizeof(a) / sizeof((a)[0]))
 
-static struct {
-    /** the config's icon_theme, NULL: none */
-    char *theme;
-    /** what :c:func:`awl_tray_app_env` made, for theme made_for (NULL: nothing yet);
-     * env.env NULL: nothing to give */
-    char *made_for;
-    awl_tray_app_env_t env;
-    char *vars[5];
-} E = { .env.fds = { -1, -1 } };
+/* its state is :c:member:`awl_process_t.tray` */
 
 /** a malloc()ed printf; aborts awl like GLib did if there is no memory */
 static char *
@@ -69,8 +61,8 @@ copy(const char *s)
 void
 awl_tray_app_set_theme(const char *theme)
 {
-    free(E.theme);
-    E.theme = theme && *theme ? copy(theme) : NULL;
+    free(awl_proc.tray.theme);
+    awl_proc.tray.theme = theme && *theme ? copy(theme) : NULL;
 }
 
 /** forgets what :c:func:`awl_tray_app_env` made */
@@ -78,16 +70,16 @@ static void
 drop(void)
 {
     for (int i = 0; i < 2; i++) {
-        if (E.env.fds[i] >= 0) close(E.env.fds[i]);
-        E.env.fds[i] = -1;
+        if (awl_proc.tray.env.fds[i] >= 0) close(awl_proc.tray.env.fds[i]);
+        awl_proc.tray.env.fds[i] = -1;
     }
-    for (size_t i = 0; i < LENGTH(E.vars); i++) {
-        free(E.vars[i]);
-        E.vars[i] = NULL;
+    for (size_t i = 0; i < LENGTH(awl_proc.tray.vars); i++) {
+        free(awl_proc.tray.vars[i]);
+        awl_proc.tray.vars[i] = NULL;
     }
-    E.env.env = NULL;
-    free(E.made_for);
-    E.made_for = NULL;
+    awl_proc.tray.env.env = NULL;
+    free(awl_proc.tray.made_for);
+    awl_proc.tray.made_for = NULL;
 }
 
 /** XDG_DATA_DIRS, or its default, as GLib has it: each in turn, while
@@ -383,7 +375,7 @@ shim(void)
     return path;
 }
 
-/** the profile, the database and the variables for E.theme */
+/** the profile, the database and the variables for awl_proc.tray.theme */
 static int
 make(void)
 {
@@ -392,17 +384,17 @@ make(void)
         awl_wrn_printf("tray: no " SHIM " next to awl, programs keep the desktop's icon theme\n");
         return 0;
     }
-    bytes_t db = database(E.theme);
-    E.env.fds[1] = memfile("awl-tray-dconf-db", db.data, db.len);
+    bytes_t db = database(awl_proc.tray.theme);
+    awl_proc.tray.env.fds[1] = memfile("awl-tray-dconf-db", db.data, db.len);
     free(db.data);
-    if (E.env.fds[1] >= 0) {
+    if (awl_proc.tray.env.fds[1] >= 0) {
         char *base = base_profile();
-        char *text = fmt("%sfile-db:/proc/self/fd/%d\n", base, E.env.fds[1]);
-        E.env.fds[0] = memfile("awl-tray-dconf-profile", text, strlen(text));
+        char *text = fmt("%sfile-db:/proc/self/fd/%d\n", base, awl_proc.tray.env.fds[1]);
+        awl_proc.tray.env.fds[0] = memfile("awl-tray-dconf-profile", text, strlen(text));
         free(text);
         free(base);
     }
-    if (E.env.fds[0] < 0 || E.env.fds[1] < 0) {
+    if (awl_proc.tray.env.fds[0] < 0 || awl_proc.tray.env.fds[1] < 0) {
         free(lib);
         return 0;
     }
@@ -410,12 +402,12 @@ make(void)
     const char *preload = getenv("LD_PRELOAD");
     /* awl's own, for the shim to put back */
     const char *was = getenv("DCONF_PROFILE");
-    E.vars[0] = fmt("DCONF_PROFILE=/proc/self/fd/%d", E.env.fds[0]);
-    E.vars[1] = fmt("AWL_TRAY_ENV_FDS=%d,%d", E.env.fds[0], E.env.fds[1]);
-    E.vars[2] = preload && *preload ? fmt("LD_PRELOAD=%s:%s", lib, preload)
+    awl_proc.tray.vars[0] = fmt("DCONF_PROFILE=/proc/self/fd/%d", awl_proc.tray.env.fds[0]);
+    awl_proc.tray.vars[1] = fmt("AWL_TRAY_ENV_FDS=%d,%d", awl_proc.tray.env.fds[0], awl_proc.tray.env.fds[1]);
+    awl_proc.tray.vars[2] = preload && *preload ? fmt("LD_PRELOAD=%s:%s", lib, preload)
                                     : fmt("LD_PRELOAD=%s", lib);
-    if (was) E.vars[3] = fmt("AWL_TRAY_DCONF_PROFILE=%s", was);
-    E.env.env = (const char *const *)E.vars;
+    if (was) awl_proc.tray.vars[3] = fmt("AWL_TRAY_DCONF_PROFILE=%s", was);
+    awl_proc.tray.env.env = (const char *const *)awl_proc.tray.vars;
     free(lib);
     return 1;
 }
@@ -423,27 +415,27 @@ make(void)
 const awl_tray_app_env_t *
 awl_tray_app_env(void)
 {
-    if (!E.theme) return NULL;
-    if (E.made_for && !strcmp(E.made_for, E.theme)) return E.env.env ? &E.env : NULL;
+    if (!awl_proc.tray.theme) return NULL;
+    if (awl_proc.tray.made_for && !strcmp(awl_proc.tray.made_for, awl_proc.tray.theme)) return awl_proc.tray.env.env ? &awl_proc.tray.env : NULL;
     drop();
-    E.made_for = copy(E.theme);
-    if (!installed(E.theme)) {
-        awl_wrn_printf("tray: icon theme %s isn't installed, programs keep the desktop's\n", E.theme);
+    awl_proc.tray.made_for = copy(awl_proc.tray.theme);
+    if (!installed(awl_proc.tray.theme)) {
+        awl_wrn_printf("tray: icon theme %s isn't installed, programs keep the desktop's\n", awl_proc.tray.theme);
         return NULL;
     }
     if (!make()) {
         drop();
-        E.made_for = copy(E.theme);
+        awl_proc.tray.made_for = copy(awl_proc.tray.theme);
         return NULL;
     }
-    awl_log_printf("tray: icon theme %s for the programs that ask\n", E.theme);
-    return &E.env;
+    awl_log_printf("tray: icon theme %s for the programs that ask\n", awl_proc.tray.theme);
+    return &awl_proc.tray.env;
 }
 
 void
 awl_tray_app_cleanup(void)
 {
     drop();
-    free(E.theme);
-    E.theme = NULL;
+    free(awl_proc.tray.theme);
+    awl_proc.tray.theme = NULL;
 }

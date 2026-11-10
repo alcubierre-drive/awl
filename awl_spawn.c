@@ -2,6 +2,7 @@
 #include "awl_config.h"
 #include "awl_lockscreen.h"
 #include "awl_log.h"
+#include "awl_process.h"
 #include "awl_xwayland.h"
 #include "tray/awl_tray.h"
 #include <fcntl.h>
@@ -20,13 +21,9 @@ extern int execvpe(const char *file, char *const argv[], char *const envp[]);
 /** how long awl waits on exit for its children */
 #define CHILD_STOP_MS 3000
 
-static void autostart(const char **argv);
+static void autostart(const char *const *argv);
 static void unblocksignals(void);
 
-/** the startup command's */
-static pid_t child_pid = -1;
-static pid_t Autostarted_pids[256] = {0};
-static int Autostarted_pids_sz = 0;
 
 int
 handlesigchld(int signo, void *data)
@@ -92,34 +89,34 @@ void spawn(awl_server_t *srv, const Arg *arg) { spawn_pid(arg); }
 /** spawns argv and remembers it, so it is stopped when awl exits; refuses to
  * start it at all if there is no room left to remember it */
 void
-autostart(const char **argv)
+autostart(const char *const *argv)
 {
     pid_t pid;
-    if (Autostarted_pids_sz >= (int)LENGTH(Autostarted_pids)) {
+    if (awl_proc.spawn.nautostarted >= (int)LENGTH(awl_proc.spawn.autostarted)) {
         awl_wrn_printf("autostart: more than %d programs, not starting %s\n",
-                (int)LENGTH(Autostarted_pids),
+                (int)LENGTH(awl_proc.spawn.autostarted),
                 argv[0] && !strcmp(argv[0], TRAY_ICONS) && argv[1] ? argv[1] : argv[0]);
         return;
     }
     /* a failed spawn returns -1; never let that reach kill()/waitpid() */
     if ((pid = spawn_pid(&(const Arg){.v=argv})) > 0)
-        Autostarted_pids[Autostarted_pids_sz++] = pid;
+        awl_proc.spawn.autostarted[awl_proc.spawn.nautostarted++] = pid;
 }
 
 void
 stopchildren(void)
 {
-    pid_t pids[LENGTH(Autostarted_pids) + 1], r;
+    pid_t pids[LENGTH(awl_proc.spawn.autostarted) + 1], r;
     struct timespec tick = {0, 20 * 1000 * 1000};
     int i, n = 0, left, waited;
 
-    if (child_pid > 0)
-        pids[n++] = child_pid;
-    for (i = 0; i < Autostarted_pids_sz; i++)
-        if (Autostarted_pids[i] > 0)
-            pids[n++] = Autostarted_pids[i];
-    child_pid = -1;
-    Autostarted_pids_sz = 0;
+    if (awl_proc.spawn.startup > 0)
+        pids[n++] = awl_proc.spawn.startup;
+    for (i = 0; i < awl_proc.spawn.nautostarted; i++)
+        if (awl_proc.spawn.autostarted[i] > 0)
+            pids[n++] = awl_proc.spawn.autostarted[i];
+    awl_proc.spawn.startup = -1;
+    awl_proc.spawn.nautostarted = 0;
 
     for (i = 0; i < n; i++)
         kill(-pids[i], SIGTERM);
@@ -168,9 +165,9 @@ spawnstartup(const char *cmd)
      * of the fork -- see vfork() above. */
     if (!cmd)
         return;
-    if ((child_pid = vfork()) < 0)
+    if ((awl_proc.spawn.startup = vfork()) < 0)
         die("startup: vfork:");
-    if (child_pid == 0) {
+    if (awl_proc.spawn.startup == 0) {
         unblocksignals();
         close(STDIN_FILENO);
         setsid();

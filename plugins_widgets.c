@@ -1359,8 +1359,8 @@ typedef struct {
     double alpha_m2;
 } backlight_moons_t;
 static backlight_moons_t backlight_moons( int permille ) {
-    static const char* moons_r[] = { "🌑", "🌒", "🌓", "🌔", "🌕" };
-    static const char* moons_l[] = { "🌑", "🌘", "🌗", "🌖", "🌕" };
+    static const char* const moons_r[] = { "🌑", "🌒", "🌓", "🌔", "🌕" };
+    static const char* const moons_l[] = { "🌑", "🌘", "🌗", "🌖", "🌕" };
     static const int n = sizeof(moons_r) / sizeof(*moons_r);
     static int lr_sel = 0;
     static int permille_prev = 0;
@@ -1376,7 +1376,7 @@ static backlight_moons_t backlight_moons( int permille ) {
         permille_prev = permille;
         dir_prev = dir;
     }
-    const char** moons = lr_sel ? moons_l : moons_r;
+    const char* const* moons = lr_sel ? moons_l : moons_r;
 
     // n moons, n-1 steps between them over 0..1000
     double pval = permille * (n - 1) / 1000.;

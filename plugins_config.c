@@ -186,22 +186,22 @@ static const EnvVar environment[] = {
 };
 
 /* commands */
-static const char *termcmd[] = { "kitty", "-d", "$HOME", NULL };
+static const char *const termcmd[] = { "kitty", "-d", "$HOME", NULL };
 static const char *const launcher_terminal[] = { "kitty", NULL };
-static const char *hyprcopy[] = { "hyprcopy", NULL };
-static const char *grimslurp[] = { "grim_slurp", NULL };
-static const char *wdisplays[] = { "wdisplays", NULL };
+static const char *const hyprcopy[] = { "hyprcopy", NULL };
+static const char *const grimslurp[] = { "grim_slurp", NULL };
+static const char *const wdisplays[] = { "wdisplays", NULL };
 
 /* started with awl (only at its start), terminated when it exits;
  * TRAY_ICONS first: in the tray's icon theme */
-static const char* autostart[][8] = {
+static const char* const autostart[][8] = {
     { TRAY_ICONS, "nm-applet", NULL },
     { "blueman-applet", NULL },
     { "system-config-printer-applet", NULL },
     { "Telegram", NULL },
     { "evolution", NULL },
 };
-static const char* locker[] = { "swaylock", "-c", "00000000", "-p", NULL };
+static const char* const locker[] = { "swaylock", "-c", "00000000", "-p", NULL };
 
 static const Key keys[] = {
     /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */

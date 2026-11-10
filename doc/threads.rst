@@ -77,6 +77,13 @@ Changes are announced with a redraw request.
    logind thread's state take the same way through their own eventfd
    (awl_lockscreen.h).
 
+The server is the main thread's.
+   No other thread takes the :c:type:`awl_server_t`: a library thread
+   reaches awl only through ``awl_host``'s functions that are safe from
+   any thread (the redraw and lock requests, the logind state, logging).
+   What those touch is the process' state, :c:var:`awl_proc`
+   (awl_process.h), whose members each say which threads touch them.
+
 Alerts are awl's.
    What the user must not miss, such as no lock before suspend, is raised
    by awl's main thread (awl_alert.h), never by a library thread: the
