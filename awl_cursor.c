@@ -23,15 +23,12 @@ typedef struct {
 } DragIcon;
 
 static int desktopat(awl_server_t *srv, double x, double y);
-static void cursorconstrain(struct wlr_pointer_constraint_v1 *constraint);
+static void cursorconstrain(awl_server_t *srv, struct wlr_pointer_constraint_v1 *constraint);
 static void cursorwarptohint(awl_server_t *srv);
 static void destroydragicon(struct wl_listener *listener, void *data);
 static void destroypointerconstraint(struct wl_listener *listener, void *data);
 static void pointerfocus(awl_server_t *srv, Client *c, struct wlr_surface *surface, double sx, double sy,
         uint32_t time);
-
-static int grabcx, grabcy; /* client-relative */
-static struct wlr_pointer_constraint_v1 *active_constraint;
 
 void
 axisnotify(struct wl_listener *listener, void *data)
@@ -95,15 +92,14 @@ buttonpress(struct wl_listener *listener, void *data)
     Client *c;
     const Button *b;
     awl_window_t *twin;
-    static int swallow_release;
 
     wlr_idle_notifier_v1_notify_activity(srv->idle_notifier, srv->seat);
     awl_notifications_activity(srv);
 
     /* a press an awl window took (below) swallows its release too, so
      * nothing below sees half a click */
-    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED && swallow_release) {
-        swallow_release = 0;
+    if (event->state == WL_POINTER_BUTTON_STATE_RELEASED && srv->cursor.swallow_release) {
+        srv->cursor.swallow_release = 0;
         return;
     }
     /* An open xdg_popup (a client's menu) holds a pointer grab and
@@ -127,13 +123,13 @@ buttonpress(struct wl_listener *listener, void *data)
         /* the callback may destroy it */
         awl_window_pointer_button(twin, srv->cursor.wlr->x, srv->cursor.wlr->y, event->button, &row, &col);
         awl_dbg_printf(awl_loglevel_vrb, "popup %p: that is row %d, column %d\n", (void *)twin, row, col);
-        swallow_release = 1;
+        srv->cursor.swallow_release = 1;
         return;
     }
     /* the other popups take no input; a press anywhere but on the bar (whose
      * widgets close their own on a press, see below) closes them, and goes on
      * to what is below */
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&srv->popups)
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&srv->popups.list)
             && !pointeronbar(srv))
         popupshideall(srv);
 
@@ -171,7 +167,7 @@ buttonpress(struct wl_listener *listener, void *data)
         }
         /* the library declines the modified clicks it has no use for */
         if (click == ClkRoot && !srv->clients.exclusive_focus && desktopat(srv, srv->cursor.wlr->x, srv->cursor.wlr->y)
-                && desktop_click(event->button, CLEANMASK(mods)))
+                && desktop_click(srv->desktop, event->button, CLEANMASK(mods)))
             return;
         break;
     case WL_POINTER_BUTTON_STATE_RELEASED:
@@ -208,15 +204,15 @@ createpointerconstraint(struct wl_listener *listener, void *data)
 }
 
 void
-cursorconstrain(struct wlr_pointer_constraint_v1 *constraint)
+cursorconstrain(awl_server_t *srv, struct wlr_pointer_constraint_v1 *constraint)
 {
-    if (active_constraint == constraint)
+    if (srv->cursor.active_constraint == constraint)
         return;
 
-    if (active_constraint)
-        wlr_pointer_constraint_v1_send_deactivated(active_constraint);
+    if (srv->cursor.active_constraint)
+        wlr_pointer_constraint_v1_send_deactivated(srv->cursor.active_constraint);
 
-    active_constraint = constraint;
+    srv->cursor.active_constraint = constraint;
     wlr_pointer_constraint_v1_send_activated(constraint);
 }
 
@@ -236,13 +232,13 @@ void
 cursorwarptohint(awl_server_t *srv)
 {
     Client *c = NULL;
-    double sx = active_constraint->current.cursor_hint.x;
-    double sy = active_constraint->current.cursor_hint.y;
+    double sx = srv->cursor.active_constraint->current.cursor_hint.x;
+    double sy = srv->cursor.active_constraint->current.cursor_hint.y;
 
-    toplevel_from_wlr_surface(active_constraint->surface, &c, NULL);
-    if (c && active_constraint->current.cursor_hint.enabled) {
+    toplevel_from_wlr_surface(srv->cursor.active_constraint->surface, &c, NULL);
+    if (c && srv->cursor.active_constraint->current.cursor_hint.enabled) {
         wlr_cursor_warp(srv->cursor.wlr, NULL, sx + c->geom.x + c->bw, sy + c->geom.y + c->bw);
-        wlr_seat_pointer_warp(active_constraint->seat, sx, sy);
+        wlr_seat_pointer_warp(srv->cursor.active_constraint->seat, sx, sy);
     }
 }
 
@@ -264,9 +260,9 @@ destroypointerconstraint(struct wl_listener *listener, void *data)
     PointerConstraint *pointer_constraint = wl_container_of(listener, pointer_constraint, destroy);
     awl_server_t *srv = pointer_constraint->srv;
 
-    if (active_constraint == pointer_constraint->constraint) {
+    if (srv->cursor.active_constraint == pointer_constraint->constraint) {
         cursorwarptohint(srv);
-        active_constraint = NULL;
+        srv->cursor.active_constraint = NULL;
     }
 
     wl_list_remove(&pointer_constraint->destroy.link);
@@ -311,20 +307,20 @@ motionnotify(awl_server_t *srv, uint32_t time, struct wlr_input_device *device, 
                 dx, dy, dx_unaccel, dy_unaccel);
 
         wl_list_for_each(constraint, &srv->cursor.constraints->constraints, link)
-            cursorconstrain(constraint);
+            cursorconstrain(srv, constraint);
 
-        if (active_constraint && srv->cursor.mode != CurResize && srv->cursor.mode != CurMove) {
-            toplevel_from_wlr_surface(active_constraint->surface, &c, NULL);
-            if (c && active_constraint->surface == srv->seat->pointer_state.focused_surface) {
+        if (srv->cursor.active_constraint && srv->cursor.mode != CurResize && srv->cursor.mode != CurMove) {
+            toplevel_from_wlr_surface(srv->cursor.active_constraint->surface, &c, NULL);
+            if (c && srv->cursor.active_constraint->surface == srv->seat->pointer_state.focused_surface) {
                 sx = srv->cursor.wlr->x - c->geom.x - c->bw;
                 sy = srv->cursor.wlr->y - c->geom.y - c->bw;
-                if (wlr_region_confine(&active_constraint->region, sx, sy,
+                if (wlr_region_confine(&srv->cursor.active_constraint->region, sx, sy,
                         sx + dx, sy + dy, &sx_confined, &sy_confined)) {
                     dx = sx_confined - sx;
                     dy = sy_confined - sy;
                 }
 
-                if (active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED)
+                if (srv->cursor.active_constraint->type == WLR_POINTER_CONSTRAINT_V1_LOCKED)
                     return;
             }
         }
@@ -356,7 +352,7 @@ motionnotify(awl_server_t *srv, uint32_t time, struct wlr_input_device *device, 
     /* If we are currently grabbing the mouse, handle and return */
     if (srv->cursor.mode == CurMove) {
         /* Move the grabbed client to the new position. */
-        resize(srv, srv->cursor.grabc, (struct wlr_box){.x = (int)round(srv->cursor.wlr->x) - grabcx, .y = (int)round(srv->cursor.wlr->y) - grabcy,
+        resize(srv, srv->cursor.grabc, (struct wlr_box){.x = (int)round(srv->cursor.wlr->x) - srv->cursor.grabcx, .y = (int)round(srv->cursor.wlr->y) - srv->cursor.grabcy,
             .width = srv->cursor.grabc->geom.width, .height = srv->cursor.grabc->geom.height}, 1);
         return;
     } else if (srv->cursor.mode == CurResize) {
@@ -408,8 +404,8 @@ moveresize(awl_server_t *srv, const Arg *arg)
     setfloating(srv, srv->cursor.grabc, 1);
     switch (srv->cursor.mode = arg->ui) {
     case CurMove:
-        grabcx = (int)round(srv->cursor.wlr->x) - srv->cursor.grabc->geom.x;
-        grabcy = (int)round(srv->cursor.wlr->y) - srv->cursor.grabc->geom.y;
+        srv->cursor.grabcx = (int)round(srv->cursor.wlr->x) - srv->cursor.grabc->geom.x;
+        srv->cursor.grabcy = (int)round(srv->cursor.wlr->y) - srv->cursor.grabc->geom.y;
         wlr_cursor_set_xcursor(srv->cursor.wlr, srv->cursor.mgr, "all-scroll");
         break;
     case CurResize:

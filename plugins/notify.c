@@ -132,7 +132,7 @@ static int px( const note_t* n, float v ) {
 /** id's record in what the server keeps open now, NULL if it closed */
 static const awl_notif_t* record( uint32_t id ) {
     static const awl_notif_t* open[MAX_OPEN];
-    int k = awl_host->notif_list( open, MAX_OPEN );
+    int k = awl_host->notif_list( awl_host->srv, open, MAX_OPEN );
     for (int i = 0; i < k && i < MAX_OPEN; i++)
         if (open[i]->id == id) return open[i];
     return NULL;
@@ -496,7 +496,7 @@ void awl_notify_dismiss_all( void ) {
     int k = 0;
     /* copied first: a close changes the list */
     for (int i = 0; i < N.n; i++) ids[k++] = N.v[i]->id;
-    for (int i = 0; i < k; i++) awl_host->notif_close( ids[i], AWL_NOTIF_DISMISSED );
+    for (int i = 0; i < k; i++) awl_host->notif_close( awl_host->srv, ids[i], AWL_NOTIF_DISMISSED );
 }
 
 static void click( awl_window_t* win, int row, int col, uint32_t button, void* data ) {
@@ -504,11 +504,11 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
     (void)win;
     (void)col;
     if (button == BTN_MIDDLE) awl_notify_dismiss_all();
-    else if (button == BTN_RIGHT) awl_host->notif_close( n->id, AWL_NOTIF_DISMISSED );
+    else if (button == BTN_RIGHT) awl_host->notif_close( awl_host->srv, n->id, AWL_NOTIF_DISMISSED );
     else if (button != BTN_LEFT) return;
     else if (row >= 1 && row <= n->nactions) awl_host->notif_invoke( awl_host->srv, n->id, n->actions[2 * (row - 1)] );
     else if (n->has_default) awl_host->notif_invoke( awl_host->srv, n->id, "default" );
-    else awl_host->notif_close( n->id, AWL_NOTIF_DISMISSED );
+    else awl_host->notif_close( awl_host->srv, n->id, AWL_NOTIF_DISMISSED );
 }
 
 static void hover( awl_window_t* win, int row, int in, void* data ) {
@@ -834,7 +834,7 @@ void awl_notify_changed( void ) {
     static const awl_notif_t* open[MAX_OPEN];
     static note_t* next[MAX_OPEN];
     if (!N.started) return;
-    int k = awl_host->notif_list( open, MAX_OPEN );
+    int k = awl_host->notif_list( awl_host->srv, open, MAX_OPEN );
     if (k > MAX_OPEN) k = MAX_OPEN;
     int nn = 0;
     for (int i = 0; i < k; i++) {

@@ -12,7 +12,7 @@
 
 /** the timer, unarmed until configapply() */
 void wallpaperinit(awl_server_t *srv);
-void wallpaperfini(void);
+void wallpaperfini(awl_server_t *srv);
 /** cfgdict's "wallpaper_mode": cfg->wallpaper.mode */
 void wallpapermodeinit(awl_server_t *srv);
 /** after plugins_config.c changed: its interval and mode */

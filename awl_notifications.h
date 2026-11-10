@@ -50,27 +50,31 @@ typedef struct awl_server_t awl_server_t;
 
 struct wl_event_loop;
 
-/** Starts it on loop; it connects from the loop. changed, if not NULL, is
+/** the server's state, :c:member:`awl_server_t.notifs` */
+typedef struct awl_notifs awl_notifs_t;
+
+/** Makes :c:member:`awl_server_t.notifs` and starts it on loop; it connects from the loop. changed, if not NULL, is
  * called once per loop round after the open notifications changed.
  * Returns 0, or -1 (logged). */
 int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( void ) );
 /** Stops it, letting go of the name; the open notifications are dropped
- * without a signal. Nothing if it isn't running. */
-void awl_notifications_stop( void );
+ * without a signal, :c:member:`awl_server_t.notifs` freed. Nothing if it
+ * isn't running. */
+void awl_notifications_stop( awl_server_t* srv );
 
 /** :c:member:`awl_host_t.notif_list` */
-int awl_notifications_list( const awl_notif_t** out, int max );
+int awl_notifications_list( awl_server_t* srv, const awl_notif_t** out, int max );
 /** :c:member:`awl_host_t.notif_close` */
-void awl_notifications_close( uint32_t id, awl_notif_reason_t reason );
+void awl_notifications_close( awl_server_t* srv, uint32_t id, awl_notif_reason_t reason );
 /** :c:member:`awl_host_t.notif_invoke` */
-void awl_notifications_invoke( uint32_t id, const char* key, const char* token );
+void awl_notifications_invoke( awl_server_t* srv, uint32_t id, const char* key, const char* token );
 /** :c:member:`awl_host_t.notif_send`: awl's own notifications, the library's and
  * the core's (awl_alert.c) */
 uint32_t awl_notifications_send( awl_server_t* srv, const awl_notif_send_t* send );
 /** :c:member:`awl_host_t.notif_history` */
-int awl_notifications_history( const awl_notif_past_t** out, int max );
+int awl_notifications_history( awl_server_t* srv, const awl_notif_past_t** out, int max );
 /** :c:member:`awl_host_t.notif_forget` */
-void awl_notifications_forget( uint64_t seq );
+void awl_notifications_forget( awl_server_t* srv, uint64_t seq );
 /** :c:member:`awl_host_t.notif_show` */
 uint32_t awl_notifications_show( awl_server_t* srv, uint64_t seq );
 /** :c:member:`awl_host_t.notif_hold` */

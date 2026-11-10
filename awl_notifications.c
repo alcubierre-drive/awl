@@ -52,6 +52,8 @@ typedef struct {
      * left of it when the user went away, 0 the whole timeout */
     int64_t deadline;
     int left;
+    /** the store it's in, for expire() */
+    awl_notifs_t* N;
 } notif_t;
 
 /** a closed one in the history: pub's strings are n's */
@@ -60,7 +62,10 @@ typedef struct {
     notif_t* n;
 } past_t;
 
-static struct {
+/** The notification server (:c:member:`awl_server_t.notifs`), from
+ * awl_notifications_start() to awl_notifications_stop() */
+struct awl_notifs {
+    /** NULL while it isn't running */
     struct wl_event_loop* loop;
     void (*changed)( void );
     struct wl_event_source* idle;
@@ -85,24 +90,24 @@ static struct {
     int64_t last_activity;
     struct wl_event_source* idle_timer;
     int idle_armed, paused;
-} N = { .next_id = 1 };
+};
 
 /* ---- the store ---- */
 
 static void changed_fire( void* data ) {
-    (void)data;
-    N.idle = NULL;
-    if (N.changed) N.changed();
+    awl_notifs_t* N = data;
+    N->idle = NULL;
+    if (N->changed) N->changed();
 }
 
 /** the library hears of it once this loop round is done */
-static void changed( void ) {
-    if (!N.idle && N.loop) N.idle = wl_event_loop_add_idle( N.loop, changed_fire, NULL );
+static void changed( awl_notifs_t* N ) {
+    if (!N->idle && N->loop) N->idle = wl_event_loop_add_idle( N->loop, changed_fire, N );
 }
 
-static int find( uint32_t id ) {
-    for (int i = 0; i < N.nopen; i++)
-        if (N.open[i]->pub.id == id) return i;
+static int find( awl_notifs_t* N, uint32_t id ) {
+    for (int i = 0; i < N->nopen; i++)
+        if (N->open[i]->pub.id == id) return i;
     return -1;
 }
 
@@ -154,28 +159,33 @@ static float clampf( float f ) {
 
 /** the idle check due idle_pause after the last activity */
 static void idle_arm( awl_server_t *srv ) {
+    awl_notifs_t* N = srv->notifs;
     const int pause = srv->cfg->notifications.idle_pause;
-    if (N.idle_armed || N.paused || pause <= 0 || !N.loop) return;
-    if (!N.idle_timer && !(N.idle_timer = wl_event_loop_add_timer( N.loop, idle_check, srv ))) return;
-    int64_t left = N.last_activity + pause - now_ms();
+    if (N->idle_armed || N->paused || pause <= 0 || !N->loop) return;
+    if (!N->idle_timer && !(N->idle_timer = wl_event_loop_add_timer( N->loop, idle_check, srv ))) return;
+    int64_t left = N->last_activity + pause - now_ms();
     if (left < 1) left = 1;
     if (left > pause) left = pause;
-    wl_event_source_timer_update( N.idle_timer, (int)left );
-    N.idle_armed = 1;
+    wl_event_source_timer_update( N->idle_timer, (int)left );
+    N->idle_armed = 1;
 }
 
 /** (re)starts n's timer, with what was left when the user went away or
  * else the whole timeout, unless it is held, has none or the user is away */
 static void arm( awl_server_t* srv, notif_t* n ) {
+    awl_notifs_t* N = srv->notifs;
     if (n->pub.timeout > 0) idle_arm(srv);
-    if (n->held || n->pub.timeout <= 0 || N.paused) {
+    if (n->held || n->pub.timeout <= 0 || N->paused) {
         if (n->timer) wl_event_source_timer_update( n->timer, 0 );
         n->deadline = 0;
         return;
     }
     const int ms = n->left > 0 ? n->left : n->pub.timeout;
     n->left = 0;
-    if (!n->timer) n->timer = wl_event_loop_add_timer( N.loop, expire, n );
+    if (!n->timer) {
+        n->N = N;
+        n->timer = wl_event_loop_add_timer( N->loop, expire, n );
+    }
     if (n->timer) wl_event_source_timer_update( n->timer, ms );
     n->deadline = now_ms() + ms;
 }
@@ -187,16 +197,16 @@ static void pixels_drop( notif_t* n ) {
     memset( &n->pub.image_data, 0, sizeof n->pub.image_data );
 }
 
-static void past_free( past_t* p ) {
-    N.past_bytes -= p->n->npixels;
+static void past_free( awl_notifs_t* N, past_t* p ) {
+    N->past_bytes -= p->n->npixels;
     notif_free( p->n );
 }
 
 /** n (closed, out of open) into the history, unless it is transient;
  * returns whether it took n */
-static int past_add( notif_t* n, awl_notif_reason_t reason ) {
+static int past_add( awl_notifs_t* N, notif_t* n, awl_notif_reason_t reason ) {
     if (n->pub.flags & AWL_NOTIF_TRANSIENT) return 0;
-    if (N.npast == MAX_PAST) past_free( &N.past[--N.npast] );
+    if (N->npast == MAX_PAST) past_free( N, &N->past[--N->npast] );
     /* no client waits on its actions now; its image data as room allows */
     for (int i = 0; i < 2 * n->pub.nactions; i++) free( n->actions[i] );
     free( n->actions );
@@ -205,15 +215,15 @@ static int past_add( notif_t* n, awl_notif_reason_t reason ) {
     n->pub.nactions = 0;
     if (n->timer) wl_event_source_remove( n->timer );
     n->timer = NULL;
-    for (int i = N.npast - 1; i >= 0 && N.past_bytes + n->npixels > MAX_PAST_IMAGES; i--) {
-        N.past_bytes -= N.past[i].n->npixels;
-        pixels_drop( N.past[i].n );
+    for (int i = N->npast - 1; i >= 0 && N->past_bytes + n->npixels > MAX_PAST_IMAGES; i--) {
+        N->past_bytes -= N->past[i].n->npixels;
+        pixels_drop( N->past[i].n );
     }
-    N.past_bytes += n->npixels;
-    memmove( &N.past[1], &N.past[0], (size_t)N.npast * sizeof(*N.past) );
-    N.npast++;
-    N.past[0] = (past_t){
-        .pub = { .seq = ++N.next_seq, .id = n->pub.id, .app = n->pub.app, .summary = n->pub.summary,
+    N->past_bytes += n->npixels;
+    memmove( &N->past[1], &N->past[0], (size_t)N->npast * sizeof(*N->past) );
+    N->npast++;
+    N->past[0] = (past_t){
+        .pub = { .seq = ++N->next_seq, .id = n->pub.id, .app = n->pub.app, .summary = n->pub.summary,
                  .urgency = n->pub.urgency, .flags = n->pub.flags, .reason = reason, .closed = time( NULL ) },
         .n = n,
     };
@@ -222,60 +232,71 @@ static int past_add( notif_t* n, awl_notif_reason_t reason ) {
 
 /** removes open[i], telling its clients why; the history keeps it
  * (past) */
-static void close_past( int i, awl_notif_reason_t reason, int past ) {
-    notif_t* n = N.open[i];
+static void close_past( awl_notifs_t* N, int i, awl_notif_reason_t reason, int past ) {
+    notif_t* n = N->open[i];
     awl_vrb_printf( "notifications: %u closed (%d)\n", n->pub.id, reason );
     /* awl's own have no client to tell, nor have those shown again */
-    if (N.bus && !(n->pub.flags & CLIENTLESS)) sd_bus_emit_signal( N.bus, PATH, IFACE, "NotificationClosed", "uu", n->pub.id, (uint32_t)reason );
-    N.image_bytes -= n->npixels;
-    memmove( &N.open[i], &N.open[i + 1], (size_t)(N.nopen - i - 1) * sizeof(*N.open) );
-    N.nopen--;
-    if (!past || !past_add( n, reason )) notif_free( n );
-    changed();
+    if (N->bus && !(n->pub.flags & CLIENTLESS)) sd_bus_emit_signal( N->bus, PATH, IFACE, "NotificationClosed", "uu", n->pub.id, (uint32_t)reason );
+    N->image_bytes -= n->npixels;
+    memmove( &N->open[i], &N->open[i + 1], (size_t)(N->nopen - i - 1) * sizeof(*N->open) );
+    N->nopen--;
+    if (!past || !past_add( N, n, reason )) notif_free( n );
+    changed( N );
 }
 
 /** close_past(), into the history unless its client closed it */
-static void close_at( int i, awl_notif_reason_t reason ) {
-    close_past( i, reason, reason != AWL_NOTIF_CLOSED );
+static void close_at( awl_notifs_t* N, int i, awl_notif_reason_t reason ) {
+    close_past( N, i, reason, reason != AWL_NOTIF_CLOSED );
 }
 
 static int expire( void* data ) {
     notif_t* n = data;
-    for (int i = 0; i < N.nopen; i++)
-        if (N.open[i] == n) close_at( i, AWL_NOTIF_EXPIRED );
+    awl_notifs_t* N = n->N;
+    for (int i = 0; i < N->nopen; i++)
+        if (N->open[i] == n) close_at( N, i, AWL_NOTIF_EXPIRED );
     return 0;
 }
 
-int awl_notifications_history( const awl_notif_past_t** out, int max ) {
-    for (int i = 0; i < N.npast && i < max; i++) out[i] = &N.past[i].pub;
-    return N.npast;
+int awl_notifications_history( awl_server_t* srv, const awl_notif_past_t** out, int max ) {
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return 0;
+    for (int i = 0; i < N->npast && i < max; i++) out[i] = &N->past[i].pub;
+    return N->npast;
 }
 
-void awl_notifications_forget( uint64_t seq ) {
+void awl_notifications_forget( awl_server_t* srv, uint64_t seq ) {
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return;
     int k = 0;
-    for (int i = 0; i < N.npast; i++) {
-        if (!seq || N.past[i].pub.seq == seq) past_free( &N.past[i] );
-        else N.past[k++] = N.past[i];
+    for (int i = 0; i < N->npast; i++) {
+        if (!seq || N->past[i].pub.seq == seq) past_free( N, &N->past[i] );
+        else N->past[k++] = N->past[i];
     }
-    if (k == N.npast) return;
-    N.npast = k;
-    changed();
+    if (k == N->npast) return;
+    N->npast = k;
+    changed( N );
 }
 
-int awl_notifications_list( const awl_notif_t** out, int max ) {
-    for (int i = 0; i < N.nopen && i < max; i++) out[i] = &N.open[i]->pub;
-    return N.nopen;
+int awl_notifications_list( awl_server_t* srv, const awl_notif_t** out, int max ) {
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return 0;
+    for (int i = 0; i < N->nopen && i < max; i++) out[i] = &N->open[i]->pub;
+    return N->nopen;
 }
 
-void awl_notifications_close( uint32_t id, awl_notif_reason_t reason ) {
-    int i = find( id );
-    if (i >= 0) close_at( i, reason );
+void awl_notifications_close( awl_server_t* srv, uint32_t id, awl_notif_reason_t reason ) {
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return;
+    int i = find( N, id );
+    if (i >= 0) close_at( N, i, reason );
 }
 
-void awl_notifications_invoke( uint32_t id, const char* key, const char* token ) {
-    int i = find( id );
+void awl_notifications_invoke( awl_server_t* srv, uint32_t id, const char* key, const char* token ) {
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return;
+    int i = find( N, id );
     if (i < 0 || !key) return;
-    notif_t* n = N.open[i];
+    notif_t* n = N->open[i];
     int a = 0;
     while (a < n->pub.nactions && strcmp( n->actions[2 * a], key )) a++;
     if (a == n->pub.nactions) {
@@ -283,26 +304,28 @@ void awl_notifications_invoke( uint32_t id, const char* key, const char* token )
         return;
     }
     awl_vrb_printf( "notifications: %u action '%s'\n", id, key );
-    if (N.bus) {
-        if (token) sd_bus_emit_signal( N.bus, PATH, IFACE, "ActivationToken", "us", id, token );
-        sd_bus_emit_signal( N.bus, PATH, IFACE, "ActionInvoked", "us", id, key );
+    if (N->bus) {
+        if (token) sd_bus_emit_signal( N->bus, PATH, IFACE, "ActivationToken", "us", id, token );
+        sd_bus_emit_signal( N->bus, PATH, IFACE, "ActionInvoked", "us", id, key );
     }
     /* acted on: not for the history */
-    if (!(n->pub.flags & AWL_NOTIF_RESIDENT)) close_past( i, AWL_NOTIF_DISMISSED, 0 );
+    if (!(n->pub.flags & AWL_NOTIF_RESIDENT)) close_past( N, i, AWL_NOTIF_DISMISSED, 0 );
 }
 
 void awl_notifications_idle( awl_server_t *srv ) {
-    if (N.paused) return;
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return;
+    if (N->paused) return;
     awl_vrb_printf( "notifications: idle, timeouts stopped\n" );
-    N.paused = 1;
+    N->paused = 1;
     /* the user went away somewhere between the last activity and now: the
      * idle_giveback of that is given back, the rest counts as seen */
     const float back = clampf( srv->cfg->notifications.idle_giveback ),
                 keep = clampf( srv->cfg->notifications.idle_floor );
     const int64_t now = now_ms();
-    const int64_t away = now - (int64_t)((float)(now - N.last_activity) * back);
-    for (int i = 0; i < N.nopen; i++) {
-        notif_t* n = N.open[i];
+    const int64_t away = now - (int64_t)((float)(now - N->last_activity) * back);
+    for (int i = 0; i < N->nopen; i++) {
+        notif_t* n = N->open[i];
         /* what was left when the user went away, and at least idle_floor
          * of it, to be seen on return */
         if (n->deadline) {
@@ -323,30 +346,34 @@ void awl_notifications_idle( awl_server_t *srv ) {
  * again when that will be, while something is open */
 static int idle_check( void* data ) {
     awl_server_t *srv = data;
-    (void)data;
-    N.idle_armed = 0;
-    if (!N.nopen) return 0;
+    awl_notifs_t* N = srv->notifs;
+    N->idle_armed = 0;
+    if (!N->nopen) return 0;
     const int pause = srv->cfg->notifications.idle_pause;
-    if (pause > 0 && now_ms() - N.last_activity >= pause) awl_notifications_idle(srv);
+    if (pause > 0 && now_ms() - N->last_activity >= pause) awl_notifications_idle(srv);
     else idle_arm(srv);
     return 0;
 }
 
 void awl_notifications_activity( awl_server_t *srv ) {
-    N.last_activity = now_ms();
-    if (!N.paused) return;
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return;
+    N->last_activity = now_ms();
+    if (!N->paused) return;
     awl_vrb_printf( "notifications: active, timeouts resumed\n" );
-    N.paused = 0;
-    for (int i = 0; i < N.nopen; i++) arm( srv, N.open[i] );
+    N->paused = 0;
+    for (int i = 0; i < N->nopen; i++) arm( srv, N->open[i] );
 }
 
 void awl_notifications_hold( awl_server_t* srv, uint32_t id, int held ) {
-    int i = find( id );
-    if (i < 0 || N.open[i]->held == !!held) return;
-    N.open[i]->held = !!held;
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return;
+    int i = find( N, id );
+    if (i < 0 || N->open[i]->held == !!held) return;
+    N->open[i]->held = !!held;
     /* released, it starts from the beginning */
-    N.open[i]->left = 0;
-    arm( srv, N.open[i] );
+    N->open[i]->left = 0;
+    arm( srv, N->open[i] );
 }
 
 /* ---- Notify ---- */
@@ -387,7 +414,7 @@ static int read_str( sd_bus_message* m, const char* type, char** out, size_t max
 
 /** image-data's (iiibiiay) into n, rows packed, if it is one awl takes
  * (then ``*taken``) */
-static int read_image( sd_bus_message* m, const char* type, notif_t* n, int* taken ) {
+static int read_image( awl_notifs_t* N, sd_bus_message* m, const char* type, notif_t* n, int* taken ) {
     int32_t w, h, stride, bits, channels;
     int alpha;
     const void* data;
@@ -406,7 +433,7 @@ static int read_image( sd_bus_message* m, const char* type, notif_t* n, int* tak
         return 1;
     }
     size_t row = (size_t)(w * channels), len = row * (size_t)h;
-    if (N.image_bytes + len > MAX_IMAGES) {
+    if (N->image_bytes + len > MAX_IMAGES) {
         awl_wrn_printf( "notifications: too much image data open, one dropped\n" );
         return 1;
     }
@@ -430,13 +457,13 @@ static int read_image( sd_bus_message* m, const char* type, notif_t* n, int* tak
 /** one hint, its value's type type, into n; what isn't taken is skipped.
  * ``*rank`` is the image data's so far: image-data beats image_data beats
  * icon_data. */
-static int hint( sd_bus_message* m, const char* key, const char* type, notif_t* n, int* rank ) {
-    static const char* images[] = { "icon_data", "image_data", "image-data" };
+static int hint( awl_notifs_t* N, sd_bus_message* m, const char* key, const char* type, notif_t* n, int* rank ) {
+    static const char* const images[] = { "icon_data", "image_data", "image-data" };
     int r = 0, v, image = -1, taken = 0;
     for (int i = 0; i < 3; i++)
         if (!strcmp( key, images[i] )) image = i;
     if (image >= 0) {
-        if (image >= *rank && (r = read_image( m, type, n, &taken )) > 0 && taken) *rank = image + 1;
+        if (image >= *rank && (r = read_image( N, m, type, n, &taken )) > 0 && taken) *rank = image + 1;
     } else if (!strcmp( key, "urgency" )) {
         if ((r = read_int( m, type, &v )) > 0)
             n->pub.urgency = v <= 0 ? AWL_NOTIF_LOW : v == 1 ? AWL_NOTIF_NORMAL : AWL_NOTIF_CRITICAL;
@@ -458,7 +485,7 @@ static int hint( sd_bus_message* m, const char* key, const char* type, notif_t* 
     return r ? 0 : sd_bus_message_skip( m, type );
 }
 
-static int read_hints( sd_bus_message* m, notif_t* n ) {
+static int read_hints( awl_notifs_t* N, sd_bus_message* m, notif_t* n ) {
     int r, rank = 0;
     if ((r = sd_bus_message_enter_container( m, 'a', "{sv}" )) < 0) return r;
     while ((r = sd_bus_message_enter_container( m, 'e', "sv" )) > 0) {
@@ -466,7 +493,7 @@ static int read_hints( sd_bus_message* m, notif_t* n ) {
         if ((r = sd_bus_message_read_basic( m, 's', &key )) < 0 ||
             (r = sd_bus_message_peek_type( m, NULL, &type )) < 0 ||
             (r = sd_bus_message_enter_container( m, 'v', type )) < 0 ||
-            (r = hint( m, key, type, n, &rank )) < 0 ||
+            (r = hint( N, m, key, type, n, &rank )) < 0 ||
             (r = sd_bus_message_exit_container( m )) < 0 ||
             (r = sd_bus_message_exit_container( m )) < 0)
             return r;
@@ -510,29 +537,29 @@ static int strings_set( notif_t* n ) {
 
 /** whether open[i] is of n's kind: both a client's or both not
  * (CLIENTLESS) */
-static int same_kind( int i, const notif_t* n ) {
-    return !(N.open[i]->pub.flags & CLIENTLESS) == !(n->pub.flags & CLIENTLESS);
+static int same_kind( awl_notifs_t* N, int i, const notif_t* n ) {
+    return !(N->open[i]->pub.flags & CLIENTLESS) == !(n->pub.flags & CLIENTLESS);
 }
 
 /** the open one that n replaces: replaces_id's, else the one with n's tag
  * from n's app; only one of n's kind (no client replaces awl's own) */
-static int replaced( const notif_t* n, uint32_t replaces_id ) {
+static int replaced( awl_notifs_t* N, const notif_t* n, uint32_t replaces_id ) {
     if (replaces_id) {
-        int i = find( replaces_id );
-        return i >= 0 && same_kind( i, n ) ? i : -1;
+        int i = find( N, replaces_id );
+        return i >= 0 && same_kind( N, i, n ) ? i : -1;
     }
-    for (int i = 0; *n->tag && i < N.nopen; i++)
-        if (same_kind( i, n ) && !strcmp( N.open[i]->tag, n->tag ) && !strcmp( N.open[i]->pub.app, n->pub.app ))
+    for (int i = 0; *n->tag && i < N->nopen; i++)
+        if (same_kind( N, i, n ) && !strcmp( N->open[i]->tag, n->tag ) && !strcmp( N->open[i]->pub.app, n->pub.app ))
             return i;
     return -1;
 }
 
 /** an id for a new one: replaces_id if awl gave it out and it is closed,
  * else the next, never 0 or an open one's */
-static uint32_t new_id( uint32_t replaces_id ) {
-    if (replaces_id && replaces_id < N.next_id && find( replaces_id ) < 0) return replaces_id;
-    while (!N.next_id || find( N.next_id ) >= 0) N.next_id++;
-    return N.next_id++;
+static uint32_t new_id( awl_notifs_t* N, uint32_t replaces_id ) {
+    if (replaces_id && replaces_id < N->next_id && find( N, replaces_id ) < 0) return replaces_id;
+    while (!N->next_id || find( N, N->next_id ) >= 0) N->next_id++;
+    return N->next_id++;
 }
 
 /** the timeout for urgency when the sender leaves it to the server */
@@ -545,11 +572,12 @@ static int default_timeout( awl_server_t* srv, awl_notif_urgency_t urgency ) {
 /** opens n (complete, with its generation), or replaces the open one it
  * replaces with it; returns its id. n is the store's now. */
 static uint32_t post( awl_server_t* srv, notif_t* n, uint32_t replaces_id ) {
-    int i = replaced( n, replaces_id );
+    awl_notifs_t* N = srv->notifs;
+    int i = replaced( N, n, replaces_id );
     if (i >= 0) {
         /* in place: its id, place, timer (its data is old) and hold stay */
-        notif_t* old = N.open[i];
-        N.image_bytes = N.image_bytes - old->npixels + n->npixels;
+        notif_t* old = N->open[i];
+        N->image_bytes = N->image_bytes - old->npixels + n->npixels;
         n->pub.id = old->pub.id;
         n->timer = old->timer;
         n->held = old->held;
@@ -559,21 +587,21 @@ static uint32_t post( awl_server_t* srv, notif_t* n, uint32_t replaces_id ) {
         n = old;
         awl_vrb_printf( "notifications: %u replaced\n", n->pub.id );
     } else {
-        if (N.nopen == MAX_OPEN) {
-            int o = N.nopen - 1;
-            while (o > 0 && N.open[o]->pub.urgency == AWL_NOTIF_CRITICAL) o--;
-            if (N.open[o]->pub.urgency == AWL_NOTIF_CRITICAL) o = N.nopen - 1;
-            close_at( o, AWL_NOTIF_UNDEFINED );
+        if (N->nopen == MAX_OPEN) {
+            int o = N->nopen - 1;
+            while (o > 0 && N->open[o]->pub.urgency == AWL_NOTIF_CRITICAL) o--;
+            if (N->open[o]->pub.urgency == AWL_NOTIF_CRITICAL) o = N->nopen - 1;
+            close_at( N, o, AWL_NOTIF_UNDEFINED );
         }
-        n->pub.id = new_id( replaces_id );
-        N.image_bytes += n->npixels;
-        memmove( &N.open[1], &N.open[0], (size_t)N.nopen * sizeof(*N.open) );
-        N.open[0] = n;
-        N.nopen++;
+        n->pub.id = new_id( N, replaces_id );
+        N->image_bytes += n->npixels;
+        memmove( &N->open[1], &N->open[0], (size_t)N->nopen * sizeof(*N->open) );
+        N->open[0] = n;
+        N->nopen++;
         awl_vrb_printf( "notifications: %u from '%s'\n", n->pub.id, n->pub.app );
     }
     arm( srv, n );
-    changed();
+    changed( N );
     return n->pub.id;
 }
 
@@ -581,6 +609,7 @@ static uint32_t post( awl_server_t* srv, notif_t* n, uint32_t replaces_id ) {
  * as actions, a{sv} hints, i expire_timeout) -> u id */
 static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     awl_server_t *srv = userdata;
+    awl_notifs_t* N = srv->notifs;
     (void)ret_error;
     const char *app, *icon, *summary, *body;
     uint32_t replaces_id;
@@ -591,7 +620,7 @@ static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_e
     n->pub.urgency = AWL_NOTIF_NORMAL;
     n->pub.value = -1;
     if ((r = sd_bus_message_read( m, "susss", &app, &replaces_id, &icon, &summary, &body )) < 0 ||
-        (r = read_actions( m, n )) < 0 || (r = read_hints( m, n )) < 0 ||
+        (r = read_actions( m, n )) < 0 || (r = read_hints( N, m, n )) < 0 ||
         (r = sd_bus_message_read( m, "i", &expire_timeout )) < 0)
         goto fail;
     r = -ENOMEM;
@@ -602,7 +631,7 @@ static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_e
     n->pub.timeout = n->pub.urgency == AWL_NOTIF_CRITICAL ? 0
                    : expire_timeout >= 0 ? expire_timeout
                    : default_timeout( srv, n->pub.urgency );
-    n->pub.generation = ++N.generation;
+    n->pub.generation = ++N->generation;
     return sd_bus_reply_method_return( m, "u", post( srv, n, replaces_id ) );
 fail:
     notif_free( n );
@@ -612,12 +641,14 @@ fail:
 /** CloseNotification(u id): reason 3; nothing if it isn't open or is no
  * client's (CLIENTLESS) */
 static int method_close( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)userdata; (void)ret_error;
+    awl_server_t *srv = userdata;
+    awl_notifs_t* N = srv->notifs;
+    (void)ret_error;
     uint32_t id;
     int r = sd_bus_message_read( m, "u", &id );
     if (r < 0) return r;
-    int i = find( id );
-    if (i >= 0 && !(N.open[i]->pub.flags & CLIENTLESS)) close_at( i, AWL_NOTIF_CLOSED );
+    int i = find( N, id );
+    if (i >= 0 && !(N->open[i]->pub.flags & CLIENTLESS)) close_at( N, i, AWL_NOTIF_CLOSED );
     return sd_bus_reply_method_return( m, NULL );
 }
 
@@ -677,7 +708,8 @@ static char* copy_utf8( const char* s, size_t max ) {
 }
 
 uint32_t awl_notifications_send( awl_server_t* srv, const awl_notif_send_t* s ) {
-    if (!N.loop || !s) return 0;
+    awl_notifs_t* N = srv->notifs;
+    if (!N || !N->loop || !s) return 0;
     notif_t* n = calloc( 1, sizeof(*n) );
     if (!n) return 0;
     n->pub.urgency = s->urgency <= AWL_NOTIF_LOW ? AWL_NOTIF_LOW
@@ -693,20 +725,22 @@ uint32_t awl_notifications_send( awl_server_t* srv, const awl_notif_send_t* s ) 
         notif_free( n );
         return 0;
     }
-    n->pub.generation = ++N.generation;
+    n->pub.generation = ++N->generation;
     return post( srv, n, 0 );
 }
 
 /** history entry seq open again, as a new one */
 uint32_t awl_notifications_show( awl_server_t* srv, uint64_t seq ) {
+    awl_notifs_t* N = srv->notifs;
     int i = 0;
-    while (i < N.npast && N.past[i].pub.seq != seq) i++;
-    if (!N.loop || !seq || i == N.npast) return 0;
-    notif_t* n = N.past[i].n;
-    N.past_bytes -= n->npixels;
-    memmove( &N.past[i], &N.past[i + 1], (size_t)(N.npast - i - 1) * sizeof(*N.past) );
-    N.npast--;
-    if (N.image_bytes + n->npixels > MAX_IMAGES) pixels_drop( n );
+    if (!N) return 0;
+    while (i < N->npast && N->past[i].pub.seq != seq) i++;
+    if (!N->loop || !seq || i == N->npast) return 0;
+    notif_t* n = N->past[i].n;
+    N->past_bytes -= n->npixels;
+    memmove( &N->past[i], &N->past[i + 1], (size_t)(N->npast - i - 1) * sizeof(*N->past) );
+    N->npast--;
+    if (N->image_bytes + n->npixels > MAX_IMAGES) pixels_drop( n );
     /* its client is done with it: none replaces, closes or hears of it;
      * its timeout starts over */
     n->pub.flags |= AWL_NOTIF_SHOWN;
@@ -714,7 +748,7 @@ uint32_t awl_notifications_show( awl_server_t* srv, uint64_t seq ) {
     n->held = 0;
     n->left = 0;
     n->deadline = 0;
-    n->pub.generation = ++N.generation;
+    n->pub.generation = ++N->generation;
     awl_vrb_printf( "notifications: %llu shown again\n", (unsigned long long)seq );
     return post( srv, n, 0 );
 }
@@ -723,12 +757,13 @@ uint32_t awl_notifications_show( awl_server_t* srv, uint64_t seq ) {
 
 /** RequestName -> u: 1 the owner, 2 queued behind another server */
 static int on_name( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)userdata; (void)ret_error;
+    awl_server_t *srv = userdata;
+    (void)ret_error;
     const sd_bus_error* e = sd_bus_message_get_error( m );
     uint32_t r = 0;
     if (e) {
         awl_err_printf( "notifications: can't have " NAME ": %s\n", e->message ? e->message : e->name );
-        awl_bus_fail( N.conn );
+        awl_bus_fail( srv->notifs->conn );
     } else if (sd_bus_message_read( m, "u", &r ) >= 0 && r == 2) {
         awl_wrn_printf( "notifications: another server has " NAME ", waiting for it\n" );
     }
@@ -746,20 +781,23 @@ static int on_acquired( sd_bus_message* m, void* userdata, sd_bus_error* ret_err
 
 /** awl_bus_ops_t.setup */
 static int setup( sd_bus* bus, void* data ) {
+    awl_server_t *srv = data;
+    awl_notifs_t* N = srv->notifs;
     int r;
-    N.bus = bus;
-    if ((r = sd_bus_add_object_vtable( bus, &N.vtable, PATH, IFACE, vtable, data )) < 0 ||
+    N->bus = bus;
+    if ((r = sd_bus_add_object_vtable( bus, &N->vtable, PATH, IFACE, vtable, data )) < 0 ||
         (r = sd_bus_match_signal( bus, NULL, "org.freedesktop.DBus", "/org/freedesktop/DBus",
                 "org.freedesktop.DBus", "NameAcquired", on_acquired, NULL )) < 0)
         return r;
-    return sd_bus_request_name_async( bus, NULL, NAME, SD_BUS_NAME_QUEUE, on_name, NULL );
+    return sd_bus_request_name_async( bus, NULL, NAME, SD_BUS_NAME_QUEUE, on_name, srv );
 }
 
 /** awl_bus_ops_t.dropped: the notifications stay for the next connection */
 static void dropped( void* data ) {
-    (void)data;
-    N.vtable = sd_bus_slot_unref( N.vtable );
-    N.bus = NULL;
+    awl_server_t *srv = data;
+    awl_notifs_t* N = srv->notifs;
+    N->vtable = sd_bus_slot_unref( N->vtable );
+    N->bus = NULL;
 }
 
 static const awl_bus_ops_t ops = {
@@ -770,32 +808,36 @@ static const awl_bus_ops_t ops = {
 };
 
 int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( void ) ) {
-    if (N.loop) return 0;
-    N.loop = loop;
-    N.changed = changed;
-    N.last_activity = now_ms();
-    if (!(N.conn = awl_bus_start( loop, &ops, srv ))) {
-        N.loop = NULL;
+    awl_notifs_t* N;
+    if (srv->notifs) return 0;
+    N = srv->notifs = ecalloc( 1, sizeof(*N) );
+    N->next_id = 1;
+    N->loop = loop;
+    N->changed = changed;
+    N->last_activity = now_ms();
+    if (!(N->conn = awl_bus_start( loop, &ops, srv ))) {
+        N->loop = NULL;
         return -1;
     }
     return 0;
 }
 
-void awl_notifications_stop( void ) {
-    if (!N.loop) return;
-    awl_bus_stop( N.conn );
-    N.conn = NULL;
-    if (N.idle) wl_event_source_remove( N.idle );
-    N.idle = NULL;
-    if (N.idle_timer) wl_event_source_remove( N.idle_timer );
-    N.idle_timer = NULL;
-    N.idle_armed = 0;
-    N.paused = 0;
-    for (int i = 0; i < N.nopen; i++) notif_free( N.open[i] );
-    N.nopen = 0;
-    for (int i = 0; i < N.npast; i++) past_free( &N.past[i] );
-    N.npast = 0;
-    N.past_bytes = 0;
-    N.image_bytes = 0;
-    N.loop = NULL;
+void awl_notifications_stop( awl_server_t* srv ) {
+    awl_notifs_t* N = srv->notifs;
+    if (!N) return;
+    awl_bus_stop( N->conn );
+    N->conn = NULL;
+    if (N->idle) wl_event_source_remove( N->idle );
+    N->idle = NULL;
+    if (N->idle_timer) wl_event_source_remove( N->idle_timer );
+    N->idle_timer = NULL;
+    N->idle_armed = 0;
+    N->paused = 0;
+    for (int i = 0; i < N->nopen; i++) notif_free( N->open[i] );
+    N->nopen = 0;
+    for (int i = 0; i < N->npast; i++) past_free( N, &N->past[i] );
+    N->npast = 0;
+    N->past_bytes = 0;
+    free( N );
+    srv->notifs = NULL;
 }

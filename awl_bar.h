@@ -12,15 +12,18 @@
 
 #include "awl_server.h"
 
-/** the hover's timers, before the first monitor */
+/** :c:member:`awl_server_t.bars` and the hover's timers, before the first monitor */
 void barinit(awl_server_t *srv);
-void barfini(void);
+/** removes the timers and the redraw */
+void barfini(awl_server_t *srv);
+/** frees :c:member:`awl_server_t.bars`; last, once no monitor is left */
+void barfree(awl_server_t *srv);
 /** sets up m's bar with the library's widgets; it is drawn with the others */
 void baraddmon(awl_server_t *srv, Monitor *m);
 /** m is going: forgets the hover's widgets in its bar, releases its fonts
  * and tears its bar down (closemon() then leaves the bar alone);
  * cleanupmon() destroys the scene nodes and buffers */
-void barremovemon(Monitor *m);
+void barremovemon(awl_server_t *srv, Monitor *m);
 /** before the plugin library goes (:c:func:`awl_plugins_reload`): ends the hover
  * (callback_leave, callback_view) while its widgets are still there, and
  * clears every bar's widgets */

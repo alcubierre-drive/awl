@@ -123,4 +123,4 @@ void popupsrestyle(awl_server_t *srv);
  * the plugins' */
 int popupsreap(awl_server_t *srv);
 /** the scene is going */
-void popupsfini(void);
+void popupsfini(awl_server_t *srv);

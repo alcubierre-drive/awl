@@ -32,14 +32,17 @@ typedef enum {
 void awl_alert_set( awl_server_t* srv, awl_alert_id_t id, const char* fmt, ... )
     __attribute__(( format( printf, 3, 4 ) ));
 /** Takes the alert id down, if up; logs that. */
-void awl_alert_clear( awl_alert_id_t id );
+void awl_alert_clear( awl_server_t* srv, awl_alert_id_t id );
 /** Whether the alert id is up. */
-int awl_alert_up( awl_alert_id_t id );
+int awl_alert_up( awl_server_t* srv, awl_alert_id_t id );
 /** The text of the first alert that is up, or NULL if none is. */
-const char* awl_alert_text( void );
+const char* awl_alert_text( awl_server_t* srv );
 
-/** the alerts' tree, over everything, the lock screen included */
+/** :c:member:`awl_server_t.alerts`, and their tree, over everything, the
+ * lock screen included */
 void awl_alert_init( awl_server_t *srv );
+/** frees :c:member:`awl_server_t.alerts`; last, once nothing can raise one */
+void awl_alert_fini( awl_server_t *srv );
 /** m's alert, hidden until :c:func:`awl_alert_draw` */
 void awl_alert_addmon( awl_server_t* srv, Monitor* m );
 /** The alert on m, as cfg->alert says, in the bar's font: in the bottom

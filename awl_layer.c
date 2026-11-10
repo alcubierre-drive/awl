@@ -69,8 +69,8 @@ arrangelayers(awl_server_t *srv, Monitor *m)
     for (i = 3; i >= 0; i--)
         arrangelayer(m, &m->layers[i], &usable_area, 0);
 
-    desktop_update(m);
-    background_update(m);
+    desktop_update(srv->desktop, m);
+    background_update(srv->background, m);
     awl_alert_draw(srv, m);
     popupsupdate(srv, m);
 

@@ -19,9 +19,6 @@ static void maximizenotify(struct wl_listener *listener, void *data);
 static void requestdecorationmode(struct wl_listener *listener, void *data);
 static void setontop(awl_server_t *srv, Client* c, int ontop);
 
-/** the border width plugins_config.c had, to tell whether a reload changed
- * it */
-static unsigned int applied_borderpx;
 void
 applybounds(Client *c, struct wlr_box *bbox)
 {
@@ -784,7 +781,7 @@ updatetitle(struct wl_listener *listener, void *data)
 }
 
 /* marks awl's own tokens (wlr_xdg_activation_token_v1.data) */
-static char activationmark;
+static const char activationmark;
 
 const char *
 activationtoken(awl_server_t *srv)
@@ -792,7 +789,7 @@ activationtoken(awl_server_t *srv)
     struct wlr_xdg_activation_token_v1 *t;
     if (!srv->activation || !(t = wlr_xdg_activation_token_v1_create(srv->activation)))
         return NULL;
-    t->data = &activationmark;
+    t->data = (void *)&activationmark;
     return wlr_xdg_activation_token_v1_get_name(t);
 }
 
@@ -905,15 +902,15 @@ clientsconfigure(awl_server_t *srv)
     Client *c, *sel = focustop(srv, srv->out.selmon);
 
     /* borders: those at the old default width get the new one */
-    if (srv->cfg->borderpx != applied_borderpx) {
+    if (srv->cfg->borderpx != srv->clients.applied_borderpx) {
         wl_list_for_each(c, &srv->clients.list, link) {
-            if (c->isfullscreen || c->bw != applied_borderpx)
+            if (c->isfullscreen || c->bw != srv->clients.applied_borderpx)
                 continue;
             c->bw = srv->cfg->borderpx;
             if (c->mon)
                 resize(srv, c, c->geom, 0);
         }
-        applied_borderpx = srv->cfg->borderpx;
+        srv->clients.applied_borderpx = srv->cfg->borderpx;
         wl_list_for_each(m, &srv->out.mons, link)
             arrange(srv, m);
     }

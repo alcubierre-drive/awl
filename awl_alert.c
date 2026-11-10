@@ -15,39 +15,47 @@ static const char* names[AwlAlertLast] = {
     [AwlAlertLogind] = "logind",
     [AwlAlertLocker] = "locker",
 };
-static char texts[AwlAlertLast][128];
-static unsigned int version;
+/** The alerts (:c:member:`awl_server_t.alerts`), from awl_alert_init() to
+ * awl_alert_fini() */
+struct awl_alerts {
+    /** each alert's text, empty while it's down */
+    char texts[AwlAlertLast][128];
+    /** counts the changes, for :c:member:`Monitor.alert_version` */
+    unsigned int version;
+    /** the topmost tree, :c:func:`awl_alert_init`'s */
+    struct wlr_scene_tree* tree;
+};
 
 void awl_alert_set( awl_server_t* srv, awl_alert_id_t id, const char* fmt, ... ) {
-    char text[sizeof texts[0]];
+    char text[sizeof srv->alerts->texts[0]];
     va_list ap;
     va_start( ap, fmt );
     vsnprintf( text, sizeof text, fmt, ap );
     va_end( ap );
-    if (!strcmp( text, texts[id] )) return;
+    if (!strcmp( text, srv->alerts->texts[id] )) return;
     awl_err_printf( "ALERT (%s): %s\n", names[id], text );
     /* one notification per alert, not per change of its text */
-    if (!texts[id][0]) notify( srv, text );
-    memcpy( texts[id], text, sizeof text );
-    version++;
+    if (!srv->alerts->texts[id][0]) notify( srv, text );
+    memcpy( srv->alerts->texts[id], text, sizeof text );
+    srv->alerts->version++;
     awl_redraw_request();
 }
 
-void awl_alert_clear( awl_alert_id_t id ) {
-    if (!texts[id][0]) return;
+void awl_alert_clear( awl_server_t* srv, awl_alert_id_t id ) {
+    if (!srv->alerts->texts[id][0]) return;
     awl_log_printf( "alert (%s) cleared\n", names[id] );
-    texts[id][0] = 0;
-    version++;
+    srv->alerts->texts[id][0] = 0;
+    srv->alerts->version++;
     awl_redraw_request();
 }
 
-int awl_alert_up( awl_alert_id_t id ) {
-    return texts[id][0] != 0;
+int awl_alert_up( awl_server_t* srv, awl_alert_id_t id ) {
+    return srv->alerts->texts[id][0] != 0;
 }
 
-const char* awl_alert_text( void ) {
+const char* awl_alert_text( awl_server_t* srv ) {
     for (int i = 0; i < AwlAlertLast; i++)
-        if (texts[i][0]) return texts[i];
+        if (srv->alerts->texts[i][0]) return srv->alerts->texts[i];
     return NULL;
 }
 
@@ -63,20 +71,18 @@ static void notify( awl_server_t* srv, const char* text ) {
 
 /* ---- drawing ---- */
 
-/** the topmost tree, :c:func:`awl_alert_init`'s */
-static struct wlr_scene_tree* tree;
-
 /** clicks go through the alert */
 static bool accepts_input( struct wlr_scene_buffer* buffer, double* sx, double* sy ) {
     return false;
 }
 
 void awl_alert_init( awl_server_t *srv ) {
-    tree = wlr_scene_tree_create( &srv->scene->tree );
+    srv->alerts = ecalloc( 1, sizeof *srv->alerts );
+    srv->alerts->tree = wlr_scene_tree_create( &srv->scene->tree );
 }
 
 void awl_alert_addmon( awl_server_t* srv, Monitor* m ) {
-    m->alert = wlr_scene_buffer_create( tree, NULL );
+    m->alert = wlr_scene_buffer_create( srv->alerts->tree, NULL );
     m->alert->point_accepts_input = accepts_input;
     wlr_scene_buffer_set_opacity( m->alert, srv->cfg->alert.opacity );
     wlr_scene_node_set_enabled( &m->alert->node, 0 );
@@ -97,7 +103,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
     const pixman_color_t fg = color_8bit_to_16bit( srv->cfg->colors.alert_fg ),
                          bg = color_8bit_to_16bit( srv->cfg->colors.alert_bg );
     const int margin = srv->cfg->alert.margin;
-    const char* text = awl_alert_text();
+    const char* text = awl_alert_text( srv );
     const float s = m->wlr_output->scale;
     struct fcft_font* font;
     pixman_image_t* pix;
@@ -106,10 +112,10 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
 
     if (!m->alert) /* createmon() arranges before it makes it */
         return;
-    if (m->alert_version == version && m->alert_scale == s
+    if (m->alert_version == srv->alerts->version && m->alert_scale == s
             && wlr_box_equal( &m->alert_area, &m->w ))
         return;
-    m->alert_version = version;
+    m->alert_version = srv->alerts->version;
     m->alert_scale = s;
     /* the window area: clear of the bar and of exclusive layer surfaces */
     m->alert_area = m->w;
@@ -146,7 +152,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
     wlr_scene_buffer_set_dest_size( m->alert, (int)(w / s), (int)(h / s) );
     wlr_scene_node_set_position( &m->alert->node, m->w.x + margin,
             m->w.y + m->w.height - margin - (int)(h / s) );
-    wlr_scene_node_raise_to_top( &tree->node );
+    wlr_scene_node_raise_to_top( &srv->alerts->tree->node );
     wlr_scene_node_set_enabled( &m->alert->node, 1 );
 }
 
@@ -154,4 +160,10 @@ void awl_alert_draw_all( awl_server_t *srv ) {
     Monitor* m;
     wl_list_for_each( m, &srv->out.mons, link )
         awl_alert_draw( srv, m );
+}
+
+void awl_alert_fini( awl_server_t *srv ) {
+    /* the tree goes with the scene */
+    free( srv->alerts );
+    srv->alerts = NULL;
 }

@@ -67,7 +67,7 @@ static void timer_remove( awl_timer_t* t ) {
 /** :c:member:`awl_host_t.notif_invoke`: with a token of awl's, so the client may
  * bring its window up */
 static void notifinvoke( awl_server_t* srv, uint32_t id, const char* key ) {
-    awl_notifications_invoke( id, key, activationtoken(srv) );
+    awl_notifications_invoke( srv, id, key, activationtoken(srv) );
 }
 
 /** after the library's fini, before it is unloaded: destroys the popups and

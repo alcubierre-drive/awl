@@ -37,7 +37,7 @@ static void setup(awl_server_t *srv);
 
 static awl_server_t server = {
     /* empty from the start: no init in setup() */
-    .popups = {&server.popups, &server.popups},
+    .popups.list = {&server.popups.list, &server.popups.list},
     .listen.cursor_axis = {.notify = axisnotify},
     .listen.cursor_button = {.notify = buttonpress},
     .listen.cursor_frame = {.notify = cursorframe},
@@ -72,14 +72,13 @@ awl_server_t *awl = &server;
 
 
 /** bars are redrawn on demand: see awl_redraw.h */
-static struct wl_event_source* redraw_source = NULL;
 static int redraw_fire( int fd, uint32_t mask, void* data ) {
     awl_server_t *srv = data;
     (void)fd; (void)mask; (void)data;
     awl_redraw_drain();
     awl_plugins_redraw();
     drawbars(srv);
-    desktop_update_all();
+    desktop_update_all(srv->desktop);
     wallpapertake(srv);
     awl_alert_draw_all(srv);
     return 0;
@@ -97,15 +96,15 @@ cleanup(awl_server_t *srv)
 {
     sigset_t quitsigs;
 
-    if (redraw_source) wl_event_source_remove(redraw_source);
-    redraw_source = NULL;
-    lockfini();
-    barfini();
-    wallpaperfini();
-    background_fini();
+    if (srv->redraw_source) wl_event_source_remove(srv->redraw_source);
+    srv->redraw_source = NULL;
+    lockfini(srv);
+    barfini(srv);
+    wallpaperfini(srv);
 
-    awl_sni_watcher_stop();
-    awl_notifications_stop();
+    awl_sni_watcher_stop(srv->sni);
+    srv->sni = NULL;
+    awl_notifications_stop(srv);
     awl_tray_app_cleanup();
 
     /* The event loop doesn't run any more, so nothing reads the signalfd:
@@ -124,11 +123,16 @@ cleanup(awl_server_t *srv)
     stopchildren();
     wlr_xcursor_manager_destroy(srv->cursor.mgr);
 
-    inputfini();
+    inputfini(srv);
 
     /* If it's not destroyed manually, it will cause a use-after-free of wlr_seat.
      * Destroy it until it's fixed on the wlroots side */
     wlr_backend_destroy(srv->backend);
+    /* the monitors are gone, the event loop is still there */
+    background_fini(srv->background);
+    srv->background = NULL;
+    desktop_fini(srv->desktop);
+    srv->desktop = NULL;
 
     /* The monitors, and with them the bars' widgets, are gone: the plugins
      * stop while their popups' scene and their timers' loop are still there
@@ -137,13 +141,17 @@ cleanup(awl_server_t *srv)
     awl_plugins_unload(srv);
 
     wl_display_destroy(srv->dpy);
-    popupsfini();
+    popupsfini(srv);
     wlr_scene_node_destroy(&srv->scene->tree.node);
     awl_draw_fini();
     configfini(srv);
     /* only now nothing can request a redraw or a lock anymore */
     awl_redraw_fini();
-    awl_lock_fini();
+    awl_lock_fini(srv);
+    barfree(srv);
+    awl_alert_fini(srv);
+    inputfree(srv);
+    testfini(srv);
 }
 
 void
@@ -335,11 +343,11 @@ setup(awl_server_t *srv)
     /* the wallpaper, under background layer surfaces (see awl_background.h) */
     srv->background_tree = wlr_scene_tree_create(&srv->scene->tree);
     wlr_scene_node_place_below(&srv->background_tree->node, &srv->layers[LyrBg]->node);
-    background_init(srv->background_tree, srv->event_loop);
+    srv->background = background_init(srv->background_tree, srv->event_loop);
     /* the desktop_dir panels, over the wallpaper (see awl_desktop.h) */
     srv->desktop_tree = wlr_scene_tree_create(&srv->scene->tree);
     wlr_scene_node_place_above(&srv->desktop_tree->node, &srv->layers[LyrBg]->node);
-    desktop_init(srv->desktop_tree, &(desktop_style_t){
+    srv->desktop = desktop_init(srv->desktop_tree, &(desktop_style_t){
             .blur = srv->cfg->blur.popups, .radius = srv->cfg->desktop.radius,
             .blur_strength = srv->cfg->blur.strength, .blur_alpha = srv->cfg->blur.alpha });
     /* the alerts, over everything (awl_alert_draw() keeps it on top) */
@@ -529,11 +537,11 @@ setup(awl_server_t *srv)
      * wake without the eventfd is lost (the logind state then stays unseen
      * and its alert up) */
     if (awl_redraw_init() >= 0)
-        redraw_source = wl_event_loop_add_fd(srv->event_loop, awl_redraw_fd(),
+        srv->redraw_source = wl_event_loop_add_fd(srv->event_loop, awl_redraw_fd(),
                 WL_EVENT_READABLE, redraw_fire, srv);
     lockinit(srv);
     /* before the plugins: their tray widget asks it for the items */
-    awl_sni_watcher_start(srv->event_loop);
+    srv->sni = awl_sni_watcher_start(srv->event_loop);
     awl_notifications_start(srv, srv->event_loop, awl_plugins_notifications_changed);
     awl_plugins_load(srv, 0, srv->cfgdict);
     configuse(srv);

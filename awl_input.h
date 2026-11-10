@@ -18,7 +18,10 @@ uint32_t bindmods(awl_server_t *srv, uint32_t mod);
 /** the keyboard group of the real keyboards, before the first one; and the
  * list of devices configapply() reconfigures */
 void inputinit(awl_server_t *srv);
-void inputfini(void);
+void inputfini(awl_server_t *srv);
+/** frees :c:member:`awl_server_t.input`; once the backend, and with it
+ * every device, is gone */
+void inputfree(awl_server_t *srv);
 /** after the config changed: the keymap, key repeat, and the
  * pointers' libinput settings */
 void inputconfigure(awl_server_t *srv);

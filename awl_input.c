@@ -37,7 +37,7 @@ typedef struct {
     struct wl_list link;
 } InputDevice;
 
-static void createkeyboard(struct wlr_keyboard *keyboard);
+static void createkeyboard(awl_server_t *srv, struct wlr_keyboard *keyboard);
 static struct xkb_keymap *compilekeymap(awl_server_t *srv);
 static KeyboardGroup *createkeyboardgroup(awl_server_t *srv);
 static void configurepointer(awl_server_t *srv, struct wlr_pointer *pointer);
@@ -50,16 +50,22 @@ static void keypress(struct wl_listener *listener, void *data);
 static void keypressmod(struct wl_listener *listener, void *data);
 static int keyrepeat(void *data);
 static void untrackinputdevice(struct wl_listener *listener, void *data);
-static void trackinputdevice(struct wlr_input_device *device);
+static void trackinputdevice(awl_server_t *srv, struct wlr_input_device *device);
 
-static KeyboardGroup *kb_group;
-static struct wl_list inputdevices; /* InputDevice.link */
-/** What the keyboards were set up with, copied, to tell whether a reload
- * changed it */
-static struct {
-    char *xkb[5]; /* rules, model, layout, variant, options */
-    int repeat_rate, repeat_delay;
-} applied;
+/** The input devices (:c:member:`awl_server_t.input`), from inputinit() to
+ * inputfree() */
+struct awl_input {
+    /** the keyboards, all in one group */
+    KeyboardGroup *kb_group;
+    /** InputDevice.link */
+    struct wl_list devices;
+    /** What the keyboards were set up with, copied, to tell whether a reload
+     * changed it */
+    struct {
+        char *xkb[5]; /* rules, model, layout, variant, options */
+        int repeat_rate, repeat_delay;
+    } applied;
+};
 
 void
 checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude)
@@ -92,13 +98,13 @@ createidleinhibitor(struct wl_listener *listener, void *data)
 }
 
 void
-createkeyboard(struct wlr_keyboard *keyboard)
+createkeyboard(awl_server_t *srv, struct wlr_keyboard *keyboard)
 {
     /* Set the keymap to match the group keymap */
-    wlr_keyboard_set_keymap(keyboard, kb_group->wlr_group->keyboard.keymap);
+    wlr_keyboard_set_keymap(keyboard, srv->input->kb_group->wlr_group->keyboard.keymap);
 
     /* Add the new keyboard to the group */
-    wlr_keyboard_group_add_keyboard(kb_group->wlr_group, keyboard);
+    wlr_keyboard_group_add_keyboard(srv->input->kb_group->wlr_group, keyboard);
 }
 
 struct xkb_keymap *
@@ -123,8 +129,8 @@ createkeyboardgroup(awl_server_t *srv)
 
     /* Prepare an XKB keymap and assign it to the keyboard group: the one in
      * effect, which is the config's unless a reload brought a broken one */
-    if (kb_group)
-        keymap = xkb_keymap_ref(kb_group->wlr_group->keyboard.keymap);
+    if (srv->input->kb_group)
+        keymap = xkb_keymap_ref(srv->input->kb_group->wlr_group->keyboard.keymap);
     else if (!(keymap = compilekeymap(srv)))
         die("failed to compile keymap");
 
@@ -132,8 +138,8 @@ createkeyboardgroup(awl_server_t *srv)
     xkb_keymap_unref(keymap);
 
     wlr_keyboard_set_repeat_info(&group->wlr_group->keyboard,
-            kb_group ? kb_group->wlr_group->keyboard.repeat_info.rate : srv->cfg->keyboard.repeat_rate,
-            kb_group ? kb_group->wlr_group->keyboard.repeat_info.delay : srv->cfg->keyboard.repeat_delay);
+            srv->input->kb_group ? srv->input->kb_group->wlr_group->keyboard.repeat_info.rate : srv->cfg->keyboard.repeat_rate,
+            srv->input->kb_group ? srv->input->kb_group->wlr_group->keyboard.repeat_info.delay : srv->cfg->keyboard.repeat_delay);
 
     /* Set up listeners for keyboard events */
     LISTEN(&group->wlr_group->keyboard.events.key, &group->key, keypress);
@@ -233,12 +239,12 @@ inputdevice(struct wl_listener *listener, void *data)
 
     switch (device->type) {
     case WLR_INPUT_DEVICE_KEYBOARD:
-        createkeyboard(wlr_keyboard_from_input_device(device));
-        trackinputdevice(device);
+        createkeyboard(srv, wlr_keyboard_from_input_device(device));
+        trackinputdevice(srv, device);
         break;
     case WLR_INPUT_DEVICE_POINTER:
         createpointer(srv, wlr_pointer_from_input_device(device));
-        trackinputdevice(device);
+        trackinputdevice(srv, device);
         break;
     default:
         /* TODO handle other input device types */
@@ -250,7 +256,7 @@ inputdevice(struct wl_listener *listener, void *data)
      * there are no pointer devices, so we always include that capability. */
     /* TODO do we actually require a cursor? */
     caps = WL_SEAT_CAPABILITY_POINTER;
-    if (!wl_list_empty(&kb_group->wlr_group->devices))
+    if (!wl_list_empty(&srv->input->kb_group->wlr_group->devices))
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
     wlr_seat_set_capabilities(srv->seat, caps);
 }
@@ -330,7 +336,7 @@ keypress(struct wl_listener *listener, void *data)
     awl_notifications_activity(srv);
 
     if (srv->locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
-        lockkeystroke();
+        lockkeystroke(srv);
 
     /* A popup that has the keyboard (the launcher) gets every key before the
      * bindings, and no client gets any: none has the focus meanwhile. */
@@ -463,12 +469,12 @@ untrackinputdevice(struct wl_listener *listener, void *data)
 }
 
 void
-trackinputdevice(struct wlr_input_device *device)
+trackinputdevice(awl_server_t *srv, struct wlr_input_device *device)
 {
     InputDevice *d = ecalloc(1, sizeof(*d));
     d->device = device;
     LISTEN(&device->events.destroy, &d->destroy, untrackinputdevice);
-    wl_list_insert(&inputdevices, &d->link);
+    wl_list_insert(&srv->input->devices, &d->link);
 }
 
 void
@@ -501,15 +507,28 @@ virtualpointer(struct wl_listener *listener, void *data)
 void
 inputinit(awl_server_t *srv)
 {
-    wl_list_init(&inputdevices);
-    kb_group = createkeyboardgroup(srv);
-    wl_list_init(&kb_group->destroy.link);
+    srv->input = ecalloc(1, sizeof *srv->input);
+    wl_list_init(&srv->input->devices);
+    srv->input->kb_group = createkeyboardgroup(srv);
+    wl_list_init(&srv->input->kb_group->destroy.link);
 }
 
 void
-inputfini(void)
+inputfini(awl_server_t *srv)
 {
-    destroykeyboardgroup(&kb_group->destroy, NULL);
+    destroykeyboardgroup(&srv->input->kb_group->destroy, NULL);
+}
+
+void
+inputfree(awl_server_t *srv)
+{
+    int i;
+    if (!srv->input)
+        return;
+    for (i = 0; i < (int)LENGTH(srv->input->applied.xkb); i++)
+        free(srv->input->applied.xkb[i]);
+    free(srv->input);
+    srv->input = NULL;
 }
 
 void
@@ -523,28 +542,28 @@ inputconfigure(awl_server_t *srv)
 
     /* keyboards: the virtual ones keep the keymaps their clients gave them */
     for (i = changed = 0; i < (int)LENGTH(xkb); i++)
-        changed |= !streqnull(xkb[i], applied.xkb[i]);
+        changed |= !streqnull(xkb[i], srv->input->applied.xkb[i]);
     if (changed && !(keymap = compilekeymap(srv))) {
         awl_wrn_printf("plugins_config.c: can't compile the keymap, keeping the old one\n");
     } else if (changed) {
-        wlr_keyboard_set_keymap(&kb_group->wlr_group->keyboard, keymap);
-        wl_list_for_each(d, &inputdevices, link)
+        wlr_keyboard_set_keymap(&srv->input->kb_group->wlr_group->keyboard, keymap);
+        wl_list_for_each(d, &srv->input->devices, link)
             if (d->device->type == WLR_INPUT_DEVICE_KEYBOARD)
                 wlr_keyboard_set_keymap(wlr_keyboard_from_input_device(d->device), keymap);
         xkb_keymap_unref(keymap);
         for (i = 0; i < (int)LENGTH(xkb); i++) {
-            free(applied.xkb[i]);
-            applied.xkb[i] = strdupnull(xkb[i]);
+            free(srv->input->applied.xkb[i]);
+            srv->input->applied.xkb[i] = strdupnull(xkb[i]);
         }
     }
-    if (srv->cfg->keyboard.repeat_rate != applied.repeat_rate || srv->cfg->keyboard.repeat_delay != applied.repeat_delay) {
-        wlr_keyboard_set_repeat_info(&kb_group->wlr_group->keyboard,
+    if (srv->cfg->keyboard.repeat_rate != srv->input->applied.repeat_rate || srv->cfg->keyboard.repeat_delay != srv->input->applied.repeat_delay) {
+        wlr_keyboard_set_repeat_info(&srv->input->kb_group->wlr_group->keyboard,
                 srv->cfg->keyboard.repeat_rate, srv->cfg->keyboard.repeat_delay);
-        applied.repeat_rate = srv->cfg->keyboard.repeat_rate;
-        applied.repeat_delay = srv->cfg->keyboard.repeat_delay;
+        srv->input->applied.repeat_rate = srv->cfg->keyboard.repeat_rate;
+        srv->input->applied.repeat_delay = srv->cfg->keyboard.repeat_delay;
     }
 
-    wl_list_for_each(d, &inputdevices, link)
+    wl_list_for_each(d, &srv->input->devices, link)
         if (d->device->type == WLR_INPUT_DEVICE_POINTER)
             configurepointer(srv, wlr_pointer_from_input_device(d->device));
 }

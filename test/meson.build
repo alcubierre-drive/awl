@@ -47,7 +47,8 @@ test('desktop_entry_unit', desktop_entry_unit)
 test('markup_unit', markup_unit)
 test('icon_unit', icon_unit, args: [meson.current_source_dir() / 'data'])
 
-# vptr, the pointer injector live.sh uses; sni_menu, a tray item with a menu
+# vptr, the pointer injector live.sh uses; sni_menu, a tray item with a menu;
+# lock (below), a screen locker
 vptr_protocol = 'wlr-virtual-pointer-unstable-v1.xml'
 executable('vptr', 'vptr.c',
   custom_target('wlr-virtual-pointer-unstable-v1-client-protocol.h',
@@ -55,6 +56,17 @@ executable('vptr', 'vptr.c',
     command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@']),
   custom_target('wlr-virtual-pointer-unstable-v1-protocol.c',
     input: vptr_protocol, output: '@BASENAME@-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@']),
+  dependencies: dependency('wayland-client'),
+)
+# lock, a minimal screen locker for test/lock.sh
+lock_protocol = wl_protocols / 'staging/ext-session-lock/ext-session-lock-v1.xml'
+executable('lock', 'lock.c',
+  custom_target('ext-session-lock-v1-client-protocol.h',
+    input: lock_protocol, output: '@BASENAME@-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@']),
+  custom_target('ext-session-lock-v1-protocol.c',
+    input: lock_protocol, output: '@BASENAME@-protocol.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@']),
   dependencies: dependency('wayland-client'),
 )

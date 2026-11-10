@@ -25,22 +25,31 @@ typedef struct DesktopView {
     int drawn;
 } DesktopView;
 
-static struct {
+/** The panels (:c:member:`awl_server_t.desktop`), from desktop_init() to
+ * desktop_fini() */
+struct awl_desktop {
     struct wlr_scene_tree* tree;
     desktop_style_t cfg;
     struct wl_list views; /* DesktopView.link */
     unsigned reloads;     /* versions of different libraries don't compare */
-} desk;
+};
 
-void desktop_init( struct wlr_scene_tree* tree, const desktop_style_t* cfg ) {
-    desk.tree = tree;
-    desk.cfg = *cfg;
-    wl_list_init( &desk.views );
+awl_desktop_t* desktop_init( struct wlr_scene_tree* tree, const desktop_style_t* cfg ) {
+    awl_desktop_t* desk = ecalloc( 1, sizeof(*desk) );
+    desk->tree = tree;
+    desk->cfg = *cfg;
+    wl_list_init( &desk->views );
+    return desk;
 }
 
-/** (re)does v's blur, under its buffer, from desk.cfg */
-static void configure( DesktopView* v ) {
-    if (!desk.cfg.blur) {
+void desktop_fini( awl_desktop_t* desk ) {
+    /* the panels went with their monitors */
+    free( desk );
+}
+
+/** (re)does v's blur, under its buffer, from desk->cfg */
+static void configure( awl_desktop_t* desk, DesktopView* v ) {
+    if (!desk->cfg.blur) {
         if (v->blur) wlr_scene_node_destroy( &v->blur->node );
         v->blur = NULL;
         return;
@@ -50,41 +59,41 @@ static void configure( DesktopView* v ) {
         wlr_scene_node_lower_to_bottom( &v->blur->node );
         wlr_scene_blur_set_should_only_blur_bottom_layer( v->blur, 0 );
     }
-    wlr_scene_blur_set_corner_radius( v->blur, desk.cfg.radius );
-    wlr_scene_blur_set_strength( v->blur, desk.cfg.blur_strength );
-    wlr_scene_blur_set_alpha( v->blur, desk.cfg.blur_alpha );
+    wlr_scene_blur_set_corner_radius( v->blur, desk->cfg.radius );
+    wlr_scene_blur_set_strength( v->blur, desk->cfg.blur_strength );
+    wlr_scene_blur_set_alpha( v->blur, desk->cfg.blur_alpha );
 }
 
-static DesktopView* view_of( Monitor* m ) {
+static DesktopView* view_of( awl_desktop_t* desk, Monitor* m ) {
     DesktopView* v;
-    wl_list_for_each( v, &desk.views, link )
+    wl_list_for_each( v, &desk->views, link )
         if (v->m == m) return v;
     return NULL;
 }
 
-void desktop_configure( const desktop_style_t* cfg ) {
-    desk.cfg = *cfg;
+void desktop_configure( awl_desktop_t* desk, const desktop_style_t* cfg ) {
+    desk->cfg = *cfg;
     DesktopView* v;
-    wl_list_for_each( v, &desk.views, link ) {
-        configure( v );
+    wl_list_for_each( v, &desk->views, link ) {
+        configure( desk, v );
         v->drawn = 0; /* the radius is drawn into the buffer too */
-        desktop_update( v->m );
+        desktop_update( desk, v->m );
     }
 }
 
-void desktop_addmon( Monitor* m ) {
+void desktop_addmon( awl_desktop_t* desk, Monitor* m ) {
     DesktopView* v = ecalloc( 1, sizeof(*v) );
     v->m = m;
-    v->tree = wlr_scene_tree_create( desk.tree );
+    v->tree = wlr_scene_tree_create( desk->tree );
     v->buffer = wlr_scene_buffer_create( v->tree, NULL );
-    configure( v );
+    configure( desk, v );
     wlr_scene_node_set_enabled( &v->tree->node, 0 );
-    wl_list_insert( &desk.views, &v->link );
-    desktop_update( m );
+    wl_list_insert( &desk->views, &v->link );
+    desktop_update( desk, m );
 }
 
-void desktop_removemon( Monitor* m ) {
-    DesktopView* v = view_of( m );
+void desktop_removemon( awl_desktop_t* desk, Monitor* m ) {
+    DesktopView* v = view_of( desk, m );
     if (!v) return;
     wlr_scene_node_destroy( &v->tree->node );
     wl_list_remove( &v->link );
@@ -122,11 +131,11 @@ static struct fcft_font* font_of( Monitor* m ) {
 }
 
 /** returns whether there is anything to show */
-static int draw( DesktopView* v, const awl_plugin_api_t* api ) {
+static int draw( awl_desktop_t* desk, DesktopView* v, const awl_plugin_api_t* api ) {
     Monitor* m = v->m;
     struct fcft_font* font = font_of( m );
     const float s = m->wlr_output->scale;
-    const int radius = (int)lroundf( desk.cfg.radius * s );
+    const int radius = (int)lroundf( desk->cfg.radius * s );
     int x, y, width, height;
     api->desktop_measure( font, (int)(m->w.width * s), (int)(m->w.height * s), radius, s,
                           &x, &y, &width, &height );
@@ -155,15 +164,15 @@ static int draw( DesktopView* v, const awl_plugin_api_t* api ) {
     return 1;
 }
 
-void desktop_update( Monitor* m ) {
-    DesktopView* v = view_of( m );
+void desktop_update( awl_desktop_t* desk, Monitor* m ) {
+    DesktopView* v = view_of( desk, m );
     if (!v) return;
     const awl_plugin_api_t* api = awl_plugins_api();
 
     DesktopKey key;
     memset( &key, 0, sizeof(key) );
     key.version = api ? api->desktop_version() : 0;
-    key.reloads = desk.reloads;
+    key.reloads = desk->reloads;
     key.enabled = m->wlr_output->enabled;
     key.w = m->w;
     key.scale = m->wlr_output->scale;
@@ -172,31 +181,31 @@ void desktop_update( Monitor* m ) {
     v->drawn = 1;
 
     int on = key.version && key.enabled && font_of( m ) && m->w.width > 0 && m->w.height > 0
-          && draw( v, api );
+          && draw( desk, v, api );
     wlr_scene_node_set_enabled( &v->tree->node, on );
 }
 
-void desktop_fontchanged( Monitor* m ) {
-    DesktopView* v = view_of( m );
+void desktop_fontchanged( awl_desktop_t* desk, Monitor* m ) {
+    DesktopView* v = view_of( desk, m );
     if (!v) return;
     v->drawn = 0;
-    desktop_update( m );
+    desktop_update( desk, m );
 }
 
-void desktop_update_all( void ) {
+void desktop_update_all( awl_desktop_t* desk ) {
     DesktopView* v;
-    wl_list_for_each( v, &desk.views, link )
-        desktop_update( v->m );
+    wl_list_for_each( v, &desk->views, link )
+        desktop_update( desk, v->m );
 }
 
-void desktop_reloaded( void ) {
-    desk.reloads++;
-    desktop_update_all();
+void desktop_reloaded( awl_desktop_t* desk ) {
+    desk->reloads++;
+    desktop_update_all( desk );
 }
 
-int desktop_click( int button, uint32_t mods ) {
+int desktop_click( awl_desktop_t* desk, int button, uint32_t mods ) {
     const awl_plugin_api_t* api = awl_plugins_api();
     if (!api || !api->desktop_click( button, mods )) return 0;
-    desktop_update_all();
+    desktop_update_all( desk );
     return 1;
 }

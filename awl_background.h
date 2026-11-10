@@ -13,18 +13,22 @@
 
 #include "awl_core.h"
 
+/** the wallpaper's state, :c:member:`awl_server_t.background` */
+typedef struct awl_background awl_background_t;
+
 /** tree: an empty scene tree, already placed in the stacking order; loop
  * runs the fades */
-void background_init( struct wlr_scene_tree* tree, struct wl_event_loop* loop );
-/** drops the current image and stops a fade */
-void background_fini( void );
+awl_background_t* background_init( struct wlr_scene_tree* tree, struct wl_event_loop* loop );
+/** drops the current image, stops a fade and frees bg; once no monitor
+ * is left, before the event loop goes */
+void background_fini( awl_background_t* bg );
 
 /** shows img (taking it) instead of the current one, fading in over fade_ms */
-void background_set( awl_image_t* img, unsigned int fade_ms );
+void background_set( awl_background_t* bg, awl_image_t* img, unsigned int fade_ms );
 
 /** puts the current image on m */
-void background_addmon( Monitor* m );
+void background_addmon( awl_background_t* bg, Monitor* m );
 /** takes it off m again */
-void background_removemon( Monitor* m );
+void background_removemon( awl_background_t* bg, Monitor* m );
 /** follows m's position, size and enabled state; cheap if they're unchanged */
-void background_update( Monitor* m );
+void background_update( awl_background_t* bg, Monitor* m );

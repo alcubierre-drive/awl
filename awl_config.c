@@ -32,13 +32,19 @@ const awl_arranges_t awl_arranges = { AWL_ARRANGES };
 #undef AWL_ACTION_REGISTER
 #undef AWL_LAYOUT_REGISTER
 
-/** the library's, cfg while it is loaded */
-static awl_config_t loaded;
-static struct wl_event_source *plugin_restart_source;
+/** The config's state (:c:member:`awl_server_t.conf`), from configinit() to
+ * configfini() */
+struct awl_conf {
+    /** the library's, cfg while it is loaded */
+    awl_config_t loaded;
+    /** plugin_restart()'s, until it runs */
+    struct wl_event_source *restart_source;
+};
 
 void
 configinit(awl_server_t *srv)
 {
+    srv->conf = ecalloc(1, sizeof *srv->conf);
     /* NULL is fine: every lookup then fails with AWL_DICT_ERR_INVALID */
     if (!(srv->cfgdict = awl_dict_new()))
         awl_err_printf("out of memory for the config dictionary\n");
@@ -50,6 +56,9 @@ configfini(awl_server_t *srv)
 {
     awl_dict_destroy(srv->cfgdict);
     srv->cfgdict = NULL;
+    /* cfg is builtinconfig()'s by now, the event loop gone */
+    free(srv->conf);
+    srv->conf = NULL;
 }
 
 /** the config dictionary's keys awl sets when it starts */
@@ -260,7 +269,7 @@ configapply(awl_server_t *srv)
         wlr_scene_rect_set_color(m->fullscreen_bg, (float[4])RGBA(srv->cfg->colors.fullscreen));
     lockconfigure(srv);
     wallpaperconfigure(srv);
-    desktop_configure(&(desktop_style_t){
+    desktop_configure(srv->desktop, &(desktop_style_t){
             .blur = srv->cfg->blur.popups, .radius = srv->cfg->desktop.radius,
             .blur_strength = srv->cfg->blur.strength, .blur_alpha = srv->cfg->blur.alpha });
     popupsrestyle(srv);
@@ -278,10 +287,10 @@ configuse(awl_server_t *srv)
     if (api) {
         /* the old one's lists point into the library, so only its layouts'
          * address survives this, for layoutsmoved() */
-        api->config(&loaded);
+        api->config(&srv->conf->loaded);
         /* the library fills it in itself; filling it twice changes nothing */
-        awl_config_fill_defaults(&loaded);
-        srv->cfg = &loaded;
+        awl_config_fill_defaults(&srv->conf->loaded);
+        srv->cfg = &srv->conf->loaded;
     } else {
         srv->cfg = builtinconfig();
     }
@@ -312,14 +321,14 @@ pluginsattach(awl_server_t *srv)
     configuse(srv);
     barwidgetsattach(srv);
     barsdirty(srv);
-    desktop_reloaded();
+    desktop_reloaded(srv->desktop);
 }
 
 static void
 pluginrestart(void *data)
 {
     awl_server_t *srv = data;
-    plugin_restart_source = NULL;
+    srv->conf->restart_source = NULL;
     /* picks up a rebuilt libawlplugins.so; with an unchanged (or broken)
      * one this is a plain restart of the plugin threads */
     awl_plugins_reload(srv, pluginsdetach, pluginsattach);
@@ -338,8 +347,8 @@ plugin_restart(awl_server_t *srv, const Arg* arg)
     (void)arg;
     /* Not from here: this is usually called through a key binding, from the
      * library's code the reload unloads */
-    if (!plugin_restart_source)
-        plugin_restart_source = wl_event_loop_add_idle(srv->event_loop, pluginrestart, srv);
+    if (!srv->conf->restart_source)
+        srv->conf->restart_source = wl_event_loop_add_idle(srv->event_loop, pluginrestart, srv);
 }
 
 void

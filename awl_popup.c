@@ -11,14 +11,6 @@
 static awl_window_style_t popupstyle(awl_server_t *srv, const Popup *p);
 static Popup *popupfind(awl_server_t *srv, awl_window_t *win);
 
-/** the popups' tree, made with the first one; the persistent ones', made
- * with the first of them (popupsplace()) */
-static struct wlr_scene_tree *popup_tree, *persistent_tree;
-/** the popup the pointer is over, if it takes the pointer */
-static awl_window_t *popup_hovered;
-/** the popup that had the keyboard at the last :c:func:`popupsgrabupdate` */
-static awl_window_t *popup_keyboard;
-
 int
 pointerinpopup(awl_server_t *srv, awl_window_t *win)
 {
@@ -69,7 +61,7 @@ static int
 popupsshown(awl_server_t *srv)
 {
     Popup *p;
-    wl_list_for_each(p, &srv->popups, link)
+    wl_list_for_each(p, &srv->popups.list, link)
         if (!p->persistent && awl_window_monitor(p->win))
             return 1;
     return 0;
@@ -84,16 +76,16 @@ popupsplace(awl_server_t *srv)
 {
     struct wlr_scene_node *persistent_below = srv->cfg->popup.persistent_overlay
             ? &srv->layers[LyrOverlay]->node : &srv->layers[LyrTop]->node;
-    if (persistent_tree && popup_tree && popupsshown(srv)) {
-        wlr_scene_node_place_above(&persistent_tree->node, persistent_below);
-        wlr_scene_node_place_above(&popup_tree->node, &persistent_tree->node);
+    if (srv->popups.persistent_tree && srv->popups.tree && popupsshown(srv)) {
+        wlr_scene_node_place_above(&srv->popups.persistent_tree->node, persistent_below);
+        wlr_scene_node_place_above(&srv->popups.tree->node, &srv->popups.persistent_tree->node);
         return;
     }
-    if (popup_tree)
-        wlr_scene_node_place_above(&popup_tree->node, &srv->layers[LyrTop]->node);
-    if (persistent_tree)
-        wlr_scene_node_place_above(&persistent_tree->node, srv->cfg->popup.persistent_overlay
-                ? persistent_below : popup_tree ? &popup_tree->node : persistent_below);
+    if (srv->popups.tree)
+        wlr_scene_node_place_above(&srv->popups.tree->node, &srv->layers[LyrTop]->node);
+    if (srv->popups.persistent_tree)
+        wlr_scene_node_place_above(&srv->popups.persistent_tree->node, srv->cfg->popup.persistent_overlay
+                ? persistent_below : srv->popups.tree ? &srv->popups.tree->node : persistent_below);
 }
 
 /** win's entry in popups, NULL if it is not (or no longer) one of them */
@@ -102,7 +94,7 @@ popupfind(awl_server_t *srv, awl_window_t *win)
 {
     Popup *p;
     if (win)
-        wl_list_for_each(p, &srv->popups, link)
+        wl_list_for_each(p, &srv->popups.list, link)
             if (p->win == win)
                 return p;
     return NULL;
@@ -116,16 +108,16 @@ popupnew(awl_server_t *srv, int plugin)
     if (!srv->scene)
         return NULL;
     /* over the bar and the windows, under fullscreen ones */
-    if (!popup_tree) {
-        popup_tree = wlr_scene_tree_create(&srv->scene->tree);
+    if (!srv->popups.tree) {
+        srv->popups.tree = wlr_scene_tree_create(&srv->scene->tree);
         popupsplace(srv);
     }
     style = popupstyle(srv, NULL);
     p = ecalloc(1, sizeof(*p));
-    p->win = awl_window_create(popup_tree, &style);
+    p->win = awl_window_create(srv->popups.tree, &style);
     p->plugin = plugin;
     p->border_width = -1;
-    wl_list_insert(srv->popups.prev, &p->link);
+    wl_list_insert(srv->popups.list.prev, &p->link);
     return p->win;
 }
 
@@ -141,9 +133,9 @@ popupdestroy(awl_server_t *srv, awl_window_t *win)
     Popup *p = popupfind(srv, win);
     if (!p)
         return;
-    testpopupdestroyed(win);
-    if (popup_hovered == win)
-        popup_hovered = NULL;
+    testpopupdestroyed(srv, win);
+    if (srv->popups.hovered == win)
+        srv->popups.hovered = NULL;
     wl_list_remove(&p->link);
     awl_window_destroy(p->win);
     free(p);
@@ -158,7 +150,7 @@ closemenus(awl_server_t *srv, Popup *p)
 {
     Popup *o;
     if (!p->menu && !p->persistent)
-        wl_list_for_each(o, &srv->popups, link)
+        wl_list_for_each(o, &srv->popups.list, link)
             if (o->menu && awl_window_monitor(o->win))
                 awl_window_hide(o->win);
 }
@@ -203,7 +195,7 @@ awl_window_t *
 popupkeyboard(awl_server_t *srv)
 {
     Popup *p;
-    wl_list_for_each_reverse(p, &srv->popups, link)
+    wl_list_for_each_reverse(p, &srv->popups.list, link)
         if (awl_window_takes_keys(p->win) && !(srv->locked && p->persistent))
             return p->win;
     return NULL;
@@ -215,11 +207,11 @@ popupsgrabupdate(awl_server_t *srv)
     awl_window_t *win = popupkeyboard(srv);
     /* a popup shown or hidden: its place over the persistent ones */
     popupsplace(srv);
-    if (!win == !popup_keyboard) {
-        popup_keyboard = win;
+    if (!win == !srv->popups.keyboard) {
+        srv->popups.keyboard = win;
         return;
     }
-    popup_keyboard = win;
+    srv->popups.keyboard = win;
     awl_dbg_printf(awl_loglevel_vrb, "popup %p: %s the keyboard\n", (void *)win,
             win ? "takes" : "gives back");
     if (srv->locked)
@@ -237,7 +229,7 @@ static int
 popupcovered(awl_server_t *srv, awl_window_t *win, int persistent, double x, double y)
 {
     struct wlr_scene_node *node = wlr_scene_node_at(&srv->scene->tree.node, x, y, NULL, NULL);
-    struct wlr_scene_node *ours = persistent ? &persistent_tree->node : &popup_tree->node;
+    struct wlr_scene_node *ours = persistent ? &srv->popups.persistent_tree->node : &srv->popups.tree->node;
     struct wlr_scene_node *it;
     if (!node)
         return 0;
@@ -258,7 +250,7 @@ popupat(awl_server_t *srv, double x, double y)
     /* the top tree's first (popupsplace()), then the newest */
     const int top = !popupsshown(srv);
     for (int i = 0; i < 2; i++)
-        wl_list_for_each_reverse(p, &srv->popups, link)
+        wl_list_for_each_reverse(p, &srv->popups.list, link)
             if (p->persistent == (i ? !top : top) && awl_window_takes_pointer(p->win, x, y))
                 return popupcovered(srv, p->win, p->persistent, x, y) ? NULL : p->win;
     return NULL;
@@ -278,19 +270,19 @@ popupmotion(awl_server_t *srv)
     awl_window_t *win = popuppointer(srv);
     int row;
 
-    if (popup_hovered && popup_hovered != win) {
-        awl_window_pointer_leave(srv, popup_hovered);
-        awl_dbg_printf(awl_loglevel_vrb, "popup %p: pointer left\n", (void *)popup_hovered);
+    if (srv->popups.hovered && srv->popups.hovered != win) {
+        awl_window_pointer_leave(srv, srv->popups.hovered);
+        awl_dbg_printf(awl_loglevel_vrb, "popup %p: pointer left\n", (void *)srv->popups.hovered);
     }
     if (!win) {
-        popup_hovered = NULL;
+        srv->popups.hovered = NULL;
         return 0;
     }
-    if (popup_hovered != win) {
+    if (srv->popups.hovered != win) {
         wlr_seat_pointer_notify_clear_focus(srv->seat);
         wlr_cursor_set_xcursor(srv->cursor.wlr, srv->cursor.mgr, "default");
         updatehover(srv, NULL);
-        popup_hovered = win;
+        srv->popups.hovered = win;
     }
     row = awl_window_hover_row(win);
     if (awl_window_pointer_motion(srv, win, srv->cursor.wlr->x, srv->cursor.wlr->y) != row)
@@ -303,7 +295,7 @@ void
 popupsupdate(awl_server_t *srv, Monitor *m)
 {
     Popup *p;
-    wl_list_for_each(p, &srv->popups, link)
+    wl_list_for_each(p, &srv->popups.list, link)
         awl_window_update(srv, p->win, m);
 }
 
@@ -311,7 +303,7 @@ void
 popupshideall(awl_server_t *srv)
 {
     Popup *p;
-    wl_list_for_each(p, &srv->popups, link)
+    wl_list_for_each(p, &srv->popups.list, link)
         if (!p->persistent)
             awl_window_hide(p->win);
     popupsgrabupdate(srv);
@@ -344,12 +336,12 @@ popupsetpersistent(awl_server_t *srv, awl_window_t *win, int persistent)
     if (!p || p->persistent == !!persistent)
         return;
     p->persistent = !!persistent;
-    if (p->persistent && !persistent_tree) {
-        persistent_tree = wlr_scene_tree_create(&srv->scene->tree);
+    if (p->persistent && !srv->popups.persistent_tree) {
+        srv->popups.persistent_tree = wlr_scene_tree_create(&srv->scene->tree);
         popupsplace(srv);
         popupslocked(srv);
     }
-    awl_window_reparent(win, p->persistent ? persistent_tree : popup_tree);
+    awl_window_reparent(win, p->persistent ? srv->popups.persistent_tree : srv->popups.tree);
 }
 
 void
@@ -414,17 +406,17 @@ popuppersistent(awl_server_t *srv, awl_window_t *win)
 int
 popuppersistentlayer(awl_server_t *srv, int *visible)
 {
-    *visible = persistent_tree && persistent_tree->node.enabled;
-    if (!persistent_tree)
+    *visible = srv->popups.persistent_tree && srv->popups.persistent_tree->node.enabled;
+    if (!srv->popups.persistent_tree)
         return -1;
-    return persistent_tree->node.link.prev == &srv->layers[LyrOverlay]->node.link ? LyrOverlay : LyrTop;
+    return srv->popups.persistent_tree->node.link.prev == &srv->layers[LyrOverlay]->node.link ? LyrOverlay : LyrTop;
 }
 
 void
 popupslocked(awl_server_t *srv)
 {
-    if (persistent_tree)
-        wlr_scene_node_set_enabled(&persistent_tree->node, !srv->locked);
+    if (srv->popups.persistent_tree)
+        wlr_scene_node_set_enabled(&srv->popups.persistent_tree->node, !srv->locked);
 }
 
 int
@@ -444,7 +436,7 @@ void
 popupsremovemon(awl_server_t *srv, Monitor *m)
 {
     Popup *p;
-    wl_list_for_each(p, &srv->popups, link)
+    wl_list_for_each(p, &srv->popups.list, link)
         awl_window_removemon(p->win, m);
     popupsgrabupdate(srv);
 }
@@ -454,7 +446,7 @@ popupsrestyle(awl_server_t *srv)
 {
     Popup *p;
     awl_window_style_t style;
-    wl_list_for_each(p, &srv->popups, link) {
+    wl_list_for_each(p, &srv->popups.list, link) {
         style = popupstyle(srv, p);
         awl_window_set_style(srv, p->win, &style);
     }
@@ -468,7 +460,7 @@ popupsreap(awl_server_t *srv)
     int n = 0;
 
     /* AWL_TEST_WINDOWS' go too: a reload destroys every popup */
-    wl_list_for_each_safe(p, tmp, &srv->popups, link) {
+    wl_list_for_each_safe(p, tmp, &srv->popups.list, link) {
         n += p->plugin;
         popupdestroy(srv, p->win);
     }
@@ -476,8 +468,8 @@ popupsreap(awl_server_t *srv)
 }
 
 void
-popupsfini(void)
+popupsfini(awl_server_t *srv)
 {
-    popup_tree = persistent_tree = NULL;
-    popup_keyboard = NULL;
+    srv->popups.tree = srv->popups.persistent_tree = NULL;
+    srv->popups.keyboard = NULL;
 }

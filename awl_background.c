@@ -27,14 +27,16 @@ typedef struct BackgroundView {
     struct wlr_box box; /* what they were placed for; 0 if hidden */
 } BackgroundView;
 
-static struct {
+/** The wallpaper's images (:c:member:`awl_server_t.background`), from
+ * background_init() to background_fini() */
+struct awl_background {
     struct wlr_scene_tree* tree;
     struct wl_list views;  /* BackgroundView.link */
     Image* cur;            /* NULL until the first one */
     struct wl_event_source* fade_timer;
     struct timespec fade_start;
     unsigned int fade_ms;
-} bg;
+};
 
 /** a frame's worth at 60 Hz */
 static const int fade_tick_ms = 16;
@@ -64,9 +66,9 @@ static const struct wlr_buffer_impl image_impl = {
     .end_data_ptr_access = image_end,
 };
 
-static BackgroundView* view_of( Monitor* m ) {
+static BackgroundView* view_of( awl_background_t* bg, Monitor* m ) {
     BackgroundView* v;
-    wl_list_for_each( v, &bg.views, link )
+    wl_list_for_each( v, &bg->views, link )
         if (v->m == m) return v;
     return NULL;
 }
@@ -82,8 +84,8 @@ static void place( const Shown* s, struct wlr_box box ) {
     wlr_scene_node_set_position( &s->node->node, box.x, box.y );
 }
 
-static Shown show( Image* i, struct wlr_box box ) {
-    Shown s = { wlr_scene_buffer_create( bg.tree, &i->base ), i->img->width, i->img->height };
+static Shown show( awl_background_t* bg, Image* i, struct wlr_box box ) {
+    Shown s = { wlr_scene_buffer_create( bg->tree, &i->base ), i->img->width, i->img->height };
     place( &s, box );
     return s;
 }
@@ -100,32 +102,35 @@ static double elapsed_ms( const struct timespec* since ) {
 }
 
 static int fade_step( void* data ) {
+    awl_background_t* bg = data;
     BackgroundView* v;
-    double t = bg.fade_ms ? elapsed_ms( &bg.fade_start ) / bg.fade_ms : 1;
+    double t = bg->fade_ms ? elapsed_ms( &bg->fade_start ) / bg->fade_ms : 1;
     if (t > 1) t = 1;
     float a = (float)(t * t * (3 - 2 * t)); /* smoothstep */
-    wl_list_for_each( v, &bg.views, link ) {
+    wl_list_for_each( v, &bg->views, link ) {
         if (v->cur.node) wlr_scene_buffer_set_opacity( v->cur.node, a );
         if (t >= 1) hide( &v->old );
     }
-    if (t < 1) wl_event_source_timer_update( bg.fade_timer, fade_tick_ms );
+    if (t < 1) wl_event_source_timer_update( bg->fade_timer, fade_tick_ms );
     return 0;
 }
 
-void background_init( struct wlr_scene_tree* tree, struct wl_event_loop* loop ) {
-    bg.tree = tree;
-    wl_list_init( &bg.views );
-    bg.fade_timer = wl_event_loop_add_timer( loop, fade_step, NULL );
+awl_background_t* background_init( struct wlr_scene_tree* tree, struct wl_event_loop* loop ) {
+    awl_background_t* bg = ecalloc( 1, sizeof(*bg) );
+    bg->tree = tree;
+    wl_list_init( &bg->views );
+    bg->fade_timer = wl_event_loop_add_timer( loop, fade_step, bg );
+    return bg;
 }
 
-void background_fini( void ) {
-    if (bg.fade_timer) wl_event_source_remove( bg.fade_timer );
-    bg.fade_timer = NULL;
-    if (bg.cur) wlr_buffer_drop( &bg.cur->base );
-    bg.cur = NULL;
+void background_fini( awl_background_t* bg ) {
+    if (!bg) return;
+    if (bg->fade_timer) wl_event_source_remove( bg->fade_timer );
+    if (bg->cur) wlr_buffer_drop( &bg->cur->base );
+    free( bg );
 }
 
-void background_set( awl_image_t* img, unsigned int fade_ms ) {
+void background_set( awl_background_t* bg, awl_image_t* img, unsigned int fade_ms ) {
     BackgroundView* v;
     Image* i = ecalloc( 1, sizeof(*i) );
     i->img = img;
@@ -134,13 +139,13 @@ void background_set( awl_image_t* img, unsigned int fade_ms ) {
     /* a fade still running is cut short: its old image goes, its new one
      * shows fully and is what this one fades in over */
     int fade = 0;
-    wl_list_for_each( v, &bg.views, link ) {
+    wl_list_for_each( v, &bg->views, link ) {
         hide( &v->old );
         if (v->cur.node) wlr_scene_buffer_set_opacity( v->cur.node, 1 );
         v->old = v->cur;
         v->cur = (Shown){0};
         if (!v->box.width) continue;
-        v->cur = show( i, v->box );
+        v->cur = show( bg, i, v->box );
         if (v->old.node && fade_ms) {
             wlr_scene_buffer_set_opacity( v->cur.node, 0 );
             fade = 1;
@@ -150,25 +155,25 @@ void background_set( awl_image_t* img, unsigned int fade_ms ) {
     }
     /* kept for monitors that show up later; the previous one is freed once
      * no node holds it anymore */
-    if (bg.cur) wlr_buffer_drop( &bg.cur->base );
-    bg.cur = i;
+    if (bg->cur) wlr_buffer_drop( &bg->cur->base );
+    bg->cur = i;
 
     if (fade) {
-        clock_gettime( CLOCK_MONOTONIC, &bg.fade_start );
-        bg.fade_ms = fade_ms;
-        wl_event_source_timer_update( bg.fade_timer, fade_tick_ms );
+        clock_gettime( CLOCK_MONOTONIC, &bg->fade_start );
+        bg->fade_ms = fade_ms;
+        wl_event_source_timer_update( bg->fade_timer, fade_tick_ms );
     }
 }
 
-void background_addmon( Monitor* m ) {
+void background_addmon( awl_background_t* bg, Monitor* m ) {
     BackgroundView* v = ecalloc( 1, sizeof(*v) );
     v->m = m;
-    wl_list_insert( &bg.views, &v->link );
-    background_update( m );
+    wl_list_insert( &bg->views, &v->link );
+    background_update( bg, m );
 }
 
-void background_removemon( Monitor* m ) {
-    BackgroundView* v = view_of( m );
+void background_removemon( awl_background_t* bg, Monitor* m ) {
+    BackgroundView* v = view_of( bg, m );
     if (!v) return;
     hide( &v->old );
     hide( &v->cur );
@@ -176,8 +181,8 @@ void background_removemon( Monitor* m ) {
     free( v );
 }
 
-void background_update( Monitor* m ) {
-    BackgroundView* v = view_of( m );
+void background_update( awl_background_t* bg, Monitor* m ) {
+    BackgroundView* v = view_of( bg, m );
     if (!v) return;
     struct wlr_box box = m->m;
     if (!m->wlr_output->enabled || box.width <= 0 || box.height <= 0)
@@ -190,7 +195,7 @@ void background_update( Monitor* m ) {
         hide( &v->cur );
         return;
     }
-    if (!v->cur.node && bg.cur) v->cur = show( bg.cur, box );
+    if (!v->cur.node && bg->cur) v->cur = show( bg, bg->cur, box );
     place( &v->cur, box );
     place( &v->old, box );
 }

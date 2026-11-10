@@ -37,7 +37,7 @@ cleanupmon(struct wl_listener *listener, void *data)
             wlr_layer_surface_v1_destroy(l->layer_surface);
     }
     /* closemon() below checks m->bar.m to decide whether to touch the bar */
-    barremovemon(m);
+    barremovemon(srv, m);
 
     wl_list_remove(&m->destroy.link);
     wl_list_remove(&m->frame.link);
@@ -53,8 +53,8 @@ cleanupmon(struct wl_listener *listener, void *data)
     wlr_scene_node_destroy(&m->fullscreen_bg->node);
     wlr_scene_node_destroy(&m->bar_blur->node);
     wlr_scene_node_destroy(&m->scene_buffer->node);
-    desktop_removemon(m);
-    background_removemon(m);
+    desktop_removemon(srv->desktop, m);
+    background_removemon(srv->background, m);
     popupsremovemon(srv, m);
     wlr_scene_node_destroy(&m->alert->node);
     for (i = 0; i < LENGTH(m->bar_bufs); i++)
@@ -160,8 +160,8 @@ createmon(struct wl_listener *listener, void *data)
     wlr_output_state_finish(&state);
 
     baraddmon(srv, m);
-    desktop_addmon(m);
-    background_addmon(m);
+    desktop_addmon(srv->desktop, m);
+    background_addmon(srv->background, m);
     awl_alert_addmon(srv, m);
 
     wl_list_insert(&srv->out.mons, &m->link);
@@ -536,8 +536,8 @@ outputsupdate(awl_server_t *srv)
         wlr_output_layout_remove(srv->out.layout, m->wlr_output);
         closemon(srv, m);
         m->m = m->w = (struct wlr_box){0};
-        desktop_update(m);
-        background_update(m);
+        desktop_update(srv->desktop, m);
+        background_update(srv->background, m);
         awl_alert_draw(srv, m);
         popupsupdate(srv, m);
     }

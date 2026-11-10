@@ -396,10 +396,10 @@ typedef struct awl_host_t {
     /** the open notifications into out, newest first, at most max; returns
      * how many there are. They stay valid until the library returns to
      * awl's loop or calls notif_close or notif_invoke. */
-    int (*notif_list)( const awl_notif_t** out, int max );
+    int (*notif_list)( awl_server_t* srv, const awl_notif_t** out, int max );
     /** closes notification id, if it is open, for reason (the user's
      * dismissal: AWL_NOTIF_DISMISSED) */
-    void (*notif_close)( uint32_t id, awl_notif_reason_t reason );
+    void (*notif_close)( awl_server_t* srv, uint32_t id, awl_notif_reason_t reason );
     /** the user chose action key of notification id: ActionInvoked, after
      * ActivationToken with a new xdg-activation token of awl's, which the
      * client may focus a window with (:c:func:`activationtoken`; or only make it
@@ -416,9 +416,9 @@ typedef struct awl_host_t {
     /** the history into out, newest first, at most max; returns how many
      * there are. Valid as notif_list's, and until notif_forget. A change
      * fires :c:member:`awl_plugin_api_t.notifications_changed` too. */
-    int (*notif_history)( const awl_notif_past_t** out, int max );
+    int (*notif_history)( awl_server_t* srv, const awl_notif_past_t** out, int max );
     /** drops entry seq from the history, 0: all of it */
-    void (*notif_forget)( uint64_t seq );
+    void (*notif_forget)( awl_server_t* srv, uint64_t seq );
     /** opens history entry seq again, out of the history, as a new
      * notification (:c:enumerator:`AWL_NOTIF_SHOWN`, without actions, its timeout from the
      * start); returns its id, 0 if there is no such entry */

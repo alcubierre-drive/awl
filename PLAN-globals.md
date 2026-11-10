@@ -110,15 +110,45 @@ the notification bus are registered with `srv` as their data. `TAGCOUNT(cfg)`
 and `TAGMASK(cfg)` take the config. `awl_plugins_reload()` hands `srv` to
 detach/attach.
 
-The ABI bump is done too (uncommitted, `AWL_PLUGIN_ABI` 42): `awl_host_t.srv`
+The ABI bump is done too (`AWL_PLUGIN_ABI` 42): `awl_host_t.srv`
 is the server, opaque to the library, which passes it back as the first
 argument of the host functions that need it (the windows, notifications,
 timers, focus and monitors); actions are `(srv, arg)` (a binding gets the
 core's `srv`), arranges and `Layout.arrange` `(srv, m)`.
 `awl_plugins_load(srv, ...)` sets `host.srv`. The `host_*` wrappers are gone.
 
-The core reads `awl` only in `main()` now. Next: the private module state
-(3.), then C (`main` makes the server, `awl` goes; `awl_proc`).
+The core reads `awl` only in `main()` now.
+
+The private module state (3.) is done (uncommitted, `AWL_PLUGIN_ABI` 43):
+- Opaque, a pointer in the server each, the struct defined in the module's
+  .c (forward-declared in awl_server.h): `srv->lock`, `bars`, `wallpaper`,
+  `alerts`, `input`, `conf` (the library's config and the pending
+  plugin_restart), `notifs`, `test`.
+- Modules that don't need the server take their own handle, which the
+  server keeps: `background_*(srv->background, ...)`,
+  `desktop_*(srv->desktop, ...)`, `awl_sni_watcher_stop(srv->sni)`. Their
+  callbacks get the handle as data.
+- Small state of modules that already had a public member struct went
+  there: the cursor's grab offset, active constraint and swallowed release
+  (`awl_cursor_t`), the applied border width (`awl_clients_t`); the popups
+  became `awl_popups_t` (list, trees, hovered, keyboard). awl.c's
+  `redraw_source` is a server member.
+- `locked` stays a plain member: ten files read it, awl_test.c sets it.
+- The notifications' `notif_list`, `notif_close`, `notif_history` and
+  `notif_forget` take `srv` now, hence ABI 43.
+- Teardown: where callbacks still reach a module after its fini (monitors
+  go with the backend, locks with the clients), a separate free runs last:
+  `barfree`, `inputfree`, `awl_lock_fini`, `awl_alert_fini`, `testfini`.
+  `background_fini` and `desktop_fini` run right after the backend is gone.
+
+Left for C, because it's process state, not the compositor's: the lock's
+eventfd and the logind thread's atomics (awl_lockscreen.c), the plugin host
+(one library per process, which keeps one `awl_host`: the handle, its api,
+the host table, its timers, paused/covered), the config's environment
+(setenv is the process'), `builtinconfig()`'s cache, and the log, spawn,
+redraw, draw and dict state listed in 5.
+
+Next: C (`main` makes the server, `awl` goes; `awl_proc`).
 
 A. **Gather (mechanical):**
    - Add `awl_server_t` and its member structs.

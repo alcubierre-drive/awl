@@ -51,6 +51,9 @@ typedef struct {
     void *exclusive_focus;
     /** cfg->colors' border, border_focused and border_urgent, copied: the clients' borders outlive a reload */
     uint32_t borders[BorderLast];
+    /** the border width plugins_config.c had, to tell whether a reload
+     * changed it */
+    unsigned int applied_borderpx;
 } awl_clients_t;
 
 /** The pointer, awl_cursor.c's */
@@ -65,7 +68,40 @@ typedef struct {
     unsigned int mode;
     /** the client being moved or resized */
     Client *grabc;
+    /** where in it the pointer grabbed it, client-relative */
+    int grabcx, grabcy;
+    /** the constraint in effect, or NULL */
+    struct wlr_pointer_constraint_v1 *active_constraint;
+    /** a press an awl window took swallows its release too */
+    int swallow_release;
 } awl_cursor_t;
+
+/* the modules' own state, defined in their .c files (awl_server_t's
+ * members below) */
+struct awl_lock;
+struct awl_bars;
+struct awl_wallpaper;
+struct awl_alerts;
+struct awl_input;
+struct awl_conf;
+struct awl_background;
+struct awl_desktop;
+struct awl_sni_watcher;
+struct awl_notifs;
+struct awl_test;
+
+/** The popups, awl_popup.c's */
+typedef struct {
+    /** every popup, Popup.link, the newest last (on top) */
+    struct wl_list list;
+    /** the popups' tree, made with the first one; the persistent ones', made
+     * with the first of them (popupsplace()) */
+    struct wlr_scene_tree *tree, *persistent_tree;
+    /** the popup the pointer is over, if it takes the pointer */
+    awl_window_t *hovered;
+    /** the popup that had the keyboard at the last :c:func:`popupsgrabupdate` */
+    awl_window_t *keyboard;
+} awl_popups_t;
 
 /** The compositor: one, made by setup() */
 typedef struct awl_server_t {
@@ -123,10 +159,40 @@ typedef struct awl_server_t {
     awl_outputs_t out;
     awl_clients_t clients;
     awl_cursor_t cursor;
-    /** every popup, Popup.link, the newest last (on top) */
-    struct wl_list popups;
+    awl_popups_t popups;
     /** the session is locked: by the locker, or still, after it crashed */
     int locked;
+
+    /* The modules' own state: each struct is defined only in its module's
+     * .c, which makes it in its init; other modules go through its
+     * functions. */
+    /** awl_lockscreen.c's, from lockinit() to awl_lock_fini() */
+    struct awl_lock *lock;
+    /** awl_bar.c's: the hover, the redraw, the fonts in use; from barinit() to barfree() */
+    struct awl_bars *bars;
+    /** awl_wallpaper.c's: the timer and its mode; from wallpaperinit() to wallpaperfini() */
+    struct awl_wallpaper *wallpaper;
+    /** awl_alert.c's: the alerts' texts and tree; from awl_alert_init() to awl_alert_fini() */
+    struct awl_alerts *alerts;
+    /** awl_input.c's: the keyboard group and the devices; from inputinit() to inputfree() */
+    struct awl_input *input;
+    /** awl_config.c's: the library's config, which cfg points to while it's
+     * loaded, and a pending plugin_restart(); from configinit() to configfini() */
+    struct awl_conf *conf;
+    /** awl_background.c's: the wallpaper's images and fade; from
+     * background_init() to background_fini() */
+    struct awl_background *background;
+    /** awl_desktop.c's: the desktop panels; from desktop_init() to desktop_fini() */
+    struct awl_desktop *desktop;
+    /** awl_sni.c's: the StatusNotifierWatcher, NULL if it couldn't start */
+    struct awl_sni_watcher *sni;
+    /** awl_notifications.c's: the notification server and its history;
+     * from awl_notifications_start() to awl_notifications_stop() */
+    struct awl_notifs *notifs;
+    /** awl_test.c's: AWL_TEST_WINDOWS' popups; NULL without it */
+    struct awl_test *test;
+    /** awl_redraw.h's fd's event handler (redraw_fire()) */
+    struct wl_event_source *redraw_source;
     /** setup()'s listeners to the globals above, cleanuplisteners() removes them */
     struct {
         struct wl_listener cursor_axis;

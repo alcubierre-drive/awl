@@ -14,4 +14,6 @@
  * popups, see testwincmd(). After the backend is made. */
 void testinit(awl_server_t *srv);
 /** win, a popup, is gone */
-void testpopupdestroyed(awl_window_t *win);
+void testpopupdestroyed(awl_server_t *srv, awl_window_t *win);
+/** frees :c:member:`awl_server_t.test` */
+void testfini(awl_server_t *srv);

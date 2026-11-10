@@ -20,7 +20,10 @@
 
 struct wl_event_loop;
 
-/** Starts it on loop; it connects from the loop. Returns 0, or -1 (logged). */
-int awl_sni_watcher_start( struct wl_event_loop* loop );
-/** Stops it, letting go of the name. Nothing if it isn't running. */
-void awl_sni_watcher_stop( void );
+/** the watcher's state, :c:member:`awl_server_t.sni` */
+typedef struct awl_sni_watcher awl_sni_watcher_t;
+
+/** Starts it on loop; it connects from the loop. Returns it, or NULL (logged). */
+awl_sni_watcher_t* awl_sni_watcher_start( struct wl_event_loop* loop );
+/** Stops w, letting go of the name, and frees it. Nothing for NULL. */
+void awl_sni_watcher_stop( awl_sni_watcher_t* w );

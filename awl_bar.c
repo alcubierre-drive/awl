@@ -13,8 +13,8 @@
 
 static widget_t *barwidgetin(Monitor *m, double cx, unsigned int *xrel);
 static widget_t *barwidgetatx(awl_server_t *srv, Monitor *m, double cx, double cy, unsigned int *xrel);
-static void updateview(widget_t *w, unsigned int xrel);
-static void setleavepending(int pending);
+static void updateview(struct awl_bars *b, widget_t *w, unsigned int xrel);
+static void setleavepending(struct awl_bars *b, int pending);
 static int leavetimeout(void *data);
 static int hovertimeout(void *data);
 static void widget_wrap_scroll_callback( widget_t* w, uint32_t xrel, double delta );
@@ -39,33 +39,36 @@ static const struct wlr_buffer_impl buffer_impl = {
     .end_data_ptr_access = buffer_end_data_ptr_access
 };
 
-/** What the fonts were set up with, copied, to tell whether a reload
- * changed them */
-static struct {
-    char *font;
-    int fontsize;
-    char *emojifont;
-    char *popupfont; /* cfg->popup's */
-    int popupfontsize;
-    char *desktopfont; /* cfg->desktop's */
-    int desktopfontsize;
-    /* cfg->bar's, -1 before the first */
-    int show, top;
-} applied = { .show = -1, .top = -1 };
+/** The bars' state (:c:member:`awl_server_t.bars`), from barinit() to barfree() */
+struct awl_bars {
+    /** What the fonts were set up with, copied, to tell whether a reload
+     * changed them */
+    struct {
+        char *font;
+        int fontsize;
+        char *emojifont;
+        char *popupfont; /* cfg->popup's */
+        int popupfontsize;
+        char *desktopfont; /* cfg->desktop's */
+        int desktopfontsize;
+        /* cfg->bar's, -1 before the first */
+        int show, top;
+    } applied;
 
-/** Bar widget hover (:c:member:`widget_t.callback_hover`): hover_widget is the widget
- * under the pointer if it has a hover callback, hover_timer fires its
- * callback hover_delay_ms after the pointer got there. hover_active is the
- * widget whose hover fired and that has a callback_leave; leave_timer fires
- * that leave_delay_ms after the pointer left both it and its popup (at once
- * for a delay of 0). */
-static struct wl_event_source *hover_timer, *leave_timer;
-static widget_t *hover_widget, *hover_active;
-static int leave_pending;
-/** the widget with a callback_view the pointer is on (:c:member:`widget_t.callback_view`) */
-static widget_t *view_widget;
-/** :c:func:`barsdirty`'s redraw, NULL while none is due */
-static struct wl_event_source *redraw_idle;
+    /** Bar widget hover (:c:member:`widget_t.callback_hover`): hover_widget is the widget
+     * under the pointer if it has a hover callback, hover_timer fires its
+     * callback hover_delay_ms after the pointer got there. hover_active is the
+     * widget whose hover fired and that has a callback_leave; leave_timer fires
+     * that leave_delay_ms after the pointer left both it and its popup (at once
+     * for a delay of 0). The timers are there from barinit() to barfini(). */
+    struct wl_event_source *hover_timer, *leave_timer;
+    widget_t *hover_widget, *hover_active;
+    int leave_pending;
+    /** the widget with a callback_view the pointer is on (:c:member:`widget_t.callback_view`) */
+    widget_t *view_widget;
+    /** :c:func:`barsdirty`'s redraw, NULL while none is due */
+    struct wl_event_source *redraw_idle;
+};
 
 /** the widget of m's bar at layout x cx, if the bar is there; ``*xrel`` (may be
  * NULL) its x there, from the widget's left edge in buffer pixels. The one
@@ -117,41 +120,41 @@ barwidgetatx(awl_server_t *srv, Monitor *m, double cx, double cy, unsigned int *
 /** the pointer is on w at xrel (NULL: on no widget): callback_view tells
  * the widget it left -1 first */
 static void
-updateview(widget_t *w, unsigned int xrel)
+updateview(struct awl_bars *b, widget_t *w, unsigned int xrel)
 {
-    widget_t *left = view_widget;
+    widget_t *left = b->view_widget;
 
-    view_widget = w && w->callback_view ? w : NULL;
-    if (left && left != view_widget)
+    b->view_widget = w && w->callback_view ? w : NULL;
+    if (left && left != b->view_widget)
         left->callback_view(left, -1);
-    if (view_widget)
-        view_widget->callback_view(view_widget, (int32_t)xrel);
+    if (b->view_widget)
+        b->view_widget->callback_view(b->view_widget, (int32_t)xrel);
 }
 
 static int leavetimeout(void *data);
 
 /** a leave_delay_ms of 0 calls callback_leave right away */
 static void
-setleavepending(int pending)
+setleavepending(struct awl_bars *b, int pending)
 {
-    if (pending == leave_pending)
+    if (pending == b->leave_pending)
         return;
-    if (pending && !hover_active->leave_delay_ms) {
-        leavetimeout(NULL);
+    if (pending && !b->hover_active->leave_delay_ms) {
+        leavetimeout(b);
         return;
     }
-    leave_pending = pending;
-    wl_event_source_timer_update(leave_timer, pending ? (int)hover_active->leave_delay_ms : 0);
+    b->leave_pending = pending;
+    wl_event_source_timer_update(b->leave_timer, pending ? (int)b->hover_active->leave_delay_ms : 0);
 }
 
 static int
 leavetimeout(void *data)
 {
-    widget_t *w = hover_active;
+    struct awl_bars *b = data;
+    widget_t *w = b->hover_active;
 
-    (void)data;
-    hover_active = NULL;
-    leave_pending = 0;
+    b->hover_active = NULL;
+    b->leave_pending = 0;
     if (w)
         w->callback_leave(w);
     return 0;
@@ -161,18 +164,17 @@ static int
 hovertimeout(void *data)
 {
     awl_server_t *srv = data;
-    (void)data;
     /* not while a layer surface or a popup (e.g. a launcher) holds the
      * keyboard */
-    if (!hover_widget || srv->locked || srv->clients.exclusive_focus || popupkeyboard(srv))
+    if (!srv->bars->hover_widget || srv->locked || srv->clients.exclusive_focus || popupkeyboard(srv))
         return 0;
-    if (hover_active && hover_active != hover_widget) {
-        setleavepending(0);
-        leavetimeout(NULL);
+    if (srv->bars->hover_active && srv->bars->hover_active != srv->bars->hover_widget) {
+        setleavepending(srv->bars, 0);
+        leavetimeout(srv->bars);
     }
-    if (hover_widget->callback_leave)
-        hover_active = hover_widget;
-    hover_widget->callback_hover(hover_widget);
+    if (srv->bars->hover_widget->callback_leave)
+        srv->bars->hover_active = srv->bars->hover_widget;
+    srv->bars->hover_widget->callback_hover(srv->bars->hover_widget);
     return 0;
 }
 
@@ -183,21 +185,21 @@ updatehover(awl_server_t *srv, Client *c)
     Monitor *m;
     unsigned int xrel = 0;
 
-    if (!hover_timer)
+    if (!srv->bars->hover_timer)
         return;
     if (!c && !srv->locked && srv->cursor.mode == CurNormal
             && (m = xytomon(srv, srv->cursor.wlr->x, srv->cursor.wlr->y)))
         w = barwidgetatx(srv, m, srv->cursor.wlr->x, srv->cursor.wlr->y, &xrel);
-    updateview(w, xrel);
+    updateview(srv->bars, w, xrel);
     if (w && !w->callback_hover)
         w = NULL;
-    if (hover_active)
-        setleavepending(w != hover_active && !pointerinpopup(srv, hover_active->popup_window));
-    if (w == hover_widget)
+    if (srv->bars->hover_active)
+        setleavepending(srv->bars, w != srv->bars->hover_active && !pointerinpopup(srv, srv->bars->hover_active->popup_window));
+    if (w == srv->bars->hover_widget)
         return;
-    hover_widget = w;
+    srv->bars->hover_widget = w;
     /* a delay of 0 would disarm the timer */
-    wl_event_source_timer_update(hover_timer, w ? (w->hover_delay_ms ? (int)w->hover_delay_ms : 1) : 0);
+    wl_event_source_timer_update(srv->bars->hover_timer, w ? (w->hover_delay_ms ? (int)w->hover_delay_ms : 1) : 0);
 }
 
 static const double SCROLL_LIMIT = 10.0;
@@ -497,7 +499,7 @@ redrawidle(void *data)
 {
     awl_server_t *srv = data;
     (void)data;
-    redraw_idle = NULL;
+    srv->bars->redraw_idle = NULL;
     drawbars(srv);
 }
 
@@ -505,8 +507,8 @@ void
 barsdirty(awl_server_t *srv)
 {
     /* hover_timer: between barinit() and barfini() */
-    if (!redraw_idle && hover_timer)
-        redraw_idle = wl_event_loop_add_idle(srv->event_loop, redrawidle, srv);
+    if (!srv->bars->redraw_idle && srv->bars->hover_timer)
+        srv->bars->redraw_idle = wl_event_loop_add_idle(srv->event_loop, redrawidle, srv);
 }
 
 void togglebar(awl_server_t *srv, const Arg *arg) { togglebar_mon(srv, srv->out.selmon); }
@@ -582,7 +584,7 @@ updatebar(awl_server_t *srv, Monitor *m)
     m->bar_area.height = m->bar.lrpad + 2;
     m->bar_area.real_height = (int)((float)m->bar_area.height / m->wlr_output->scale);
     updatefonts(srv, m);
-    desktop_fontchanged(m);
+    desktop_fontchanged(srv->desktop, m);
     popupsupdate(srv, m);
     barview(m);
 }
@@ -590,28 +592,43 @@ updatebar(awl_server_t *srv, Monitor *m)
 void
 barinit(awl_server_t *srv)
 {
-    hover_timer = wl_event_loop_add_timer(srv->event_loop, hovertimeout, srv);
-    leave_timer = wl_event_loop_add_timer(srv->event_loop, leavetimeout, NULL);
+    srv->bars = ecalloc(1, sizeof *srv->bars);
+    srv->bars->applied.show = srv->bars->applied.top = -1;
+    srv->bars->hover_timer = wl_event_loop_add_timer(srv->event_loop, hovertimeout, srv);
+    srv->bars->leave_timer = wl_event_loop_add_timer(srv->event_loop, leavetimeout, srv->bars);
 }
 
 void
-barfini(void)
+barfini(awl_server_t *srv)
 {
-    if (redraw_idle) {
-        wl_event_source_remove(redraw_idle);
-        redraw_idle = NULL;
+    if (srv->bars->redraw_idle) {
+        wl_event_source_remove(srv->bars->redraw_idle);
+        srv->bars->redraw_idle = NULL;
     }
-    if (hover_timer) {
-        wl_event_source_remove(hover_timer);
-        hover_timer = NULL;
-        hover_widget = NULL;
-        view_widget = NULL;
+    if (srv->bars->hover_timer) {
+        wl_event_source_remove(srv->bars->hover_timer);
+        srv->bars->hover_timer = NULL;
+        srv->bars->hover_widget = NULL;
+        srv->bars->view_widget = NULL;
     }
-    if (leave_timer) {
-        wl_event_source_remove(leave_timer);
-        leave_timer = NULL;
-        hover_active = NULL;
+    if (srv->bars->leave_timer) {
+        wl_event_source_remove(srv->bars->leave_timer);
+        srv->bars->leave_timer = NULL;
+        srv->bars->hover_active = NULL;
     }
+}
+
+void
+barfree(awl_server_t *srv)
+{
+    if (!srv->bars)
+        return;
+    free(srv->bars->applied.font);
+    free(srv->bars->applied.emojifont);
+    free(srv->bars->applied.popupfont);
+    free(srv->bars->applied.desktopfont);
+    free(srv->bars);
+    srv->bars = NULL;
 }
 
 void
@@ -637,21 +654,21 @@ baraddmon(awl_server_t *srv, Monitor *m)
 }
 
 void
-barremovemon(Monitor *m)
+barremovemon(awl_server_t *srv, Monitor *m)
 {
     /* hover_widget points into m->bar, as may view_widget */
-    if (view_widget && (char *)view_widget >= (char *)&m->bar
-            && (char *)view_widget < (char *)(&m->bar + 1))
-        view_widget = NULL;
-    if (hover_widget && (char *)hover_widget >= (char *)&m->bar
-            && (char *)hover_widget < (char *)(&m->bar + 1)) {
-        hover_widget = NULL;
-        wl_event_source_timer_update(hover_timer, 0);
+    if (srv->bars->view_widget && (char *)srv->bars->view_widget >= (char *)&m->bar
+            && (char *)srv->bars->view_widget < (char *)(&m->bar + 1))
+        srv->bars->view_widget = NULL;
+    if (srv->bars->hover_widget && (char *)srv->bars->hover_widget >= (char *)&m->bar
+            && (char *)srv->bars->hover_widget < (char *)(&m->bar + 1)) {
+        srv->bars->hover_widget = NULL;
+        wl_event_source_timer_update(srv->bars->hover_timer, 0);
     }
-    if (hover_active && (char *)hover_active >= (char *)&m->bar
-            && (char *)hover_active < (char *)(&m->bar + 1)) {
-        setleavepending(0);
-        hover_active = NULL;
+    if (srv->bars->hover_active && (char *)srv->bars->hover_active >= (char *)&m->bar
+            && (char *)srv->bars->hover_active < (char *)(&m->bar + 1)) {
+        setleavepending(srv->bars, 0);
+        srv->bars->hover_active = NULL;
     }
     awl_font_release(m->popupfont);
     m->popupfont = NULL;
@@ -666,15 +683,15 @@ barwidgetsclear(awl_server_t *srv)
     Monitor *m;
 
     /* a hover popup gets its leave callback while that still exists */
-    if (hover_active) {
-        setleavepending(0);
-        leavetimeout(NULL);
+    if (srv->bars->hover_active) {
+        setleavepending(srv->bars, 0);
+        leavetimeout(srv->bars);
     }
-    hover_widget = NULL;
-    if (hover_timer)
-        wl_event_source_timer_update(hover_timer, 0);
+    srv->bars->hover_widget = NULL;
+    if (srv->bars->hover_timer)
+        wl_event_source_timer_update(srv->bars->hover_timer, 0);
     /* it hears that the pointer left, while it still can */
-    updateview(NULL, 0);
+    updateview(srv->bars, NULL, 0);
     wl_list_for_each(m, &srv->out.mons, link)
         if (m->bar.m)
             awl_bar_widgets_clear(&m->bar);
@@ -697,10 +714,10 @@ barconfigure(awl_server_t *srv)
 
     /* the bars' font, and with it their height */
     awl_font_retry();
-    if (!streqnull(srv->cfg->font, applied.font) || srv->cfg->fontsize != applied.fontsize) {
-        free(applied.font);
-        applied.font = strdupnull(srv->cfg->font);
-        applied.fontsize = srv->cfg->fontsize;
+    if (!streqnull(srv->cfg->font, srv->bars->applied.font) || srv->cfg->fontsize != srv->bars->applied.fontsize) {
+        free(srv->bars->applied.font);
+        srv->bars->applied.font = strdupnull(srv->cfg->font);
+        srv->bars->applied.fontsize = srv->cfg->fontsize;
         wl_list_for_each(m, &srv->out.mons, link) {
             if (!m->bar.m)
                 continue;
@@ -711,34 +728,34 @@ barconfigure(awl_server_t *srv)
     }
     /* the bars' place, and whether they're shown: every bar follows a
      * change (togglebar's state otherwise stays) */
-    if (applied.top >= 0 && !!srv->cfg->bar.top != applied.top)
+    if (srv->bars->applied.top >= 0 && !!srv->cfg->bar.top != srv->bars->applied.top)
         wl_list_for_each(m, &srv->out.mons, link)
             if (m->bar.m) {
                 arrangelayers(srv, m);
                 popupsupdate(srv, m);
             }
-    applied.top = !!srv->cfg->bar.top;
-    if (applied.show >= 0 && !!srv->cfg->bar.show != applied.show)
+    srv->bars->applied.top = !!srv->cfg->bar.top;
+    if (srv->bars->applied.show >= 0 && !!srv->cfg->bar.show != srv->bars->applied.show)
         wl_list_for_each(m, &srv->out.mons, link)
             if (m->bar.m && m->showbar != !!srv->cfg->bar.show)
                 togglebar_mon(srv, m);
-    applied.show = !!srv->cfg->bar.show;
+    srv->bars->applied.show = !!srv->cfg->bar.show;
 
     /* the bars' emoji (updatebar() above reloaded them too, no harm) */
-    if (!streqnull(srv->cfg->emoji_font, applied.emojifont)) {
-        free(applied.emojifont);
-        applied.emojifont = strdupnull(srv->cfg->emoji_font);
+    if (!streqnull(srv->cfg->emoji_font, srv->bars->applied.emojifont)) {
+        free(srv->bars->applied.emojifont);
+        srv->bars->applied.emojifont = strdupnull(srv->cfg->emoji_font);
         wl_list_for_each(m, &srv->out.mons, link)
             if (m->bar.m)
                 updateemojifont(srv, m);
         barsdirty(srv);
     }
     /* the popups' (updatebar() above reloaded it too, no harm) */
-    if (!streqnull(srv->cfg->popup.font, applied.popupfont)
-            || srv->cfg->popup.fontsize.v != applied.popupfontsize) {
-        free(applied.popupfont);
-        applied.popupfont = strdupnull(srv->cfg->popup.font);
-        applied.popupfontsize = srv->cfg->popup.fontsize.v;
+    if (!streqnull(srv->cfg->popup.font, srv->bars->applied.popupfont)
+            || srv->cfg->popup.fontsize.v != srv->bars->applied.popupfontsize) {
+        free(srv->bars->applied.popupfont);
+        srv->bars->applied.popupfont = strdupnull(srv->cfg->popup.font);
+        srv->bars->applied.popupfontsize = srv->cfg->popup.fontsize.v;
         wl_list_for_each(m, &srv->out.mons, link) {
             if (!m->bar.m || !m->bar.font)
                 continue;
@@ -747,16 +764,16 @@ barconfigure(awl_server_t *srv)
         }
     }
     /* the desktop file list's, the same way */
-    if (!streqnull(srv->cfg->desktop.font, applied.desktopfont)
-            || srv->cfg->desktop.fontsize.v != applied.desktopfontsize) {
-        free(applied.desktopfont);
-        applied.desktopfont = strdupnull(srv->cfg->desktop.font);
-        applied.desktopfontsize = srv->cfg->desktop.fontsize.v;
+    if (!streqnull(srv->cfg->desktop.font, srv->bars->applied.desktopfont)
+            || srv->cfg->desktop.fontsize.v != srv->bars->applied.desktopfontsize) {
+        free(srv->bars->applied.desktopfont);
+        srv->bars->applied.desktopfont = strdupnull(srv->cfg->desktop.font);
+        srv->bars->applied.desktopfontsize = srv->cfg->desktop.fontsize.v;
         wl_list_for_each(m, &srv->out.mons, link) {
             if (!m->bar.m || !m->bar.font)
                 continue;
             updatefont(m, &m->desktopfont, srv->cfg->desktop.font, srv->cfg->desktop.fontsize.v, "desktop");
-            desktop_fontchanged(m);
+            desktop_fontchanged(srv->desktop, m);
         }
     }
     wl_list_for_each(m, &srv->out.mons, link) {
@@ -799,11 +816,11 @@ barbutton(awl_server_t *srv, uint32_t button, unsigned int *click)
      * its hover opened, or keeps it from opening, until the pointer
      * leaves and comes back */
     pressed = barwidgetin(srv->out.selmon, srv->cursor.wlr->x, &xrel);
-    if (pressed && pressed == hover_widget)
-        wl_event_source_timer_update(hover_timer, 0);
-    if (hover_active && pressed == hover_active) {
-        setleavepending(0);
-        leavetimeout(NULL);
+    if (pressed && pressed == srv->bars->hover_widget)
+        wl_event_source_timer_update(srv->bars->hover_timer, 0);
+    if (srv->bars->hover_active && pressed == srv->bars->hover_active) {
+        setleavepending(srv->bars, 0);
+        leavetimeout(srv->bars);
     }
     *click = ClkBar;
     if (!pressed || !pressed->callback_click)

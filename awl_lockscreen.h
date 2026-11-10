@@ -23,11 +23,12 @@
 #include <sys/types.h>
 
 
-/** the eventfd for the logind thread and its event handler, the timers,
- * the blur over the screen while locked; before the plugins start */
+/** :c:member:`awl_server_t.lock`, the eventfd for the logind thread and its
+ * event handler, the timers, the blur over the screen while locked; before
+ * the plugins start */
 void lockinit(awl_server_t *srv);
 /** removes the handler and the timers; :c:func:`awl_lock_fini` closes the eventfd */
-void lockfini(void);
+void lockfini(awl_server_t *srv);
 /** ext-session-lock's new locks */
 void locksession(struct wl_listener *listener, void *data);
 /** a monitor's lock surface is gone (:c:member:`Monitor.destroy_lock_surface`) */
@@ -38,7 +39,7 @@ void lockshown(awl_server_t *srv, Monitor *m);
 /** the output layout changed: the blur covers it all */
 void lockresize(awl_server_t *srv);
 /** a key was pressed while locked */
-void lockkeystroke(void);
+void lockkeystroke(awl_server_t *srv);
 /** pid, a child, exited: if it was the locker, it may never have locked */
 void lockerexited(awl_server_t *srv, pid_t pid);
 /** after plugins_config.c changed: the blur */
@@ -49,7 +50,7 @@ void awl_lock_request(void);
 /** What the logind thread listens for now, :c:enum:`awl_logind_flags` (awl_host.h);
  * 0 when it stops. Any thread. */
 void awl_lock_logind_state(unsigned flags);
-/** Closes the eventfd (requests and states are dropped from then on). Only
- * once nothing can call the two above anymore: after the plugins are
- * unloaded. */
-void awl_lock_fini(void);
+/** Closes the eventfd (requests and states are dropped from then on) and
+ * frees :c:member:`awl_server_t.lock`. Only once nothing can call the two
+ * above anymore: after the plugins are unloaded. */
+void awl_lock_fini(awl_server_t *srv);
