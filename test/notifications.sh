@@ -47,9 +47,11 @@ look() {
 	"$live" alive || die "awl died"
 	state=$("$live" win "${@:-}") && [ -n "$state" ] || die "no state from awl"
 	# awl's alerts come whenever (the logind one a while after the start:
-	# the test bus has no logind): dismissed, they don't count
+	# the test bus has no logind), do-not-disturb's OSD with every toggle
+	# (plugins/osd.c): dismissed, they don't count
 	local a
-	a=$(awk '$1 == "notif" && $(NF - 1) == "awl" && $NF == "alert" { print $2 }' <<<"$state")
+	a=$(awk '$1 == "notif" && (($(NF - 1) == "awl" && $NF == "alert") ||
+		/ (Do not disturb|Notifications enabled)$/) { print $2 }' <<<"$state")
 	alerts=$(wc -w <<<"$a")
 	[ -z "$a" ] && return
 	for a in $a; do "$live" win "nclose $a 2" >/dev/null; done

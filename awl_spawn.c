@@ -36,7 +36,7 @@ handlesigchld(int signo, void *data)
      * that fails, so look first (WNOWAIT) and leave that one alone */
     while (!waitid(P_ALL, 0, &in, WEXITED | WNOHANG | WNOWAIT) && in.si_pid) {
 #ifdef XWAYLAND
-        if (xwayland && xwayland->server && in.si_pid == xwayland->server->pid)
+        if (awl->xwayland && awl->xwayland->server && in.si_pid == awl->xwayland->server->pid)
             break;
 #endif
         waitpid(in.si_pid, NULL, 0);
@@ -182,8 +182,8 @@ spawnstartup(const char *cmd)
 void
 autostartall(void)
 {
-    for (size_t i = 0; i < cfg->autostart.n; ++i) {
-        if (!cfg->autostart.v[i][0]) continue; /* { NULL }: an empty entry */
-        autostart(cfg->autostart.v[i]);
+    for (size_t i = 0; i < awl->cfg->autostart.n; ++i) {
+        if (!awl->cfg->autostart.v[i][0]) continue; /* { NULL }: an empty entry */
+        autostart(awl->cfg->autostart.v[i]);
     }
 }

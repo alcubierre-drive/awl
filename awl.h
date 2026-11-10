@@ -618,10 +618,14 @@ typedef struct awl_config_t {
     struct {
         int timeout_low, timeout_normal;
         /** after that many ms without a key or the pointer, the timeouts
-         * stop; the next key or motion resumes them with what was left at
-         * the last one, at least half the timeout: only time the user is
-         * there counts (0: never pause) */
+         * stop; the next key or motion resumes them (0: never pause) */
         int idle_pause;
+        /** the part of idle_pause given back on return, 0 to 1: the user
+         * went away somewhere in it, the rest counts as seen */
+        float idle_giveback;
+        /** the part of its timeout a notification has left at least on
+         * return, 0 to 1 */
+        float idle_floor;
         /** a click on a notification (its ActivationToken,
          * :c:func:`activationtoken`) only makes the client's window urgent,
          * like any other client's xdg-activation, instead of showing and

@@ -84,6 +84,16 @@ awl_config.h, awl_xwayland.h) and about 120 file-static ones.
 
 ## Order (each step builds and runs)
 
+Status: A is done (uncommitted). `awl_server_t` and its member structs
+(`awl_outputs_t`, `awl_clients_t`, `awl_cursor_t`) are in awl_server.h, the
+instance is awl.c's `server`, reached through `awl`. The names:
+`awl->out.{mons,selmon,sgeom,layout,mgr,in_cleanupmon}`,
+`awl->clients.{list,fstack,exclusive_focus,borders}`,
+`awl->cursor.{wlr,mgr,constraints,relative_mgr,drag_icon,mode,grabc}`;
+the rest flat (`awl->cfg`, `awl->seat`, `awl->popups`, `awl->locked`, ...),
+awl.c's listeners in `awl->listen`. The core exports no data but `awl` and
+the action tables. Next: B, starting at the leaves.
+
 A. **Gather (mechanical):**
    - Add `awl_server_t` and its member structs.
    - Keep one temporary `awl_server_t *awl` global and rewrite `selmon` to

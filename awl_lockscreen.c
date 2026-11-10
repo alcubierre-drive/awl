@@ -49,7 +49,6 @@ static void logindupdate(void);
 static int logindtimeout(void *data);
 static void unlocksession(struct wl_listener *listener, void *data);
 
-int locked = 0;
 /* key presses while locked, reset on unlock; nothing reads it yet (main
  * thread only, and only a count: never the keys, never their timing) */
 static unsigned locked_keystrokes = 0;
@@ -118,20 +117,20 @@ createlocksurface(struct wl_listener *listener, void *data)
 
     LISTEN(&lock_surface->events.destroy, &m->destroy_lock_surface, destroylocksurface);
 
-    if (m == selmon)
-        client_notify_enter(lock_surface->surface, wlr_seat_get_keyboard(seat));
+    if (m == awl->out.selmon)
+        client_notify_enter(lock_surface->surface, wlr_seat_get_keyboard(awl->seat));
 }
 
 void
 destroylock(SessionLock *lock, int unlock)
 {
-    wlr_seat_keyboard_notify_clear_focus(seat);
+    wlr_seat_keyboard_notify_clear_focus(awl->seat);
     /* a crashed locker leaves the screen locked, but only under awl's blur:
      * a suspend now waits for the next locker */
     covered_pending = 0;
     wl_event_source_timer_update(covered_timer, 0);
     awl_plugins_set_covered(0);
-    if ((locked = !unlock))
+    if ((awl->locked = !unlock))
         goto destroy;
     popupslocked();
     locked_keystrokes = 0;
@@ -142,7 +141,7 @@ destroylock(SessionLock *lock, int unlock)
         AWL_wlr_scene_blur_set_shatter(locked_bg_blur, 0.01);
     }
 
-    focusclient(focustop(selmon), 0);
+    focusclient(focustop(awl->out.selmon), 0);
     motionnotify(0, NULL, 0, 0, 0, 0);
 
     /* catch up on everything skipped while locked */
@@ -167,16 +166,16 @@ destroylocksurface(struct wl_listener *listener, void *data)
     m->lock_surface = NULL;
     wl_list_remove(&m->destroy_lock_surface.link);
 
-    if (lock_surface->surface != seat->keyboard_state.focused_surface)
+    if (lock_surface->surface != awl->seat->keyboard_state.focused_surface)
         return;
 
-    if (locked && cur_lock && !wl_list_empty(&cur_lock->surfaces)) {
+    if (awl->locked && cur_lock && !wl_list_empty(&cur_lock->surfaces)) {
         surface = wl_container_of(cur_lock->surfaces.next, surface, link);
-        client_notify_enter(surface->surface, wlr_seat_get_keyboard(seat));
-    } else if (!locked) {
-        focusclient(focustop(selmon), 1);
+        client_notify_enter(surface->surface, wlr_seat_get_keyboard(awl->seat));
+    } else if (!awl->locked) {
+        focusclient(focustop(awl->out.selmon), 1);
     } else {
-        wlr_seat_keyboard_clear_focus(seat);
+        wlr_seat_keyboard_clear_focus(awl->seat);
     }
 }
 
@@ -198,7 +197,7 @@ lockcovered(void)
     Monitor *m;
     if (!covered_pending)
         return;
-    wl_list_for_each(m, &mons, link)
+    wl_list_for_each(m, &awl->out.mons, link)
         if (m->wlr_output->enabled && !m->lock_shown)
             return;
     covered_pending = 0;
@@ -241,7 +240,7 @@ lockfire(int fd, uint32_t mask, void *data)
 void
 lockscreen(const Arg *arg)
 {
-    const char *const *argv = cfg->lock.locker;
+    const char *const *argv = awl->cfg->lock.locker;
     pid_t pid;
     if (cur_lock)
         return;
@@ -278,7 +277,7 @@ lockwake(void)
 unsigned
 logindneeded(void)
 {
-    return AWL_LOGIND_LOCK | (cfg->lock.on_suspend ? AWL_LOGIND_SLEEP : 0);
+    return AWL_LOGIND_LOCK | (awl->cfg->lock.on_suspend ? AWL_LOGIND_SLEEP : 0);
 }
 
 /** The logind alert: up once the logind thread hasn't listened for all of
@@ -321,7 +320,7 @@ locksession(struct wl_listener *listener, void *data)
     struct wlr_session_lock_v1 *session_lock = data;
     SessionLock *lock;
     Monitor *m;
-    if (locked_bg_blur && cfg->lock.blur) {
+    if (locked_bg_blur && awl->cfg->lock.blur) {
         wlr_scene_node_set_enabled(&locked_bg_blur->node, 1);
         AWL_wlr_scene_blur_set_shatter(locked_bg_blur, 0.01);
     }
@@ -335,9 +334,9 @@ locksession(struct wl_listener *listener, void *data)
      * the locker */
     popupshideall();
 
-    lock->scene = wlr_scene_tree_create(layers[LyrBlock]);
+    lock->scene = wlr_scene_tree_create(awl->layers[LyrBlock]);
     cur_lock = lock->lock = session_lock;
-    locked = 1;
+    awl->locked = 1;
     popupslocked();
     updatepluginpause();
     if (locker_pid > 0)
@@ -351,7 +350,7 @@ locksession(struct wl_listener *listener, void *data)
     wlr_session_lock_v1_send_locked(session_lock);
 
     /* covered once every output has shown a frame of it */
-    wl_list_for_each(m, &mons, link)
+    wl_list_for_each(m, &awl->out.mons, link)
         m->lock_shown = 0;
     covered_pending = 1;
     wl_event_source_timer_update(covered_timer, LOCK_COVER_MS);
@@ -370,11 +369,11 @@ lockinit(void)
 {
     /* made either way, cfg->lock.blur can change with a reload */
     {
-        locked_bg_blur = wlr_scene_blur_create( layers[LyrBlock], sgeom.width, sgeom.height );
-        wlr_scene_node_set_position(&locked_bg_blur->node, sgeom.x, sgeom.y);
-        wlr_scene_blur_set_size(locked_bg_blur, sgeom.width, sgeom.height);
-        wlr_scene_blur_set_strength( locked_bg_blur, cfg->blur.strength );
-        wlr_scene_blur_set_alpha( locked_bg_blur, cfg->blur.alpha );
+        locked_bg_blur = wlr_scene_blur_create( awl->layers[LyrBlock], awl->out.sgeom.width, awl->out.sgeom.height );
+        wlr_scene_node_set_position(&locked_bg_blur->node, awl->out.sgeom.x, awl->out.sgeom.y);
+        wlr_scene_blur_set_size(locked_bg_blur, awl->out.sgeom.width, awl->out.sgeom.height);
+        wlr_scene_blur_set_strength( locked_bg_blur, awl->cfg->blur.strength );
+        wlr_scene_blur_set_alpha( locked_bg_blur, awl->cfg->blur.alpha );
         wlr_scene_blur_set_should_only_blur_bottom_layer( locked_bg_blur, 0 );
         wlr_scene_node_set_enabled(&locked_bg_blur->node, 0);
         wlr_scene_node_lower_to_bottom(&locked_bg_blur->node);
@@ -382,11 +381,11 @@ lockinit(void)
     /* without it, requests and states are dropped (the logind alert stays) */
     atomic_store(&lock_fd, eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
     if (atomic_load(&lock_fd) >= 0)
-        lock_source = wl_event_loop_add_fd(event_loop, atomic_load(&lock_fd),
+        lock_source = wl_event_loop_add_fd(awl->event_loop, atomic_load(&lock_fd),
                 WL_EVENT_READABLE, lockfire, NULL);
-    covered_timer = wl_event_loop_add_timer(event_loop, coveredtimeout, NULL);
+    covered_timer = wl_event_loop_add_timer(awl->event_loop, coveredtimeout, NULL);
     /* the logind thread has until then to start listening (logind_missing) */
-    logind_timer = wl_event_loop_add_timer(event_loop, logindtimeout, NULL);
+    logind_timer = wl_event_loop_add_timer(awl->event_loop, logindtimeout, NULL);
     wl_event_source_timer_update(logind_timer, LOGIND_GRACE_MS);
 }
 
@@ -413,8 +412,8 @@ void
 lockresize(void)
 {
     if (locked_bg_blur) {
-        wlr_scene_node_set_position(&locked_bg_blur->node, sgeom.x, sgeom.y);
-        wlr_scene_blur_set_size(locked_bg_blur, sgeom.width, sgeom.height);
+        wlr_scene_node_set_position(&locked_bg_blur->node, awl->out.sgeom.x, awl->out.sgeom.y);
+        wlr_scene_blur_set_size(locked_bg_blur, awl->out.sgeom.width, awl->out.sgeom.height);
     }
 }
 
@@ -440,9 +439,9 @@ void
 lockconfigure(void)
 {
     if (locked_bg_blur) {
-        wlr_scene_blur_set_strength(locked_bg_blur, cfg->blur.strength);
-        wlr_scene_blur_set_alpha(locked_bg_blur, cfg->blur.alpha);
-        if (locked)
-            wlr_scene_node_set_enabled(&locked_bg_blur->node, cfg->lock.blur);
+        wlr_scene_blur_set_strength(locked_bg_blur, awl->cfg->blur.strength);
+        wlr_scene_blur_set_alpha(locked_bg_blur, awl->cfg->blur.alpha);
+        if (awl->locked)
+            wlr_scene_node_set_enabled(&locked_bg_blur->node, awl->cfg->lock.blur);
     }
 }

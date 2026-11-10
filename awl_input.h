@@ -14,7 +14,6 @@
 /** a binding's mod (:c:member:`Key.mod`, :c:member:`Button.mod`) with :c:macro:`MODKEY` as cfg->modkey */
 uint32_t bindmods(uint32_t mod);
 
-extern struct wlr_idle_inhibit_manager_v1 *idle_inhibit_mgr;
 
 /** the keyboard group of the real keyboards, before the first one; and the
  * list of devices configapply() reconfigures */

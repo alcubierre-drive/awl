@@ -55,7 +55,8 @@ int awl_notify_stop( void );
 void awl_notify_changed( void );
 /** whether do-not-disturb is on */
 int awl_notify_dnd( void );
-/** turns do-not-disturb on or off: the windows and the menu follow */
+/** turns do-not-disturb on or off: the windows and the menu follow, an OSD
+ * tells (:c:func:`awl_osd_dnd`) */
 void awl_notify_set_dnd( int on );
 /** closes every open notification, as the user's dismissal */
 void awl_notify_dismiss_all( void );

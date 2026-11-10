@@ -30,7 +30,7 @@ testoutputadd_backend(struct wlr_backend *b, void *data)
 static int
 testoutputadd(int signo, void *data)
 {
-    wlr_multi_for_each_backend(backend, testoutputadd_backend, NULL);
+    wlr_multi_for_each_backend(awl->backend, testoutputadd_backend, NULL);
     return 0;
 }
 
@@ -39,8 +39,8 @@ testoutputremove(int signo, void *data)
 {
     /* the newest monitor, createmon() inserts at the head; never the last one */
     Monitor *m;
-    if (wl_list_length(&mons) > 1) {
-        m = wl_container_of(mons.next, m, link);
+    if (wl_list_length(&awl->out.mons) > 1) {
+        m = wl_container_of(awl->out.mons.next, m, link);
         wlr_output_destroy(m->wlr_output);
     }
     return 0;
@@ -98,7 +98,7 @@ testunescape(char *s)
  *   scroll N on|off        N takes the pointer, its scrolling is recorded
  *   persist N on|off       N is persistent (:c:func:`popupsetpersistent`)
  *   lock 1|0               what locking the screen does to the popups (sets
- *                          :c:var:`locked` without a locker: test only)
+ *                          :c:member:`awl_server_t.locked` without a locker: test only)
  *   restart                the plugin_restart action (:c:func:`pluginsreap`
  *                          destroys them all)
  *   nclose ID REASON       the notification server's host calls, as the
@@ -194,7 +194,7 @@ testwincmd(char *line)
     testunescape(line);
 
     if (toggle || !strcmp(cmd, "show")) {
-        wl_list_for_each(it, &mons, link)
+        wl_list_for_each(it, &awl->out.mons, link)
             if (!strcmp(it->wlr_output->name, mon))
                 m = it;
         if (!m)
@@ -232,7 +232,7 @@ testwincmd(char *line)
             goto bad;
         if (x)
             popupshideall();
-        locked = !!x;
+        awl->locked = !!x;
         popupslocked();
     } else if (!strcmp(cmd, "hideall")) {
         popupshideall();
@@ -287,7 +287,7 @@ testwincmd(char *line)
         snprintf(tmp, sizeof(tmp), "%s.tmp", line);
         if (!(f = fopen(tmp, "w")))
             goto bad;
-        wl_list_for_each(it, &mons, link)
+        wl_list_for_each(it, &awl->out.mons, link)
             fprintf(f, "mon %s %d %d %d %d %d %d %d %d %g %d\n", it->wlr_output->name,
                     it->m.x, it->m.y, it->m.width, it->m.height,
                     it->w.x, it->w.y, it->w.width, it->w.height,
@@ -307,7 +307,7 @@ testwincmd(char *line)
         fputs(testclicks, f);
         testclicks[0] = 0;
         n = 0;
-        wl_list_for_each(p, &popups, link) {
+        wl_list_for_each(p, &awl->popups, link) {
             for (i = 0; i < (int)LENGTH(testwins) && testwins[i] != p->win; i++);
             if (i < (int)LENGTH(testwins))
                 continue;
@@ -323,7 +323,7 @@ testwincmd(char *line)
             n++;
         }
         /* barwidgetat()'s layout of the right-hand widgets */
-        wl_list_for_each(it, &mons, link) {
+        wl_list_for_each(it, &awl->out.mons, link) {
             d = &it->bar;
             if (!d->m || !it->scene_buffer || !it->wlr_output->enabled)
                 continue;
@@ -360,7 +360,7 @@ testwincmd(char *line)
         fprintf(f, "pasts %d\n", nn);
         i = popuppersistentlayer(&x);
         fprintf(f, "persistent %s %d\n", i == LyrOverlay ? "overlay" : i == LyrTop ? "top" : "-", x);
-        fprintf(f, "margin %d\n", cfg->popup.margin);
+        fprintf(f, "margin %d\n", awl->cfg->popup.margin);
         fprintf(f, "errors %d\n", errors);
         fclose(f);
         rename(tmp, line);
@@ -403,8 +403,8 @@ testinit(void)
     /* for testing (test/live.sh): SIGUSR1 adds an output, SIGUSR2 removes
      * the newest one; headless and nested (wayland) backends only */
     if (getenv("AWL_TEST_OUTPUTS")) {
-        wl_event_loop_add_signal(event_loop, SIGUSR1, testoutputadd, NULL);
-        wl_event_loop_add_signal(event_loop, SIGUSR2, testoutputremove, NULL);
+        wl_event_loop_add_signal(awl->event_loop, SIGUSR1, testoutputadd, NULL);
+        wl_event_loop_add_signal(awl->event_loop, SIGUSR2, testoutputremove, NULL);
     }
     /* for testing (test/live.sh's win, test/windows.sh): a FIFO of commands
      * for the text popups, see testwincmd(); O_RDWR, so it never reads EOF
@@ -413,7 +413,7 @@ testinit(void)
         int fd = open(getenv("AWL_TEST_WINDOWS"), O_RDWR | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0)
             die("AWL_TEST_WINDOWS %s:", getenv("AWL_TEST_WINDOWS"));
-        wl_event_loop_add_fd(event_loop, fd, WL_EVENT_READABLE, testwinctl, NULL);
+        wl_event_loop_add_fd(awl->event_loop, fd, WL_EVENT_READABLE, testwinctl, NULL);
     }
 }
 

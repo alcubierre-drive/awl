@@ -250,7 +250,7 @@ static void place( awl_window_t* win ) {
     Monitor* m = win->m;
     int x, y;
     if (as_strip( win )) {
-        const int top = win->at == AWL_WINDOW_AT_BAR ? cfg->bar.top : win->at == AWL_WINDOW_AT_STRIP_TOP;
+        const int top = win->at == AWL_WINDOW_AT_BAR ? awl->cfg->bar.top : win->at == AWL_WINDOW_AT_STRIP_TOP;
         x = m->m.x;
         y = top ? m->m.y : m->m.y + m->m.height - win->lh;
     } else if (win->placement == PLACE_AT)

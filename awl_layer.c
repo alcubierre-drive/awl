@@ -53,7 +53,7 @@ arrangelayers(Monitor *m)
 
     if (m->showbar) {
         usable_area.height -= m->bar_area.real_height;
-        usable_area.y += cfg->bar.top ? m->bar_area.real_height : 0;
+        usable_area.y += awl->cfg->bar.top ? m->bar_area.real_height : 0;
     }
 
     /* Arrange exclusive surfaces from top->bottom */
@@ -77,11 +77,11 @@ arrangelayers(Monitor *m)
     /* Find topmost keyboard interactive layer, if such a layer exists */
     for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
         wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
-            if (locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
+            if (awl->locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
                 continue;
             focusclient(NULL, 0);
-            exclusive_focus = l;
-            client_notify_enter(l->layer_surface->surface, wlr_seat_get_keyboard(seat));
+            awl->clients.exclusive_focus = l;
+            client_notify_enter(l->layer_surface->surface, wlr_seat_get_keyboard(awl->seat));
             return;
         }
     }
@@ -92,7 +92,7 @@ commitlayersurfacenotify(struct wl_listener *listener, void *data)
 {
     LayerSurface *l = wl_container_of(listener, l, surface_commit);
     struct wlr_layer_surface_v1 *layer_surface = l->layer_surface;
-    struct wlr_scene_tree *scene_layer = layers[layermap[layer_surface->current.layer]];
+    struct wlr_scene_tree *scene_layer = awl->layers[layermap[layer_surface->current.layer]];
     struct wlr_layer_surface_v1_state old_state;
 
     if (l->layer_surface->initial_commit) {
@@ -116,7 +116,7 @@ commitlayersurfacenotify(struct wl_listener *listener, void *data)
         wl_list_remove(&l->link);
         wl_list_insert(&l->mon->layers[layer_surface->current.layer], &l->link);
         wlr_scene_node_reparent(&l->popups->node, (layer_surface->current.layer
-                < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? layers[LyrTop] : scene_layer));
+                < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? awl->layers[LyrTop] : scene_layer));
     }
 
     arrangelayers(l->mon);
@@ -128,10 +128,10 @@ createlayersurface(struct wl_listener *listener, void *data)
     struct wlr_layer_surface_v1 *layer_surface = data;
     LayerSurface *l;
     struct wlr_surface *surface = layer_surface->surface;
-    struct wlr_scene_tree *scene_layer = layers[layermap[layer_surface->pending.layer]];
+    struct wlr_scene_tree *scene_layer = awl->layers[layermap[layer_surface->pending.layer]];
 
     if (!layer_surface->output
-            && !(layer_surface->output = selmon ? selmon->wlr_output : NULL)) {
+            && !(layer_surface->output = awl->out.selmon ? awl->out.selmon->wlr_output : NULL)) {
         wlr_layer_surface_v1_destroy(layer_surface);
         return;
     }
@@ -147,7 +147,7 @@ createlayersurface(struct wl_listener *listener, void *data)
     l->scene = l->scene_layer->tree;
 
     l->popups = surface->data = wlr_scene_tree_create(layer_surface->current.layer
-            < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? layers[LyrTop] : scene_layer);
+            < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? awl->layers[LyrTop] : scene_layer);
     l->scene->node.data = l->popups->node.data = l;
 
     wl_list_insert(&l->mon->layers[layer_surface->pending.layer],&l->link);
@@ -175,11 +175,11 @@ unmaplayersurfacenotify(struct wl_listener *listener, void *data)
 
     l->mapped = 0;
     wlr_scene_node_set_enabled(&l->scene->node, 0);
-    if (l == exclusive_focus)
-        exclusive_focus = NULL;
+    if (l == awl->clients.exclusive_focus)
+        awl->clients.exclusive_focus = NULL;
     if (l->layer_surface->output && (l->mon = l->layer_surface->output->data))
         arrangelayers(l->mon);
-    if (l->layer_surface->surface == seat->keyboard_state.focused_surface)
-        focusclient(focustop(selmon), 1);
+    if (l->layer_surface->surface == awl->seat->keyboard_state.focused_surface)
+        focusclient(focustop(awl->out.selmon), 1);
     motionnotify(0, NULL, 0, 0, 0, 0);
 }

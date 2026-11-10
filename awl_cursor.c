@@ -23,13 +23,6 @@ static void destroypointerconstraint(struct wl_listener *listener, void *data);
 static void pointerfocus(Client *c, struct wlr_surface *surface, double sx, double sy,
         uint32_t time);
 
-struct wlr_cursor *cursor;
-struct wlr_xcursor_manager *cursor_mgr;
-struct wlr_pointer_constraints_v1 *pointer_constraints;
-struct wlr_relative_pointer_manager_v1 *relative_pointer_mgr;
-struct wlr_scene_tree *drag_icon;
-unsigned int cursor_mode;
-Client *grabc;
 static int grabcx, grabcy; /* client-relative */
 static struct wlr_pointer_constraint_v1 *active_constraint;
 
@@ -39,7 +32,7 @@ axisnotify(struct wl_listener *listener, void *data)
     /* This event is forwarded by the cursor when a pointer emits an axis event,
      * for example when you move the scroll wheel. */
     struct wlr_pointer_axis_event *event = data;
-    wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+    wlr_idle_notifier_v1_notify_activity(awl->idle_notifier, awl->seat);
     awl_notifications_activity();
 
     Client* c = NULL;
@@ -50,22 +43,22 @@ axisnotify(struct wl_listener *listener, void *data)
      * presses; one with only a click callback drops it: its motion took the
      * pointer focus from what is below anyway. An open xdg_popup's grab
      * comes first, as for the buttons. */
-    if (!wlr_seat_pointer_has_grab(seat) && (twin = popuppointer())) {
+    if (!wlr_seat_pointer_has_grab(awl->seat) && (twin = popuppointer())) {
         awl_dbg_printf(awl_loglevel_vrb, "popup %p: axis %d %g (%d/120) at %.0f,%.0f\n", (void *)twin,
-                event->orientation, event->delta, event->delta_discrete, cursor->x, cursor->y);
+                event->orientation, event->delta, event->delta_discrete, awl->cursor.wlr->x, awl->cursor.wlr->y);
         /* the callback may destroy it */
-        awl_window_pointer_axis(twin, cursor->x, cursor->y, event->orientation, event->delta,
+        awl_window_pointer_axis(twin, awl->cursor.wlr->x, awl->cursor.wlr->y, event->orientation, event->delta,
                 event->delta_discrete, &row, &col);
         awl_dbg_printf(awl_loglevel_vrb, "popup %p: that is row %d, column %d\n", (void *)twin, row, col);
         return;
     }
-    xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
-    if (!c && !exclusive_focus && !locked && baraxis(event->delta))
+    xytonode(awl->cursor.wlr->x, awl->cursor.wlr->y, NULL, &c, NULL, NULL, NULL);
+    if (!c && !awl->clients.exclusive_focus && !awl->locked && baraxis(event->delta))
         return;
     /* TODO: allow usage of scroll whell for mousebindings, it can be implemented
      * checking the event's orientation and the delta of the event */
     /* Notify the client with pointer focus of the axis event. */
-    wlr_seat_pointer_notify_axis(seat,
+    wlr_seat_pointer_notify_axis(awl->seat,
             event->time_msec, event->orientation, event->delta,
             event->delta_discrete, event->source, event->relative_direction);
 }
@@ -78,7 +71,7 @@ desktopat(double x, double y)
      * while locked */
     int i;
     for (i = LyrBottom; i < LyrBlock; i++)
-        if (wlr_scene_node_at(&layers[i]->node, x, y, NULL, NULL))
+        if (wlr_scene_node_at(&awl->layers[i]->node, x, y, NULL, NULL))
             return 0;
     return xytomon(x, y) != NULL;
 }
@@ -95,7 +88,7 @@ buttonpress(struct wl_listener *listener, void *data)
     awl_window_t *twin;
     static int swallow_release;
 
-    wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+    wlr_idle_notifier_v1_notify_activity(awl->idle_notifier, awl->seat);
     awl_notifications_activity();
 
     /* a press an awl window took (below) swallows its release too, so
@@ -108,22 +101,22 @@ buttonpress(struct wl_listener *listener, void *data)
      * closes itself on a press outside its client; that only works if the
      * press reaches the grab, so the bar, the desktop and the bindings don't
      * get to see it first. */
-    if (wlr_seat_pointer_has_grab(seat)) {
+    if (wlr_seat_pointer_has_grab(awl->seat)) {
         /* the press that opened the menu (or started a drag) set this */
-        if (event->state == WL_POINTER_BUTTON_STATE_RELEASED && cursor_mode == CurPressed)
-            cursor_mode = CurNormal;
-        wlr_seat_pointer_notify_button(seat,
+        if (event->state == WL_POINTER_BUTTON_STATE_RELEASED && awl->cursor.mode == CurPressed)
+            awl->cursor.mode = CurNormal;
+        wlr_seat_pointer_notify_button(awl->seat,
                 event->time_msec, event->button, event->state);
         return;
     }
     /* a popup that takes the pointer gets the press, and its release */
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !locked
-            && (twin = popupat(cursor->x, cursor->y))) {
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !awl->locked
+            && (twin = popupat(awl->cursor.wlr->x, awl->cursor.wlr->y))) {
         int row, col;
         awl_dbg_printf(awl_loglevel_vrb, "popup %p: button %u at %.0f,%.0f\n", (void *)twin,
-                event->button, cursor->x, cursor->y);
+                event->button, awl->cursor.wlr->x, awl->cursor.wlr->y);
         /* the callback may destroy it */
-        awl_window_pointer_button(twin, cursor->x, cursor->y, event->button, &row, &col);
+        awl_window_pointer_button(twin, awl->cursor.wlr->x, awl->cursor.wlr->y, event->button, &row, &col);
         awl_dbg_printf(awl_loglevel_vrb, "popup %p: that is row %d, column %d\n", (void *)twin, row, col);
         swallow_release = 1;
         return;
@@ -131,34 +124,34 @@ buttonpress(struct wl_listener *listener, void *data)
     /* the other popups take no input; a press anywhere but on the bar (whose
      * widgets close their own on a press, see below) closes them, and goes on
      * to what is below */
-    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&popups)
+    if (event->state == WL_POINTER_BUTTON_STATE_PRESSED && !wl_list_empty(&awl->popups)
             && !pointeronbar())
         popupshideall();
 
     click = ClkRoot; // TODO we don't treat these cases
-    xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
+    xytonode(awl->cursor.wlr->x, awl->cursor.wlr->y, NULL, &c, NULL, NULL, NULL);
     if (c)
         click = ClkClient;
 
-    if (!c && !exclusive_focus && event->state == WL_POINTER_BUTTON_STATE_PRESSED && !locked
+    if (!c && !awl->clients.exclusive_focus && event->state == WL_POINTER_BUTTON_STATE_PRESSED && !awl->locked
             && barbutton(event->button, &click))
         return;
 
     switch (event->state) {
     case WL_POINTER_BUTTON_STATE_PRESSED:
-        cursor_mode = CurPressed;
-        setselmon(xytomon(cursor->x, cursor->y));
-        if (locked)
+        awl->cursor.mode = CurPressed;
+        setselmon(xytomon(awl->cursor.wlr->x, awl->cursor.wlr->y));
+        if (awl->locked)
             break;
 
         /* Change focus if the button was _pressed_ over a client */
-        xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
+        xytonode(awl->cursor.wlr->x, awl->cursor.wlr->y, NULL, &c, NULL, NULL, NULL);
         if (c && (!client_is_unmanaged(c) || client_wants_focus(c)))
             focusclient(c, 1);
 
-        keyboard = wlr_seat_get_keyboard(seat);
+        keyboard = wlr_seat_get_keyboard(awl->seat);
         mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
-        for (b = cfg->buttons.v; b < cfg->buttons.v + cfg->buttons.n; b++) {
+        for (b = awl->cfg->buttons.v; b < awl->cfg->buttons.v + awl->cfg->buttons.n; b++) {
             if (CLEANMASK(mods) == CLEANMASK(bindmods(b->mod)) &&
                     event->button == b->button && b->func) {
                 if (b->click == click) {
@@ -168,29 +161,29 @@ buttonpress(struct wl_listener *listener, void *data)
             }
         }
         /* the library declines the modified clicks it has no use for */
-        if (click == ClkRoot && !exclusive_focus && desktopat(cursor->x, cursor->y)
+        if (click == ClkRoot && !awl->clients.exclusive_focus && desktopat(awl->cursor.wlr->x, awl->cursor.wlr->y)
                 && desktop_click(event->button, CLEANMASK(mods)))
             return;
         break;
     case WL_POINTER_BUTTON_STATE_RELEASED:
         /* If you released any buttons, we exit interactive move/resize mode. */
         /* TODO: should reset to the pointer focus's current setcursor */
-        if (!locked && cursor_mode != CurNormal && cursor_mode != CurPressed) {
-            wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
-            cursor_mode = CurNormal;
+        if (!awl->locked && awl->cursor.mode != CurNormal && awl->cursor.mode != CurPressed) {
+            wlr_cursor_set_xcursor(awl->cursor.wlr, awl->cursor.mgr, "default");
+            awl->cursor.mode = CurNormal;
             /* Drop the window off on its new monitor */
-            selmon = xytomon(cursor->x, cursor->y);
-            setmon(grabc, selmon, 0);
-            grabc = NULL;
+            awl->out.selmon = xytomon(awl->cursor.wlr->x, awl->cursor.wlr->y);
+            setmon(awl->cursor.grabc, awl->out.selmon, 0);
+            awl->cursor.grabc = NULL;
             return;
         }
-        cursor_mode = CurNormal;
+        awl->cursor.mode = CurNormal;
         break;
     }
 
     /* If the event wasn't handled by the compositor, notify the client with
      * pointer focus that a button press has occurred */
-    wlr_seat_pointer_notify_button(seat,
+    wlr_seat_pointer_notify_button(awl->seat,
             event->time_msec, event->button, event->state);
 }
 
@@ -224,7 +217,7 @@ cursorframe(struct wl_listener *listener, void *data)
      * multiple events together. For instance, two axis events may happen at the
      * same time, in which case a frame event won't be sent in between. */
     /* Notify the client with pointer focus of the frame event. */
-    wlr_seat_pointer_notify_frame(seat);
+    wlr_seat_pointer_notify_frame(awl->seat);
 }
 
 void
@@ -236,7 +229,7 @@ cursorwarptohint(void)
 
     toplevel_from_wlr_surface(active_constraint->surface, &c, NULL);
     if (c && active_constraint->current.cursor_hint.enabled) {
-        wlr_cursor_warp(cursor, NULL, sx + c->geom.x + c->bw, sy + c->geom.y + c->bw);
+        wlr_cursor_warp(awl->cursor.wlr, NULL, sx + c->geom.x + c->bw, sy + c->geom.y + c->bw);
         wlr_seat_pointer_warp(active_constraint->seat, sx, sy);
     }
 }
@@ -245,7 +238,7 @@ void
 destroydragicon(struct wl_listener *listener, void *data)
 {
     /* Focus enter isn't sent during drag, so refocus the focused node. */
-    focusclient(focustop(selmon), 1);
+    focusclient(focustop(awl->out.selmon), 1);
     motionnotify(0, NULL, 0, 0, 0, 0);
     wl_list_remove(&listener->link);
     free(listener);
@@ -277,11 +270,11 @@ motionabsolute(struct wl_listener *listener, void *data)
     double lx, ly, dx, dy;
 
     if (!event->time_msec) /* this is 0 with virtual pointers */
-        wlr_cursor_warp_absolute(cursor, &event->pointer->base, event->x, event->y);
+        wlr_cursor_warp_absolute(awl->cursor.wlr, &event->pointer->base, event->x, event->y);
 
-    wlr_cursor_absolute_to_layout_coords(cursor, &event->pointer->base, event->x, event->y, &lx, &ly);
-    dx = lx - cursor->x;
-    dy = ly - cursor->y;
+    wlr_cursor_absolute_to_layout_coords(awl->cursor.wlr, &event->pointer->base, event->x, event->y, &lx, &ly);
+    dx = lx - awl->cursor.wlr->x;
+    dy = ly - awl->cursor.wlr->y;
     motionnotify(event->time_msec, &event->pointer->base, dx, dy, dx, dy);
 }
 
@@ -298,17 +291,17 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
     /* time is 0 in internal calls meant to restore pointer focus. */
     if (time) {
         wlr_relative_pointer_manager_v1_send_relative_motion(
-                relative_pointer_mgr, seat, (uint64_t)time * 1000,
+                awl->cursor.relative_mgr, awl->seat, (uint64_t)time * 1000,
                 dx, dy, dx_unaccel, dy_unaccel);
 
-        wl_list_for_each(constraint, &pointer_constraints->constraints, link)
+        wl_list_for_each(constraint, &awl->cursor.constraints->constraints, link)
             cursorconstrain(constraint);
 
-        if (active_constraint && cursor_mode != CurResize && cursor_mode != CurMove) {
+        if (active_constraint && awl->cursor.mode != CurResize && awl->cursor.mode != CurMove) {
             toplevel_from_wlr_surface(active_constraint->surface, &c, NULL);
-            if (c && active_constraint->surface == seat->pointer_state.focused_surface) {
-                sx = cursor->x - c->geom.x - c->bw;
-                sy = cursor->y - c->geom.y - c->bw;
+            if (c && active_constraint->surface == awl->seat->pointer_state.focused_surface) {
+                sx = awl->cursor.wlr->x - c->geom.x - c->bw;
+                sy = awl->cursor.wlr->y - c->geom.y - c->bw;
                 if (wlr_region_confine(&active_constraint->region, sx, sy,
                         sx + dx, sy + dy, &sx_confined, &sy_confined)) {
                     dx = sx_confined - sx;
@@ -320,39 +313,39 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
             }
         }
 
-        wlr_cursor_move(cursor, device, dx, dy);
-        wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+        wlr_cursor_move(awl->cursor.wlr, device, dx, dy);
+        wlr_idle_notifier_v1_notify_activity(awl->idle_notifier, awl->seat);
         awl_notifications_activity();
 
         /* Update selmon (even while dragging a window) */
-        if (cfg->sloppyfocus)
-            setselmon(xytomon(cursor->x, cursor->y));
+        if (awl->cfg->sloppyfocus)
+            setselmon(xytomon(awl->cursor.wlr->x, awl->cursor.wlr->y));
     }
 
     /* Find the client under the pointer and send the event along. */
-    xytonode(cursor->x, cursor->y, &surface, &c, NULL, &sx, &sy);
+    xytonode(awl->cursor.wlr->x, awl->cursor.wlr->y, &surface, &c, NULL, &sx, &sy);
 
-    if (cursor_mode == CurPressed && !seat->drag
-            && surface != seat->pointer_state.focused_surface
-            && toplevel_from_wlr_surface(seat->pointer_state.focused_surface, &w, &l) >= 0) {
+    if (awl->cursor.mode == CurPressed && !awl->seat->drag
+            && surface != awl->seat->pointer_state.focused_surface
+            && toplevel_from_wlr_surface(awl->seat->pointer_state.focused_surface, &w, &l) >= 0) {
         c = w;
-        surface = seat->pointer_state.focused_surface;
-        sx = cursor->x - (l ? l->scene->node.x : w->geom.x);
-        sy = cursor->y - (l ? l->scene->node.y : w->geom.y);
+        surface = awl->seat->pointer_state.focused_surface;
+        sx = awl->cursor.wlr->x - (l ? l->scene->node.x : w->geom.x);
+        sy = awl->cursor.wlr->y - (l ? l->scene->node.y : w->geom.y);
     }
 
     /* Update drag icon's position */
-    wlr_scene_node_set_position(&drag_icon->node, (int)round(cursor->x), (int)round(cursor->y));
+    wlr_scene_node_set_position(&awl->cursor.drag_icon->node, (int)round(awl->cursor.wlr->x), (int)round(awl->cursor.wlr->y));
 
     /* If we are currently grabbing the mouse, handle and return */
-    if (cursor_mode == CurMove) {
+    if (awl->cursor.mode == CurMove) {
         /* Move the grabbed client to the new position. */
-        resize(grabc, (struct wlr_box){.x = (int)round(cursor->x) - grabcx, .y = (int)round(cursor->y) - grabcy,
-            .width = grabc->geom.width, .height = grabc->geom.height}, 1);
+        resize(awl->cursor.grabc, (struct wlr_box){.x = (int)round(awl->cursor.wlr->x) - grabcx, .y = (int)round(awl->cursor.wlr->y) - grabcy,
+            .width = awl->cursor.grabc->geom.width, .height = awl->cursor.grabc->geom.height}, 1);
         return;
-    } else if (cursor_mode == CurResize) {
-        resize(grabc, (struct wlr_box){.x = grabc->geom.x, .y = grabc->geom.y,
-            .width = (int)round(cursor->x) - grabc->geom.x, .height = (int)round(cursor->y) - grabc->geom.y}, 1);
+    } else if (awl->cursor.mode == CurResize) {
+        resize(awl->cursor.grabc, (struct wlr_box){.x = awl->cursor.grabc->geom.x, .y = awl->cursor.grabc->geom.y,
+            .width = (int)round(awl->cursor.wlr->x) - awl->cursor.grabc->geom.x, .height = (int)round(awl->cursor.wlr->y) - awl->cursor.grabc->geom.y}, 1);
         return;
     }
 
@@ -363,8 +356,8 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
     /* If there's no client surface under the cursor, set the cursor image to a
      * default. This is what makes the cursor image appear when you move it
      * off of a client or over its border. */
-    if (!surface && !seat->drag)
-        wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
+    if (!surface && !awl->seat->drag)
+        wlr_cursor_set_xcursor(awl->cursor.wlr, awl->cursor.mgr, "default");
 
     updatehover(c);
     pointerfocus(c, surface, sx, sy, time);
@@ -388,27 +381,27 @@ motionrelative(struct wl_listener *listener, void *data)
 void
 moveresize(const Arg *arg)
 {
-    if (cursor_mode != CurNormal && cursor_mode != CurPressed)
+    if (awl->cursor.mode != CurNormal && awl->cursor.mode != CurPressed)
         return;
-    xytonode(cursor->x, cursor->y, NULL, &grabc, NULL, NULL, NULL);
-    if (!grabc || client_is_unmanaged(grabc) || grabc->isfullscreen)
+    xytonode(awl->cursor.wlr->x, awl->cursor.wlr->y, NULL, &awl->cursor.grabc, NULL, NULL, NULL);
+    if (!awl->cursor.grabc || client_is_unmanaged(awl->cursor.grabc) || awl->cursor.grabc->isfullscreen)
         return;
 
     /* Float the window and tell motionnotify to grab it */
-    setfloating(grabc, 1);
-    switch (cursor_mode = arg->ui) {
+    setfloating(awl->cursor.grabc, 1);
+    switch (awl->cursor.mode = arg->ui) {
     case CurMove:
-        grabcx = (int)round(cursor->x) - grabc->geom.x;
-        grabcy = (int)round(cursor->y) - grabc->geom.y;
-        wlr_cursor_set_xcursor(cursor, cursor_mgr, "all-scroll");
+        grabcx = (int)round(awl->cursor.wlr->x) - awl->cursor.grabc->geom.x;
+        grabcy = (int)round(awl->cursor.wlr->y) - awl->cursor.grabc->geom.y;
+        wlr_cursor_set_xcursor(awl->cursor.wlr, awl->cursor.mgr, "all-scroll");
         break;
     case CurResize:
         /* Doesn't work for X11 output - the next absolute motion event
          * returns the cursor to where it started */
-        wlr_cursor_warp_closest(cursor, NULL,
-                grabc->geom.x + grabc->geom.width,
-                grabc->geom.y + grabc->geom.height);
-        wlr_cursor_set_xcursor(cursor, cursor_mgr, "se-resize");
+        wlr_cursor_warp_closest(awl->cursor.wlr, NULL,
+                awl->cursor.grabc->geom.x + awl->cursor.grabc->geom.width,
+                awl->cursor.grabc->geom.y + awl->cursor.grabc->geom.height);
+        wlr_cursor_set_xcursor(awl->cursor.wlr, awl->cursor.mgr, "se-resize");
         break;
     }
 }
@@ -419,13 +412,13 @@ pointerfocus(Client *c, struct wlr_surface *surface, double sx, double sy,
 {
     struct timespec now;
 
-    if (surface != seat->pointer_state.focused_surface &&
-            cfg->sloppyfocus && time && c && !client_is_unmanaged(c))
+    if (surface != awl->seat->pointer_state.focused_surface &&
+            awl->cfg->sloppyfocus && time && c && !client_is_unmanaged(c))
         focusclient(c, 0);
 
     /* If surface is NULL, clear pointer focus */
     if (!surface) {
-        wlr_seat_pointer_notify_clear_focus(seat);
+        wlr_seat_pointer_notify_clear_focus(awl->seat);
         return;
     }
 
@@ -437,8 +430,8 @@ pointerfocus(Client *c, struct wlr_surface *surface, double sx, double sy,
     /* Let the client know that the mouse cursor has entered one
      * of its surfaces, and make keyboard focus follow if desired.
      * wlroots makes this a no-op if surface is already focused */
-    wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
-    wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+    wlr_seat_pointer_notify_enter(awl->seat, surface, sx, sy);
+    wlr_seat_pointer_notify_motion(awl->seat, time, sx, sy);
 }
 
 void
@@ -446,9 +439,9 @@ requeststartdrag(struct wl_listener *listener, void *data)
 {
     struct wlr_seat_request_start_drag_event *event = data;
 
-    if (wlr_seat_validate_pointer_grab_serial(seat, event->origin,
+    if (wlr_seat_validate_pointer_grab_serial(awl->seat, event->origin,
             event->serial))
-        wlr_seat_start_pointer_drag(seat, event->drag, event->serial);
+        wlr_seat_start_pointer_drag(awl->seat, event->drag, event->serial);
     else
         wlr_data_source_destroy(event->drag->source);
 }
@@ -461,15 +454,15 @@ setcursor(struct wl_listener *listener, void *data)
     /* If we're "grabbing" the cursor, don't use the client's image, we will
      * restore it after "grabbing" sending a leave event, followed by a enter
      * event, which will result in the client requesting set the cursor surface */
-    if (cursor_mode != CurNormal && cursor_mode != CurPressed)
+    if (awl->cursor.mode != CurNormal && awl->cursor.mode != CurPressed)
         return;
     /* This can be sent by any client, so we check to make sure this one
      * actually has pointer focus first. If so, we can tell the cursor to
      * use the provided surface as the cursor image. It will set the
      * hardware cursor on the output that it's currently on and continue to
      * do so as the cursor moves between outputs. */
-    if (event->seat_client == seat->pointer_state.focused_client)
-        wlr_cursor_set_surface(cursor, event->surface,
+    if (event->seat_client == awl->seat->pointer_state.focused_client)
+        wlr_cursor_set_surface(awl->cursor.wlr, event->surface,
                 event->hotspot_x, event->hotspot_y);
 }
 
@@ -477,13 +470,13 @@ void
 setcursorshape(struct wl_listener *listener, void *data)
 {
     struct wlr_cursor_shape_manager_v1_request_set_shape_event *event = data;
-    if (cursor_mode != CurNormal && cursor_mode != CurPressed)
+    if (awl->cursor.mode != CurNormal && awl->cursor.mode != CurPressed)
         return;
     /* This can be sent by any client, so we check to make sure this one
      * actually has pointer focus first. If so, we can tell the cursor to
      * use the provided cursor shape. */
-    if (event->seat_client == seat->pointer_state.focused_client)
-        wlr_cursor_set_xcursor(cursor, cursor_mgr,
+    if (event->seat_client == awl->seat->pointer_state.focused_client)
+        wlr_cursor_set_xcursor(awl->cursor.wlr, awl->cursor.mgr,
                 wlr_cursor_shape_v1_name(event->shape));
 }
 
@@ -494,7 +487,7 @@ startdrag(struct wl_listener *listener, void *data)
     if (!drag->icon)
         return;
 
-    drag->icon->data = &wlr_scene_drag_icon_create(drag_icon, drag->icon)->node;
+    drag->icon->data = &wlr_scene_drag_icon_create(awl->cursor.drag_icon, drag->icon)->node;
     LISTEN_STATIC(&drag->icon->events.destroy, destroydragicon);
 }
 
@@ -513,7 +506,7 @@ xytonode(double x, double y, struct wlr_surface **psurface,
      * there has it: what is below a window's border must not lend it its
      * surface */
     for (layer = NUM_LAYERS - 1; !surface && !c && !l && layer >= 0; layer--) {
-        if (!(node = wlr_scene_node_at(&layers[layer]->node, x, y, nx, ny)))
+        if (!(node = wlr_scene_node_at(&awl->layers[layer]->node, x, y, nx, ny)))
             continue;
 
         if (node->type == WLR_SCENE_NODE_BUFFER) {

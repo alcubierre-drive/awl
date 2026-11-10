@@ -234,6 +234,8 @@ static const awl_config_t awl_config_defaults = {
         .timeout_low = 10000,
         .timeout_normal = 20000,
         .idle_pause = 10000,
+        .idle_giveback = 0.33f,
+        .idle_floor = 0.2f,
         .activate_urgent = 0,
     },
     .wallpaper = {

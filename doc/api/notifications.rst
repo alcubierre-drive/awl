@@ -28,7 +28,9 @@ flagged :c:enumerator:`AWL_NOTIF_SHOWN`, which no client replaces, closes or hea
 
 Timeouts count only while the user is there: after
 :c:member:`awl_config_t.notifications.idle_pause` without a key or pointer motion
-they stop, and the next one resumes them (:c:func:`awl_notifications_activity`).
+they stop, and the next one resumes them (:c:func:`awl_notifications_activity`)
+with what was left when the user went away: idle_giveback of that pause is given
+back, and each keeps at least idle_floor of its timeout.
 
 Its connection to the bus, and the tray watcher's, is awl_bus.h's: one each,
 reconnected after a few seconds when lost.

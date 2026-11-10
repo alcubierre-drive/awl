@@ -246,7 +246,8 @@ typedef struct awl_plugin_config_t {
     } notify;
     /** the notification a volume or brightness change brings
      * (plugins/osd.h), and the wallpaper's and the desktop files'
-     * (wallpaper_icon, desktop_icon): the new value as a bar beside an icon, no text,
+     * (wallpaper_icon, desktop_icon) and do-not-disturb's (notify's
+     * bell icons): the new value as a bar beside an icon, no text,
      * replaced in place while the changes go on; in colors.notify_low_*,
      * the bar in colors.osd_progress, or for a change awl didn't ask for
      * in colors.osd_unasked with its cause as the summary; above 100%

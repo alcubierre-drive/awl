@@ -16,7 +16,6 @@ static void dissociatex11(struct wl_listener *listener, void *data);
 static void sethints(struct wl_listener *listener, void *data);
 static void xwaylandready(struct wl_listener *listener, void *data);
 
-struct wlr_xwayland *xwayland;
 static struct wl_listener new_xwayland_surface = {.notify = createnotifyx11};
 static struct wl_listener xwayland_ready = {.notify = xwaylandready};
 
@@ -55,7 +54,7 @@ configurex11(struct wl_listener *listener, void *data)
                 event->x, event->y, event->width, event->height);
         return;
     }
-    if ((c->isfloating && c != grabc) || !sellayout(c->mon)->arrange) {
+    if ((c->isfloating && c != awl->cursor.grabc) || !sellayout(c->mon)->arrange) {
         resize(c, (struct wlr_box){.x = event->x - c->bw,
                 .y = event->y - c->bw, .width = event->width + c->bw * 2,
                 .height = event->height + c->bw * 2}, 0);
@@ -74,7 +73,7 @@ createnotifyx11(struct wl_listener *listener, void *data)
     c = xsurface->data = ecalloc(1, sizeof(*c));
     c->surface.xwayland = xsurface;
     c->type = X11;
-    c->bw = client_is_unmanaged(c) ? 0 : cfg->borderpx;
+    c->bw = client_is_unmanaged(c) ? 0 : awl->cfg->borderpx;
     c->isvisible = 1;
 
     /* Listen to the various events it can emit */
@@ -101,14 +100,14 @@ sethints(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, set_hints);
     struct wlr_surface *surface = client_surface(c);
-    if (c == focustop(selmon) || !c->surface.xwayland->hints)
+    if (c == focustop(awl->out.selmon) || !c->surface.xwayland->hints)
         return;
 
     c->isurgent = xcb_icccm_wm_hints_get_urgency(c->surface.xwayland->hints);
     barsdirty();
 
     if (c->isurgent && surface && surface->mapped)
-        client_set_border_color(c, (float[])RGBA(borders[BorderUrg]));
+        client_set_border_color(c, (float[])RGBA(awl->clients.borders[BorderUrg]));
 }
 
 void
@@ -117,11 +116,11 @@ xwaylandready(struct wl_listener *listener, void *data)
     struct wlr_xcursor *xcursor;
 
     /* assign the one and only seat */
-    wlr_xwayland_set_seat(xwayland, seat);
+    wlr_xwayland_set_seat(awl->xwayland, awl->seat);
 
     /* Set the default XWayland cursor to match the rest of awl. */
-    if ((xcursor = wlr_xcursor_manager_get_xcursor(cursor_mgr, "default", 1)))
-        wlr_xwayland_set_cursor(xwayland, wlr_xcursor_image_get_buffer(xcursor->images[0]),
+    if ((xcursor = wlr_xcursor_manager_get_xcursor(awl->cursor.mgr, "default", 1)))
+        wlr_xwayland_set_cursor(awl->xwayland, wlr_xcursor_image_get_buffer(xcursor->images[0]),
                 xcursor->images[0]->hotspot_x, xcursor->images[0]->hotspot_y);
 }
 
@@ -132,11 +131,11 @@ xwaylandinit(void)
      * Initialise the XWayland X server.
      * It will be started when the first X client is started.
      */
-    if ((xwayland = wlr_xwayland_create(dpy, compositor, 1))) {
-        wl_signal_add(&xwayland->events.ready, &xwayland_ready);
-        wl_signal_add(&xwayland->events.new_surface, &new_xwayland_surface);
+    if ((awl->xwayland = wlr_xwayland_create(awl->dpy, awl->compositor, 1))) {
+        wl_signal_add(&awl->xwayland->events.ready, &xwayland_ready);
+        wl_signal_add(&awl->xwayland->events.new_surface, &new_xwayland_surface);
 
-        setenv("DISPLAY", xwayland->display_name, 1);
+        setenv("DISPLAY", awl->xwayland->display_name, 1);
     } else {
         awl_wrn_printf("failed to setup XWayland X server, continuing without it\n");
     }
@@ -147,11 +146,11 @@ xwaylandfini(void)
 {
     /* Only registered in xwaylandinit() if wlr_xwayland_create() succeeded;
      * removing an unregistered listener dereferences its NULL link. */
-    if (xwayland) {
+    if (awl->xwayland) {
         wl_list_remove(&new_xwayland_surface.link);
         wl_list_remove(&xwayland_ready.link);
     }
-    wlr_xwayland_destroy(xwayland);
-    xwayland = NULL;
+    wlr_xwayland_destroy(awl->xwayland);
+    awl->xwayland = NULL;
 }
 #endif

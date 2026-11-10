@@ -9,16 +9,6 @@
 
 #include "awl_server.h"
 
-extern struct wlr_cursor *cursor;
-extern struct wlr_xcursor_manager *cursor_mgr;
-extern struct wlr_pointer_constraints_v1 *pointer_constraints;
-extern struct wlr_relative_pointer_manager_v1 *relative_pointer_mgr;
-/** the drag icons, under LyrBlock */
-extern struct wlr_scene_tree *drag_icon;
-/** what the pointer does, :c:enum:`CursorMode` */
-extern unsigned int cursor_mode;
-/** the client being moved or resized */
-extern Client *grabc;
 
 /* the cursor's events, the seat's requests, new pointer constraints */
 void axisnotify(struct wl_listener *listener, void *data);

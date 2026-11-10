@@ -37,7 +37,7 @@ can stay plain.
 
      /** like :c:func:`awl_draw_text`, through :c:member:`awl_host_t.actions`
       * (:c:type:`awl_host_t`), with :c:macro:`MODKEY`, :c:enum:`WallpaperMode`,
-      * :c:enumerator:`AWL_NOTIF_OSD`, :c:var:`selmon` */
+      * :c:enumerator:`AWL_NOTIF_OSD`, :c:member:`awl_outputs_t.selmon` */
 
   ``:c:func:`` adds the parentheses; ``:c:type:`` is for typedefs and structs
   alike. ``~`` shows only the last part (``:c:member:`~widget_t.free```

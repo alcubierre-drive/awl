@@ -42,11 +42,11 @@ static int timer_fire( void* data ) {
 /** a timer on the main loop that calls fn( data ), unarmed */
 static awl_timer_t* timer_add( void (*fn)( void* data ), void* data ) {
     awl_timer_t* t;
-    if (!event_loop || !fn) return NULL;
+    if (!awl->event_loop || !fn) return NULL;
     t = ecalloc( 1, sizeof(*t) );
     t->fn = fn;
     t->data = data;
-    t->source = wl_event_loop_add_timer( event_loop, timer_fire, t );
+    t->source = wl_event_loop_add_timer( awl->event_loop, timer_fire, t );
     wl_list_insert( &timers, &t->link );
     return t;
 }

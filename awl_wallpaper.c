@@ -38,13 +38,13 @@ wallpapermodedict(void)
     int mode = -1, i;
     awl_dict_val_t v;
 
-    awl_dict_lock(cfgdict);
-    if (awl_dict_get(cfgdict, "wallpaper_mode", &v) == AWL_DICT_OK
+    awl_dict_lock(awl->cfgdict);
+    if (awl_dict_get(awl->cfgdict, "wallpaper_mode", &v) == AWL_DICT_OK
             && v.kind == AWL_DICT_KIND_STR)
         for (i = 0; i < WallpaperModeCount; i++)
             if (!strcmp(v.str, wallpaper_mode_names[i]))
                 mode = i;
-    awl_dict_unlock(cfgdict);
+    awl_dict_unlock(awl->cfgdict);
     return mode;
 }
 
@@ -55,7 +55,7 @@ wallpapermodeset(WallpaperMode mode)
     if (mode >= WallpaperModeCount)
         return;
     wallpaper_mode = mode;
-    awl_dict_set(cfgdict, "wallpaper_mode", &AWL_DICT_STR(wallpaper_mode_names[mode]));
+    awl_dict_set(awl->cfgdict, "wallpaper_mode", &AWL_DICT_STR(wallpaper_mode_names[mode]));
     applied.mode_dict = mode;
 }
 
@@ -101,7 +101,7 @@ wallpapertake(void)
     const awl_plugin_api_t *api = awl_plugins_api();
     awl_image_t *img = api ? api->wallpaper_take() : NULL;
     if (img)
-        background_set(img, cfg->wallpaper.fade_ms);
+        background_set(img, awl->cfg->wallpaper.fade_ms);
 }
 
 /** cycles the timer's mode by arg->i (+1: random, next, previous, random...);
@@ -125,7 +125,7 @@ wallpapermode(const Arg *arg)
 static void
 wallpaperarm(void)
 {
-    unsigned int s = MIN(cfg->wallpaper.interval, (unsigned int)INT_MAX / 1000);
+    unsigned int s = MIN(awl->cfg->wallpaper.interval, (unsigned int)INT_MAX / 1000);
     if (wallpaper_timer)
         wl_event_source_timer_update(wallpaper_timer, (int)(s * 1000));
 }
@@ -142,7 +142,7 @@ wallpapertimeout(void *data)
 void
 wallpaperinit(void)
 {
-    wallpaper_timer = wl_event_loop_add_timer(event_loop, wallpapertimeout, NULL);
+    wallpaper_timer = wl_event_loop_add_timer(awl->event_loop, wallpapertimeout, NULL);
 }
 
 void
@@ -157,8 +157,8 @@ wallpaperfini(void)
 void
 wallpapermodeinit(void)
 {
-    wallpapermodeset(cfg->wallpaper.mode);
-    applied.mode = cfg->wallpaper.mode;
+    wallpapermodeset(awl->cfg->wallpaper.mode);
+    applied.mode = awl->cfg->wallpaper.mode;
 }
 
 void
@@ -167,8 +167,8 @@ wallpaperconfigure(void)
     int mode;
 
     /* a new interval starts counting now; an unchanged one keeps counting */
-    if (cfg->wallpaper.interval != applied.interval) {
-        applied.interval = cfg->wallpaper.interval;
+    if (awl->cfg->wallpaper.interval != applied.interval) {
+        applied.interval = awl->cfg->wallpaper.interval;
         wallpaperarm();
     }
     /* a new plugins_config.c mode replaces wallpapermode()'s, and goes to cfgdict;
@@ -176,10 +176,10 @@ wallpaperconfigure(void)
      * library's init() sets it before this runs), which wins when both
      * change. */
     mode = wallpapermodedict();
-    if (cfg->wallpaper.mode != applied.mode) {
-        applied.mode = cfg->wallpaper.mode;
+    if (awl->cfg->wallpaper.mode != applied.mode) {
+        applied.mode = awl->cfg->wallpaper.mode;
         if (mode < 0 || mode == applied.mode_dict)
-            wallpapermodeset(cfg->wallpaper.mode);
+            wallpapermodeset(awl->cfg->wallpaper.mode);
     }
     wallpapermodesync();
 }

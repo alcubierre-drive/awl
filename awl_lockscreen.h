@@ -22,8 +22,6 @@
 #include "awl_server.h"
 #include <sys/types.h>
 
-/** the session is locked: by the locker, or still, after it crashed */
-extern int locked;
 
 /** the eventfd for the logind thread and its event handler, the timers,
  * the blur over the screen while locked; before the plugins start */

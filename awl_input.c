@@ -45,7 +45,6 @@ static int keyrepeat(void *data);
 static void untrackinputdevice(struct wl_listener *listener, void *data);
 static void trackinputdevice(struct wlr_input_device *device);
 
-struct wlr_idle_inhibit_manager_v1 *idle_inhibit_mgr;
 static KeyboardGroup *kb_group;
 static struct wl_list inputdevices; /* InputDevice.link */
 /** What the keyboards were set up with, copied, to tell whether a reload
@@ -60,17 +59,17 @@ checkidleinhibitor(struct wlr_surface *exclude)
 {
     int inhibited = 0, unused_lx, unused_ly;
     struct wlr_idle_inhibitor_v1 *inhibitor;
-    wl_list_for_each(inhibitor, &idle_inhibit_mgr->inhibitors, link) {
+    wl_list_for_each(inhibitor, &awl->idle_inhibit_mgr->inhibitors, link) {
         struct wlr_surface *surface = wlr_surface_get_root_surface(inhibitor->surface);
         struct wlr_scene_tree *tree = surface->data;
-        if (exclude != surface && (cfg->bypass_surface_visibility || (!tree
+        if (exclude != surface && (awl->cfg->bypass_surface_visibility || (!tree
                 || wlr_scene_node_coords(&tree->node, &unused_lx, &unused_ly)))) {
             inhibited = 1;
             break;
         }
     }
 
-    wlr_idle_notifier_v1_set_inhibited(idle_notifier, inhibited);
+    wlr_idle_notifier_v1_set_inhibited(awl->idle_notifier, inhibited);
 }
 
 void
@@ -97,7 +96,7 @@ compilekeymap(void)
 {
     struct xkb_context *context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     struct xkb_keymap *keymap = context ? xkb_keymap_new_from_names(context,
-            &cfg->keyboard.xkb, XKB_KEYMAP_COMPILE_NO_FLAGS) : NULL;
+            &awl->cfg->keyboard.xkb, XKB_KEYMAP_COMPILE_NO_FLAGS) : NULL;
     xkb_context_unref(context);
     return keymap;
 }
@@ -122,21 +121,21 @@ createkeyboardgroup(void)
     xkb_keymap_unref(keymap);
 
     wlr_keyboard_set_repeat_info(&group->wlr_group->keyboard,
-            kb_group ? kb_group->wlr_group->keyboard.repeat_info.rate : cfg->keyboard.repeat_rate,
-            kb_group ? kb_group->wlr_group->keyboard.repeat_info.delay : cfg->keyboard.repeat_delay);
+            kb_group ? kb_group->wlr_group->keyboard.repeat_info.rate : awl->cfg->keyboard.repeat_rate,
+            kb_group ? kb_group->wlr_group->keyboard.repeat_info.delay : awl->cfg->keyboard.repeat_delay);
 
     /* Set up listeners for keyboard events */
     LISTEN(&group->wlr_group->keyboard.events.key, &group->key, keypress);
     LISTEN(&group->wlr_group->keyboard.events.modifiers, &group->modifiers, keypressmod);
 
-    group->key_repeat_source = wl_event_loop_add_timer(event_loop, keyrepeat, group);
+    group->key_repeat_source = wl_event_loop_add_timer(awl->event_loop, keyrepeat, group);
 
     /* A seat can only have one keyboard, but this is a limitation of the
      * Wayland protocol - not wlroots. We assign all connected keyboards to the
      * same wlr_keyboard_group, which provides a single wlr_keyboard interface for
      * all of them. Set this combined wlr_keyboard as the seat keyboard.
      */
-    wlr_seat_set_keyboard(seat, &group->wlr_group->keyboard);
+    wlr_seat_set_keyboard(awl->seat, &group->wlr_group->keyboard);
     return group;
 }
 
@@ -148,36 +147,36 @@ configurepointer(struct wlr_pointer *pointer)
             && (device = wlr_libinput_get_device_handle(&pointer->base))) {
 
         if (libinput_device_config_tap_get_finger_count(device)) {
-            libinput_device_config_tap_set_enabled(device, cfg->pointer.tap_to_click);
-            libinput_device_config_tap_set_drag_enabled(device, cfg->pointer.tap_and_drag);
-            libinput_device_config_tap_set_drag_lock_enabled(device, cfg->pointer.drag_lock);
-            libinput_device_config_tap_set_button_map(device, cfg->pointer.button_map);
+            libinput_device_config_tap_set_enabled(device, awl->cfg->pointer.tap_to_click);
+            libinput_device_config_tap_set_drag_enabled(device, awl->cfg->pointer.tap_and_drag);
+            libinput_device_config_tap_set_drag_lock_enabled(device, awl->cfg->pointer.drag_lock);
+            libinput_device_config_tap_set_button_map(device, awl->cfg->pointer.button_map);
         }
 
         if (libinput_device_config_scroll_has_natural_scroll(device))
-            libinput_device_config_scroll_set_natural_scroll_enabled(device, cfg->pointer.natural_scrolling);
+            libinput_device_config_scroll_set_natural_scroll_enabled(device, awl->cfg->pointer.natural_scrolling);
 
         if (libinput_device_config_dwt_is_available(device))
-            libinput_device_config_dwt_set_enabled(device, cfg->pointer.disable_while_typing);
+            libinput_device_config_dwt_set_enabled(device, awl->cfg->pointer.disable_while_typing);
 
         if (libinput_device_config_left_handed_is_available(device))
-            libinput_device_config_left_handed_set(device, cfg->pointer.left_handed);
+            libinput_device_config_left_handed_set(device, awl->cfg->pointer.left_handed);
 
         if (libinput_device_config_middle_emulation_is_available(device))
-            libinput_device_config_middle_emulation_set_enabled(device, cfg->pointer.middle_button_emulation);
+            libinput_device_config_middle_emulation_set_enabled(device, awl->cfg->pointer.middle_button_emulation);
 
         if (libinput_device_config_scroll_get_methods(device) != LIBINPUT_CONFIG_SCROLL_NO_SCROLL)
-            libinput_device_config_scroll_set_method(device, cfg->pointer.scroll_method);
+            libinput_device_config_scroll_set_method(device, awl->cfg->pointer.scroll_method);
 
         if (libinput_device_config_click_get_methods(device) != LIBINPUT_CONFIG_CLICK_METHOD_NONE)
-            libinput_device_config_click_set_method(device, cfg->pointer.click_method);
+            libinput_device_config_click_set_method(device, awl->cfg->pointer.click_method);
 
         if (libinput_device_config_send_events_get_modes(device))
-            libinput_device_config_send_events_set_mode(device, cfg->pointer.send_events_mode);
+            libinput_device_config_send_events_set_mode(device, awl->cfg->pointer.send_events_mode);
 
         if (libinput_device_config_accel_is_available(device)) {
-            libinput_device_config_accel_set_profile(device, cfg->pointer.accel_profile);
-            libinput_device_config_accel_set_speed(device, cfg->pointer.accel_speed);
+            libinput_device_config_accel_set_profile(device, awl->cfg->pointer.accel_profile);
+            libinput_device_config_accel_set_speed(device, awl->cfg->pointer.accel_speed);
         }
     }
 }
@@ -186,7 +185,7 @@ void
 createpointer(struct wlr_pointer *pointer)
 {
     configurepointer(pointer);
-    wlr_cursor_attach_input_device(cursor, &pointer->base);
+    wlr_cursor_attach_input_device(awl->cursor.wlr, &pointer->base);
 }
 
 void
@@ -240,13 +239,13 @@ inputdevice(struct wl_listener *listener, void *data)
     caps = WL_SEAT_CAPABILITY_POINTER;
     if (!wl_list_empty(&kb_group->wlr_group->devices))
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
-    wlr_seat_set_capabilities(seat, caps);
+    wlr_seat_set_capabilities(awl->seat, caps);
 }
 
 uint32_t
 bindmods(uint32_t mod)
 {
-    return mod & MODKEY ? (mod & ~MODKEY) | cfg->modkey : mod;
+    return mod & MODKEY ? (mod & ~MODKEY) | awl->cfg->modkey : mod;
 }
 
 int
@@ -258,7 +257,7 @@ keybinding(uint32_t mods, xkb_keysym_t sym)
      * processing.
      */
     const Key *k;
-    for (k = cfg->keys.v; k < cfg->keys.v + cfg->keys.n; k++) {
+    for (k = awl->cfg->keys.v; k < awl->cfg->keys.v + awl->cfg->keys.n; k++) {
         if (CLEANMASK(mods) == CLEANMASK(bindmods(k->mod))
                 && sym == k->keysym && k->func) {
             // awl_vrb_printf( "keybinding: (mod:%u key:%u func:%p arg:%li)\n", k->mod, k->keysym, k->func, k->arg.v );
@@ -313,15 +312,15 @@ keypress(struct wl_listener *listener, void *data)
     int handled = 0;
     uint32_t mods = wlr_keyboard_get_modifiers(&group->wlr_group->keyboard);
 
-    wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+    wlr_idle_notifier_v1_notify_activity(awl->idle_notifier, awl->seat);
     awl_notifications_activity();
 
-    if (locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+    if (awl->locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
         lockkeystroke();
 
     /* A popup that has the keyboard (the launcher) gets every key before the
      * bindings, and no client gets any: none has the focus meanwhile. */
-    if (!locked && popupkeyboard()) {
+    if (!awl->locked && popupkeyboard()) {
         if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED
                 && keypopup(group, keycode, mods)
                 && group->wlr_group->keyboard.repeat_info.delay > 0) {
@@ -344,7 +343,7 @@ keypress(struct wl_listener *listener, void *data)
 
     /* On _press_ if there is no active screen locker,
      * attempt to process a compositor keybinding. */
-    if (!locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    if (!awl->locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
         for (i = 0; i < nsyms; i++)
             handled = keybinding(mods, syms[i]) || handled;
     }
@@ -364,9 +363,9 @@ keypress(struct wl_listener *listener, void *data)
     if (handled)
         return;
 
-    wlr_seat_set_keyboard(seat, &group->wlr_group->keyboard);
+    wlr_seat_set_keyboard(awl->seat, &group->wlr_group->keyboard);
     /* Pass unhandled keycodes along to the client. */
-    wlr_seat_keyboard_notify_key(seat, event->time_msec,
+    wlr_seat_keyboard_notify_key(awl->seat, event->time_msec,
             event->keycode, event->state);
 }
 
@@ -377,9 +376,9 @@ keypressmod(struct wl_listener *listener, void *data)
      * pressed. We simply communicate this to the client. */
     KeyboardGroup *group = wl_container_of(listener, group, modifiers);
 
-    wlr_seat_set_keyboard(seat, &group->wlr_group->keyboard);
+    wlr_seat_set_keyboard(awl->seat, &group->wlr_group->keyboard);
     /* Send modifiers to the client. */
-    wlr_seat_keyboard_notify_modifiers(seat,
+    wlr_seat_keyboard_notify_modifiers(awl->seat,
             &group->wlr_group->keyboard.modifiers);
 }
 
@@ -402,7 +401,7 @@ keyrepeat(void *data)
     }
     if (group->popupkey) {
         /* stops with the popup, and when the screen is locked */
-        if (locked || !popupkeyboard() || !keypopup(group, group->keycode, group->mods)) {
+        if (awl->locked || !popupkeyboard() || !keypopup(group, group->keycode, group->mods)) {
             group->nsyms = 0;
             wl_event_source_timer_update(group->key_repeat_source, 0);
         }
@@ -422,7 +421,7 @@ setpsel(struct wl_listener *listener, void *data)
      * ignore such requests if they so choose, but in awl we always honor them
      */
     struct wlr_seat_request_set_primary_selection_event *event = data;
-    wlr_seat_set_primary_selection(seat, event->source, event->serial);
+    wlr_seat_set_primary_selection(awl->seat, event->source, event->serial);
 }
 
 void
@@ -433,7 +432,7 @@ setsel(struct wl_listener *listener, void *data)
      * ignore such requests if they so choose, but in awl we always honor them
      */
     struct wlr_seat_request_set_selection_event *event = data;
-    wlr_seat_set_selection(seat, event->source, event->serial);
+    wlr_seat_set_selection(awl->seat, event->source, event->serial);
 }
 
 static void
@@ -474,9 +473,9 @@ virtualpointer(struct wl_listener *listener, void *data)
     struct wlr_virtual_pointer_v1_new_pointer_event *event = data;
     struct wlr_input_device *device = &event->new_pointer->pointer.base;
 
-    wlr_cursor_attach_input_device(cursor, device);
+    wlr_cursor_attach_input_device(awl->cursor.wlr, device);
     if (event->suggested_output)
-        wlr_cursor_map_input_to_output(cursor, device, event->suggested_output);
+        wlr_cursor_map_input_to_output(awl->cursor.wlr, device, event->suggested_output);
 }
 
 void
@@ -498,8 +497,8 @@ inputconfigure(void)
 {
     InputDevice *d;
     struct xkb_keymap *keymap;
-    const char *xkb[5] = { cfg->keyboard.xkb.rules, cfg->keyboard.xkb.model,
-        cfg->keyboard.xkb.layout, cfg->keyboard.xkb.variant, cfg->keyboard.xkb.options };
+    const char *xkb[5] = { awl->cfg->keyboard.xkb.rules, awl->cfg->keyboard.xkb.model,
+        awl->cfg->keyboard.xkb.layout, awl->cfg->keyboard.xkb.variant, awl->cfg->keyboard.xkb.options };
     int i, changed;
 
     /* keyboards: the virtual ones keep the keymaps their clients gave them */
@@ -518,11 +517,11 @@ inputconfigure(void)
             applied.xkb[i] = strdupnull(xkb[i]);
         }
     }
-    if (cfg->keyboard.repeat_rate != applied.repeat_rate || cfg->keyboard.repeat_delay != applied.repeat_delay) {
+    if (awl->cfg->keyboard.repeat_rate != applied.repeat_rate || awl->cfg->keyboard.repeat_delay != applied.repeat_delay) {
         wlr_keyboard_set_repeat_info(&kb_group->wlr_group->keyboard,
-                cfg->keyboard.repeat_rate, cfg->keyboard.repeat_delay);
-        applied.repeat_rate = cfg->keyboard.repeat_rate;
-        applied.repeat_delay = cfg->keyboard.repeat_delay;
+                awl->cfg->keyboard.repeat_rate, awl->cfg->keyboard.repeat_delay);
+        applied.repeat_rate = awl->cfg->keyboard.repeat_rate;
+        applied.repeat_delay = awl->cfg->keyboard.repeat_delay;
     }
 
     wl_list_for_each(d, &inputdevices, link)

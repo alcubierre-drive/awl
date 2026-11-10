@@ -72,31 +72,31 @@ static bool accepts_input( struct wlr_scene_buffer* buffer, double* sx, double* 
 }
 
 void awl_alert_init( void ) {
-    tree = wlr_scene_tree_create( &scene->tree );
+    tree = wlr_scene_tree_create( &awl->scene->tree );
 }
 
 void awl_alert_addmon( Monitor* m ) {
     m->alert = wlr_scene_buffer_create( tree, NULL );
     m->alert->point_accepts_input = accepts_input;
-    wlr_scene_buffer_set_opacity( m->alert, cfg->alert.opacity );
+    wlr_scene_buffer_set_opacity( m->alert, awl->cfg->alert.opacity );
     wlr_scene_node_set_enabled( &m->alert->node, 0 );
     m->alert_version = (unsigned int)-1;
 }
 
 void awl_alert_configure( void ) {
     Monitor* m;
-    wl_list_for_each( m, &mons, link ) {
+    wl_list_for_each( m, &awl->out.mons, link ) {
         if (!m->alert) continue;
-        wlr_scene_buffer_set_opacity( m->alert, cfg->alert.opacity );
+        wlr_scene_buffer_set_opacity( m->alert, awl->cfg->alert.opacity );
         m->alert_version = (unsigned int)-1;
     }
     awl_alert_draw_all();
 }
 
 void awl_alert_draw( Monitor* m ) {
-    const pixman_color_t fg = color_8bit_to_16bit( cfg->colors.alert_fg ),
-                         bg = color_8bit_to_16bit( cfg->colors.alert_bg );
-    const int margin = cfg->alert.margin;
+    const pixman_color_t fg = color_8bit_to_16bit( awl->cfg->colors.alert_fg ),
+                         bg = color_8bit_to_16bit( awl->cfg->colors.alert_bg );
+    const int margin = awl->cfg->alert.margin;
     const char* text = awl_alert_text();
     const float s = m->wlr_output->scale;
     struct fcft_font* font;
@@ -119,7 +119,7 @@ void awl_alert_draw( Monitor* m ) {
     }
 
     /* the font only while drawing; the registry keeps it loaded */
-    if (!(font = awl_font_get( cfg->font, cfg->fontsize * cfg->alert.font_scale, s ))) {
+    if (!(font = awl_font_get( awl->cfg->font, awl->cfg->fontsize * awl->cfg->alert.font_scale, s ))) {
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
         return;
     }
@@ -152,6 +152,6 @@ void awl_alert_draw( Monitor* m ) {
 
 void awl_alert_draw_all( void ) {
     Monitor* m;
-    wl_list_for_each( m, &mons, link )
+    wl_list_for_each( m, &awl->out.mons, link )
         awl_alert_draw( m );
 }

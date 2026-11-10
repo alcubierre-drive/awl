@@ -108,7 +108,7 @@ barwidgetatx(Monitor *m, double cx, double cy, unsigned int *xrel)
     struct wlr_scene_node *node;
     struct wlr_scene_buffer *buffer;
 
-    if (!m->bar.m || !(node = wlr_scene_node_at(&layers[LyrBottom]->node, cx, cy, NULL, NULL))
+    if (!m->bar.m || !(node = wlr_scene_node_at(&awl->layers[LyrBottom]->node, cx, cy, NULL, NULL))
             || !(buffer = wlr_scene_buffer_from_node(node)) || buffer != m->scene_buffer)
         return NULL;
     return barwidgetin(m, cx, xrel);
@@ -163,7 +163,7 @@ hovertimeout(void *data)
     (void)data;
     /* not while a layer surface or a popup (e.g. a launcher) holds the
      * keyboard */
-    if (!hover_widget || locked || exclusive_focus || popupkeyboard())
+    if (!hover_widget || awl->locked || awl->clients.exclusive_focus || popupkeyboard())
         return 0;
     if (hover_active && hover_active != hover_widget) {
         setleavepending(0);
@@ -184,9 +184,9 @@ updatehover(Client *c)
 
     if (!hover_timer)
         return;
-    if (!c && !locked && cursor_mode == CurNormal
-            && (m = xytomon(cursor->x, cursor->y)))
-        w = barwidgetatx(m, cursor->x, cursor->y, &xrel);
+    if (!c && !awl->locked && awl->cursor.mode == CurNormal
+            && (m = xytomon(awl->cursor.wlr->x, awl->cursor.wlr->y)))
+        w = barwidgetatx(m, awl->cursor.wlr->x, awl->cursor.wlr->y, &xrel);
     updateview(w, xrel);
     if (w && !w->callback_hover)
         w = NULL;
@@ -278,11 +278,11 @@ barview(Monitor *m)
 static void
 drawbar(Monitor *m)
 {
-    if (in_cleanupmon) return;
+    if (awl->out.in_cleanupmon) return;
     /* nothing of the bar is visible under the lock screen, but every new
      * buffer still damages the output (and the full-screen locked_bg_blur
      * above it); destroylock() redraws all bars once on unlock */
-    if (locked) return;
+    if (awl->locked) return;
     if (!m) return;
     if (!m->bar.m) return;
     int x = 0;
@@ -309,7 +309,7 @@ drawbar(Monitor *m)
     awl_bar_prepare_drawing(&m->bar, m->bar_area.width, m->bar_area.height, buf->data, buf->stride);
 
     ct = focustop(m);
-    wl_list_for_each(c, &clients, link) {
+    wl_list_for_each(c, &awl->clients.list, link) {
         if (c->mon != m)
             continue;
         occ |= c->tags;
@@ -333,8 +333,8 @@ drawbar(Monitor *m)
     m->bar.urg = urg;
     m->bar.sel = m->tagset[m->seltags];
     m->bar.ntags = TAGCOUNT;
-    m->bar.selmon = (m == selmon);
-    if (wl_list_length(&mons) == 1) m->bar.selmon = -1;
+    m->bar.selmon = (m == awl->out.selmon);
+    if (wl_list_length(&awl->out.mons) == 1) m->bar.selmon = -1;
     m->bar.pertag = m->pertag;
 
     for (int ww=0; ww<m->bar.n_widgets_left; ++ww) {
@@ -366,7 +366,7 @@ drawbar(Monitor *m)
     wlr_scene_buffer_set_dest_size(m->scene_buffer,
         m->bar_area.real_width, m->bar_area.real_height);
     wlr_scene_node_set_position(&m->scene_buffer->node, m->m.x,
-        m->m.y + (cfg->bar.top ? 0 : m->m.height - m->bar_area.real_height));
+        m->m.y + (awl->cfg->bar.top ? 0 : m->m.height - m->bar_area.real_height));
     /* the window list's box, from buffer to logical pixels */
     if (m->bar_area.width) {
         uint32_t cx = m->bar.has_center_widget ? m->bar.center_widget_start : 0,
@@ -375,8 +375,8 @@ drawbar(Monitor *m)
             bw = (int)((uint64_t)(cx + cw) * m->bar_area.real_width / m->bar_area.width) - bx;
         wlr_scene_blur_set_size(m->bar_blur, bw, m->bar_area.real_height);
         wlr_scene_node_set_position(&m->bar_blur->node, m->m.x + bx,
-            m->m.y + (cfg->bar.top ? 0 : m->m.height - m->bar_area.real_height));
-        wlr_scene_node_set_enabled(&m->bar_blur->node, cfg->blur.windowlist && bw > 0);
+            m->m.y + (awl->cfg->bar.top ? 0 : m->m.height - m->bar_area.real_height));
+        wlr_scene_node_set_enabled(&m->bar_blur->node, awl->cfg->blur.windowlist && bw > 0);
     }
     /* only hand the scene a new buffer if the pixels actually changed, and
      * only damage the output where they did (usually just the clock and the
@@ -483,10 +483,10 @@ bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *damage)
 void
 drawbars(void)
 {
-    if (in_cleanupmon) return;
+    if (awl->out.in_cleanupmon) return;
     Monitor *m = NULL;
 
-    wl_list_for_each(m, &mons, link) {
+    wl_list_for_each(m, &awl->out.mons, link) {
         if (m->wlr_output->enabled) drawbar(m);
     }
 }
@@ -504,10 +504,10 @@ barsdirty(void)
 {
     /* hover_timer: between barinit() and barfini() */
     if (!redraw_idle && hover_timer)
-        redraw_idle = wl_event_loop_add_idle(event_loop, redrawidle, NULL);
+        redraw_idle = wl_event_loop_add_idle(awl->event_loop, redrawidle, NULL);
 }
 
-void togglebar(const Arg *arg) { togglebar_mon(selmon); }
+void togglebar(const Arg *arg) { togglebar_mon(awl->out.selmon); }
 void togglebar_mon(Monitor* m) {
     if (!m) return;
     m->showbar = !m->showbar;
@@ -538,12 +538,12 @@ updateemojifont(Monitor *m)
 {
     awl_font_release(m->bar.emojifont);
     m->bar.emojifont = NULL;
-    if (!cfg->emoji_font)
+    if (!awl->cfg->emoji_font)
         return;
-    if (!(m->bar.emojifont = awl_font_get_emoji(cfg->emoji_font, (float)cfg->fontsize,
+    if (!(m->bar.emojifont = awl_font_get_emoji(awl->cfg->emoji_font, (float)awl->cfg->fontsize,
                 m->wlr_output->scale)))
         awl_wrn_printf("emoji font %s not found or not in color, the bar shows text instead\n",
-                cfg->emoji_font);
+                awl->cfg->emoji_font);
 }
 
 /** (re)loads m's emoji, popup and desktop fonts (:c:member:`awl_bar_t.emojifont`,
@@ -552,8 +552,8 @@ static void
 updatefonts(Monitor *m)
 {
     updateemojifont(m);
-    updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize.v, "popup");
-    updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize.v, "desktop");
+    updatefont(m, &m->popupfont, awl->cfg->popup.font, awl->cfg->popup.fontsize.v, "popup");
+    updatefont(m, &m->desktopfont, awl->cfg->desktop.font, awl->cfg->desktop.fontsize.v, "desktop");
 }
 
 void
@@ -571,7 +571,7 @@ updatebar(Monitor *m)
     }
 
     /* falls back to monospace; keeps the old font if even that fails */
-    awl_bar_set_font(&m->bar, cfg->font, (float)cfg->fontsize, m->wlr_output->scale, 1);
+    awl_bar_set_font(&m->bar, awl->cfg->font, (float)awl->cfg->fontsize, m->wlr_output->scale, 1);
 
     m->bar_area.scale = m->wlr_output->scale;
     /* no font at all: an empty bar of a monospace:size=10's height */
@@ -588,8 +588,8 @@ updatebar(Monitor *m)
 void
 barinit(void)
 {
-    hover_timer = wl_event_loop_add_timer(event_loop, hovertimeout, NULL);
-    leave_timer = wl_event_loop_add_timer(event_loop, leavetimeout, NULL);
+    hover_timer = wl_event_loop_add_timer(awl->event_loop, hovertimeout, NULL);
+    leave_timer = wl_event_loop_add_timer(awl->event_loop, leavetimeout, NULL);
 }
 
 void
@@ -620,16 +620,16 @@ baraddmon(Monitor *m)
 
     /* LyrBottom sits below LyrTile/LyrFloat, so floating windows dragged
      * over the bar's area render on top of it -- intentional */
-    m->scene_buffer = wlr_scene_buffer_create(layers[LyrBottom], NULL);
+    m->scene_buffer = wlr_scene_buffer_create(awl->layers[LyrBottom], NULL);
     m->scene_buffer->point_accepts_input = bar_accepts_input;
     /* frosts the window list's translucent entries; drawbar() fits it and
      * enables it with cfg->blur.windowlist */
-    m->bar_blur = wlr_scene_blur_create(layers[LyrBottom], 0, 0);
+    m->bar_blur = wlr_scene_blur_create(awl->layers[LyrBottom], 0, 0);
     wlr_scene_node_place_below(&m->bar_blur->node, &m->scene_buffer->node);
-    wlr_scene_blur_set_strength(m->bar_blur, cfg->blur.strength);
-    wlr_scene_blur_set_alpha(m->bar_blur, cfg->blur.alpha);
+    wlr_scene_blur_set_strength(m->bar_blur, awl->cfg->blur.strength);
+    wlr_scene_blur_set_alpha(m->bar_blur, awl->cfg->blur.alpha);
 
-    m->showbar = !!cfg->bar.show;
+    m->showbar = !!awl->cfg->bar.show;
     updatebar(m);
     barsdirty();
 }
@@ -673,7 +673,7 @@ barwidgetsclear(void)
         wl_event_source_timer_update(hover_timer, 0);
     /* it hears that the pointer left, while it still can */
     updateview(NULL, 0);
-    wl_list_for_each(m, &mons, link)
+    wl_list_for_each(m, &awl->out.mons, link)
         if (m->bar.m)
             awl_bar_widgets_clear(&m->bar);
 }
@@ -683,7 +683,7 @@ barwidgetsattach(void)
 {
     Monitor *m;
 
-    wl_list_for_each(m, &mons, link)
+    wl_list_for_each(m, &awl->out.mons, link)
         if (m->bar.m)
             awl_plugins_bar_widgets(&m->bar);
 }
@@ -695,11 +695,11 @@ barconfigure(void)
 
     /* the bars' font, and with it their height */
     awl_font_retry();
-    if (!streqnull(cfg->font, applied.font) || cfg->fontsize != applied.fontsize) {
+    if (!streqnull(awl->cfg->font, applied.font) || awl->cfg->fontsize != applied.fontsize) {
         free(applied.font);
-        applied.font = strdupnull(cfg->font);
-        applied.fontsize = cfg->fontsize;
-        wl_list_for_each(m, &mons, link) {
+        applied.font = strdupnull(awl->cfg->font);
+        applied.fontsize = awl->cfg->fontsize;
+        wl_list_for_each(m, &awl->out.mons, link) {
             if (!m->bar.m)
                 continue;
             m->bar_area.scale = 0; /* updatebar() reloads it */
@@ -709,57 +709,57 @@ barconfigure(void)
     }
     /* the bars' place, and whether they're shown: every bar follows a
      * change (togglebar's state otherwise stays) */
-    if (applied.top >= 0 && !!cfg->bar.top != applied.top)
-        wl_list_for_each(m, &mons, link)
+    if (applied.top >= 0 && !!awl->cfg->bar.top != applied.top)
+        wl_list_for_each(m, &awl->out.mons, link)
             if (m->bar.m) {
                 arrangelayers(m);
                 popupsupdate(m);
             }
-    applied.top = !!cfg->bar.top;
-    if (applied.show >= 0 && !!cfg->bar.show != applied.show)
-        wl_list_for_each(m, &mons, link)
-            if (m->bar.m && m->showbar != !!cfg->bar.show)
+    applied.top = !!awl->cfg->bar.top;
+    if (applied.show >= 0 && !!awl->cfg->bar.show != applied.show)
+        wl_list_for_each(m, &awl->out.mons, link)
+            if (m->bar.m && m->showbar != !!awl->cfg->bar.show)
                 togglebar_mon(m);
-    applied.show = !!cfg->bar.show;
+    applied.show = !!awl->cfg->bar.show;
 
     /* the bars' emoji (updatebar() above reloaded them too, no harm) */
-    if (!streqnull(cfg->emoji_font, applied.emojifont)) {
+    if (!streqnull(awl->cfg->emoji_font, applied.emojifont)) {
         free(applied.emojifont);
-        applied.emojifont = strdupnull(cfg->emoji_font);
-        wl_list_for_each(m, &mons, link)
+        applied.emojifont = strdupnull(awl->cfg->emoji_font);
+        wl_list_for_each(m, &awl->out.mons, link)
             if (m->bar.m)
                 updateemojifont(m);
         barsdirty();
     }
     /* the popups' (updatebar() above reloaded it too, no harm) */
-    if (!streqnull(cfg->popup.font, applied.popupfont)
-            || cfg->popup.fontsize.v != applied.popupfontsize) {
+    if (!streqnull(awl->cfg->popup.font, applied.popupfont)
+            || awl->cfg->popup.fontsize.v != applied.popupfontsize) {
         free(applied.popupfont);
-        applied.popupfont = strdupnull(cfg->popup.font);
-        applied.popupfontsize = cfg->popup.fontsize.v;
-        wl_list_for_each(m, &mons, link) {
+        applied.popupfont = strdupnull(awl->cfg->popup.font);
+        applied.popupfontsize = awl->cfg->popup.fontsize.v;
+        wl_list_for_each(m, &awl->out.mons, link) {
             if (!m->bar.m || !m->bar.font)
                 continue;
-            updatefont(m, &m->popupfont, cfg->popup.font, cfg->popup.fontsize.v, "popup");
+            updatefont(m, &m->popupfont, awl->cfg->popup.font, awl->cfg->popup.fontsize.v, "popup");
             popupsupdate(m);
         }
     }
     /* the desktop file list's, the same way */
-    if (!streqnull(cfg->desktop.font, applied.desktopfont)
-            || cfg->desktop.fontsize.v != applied.desktopfontsize) {
+    if (!streqnull(awl->cfg->desktop.font, applied.desktopfont)
+            || awl->cfg->desktop.fontsize.v != applied.desktopfontsize) {
         free(applied.desktopfont);
-        applied.desktopfont = strdupnull(cfg->desktop.font);
-        applied.desktopfontsize = cfg->desktop.fontsize.v;
-        wl_list_for_each(m, &mons, link) {
+        applied.desktopfont = strdupnull(awl->cfg->desktop.font);
+        applied.desktopfontsize = awl->cfg->desktop.fontsize.v;
+        wl_list_for_each(m, &awl->out.mons, link) {
             if (!m->bar.m || !m->bar.font)
                 continue;
-            updatefont(m, &m->desktopfont, cfg->desktop.font, cfg->desktop.fontsize.v, "desktop");
+            updatefont(m, &m->desktopfont, awl->cfg->desktop.font, awl->cfg->desktop.fontsize.v, "desktop");
             desktop_fontchanged(m);
         }
     }
-    wl_list_for_each(m, &mons, link) {
-        wlr_scene_blur_set_strength(m->bar_blur, cfg->blur.strength);
-        wlr_scene_blur_set_alpha(m->bar_blur, cfg->blur.alpha);
+    wl_list_for_each(m, &awl->out.mons, link) {
+        wlr_scene_blur_set_strength(m->bar_blur, awl->cfg->blur.strength);
+        wlr_scene_blur_set_alpha(m->bar_blur, awl->cfg->blur.alpha);
     }
 }
 
@@ -769,8 +769,8 @@ pointeronbar(void)
     struct wlr_scene_node *node;
     struct wlr_scene_buffer *buffer;
 
-    return (node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL))
-            && (buffer = wlr_scene_buffer_from_node(node)) && buffer == selmon->scene_buffer;
+    return (node = wlr_scene_node_at(&awl->layers[LyrBottom]->node, awl->cursor.wlr->x, awl->cursor.wlr->y, NULL, NULL))
+            && (buffer = wlr_scene_buffer_from_node(node)) && buffer == awl->out.selmon->scene_buffer;
 }
 
 int
@@ -779,7 +779,7 @@ baraxis(double delta)
     unsigned int xrel;
     widget_t *w;
 
-    if (!pointeronbar() || !(w = barwidgetin(selmon, cursor->x, &xrel)))
+    if (!pointeronbar() || !(w = barwidgetin(awl->out.selmon, awl->cursor.wlr->x, &xrel)))
         return 0;
     widget_wrap_scroll_callback(w, xrel, delta);
     return 1;
@@ -796,7 +796,7 @@ barbutton(uint32_t button, unsigned int *click)
     /* hover popups are hover only: a press on the widget closes what
      * its hover opened, or keeps it from opening, until the pointer
      * leaves and comes back */
-    pressed = barwidgetin(selmon, cursor->x, &xrel);
+    pressed = barwidgetin(awl->out.selmon, awl->cursor.wlr->x, &xrel);
     if (pressed && pressed == hover_widget)
         wl_event_source_timer_update(hover_timer, 0);
     if (hover_active && pressed == hover_active) {

@@ -11,7 +11,6 @@
 static awl_window_style_t popupstyle(const Popup *p);
 static Popup *popupfind(awl_window_t *win);
 
-struct wl_list popups = {&popups, &popups};
 /** the popups' tree, made with the first one; the persistent ones', made
  * with the first of them (popupsplace()) */
 static struct wlr_scene_tree *popup_tree, *persistent_tree;
@@ -24,7 +23,7 @@ int
 pointerinpopup(awl_window_t *win)
 {
     /* the plugin may have destroyed it without clearing popup_window */
-    return popupfind(win) && awl_window_contains(win, cursor->x, cursor->y);
+    return popupfind(win) && awl_window_contains(win, awl->cursor.wlr->x, awl->cursor.wlr->y);
 }
 
 /** p's look, from cfg->popup and cfg->colors' popup_*; a menu's its own
@@ -34,24 +33,24 @@ popupstyle(const Popup *p)
 {
     int menu = p && p->menu;
     awl_window_style_t s = {
-            .bg = cfg->colors.popup_bg, .fg = cfg->colors.popup_fg,
-            .border = cfg->colors.popup_border,
-            .highlight = cfg->colors.popup_hover,
-            .border_width = cfg->popup.border_width,
-            .radius = cfg->popup.radius, .padding = cfg->popup.padding,
-            .margin = cfg->popup.margin,
-            .column_spacing = cfg->popup.column_spacing,
-            .row_spacing = cfg->popup.row_spacing,
-            .blur = cfg->blur.popups,
-            .blur_strength = cfg->blur.strength, .blur_alpha = cfg->blur.alpha };
+            .bg = awl->cfg->colors.popup_bg, .fg = awl->cfg->colors.popup_fg,
+            .border = awl->cfg->colors.popup_border,
+            .highlight = awl->cfg->colors.popup_hover,
+            .border_width = awl->cfg->popup.border_width,
+            .radius = awl->cfg->popup.radius, .padding = awl->cfg->popup.padding,
+            .margin = awl->cfg->popup.margin,
+            .column_spacing = awl->cfg->popup.column_spacing,
+            .row_spacing = awl->cfg->popup.row_spacing,
+            .blur = awl->cfg->blur.popups,
+            .blur_strength = awl->cfg->blur.strength, .blur_alpha = awl->cfg->blur.alpha };
     if (menu) {
-        s.bg = cfg->colors.menu_bg.v;
-        s.fg = cfg->colors.menu_fg.v;
-        s.border = cfg->colors.menu_border.v;
-        s.highlight = cfg->colors.menu_highlight.v;
-        s.border_width = cfg->popup.menu.border_width.v;
-        s.radius = cfg->popup.menu.radius.v;
-        s.blur = cfg->popup.menu.blur.v;
+        s.bg = awl->cfg->colors.menu_bg.v;
+        s.fg = awl->cfg->colors.menu_fg.v;
+        s.border = awl->cfg->colors.menu_border.v;
+        s.highlight = awl->cfg->colors.menu_highlight.v;
+        s.border_width = awl->cfg->popup.menu.border_width.v;
+        s.radius = awl->cfg->popup.menu.radius.v;
+        s.blur = awl->cfg->popup.menu.blur.v;
     }
     if (p && p->bg)
         s.bg = p->bg;
@@ -70,7 +69,7 @@ static int
 popupsshown(void)
 {
     Popup *p;
-    wl_list_for_each(p, &popups, link)
+    wl_list_for_each(p, &awl->popups, link)
         if (!p->persistent && awl_window_monitor(p->win))
             return 1;
     return 0;
@@ -83,17 +82,17 @@ popupsshown(void)
 static void
 popupsplace(void)
 {
-    struct wlr_scene_node *persistent_below = cfg->popup.persistent_overlay
-            ? &layers[LyrOverlay]->node : &layers[LyrTop]->node;
+    struct wlr_scene_node *persistent_below = awl->cfg->popup.persistent_overlay
+            ? &awl->layers[LyrOverlay]->node : &awl->layers[LyrTop]->node;
     if (persistent_tree && popup_tree && popupsshown()) {
         wlr_scene_node_place_above(&persistent_tree->node, persistent_below);
         wlr_scene_node_place_above(&popup_tree->node, &persistent_tree->node);
         return;
     }
     if (popup_tree)
-        wlr_scene_node_place_above(&popup_tree->node, &layers[LyrTop]->node);
+        wlr_scene_node_place_above(&popup_tree->node, &awl->layers[LyrTop]->node);
     if (persistent_tree)
-        wlr_scene_node_place_above(&persistent_tree->node, cfg->popup.persistent_overlay
+        wlr_scene_node_place_above(&persistent_tree->node, awl->cfg->popup.persistent_overlay
                 ? persistent_below : popup_tree ? &popup_tree->node : persistent_below);
 }
 
@@ -103,7 +102,7 @@ popupfind(awl_window_t *win)
 {
     Popup *p;
     if (win)
-        wl_list_for_each(p, &popups, link)
+        wl_list_for_each(p, &awl->popups, link)
             if (p->win == win)
                 return p;
     return NULL;
@@ -114,11 +113,11 @@ popupnew(int plugin)
 {
     Popup *p;
     awl_window_style_t style;
-    if (!scene)
+    if (!awl->scene)
         return NULL;
     /* over the bar and the windows, under fullscreen ones */
     if (!popup_tree) {
-        popup_tree = wlr_scene_tree_create(&scene->tree);
+        popup_tree = wlr_scene_tree_create(&awl->scene->tree);
         popupsplace();
     }
     style = popupstyle(NULL);
@@ -126,7 +125,7 @@ popupnew(int plugin)
     p->win = awl_window_create(popup_tree, &style);
     p->plugin = plugin;
     p->border_width = -1;
-    wl_list_insert(popups.prev, &p->link);
+    wl_list_insert(awl->popups.prev, &p->link);
     return p->win;
 }
 
@@ -159,7 +158,7 @@ closemenus(Popup *p)
 {
     Popup *o;
     if (!p->menu && !p->persistent)
-        wl_list_for_each(o, &popups, link)
+        wl_list_for_each(o, &awl->popups, link)
             if (o->menu && awl_window_monitor(o->win))
                 awl_window_hide(o->win);
 }
@@ -171,7 +170,7 @@ popupshow(awl_window_t *win, Monitor *m, int center_x)
     if (!m || !p)
         return;
     closemenus(p);
-    awl_window_show(win, m, center_x, cfg->bar.top);
+    awl_window_show(win, m, center_x, awl->cfg->bar.top);
     popupsgrabupdate();
 }
 
@@ -204,8 +203,8 @@ awl_window_t *
 popupkeyboard(void)
 {
     Popup *p;
-    wl_list_for_each_reverse(p, &popups, link)
-        if (awl_window_takes_keys(p->win) && !(locked && p->persistent))
+    wl_list_for_each_reverse(p, &awl->popups, link)
+        if (awl_window_takes_keys(p->win) && !(awl->locked && p->persistent))
             return p->win;
     return NULL;
 }
@@ -223,12 +222,12 @@ popupsgrabupdate(void)
     popup_keyboard = win;
     awl_dbg_printf(awl_loglevel_vrb, "popup %p: %s the keyboard\n", (void *)win,
             win ? "takes" : "gives back");
-    if (locked)
+    if (awl->locked)
         return;
     if (win)
-        wlr_seat_keyboard_notify_clear_focus(seat);
-    else if (!exclusive_focus)
-        focusclient(focustop(selmon), 0);
+        wlr_seat_keyboard_notify_clear_focus(awl->seat);
+    else if (!awl->clients.exclusive_focus)
+        focusclient(focustop(awl->out.selmon), 0);
 }
 
 /** whether something above win's tree takes the pointer at x, y: a
@@ -237,15 +236,15 @@ popupsgrabupdate(void)
 static int
 popupcovered(awl_window_t *win, int persistent, double x, double y)
 {
-    struct wlr_scene_node *node = wlr_scene_node_at(&scene->tree.node, x, y, NULL, NULL);
+    struct wlr_scene_node *node = wlr_scene_node_at(&awl->scene->tree.node, x, y, NULL, NULL);
     struct wlr_scene_node *ours = persistent ? &persistent_tree->node : &popup_tree->node;
     struct wlr_scene_node *it;
     if (!node)
         return 0;
     /* the scene's child that has it, then whether that is above ours */
-    while (node->parent && node->parent != &scene->tree)
+    while (node->parent && node->parent != &awl->scene->tree)
         node = &node->parent->node;
-    for (it = ours; &it->link != &scene->tree.children;
+    for (it = ours; &it->link != &awl->scene->tree.children;
             it = wl_container_of(it->link.next, it, link))
         if (it == node)
             return it != ours;
@@ -259,7 +258,7 @@ popupat(double x, double y)
     /* the top tree's first (popupsplace()), then the newest */
     const int top = !popupsshown();
     for (int i = 0; i < 2; i++)
-        wl_list_for_each_reverse(p, &popups, link)
+        wl_list_for_each_reverse(p, &awl->popups, link)
             if (p->persistent == (i ? !top : top) && awl_window_takes_pointer(p->win, x, y))
                 return popupcovered(p->win, p->persistent, x, y) ? NULL : p->win;
     return NULL;
@@ -268,9 +267,9 @@ popupat(double x, double y)
 awl_window_t *
 popuppointer(void)
 {
-    if (cursor_mode != CurNormal || seat->drag || locked)
+    if (awl->cursor.mode != CurNormal || awl->seat->drag || awl->locked)
         return NULL;
-    return popupat(cursor->x, cursor->y);
+    return popupat(awl->cursor.wlr->x, awl->cursor.wlr->y);
 }
 
 int
@@ -288,15 +287,15 @@ popupmotion(void)
         return 0;
     }
     if (popup_hovered != win) {
-        wlr_seat_pointer_notify_clear_focus(seat);
-        wlr_cursor_set_xcursor(cursor, cursor_mgr, "default");
+        wlr_seat_pointer_notify_clear_focus(awl->seat);
+        wlr_cursor_set_xcursor(awl->cursor.wlr, awl->cursor.mgr, "default");
         updatehover(NULL);
         popup_hovered = win;
     }
     row = awl_window_hover_row(win);
-    if (awl_window_pointer_motion(win, cursor->x, cursor->y) != row)
+    if (awl_window_pointer_motion(win, awl->cursor.wlr->x, awl->cursor.wlr->y) != row)
         awl_dbg_printf(awl_loglevel_vrb, "popup %p: pointer on row %d at %.0f,%.0f\n", (void *)win,
-                awl_window_hover_row(win), cursor->x, cursor->y);
+                awl_window_hover_row(win), awl->cursor.wlr->x, awl->cursor.wlr->y);
     return 1;
 }
 
@@ -304,7 +303,7 @@ void
 popupsupdate(Monitor *m)
 {
     Popup *p;
-    wl_list_for_each(p, &popups, link)
+    wl_list_for_each(p, &awl->popups, link)
         awl_window_update(p->win, m);
 }
 
@@ -312,7 +311,7 @@ void
 popupshideall(void)
 {
     Popup *p;
-    wl_list_for_each(p, &popups, link)
+    wl_list_for_each(p, &awl->popups, link)
         if (!p->persistent)
             awl_window_hide(p->win);
     popupsgrabupdate();
@@ -346,7 +345,7 @@ popupsetpersistent(awl_window_t *win, int persistent)
         return;
     p->persistent = !!persistent;
     if (p->persistent && !persistent_tree) {
-        persistent_tree = wlr_scene_tree_create(&scene->tree);
+        persistent_tree = wlr_scene_tree_create(&awl->scene->tree);
         popupsplace();
         popupslocked();
     }
@@ -418,14 +417,14 @@ popuppersistentlayer(int *visible)
     *visible = persistent_tree && persistent_tree->node.enabled;
     if (!persistent_tree)
         return -1;
-    return persistent_tree->node.link.prev == &layers[LyrOverlay]->node.link ? LyrOverlay : LyrTop;
+    return persistent_tree->node.link.prev == &awl->layers[LyrOverlay]->node.link ? LyrOverlay : LyrTop;
 }
 
 void
 popupslocked(void)
 {
     if (persistent_tree)
-        wlr_scene_node_set_enabled(&persistent_tree->node, !locked);
+        wlr_scene_node_set_enabled(&persistent_tree->node, !awl->locked);
 }
 
 int
@@ -445,7 +444,7 @@ void
 popupsremovemon(Monitor *m)
 {
     Popup *p;
-    wl_list_for_each(p, &popups, link)
+    wl_list_for_each(p, &awl->popups, link)
         awl_window_removemon(p->win, m);
     popupsgrabupdate();
 }
@@ -455,7 +454,7 @@ popupsrestyle(void)
 {
     Popup *p;
     awl_window_style_t style;
-    wl_list_for_each(p, &popups, link) {
+    wl_list_for_each(p, &awl->popups, link) {
         style = popupstyle(p);
         awl_window_set_style(p->win, &style);
     }
@@ -469,7 +468,7 @@ popupsreap(void)
     int n = 0;
 
     /* AWL_TEST_WINDOWS' go too: a reload destroys every popup */
-    wl_list_for_each_safe(p, tmp, &popups, link) {
+    wl_list_for_each_safe(p, tmp, &awl->popups, link) {
         n += p->plugin;
         popupdestroy(p->win);
     }

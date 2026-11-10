@@ -38,7 +38,7 @@ void awl_osd_brightness( float delta );
  * by its cause */
 void awl_osd_redraw( void );
 
-/* The wallpaper and the desktop files: no watch, their changes are events.
+/* The wallpaper, the desktop files and do-not-disturb: no watch, their changes are events.
  * Each has one notification (by tag), replaced in place. */
 
 /** the wallpaper's now: "i/N · mode" (the timer's mode, "(off)" without a
@@ -53,3 +53,7 @@ void awl_osd_wallpaper_ask( void );
 void awl_osd_wallpaper_taken( void );
 /** the desktop files' text alone, centered, osd.desktop_icon beside it */
 void awl_osd_desktop( const char* text );
+/** do-not-disturb was turned on or off (:c:func:`awl_notify_set_dnd`): "Do not
+ * disturb" or "Notifications enabled" alone, centered, notify's bell_icon_dnd
+ * or bell_icon beside it. It shows through do-not-disturb, as every OSD. */
+void awl_osd_dnd( int on );

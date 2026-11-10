@@ -221,7 +221,7 @@ typedef struct awl_host_t {
     void (*logind_state)( unsigned flags );
     /**
      * config values that can change while awl runs, by name. awl owns the
-     * dictionary (``cfg.s``, awl_config.h's :c:var:`cfgdict`): it lives as long as awl
+     * dictionary (``cfg.s``, :c:member:`awl_server_t.cfgdict`): it lives as long as awl
      * and keeps its entries across reloads.
      *
      * Any thread may use it, plugin threads included (awl_dict.h has the
@@ -281,7 +281,7 @@ typedef struct awl_host_t {
     void (*arrange)( Monitor* m );
     /** :c:func:`monitornamed`: the monitor of the output named name, NULL if none */
     Monitor* (*monitor_named)( const char* name );
-    /** the selected monitor (:c:var:`selmon`), NULL if there is none */
+    /** the selected monitor (:c:member:`awl_outputs_t.selmon`), NULL if there is none */
     Monitor* (*monitor_selected)( void );
     /** m's output scale (what its popups are drawn at), 1 for NULL */
     float (*monitor_scale)( Monitor* m );

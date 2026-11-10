@@ -147,9 +147,14 @@ static int64_t now_ms( void ) {
     return (int64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
 }
 
+/** f within 0 to 1 (NaN: 0) */
+static float clampf( float f ) {
+    return f > 1.0f ? 1.0f : f > 0.0f ? f : 0.0f;
+}
+
 /** the idle check due idle_pause after the last activity */
 static void idle_arm( void ) {
-    const int pause = cfg->notifications.idle_pause;
+    const int pause = awl->cfg->notifications.idle_pause;
     if (N.idle_armed || N.paused || pause <= 0 || !N.loop) return;
     if (!N.idle_timer && !(N.idle_timer = wl_event_loop_add_timer( N.loop, idle_check, NULL ))) return;
     int64_t left = N.last_activity + pause - now_ms();
@@ -290,14 +295,24 @@ void awl_notifications_idle( void ) {
     if (N.paused) return;
     awl_vrb_printf( "notifications: idle, timeouts stopped\n" );
     N.paused = 1;
+    /* the user went away somewhere between the last activity and now: the
+     * idle_giveback of that is given back, the rest counts as seen */
+    const float back = clampf( awl->cfg->notifications.idle_giveback ),
+                keep = clampf( awl->cfg->notifications.idle_floor );
+    const int64_t now = now_ms();
+    const int64_t away = now - (int64_t)((float)(now - N.last_activity) * back);
     for (int i = 0; i < N.nopen; i++) {
         notif_t* n = N.open[i];
-        /* only the time the user was there counts: what was left at the
-         * last activity, and at least half of it, to be seen on return */
+        /* what was left when the user went away, and at least idle_floor
+         * of it, to be seen on return */
         if (n->deadline) {
-            int64_t left = n->deadline - N.last_activity;
+            const int64_t least = (int64_t)((float)n->pub.timeout * keep);
+            int64_t left = n->deadline - away;
             if (left > n->pub.timeout) left = n->pub.timeout;
-            if (left < n->pub.timeout / 2) left = n->pub.timeout / 2;
+            if (left < least) left = least;
+            /* 0 would be the whole timeout (arm()): with idle_floor 0, gone
+             * right on return */
+            if (left < 1) left = 1;
             n->left = (int)left;
         }
         arm( n );
@@ -310,7 +325,7 @@ static int idle_check( void* data ) {
     (void)data;
     N.idle_armed = 0;
     if (!N.nopen) return 0;
-    const int pause = cfg->notifications.idle_pause;
+    const int pause = awl->cfg->notifications.idle_pause;
     if (pause > 0 && now_ms() - N.last_activity >= pause) awl_notifications_idle();
     else idle_arm();
     return 0;
@@ -522,8 +537,8 @@ static uint32_t new_id( uint32_t replaces_id ) {
 /** the timeout for urgency when the sender leaves it to the server */
 static int default_timeout( awl_notif_urgency_t urgency ) {
     return urgency == AWL_NOTIF_CRITICAL ? 0
-         : urgency == AWL_NOTIF_LOW ? cfg->notifications.timeout_low
-         : cfg->notifications.timeout_normal;
+         : urgency == AWL_NOTIF_LOW ? awl->cfg->notifications.timeout_low
+         : awl->cfg->notifications.timeout_normal;
 }
 
 /** opens n (complete, with its generation), or replaces the open one it

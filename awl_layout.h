@@ -10,7 +10,7 @@
 #include "awl_config.h"
 
 /** how many tags there are, cfg->ntags kept to 1..31 */
-#define TAGCOUNT                (cfg->ntags < 1 ? 1 : cfg->ntags > 31 ? 31 : cfg->ntags)
+#define TAGCOUNT                (awl->cfg->ntags < 1 ? 1 : awl->cfg->ntags > 31 ? 31 : awl->cfg->ntags)
 /** the tags, as a mask */
 #define TAGMASK                 ((1u << TAGCOUNT) - 1)
 

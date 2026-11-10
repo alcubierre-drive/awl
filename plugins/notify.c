@@ -6,6 +6,7 @@
 #include "markup.h"
 #include "notify_image.h"
 #include "notify_menu.h"
+#include "osd.h"
 
 #include <fcft/fcft.h>
 #include <linux/input-event-codes.h>
@@ -871,7 +872,10 @@ void awl_notify_set_dnd( int on ) {
     if (on == awl_notify_dnd()) return;
     if (AWL_HOST_CFG_SET( awl_host, DND_KEY, v ) != AWL_DICT_OK) return;
     awl_log_printf( "notify: do-not-disturb %s\n", on ? "on" : "off" );
-    if (N.started) restack();
+    if (N.started) {
+        awl_osd_dnd( on );
+        restack();
+    }
     awl_notify_menu_changed();
     awl_host->redraw_request();
 }

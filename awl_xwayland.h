@@ -10,8 +10,6 @@
 #include "awl_server.h"
 
 #ifdef XWAYLAND
-/** NULL if it couldn't be set up */
-extern struct wlr_xwayland *xwayland;
 
 /** sets it up and $DISPLAY to it; awl runs on without it if that fails */
 void xwaylandinit(void);

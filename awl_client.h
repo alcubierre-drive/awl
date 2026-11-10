@@ -14,14 +14,6 @@
 #define VISIBLEON(C, M)         ((M) && (C)->mon == (M) && ((C)->tags & (M)->tagset[(M)->seltags]))
 #define VISIBLEON_ACTIVE(C, M)  (VISIBLEON(C, M) && (C)->isvisible)
 
-/** the managed clients, Client.link: tiling order */
-extern struct wl_list clients;
-/** the same, Client.flink: focus order, the focused first */
-extern struct wl_list fstack;
-/** the layer surface or unmanaged client that holds the keyboard, or NULL */
-extern void *exclusive_focus;
-/** cfg->colors' border, border_focused and border_urgent, copied: the clients' borders outlive a reload */
-extern uint32_t borders[BorderLast];
 
 /* xdg-shell's new toplevels, popups and decorations, xdg-activation's
  * requests */
@@ -29,8 +21,6 @@ void createnotify(struct wl_listener *listener, void *data);
 void createpopup(struct wl_listener *listener, void *data);
 void createdecoration(struct wl_listener *listener, void *data);
 void urgent(struct wl_listener *listener, void *data);
-/** xdg-activation, the global */
-extern struct wlr_xdg_activation_v1 *activation;
 /** a new xdg-activation token of awl's own, for a client to activate a
  * window with because the user asked (a notification's action): such a
  * request gets the focus, switching to its tags (unless
@@ -357,10 +347,10 @@ static inline void
 client_notify_enter(struct wlr_surface *s, struct wlr_keyboard *kb)
 {
     if (kb)
-        wlr_seat_keyboard_notify_enter(seat, s, kb->keycodes,
+        wlr_seat_keyboard_notify_enter(awl->seat, s, kb->keycodes,
                 kb->num_keycodes, &kb->modifiers);
     else
-        wlr_seat_keyboard_notify_enter(seat, s, NULL, 0, NULL);
+        wlr_seat_keyboard_notify_enter(awl->seat, s, NULL, 0, NULL);
 }
 
 static inline void

@@ -334,10 +334,22 @@ void awl_osd_wallpaper_taken( void ) {
     awl_osd_wallpaper();
 }
 
-void awl_osd_desktop( const char* text ) {
+/** text alone, centered, icon beside it (NULL, "": none), as the
+ * notification tag */
+static void text_osd( const char* tag, const char* text, const char* icon ) {
     awl_notif_send_t n = base();
-    n.tag = "osd-desktop";
+    n.tag = tag;
     n.summary = text;
-    n.image = CFG->desktop_icon && *CFG->desktop_icon ? CFG->desktop_icon : NULL;
+    n.image = icon && *icon ? icon : NULL;
     awl_notify_send( &n );
+}
+
+void awl_osd_desktop( const char* text ) {
+    text_osd( "osd-desktop", text, CFG->desktop_icon );
+}
+
+void awl_osd_dnd( int on ) {
+    const awl_plugin_config_t* pc = awl_plugin_config();
+    text_osd( "osd-dnd", on ? "Do not disturb" : "Notifications enabled",
+              on ? pc->notify.bell_icon_dnd : pc->notify.bell_icon );
 }

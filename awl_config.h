@@ -10,14 +10,6 @@
 #include "awl_plugin_abi.h"
 #include "awl_dict.h"
 
-/** The config in effect: the library's (awl's defaults with
- * plugins_config.c's changes), or while none is loaded the defaults. The
- * library's points into it, so it's only good until the next reload;
- * :c:func:`pluginsdetach` falls back to the defaults. */
-extern const awl_config_t *cfg;
-/** The config values that can change while awl runs, by name, for awl and the
- * library (:c:member:`awl_host_t.cfg`). Lives from setup() to cleanup(), across reloads. */
-extern awl_dict_t *cfgdict;
 
 /** fills in c with awl's defaults (awl_config_defaults.h), what they leave
  * unset still unset (:c:func:`awl_config_fill_defaults`) */

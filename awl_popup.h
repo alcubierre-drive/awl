@@ -36,8 +36,6 @@ typedef struct {
     /** :c:func:`popupsetborderwidth`, < 0: the style's */
     int border_width;
 } Popup;
-/** every popup, Popup.link, the newest last (on top) */
-extern struct wl_list popups;
 
 /** a new, hidden popup of the plugins' (plugin) or of AWL_TEST_WINDOWS';
  * NULL before setup() */
@@ -94,7 +92,7 @@ int popuppersistent(awl_window_t *win);
  * the others' between unless another popup is shown), -1 before there is
  * one; ``*visible`` whether they are in sight */
 int popuppersistentlayer(int *visible);
-/** the screen was locked or unlocked (:c:var:`locked`): the persistent popups go
+/** the screen was locked or unlocked (:c:member:`awl_server_t.locked`): the persistent popups go
  * out of sight while it is, and come back after */
 void popupslocked(void);
 /** where part of win's painter is, 0 if it is not shown
