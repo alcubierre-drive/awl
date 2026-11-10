@@ -12,6 +12,6 @@
 #ifdef XWAYLAND
 
 /** sets it up and $DISPLAY to it; awl runs on without it if that fails */
-void xwaylandinit(void);
-void xwaylandfini(void);
+void xwaylandinit(awl_server_t *srv);
+void xwaylandfini(awl_server_t *srv);
 #endif

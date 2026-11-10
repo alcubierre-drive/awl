@@ -35,17 +35,18 @@ typedef struct {
     struct wl_listener new_surface;
     struct wl_listener unlock;
     struct wl_listener destroy;
+    awl_server_t *srv;
 } SessionLock;
 
 static void createlocksurface(struct wl_listener *listener, void *data);
-static void destroylock(SessionLock *lock, int unlock);
+static void destroylock(awl_server_t *srv, SessionLock *lock, int unlock);
 static void destroysessionlock(struct wl_listener *listener, void *data);
-static void lockcovered(void);
+static void lockcovered(awl_server_t *srv);
 static int coveredtimeout(void *data);
 static int lockfire(int fd, uint32_t mask, void *data);
 static void lockwake(void);
-static unsigned logindneeded(void);
-static void logindupdate(void);
+static unsigned logindneeded(awl_server_t *srv);
+static void logindupdate(awl_server_t *srv);
 static int logindtimeout(void *data);
 static void unlocksession(struct wl_listener *listener, void *data);
 
@@ -106,6 +107,7 @@ void
 createlocksurface(struct wl_listener *listener, void *data)
 {
     SessionLock *lock = wl_container_of(listener, lock, new_surface);
+    awl_server_t *srv = lock->srv;
     struct wlr_session_lock_surface_v1 *lock_surface = data;
     Monitor *m = lock_surface->output->data;
     struct wlr_scene_tree *scene_tree = lock_surface->surface->data
@@ -117,35 +119,35 @@ createlocksurface(struct wl_listener *listener, void *data)
 
     LISTEN(&lock_surface->events.destroy, &m->destroy_lock_surface, destroylocksurface);
 
-    if (m == awl->out.selmon)
-        client_notify_enter(lock_surface->surface, wlr_seat_get_keyboard(awl->seat));
+    if (m == srv->out.selmon)
+        client_notify_enter(srv, lock_surface->surface, wlr_seat_get_keyboard(srv->seat));
 }
 
 void
-destroylock(SessionLock *lock, int unlock)
+destroylock(awl_server_t *srv, SessionLock *lock, int unlock)
 {
-    wlr_seat_keyboard_notify_clear_focus(awl->seat);
+    wlr_seat_keyboard_notify_clear_focus(srv->seat);
     /* a crashed locker leaves the screen locked, but only under awl's blur:
      * a suspend now waits for the next locker */
     covered_pending = 0;
     wl_event_source_timer_update(covered_timer, 0);
     awl_plugins_set_covered(0);
-    if ((awl->locked = !unlock))
+    if ((srv->locked = !unlock))
         goto destroy;
-    popupslocked();
+    popupslocked(srv);
     locked_keystrokes = 0;
-    updatepluginpause();
+    updatepluginpause(srv);
 
     if (locked_bg_blur) {
         wlr_scene_node_set_enabled(&locked_bg_blur->node, 0);
         AWL_wlr_scene_blur_set_shatter(locked_bg_blur, 0.01);
     }
 
-    focusclient(focustop(awl->out.selmon), 0);
-    motionnotify(0, NULL, 0, 0, 0, 0);
+    focusclient(srv, focustop(srv, srv->out.selmon), 0);
+    motionnotify(srv, 0, NULL, 0, 0, 0, 0);
 
     /* catch up on everything skipped while locked */
-    barsdirty();
+    barsdirty(srv);
 
 destroy:
     wl_list_remove(&lock->new_surface.link);
@@ -161,21 +163,22 @@ void
 destroylocksurface(struct wl_listener *listener, void *data)
 {
     Monitor *m = wl_container_of(listener, m, destroy_lock_surface);
+    awl_server_t *srv = m->srv;
     struct wlr_session_lock_surface_v1 *surface, *lock_surface = m->lock_surface;
 
     m->lock_surface = NULL;
     wl_list_remove(&m->destroy_lock_surface.link);
 
-    if (lock_surface->surface != awl->seat->keyboard_state.focused_surface)
+    if (lock_surface->surface != srv->seat->keyboard_state.focused_surface)
         return;
 
-    if (awl->locked && cur_lock && !wl_list_empty(&cur_lock->surfaces)) {
+    if (srv->locked && cur_lock && !wl_list_empty(&cur_lock->surfaces)) {
         surface = wl_container_of(cur_lock->surfaces.next, surface, link);
-        client_notify_enter(surface->surface, wlr_seat_get_keyboard(awl->seat));
-    } else if (!awl->locked) {
-        focusclient(focustop(awl->out.selmon), 1);
+        client_notify_enter(srv, surface->surface, wlr_seat_get_keyboard(srv->seat));
+    } else if (!srv->locked) {
+        focusclient(srv, focustop(srv, srv->out.selmon), 1);
     } else {
-        wlr_seat_keyboard_clear_focus(awl->seat);
+        wlr_seat_keyboard_clear_focus(srv->seat);
     }
 }
 
@@ -183,7 +186,8 @@ void
 destroysessionlock(struct wl_listener *listener, void *data)
 {
     SessionLock *lock = wl_container_of(listener, lock, destroy);
-    destroylock(lock, 0);
+    awl_server_t *srv = lock->srv;
+    destroylock(srv, lock, 0);
 }
 
 /** A lock covers the screen once every enabled output has shown a frame
@@ -192,12 +196,12 @@ destroysessionlock(struct wl_listener *listener, void *data)
  * for that before it lets a suspend go ahead, so the last image before
  * sleep, and the first after it, is the locker's. */
 void
-lockcovered(void)
+lockcovered(awl_server_t *srv)
 {
     Monitor *m;
     if (!covered_pending)
         return;
-    wl_list_for_each(m, &awl->out.mons, link)
+    wl_list_for_each(m, &srv->out.mons, link)
         if (m->wlr_output->enabled && !m->lock_shown)
             return;
     covered_pending = 0;
@@ -220,6 +224,7 @@ coveredtimeout(void *data)
 int
 lockfire(int fd, uint32_t mask, void *data)
 {
+    awl_server_t *srv = data;
     uint64_t count;
     unsigned flags;
     /* drained first: whatever is stored after this wakes the loop again */
@@ -229,7 +234,7 @@ lockfire(int fd, uint32_t mask, void *data)
         lockscreen(NULL);
     if (flags != logind_flags) {
         logind_flags = flags;
-        logindupdate();
+        logindupdate(srv);
     }
     return 0;
 }
@@ -240,7 +245,8 @@ lockfire(int fd, uint32_t mask, void *data)
 void
 lockscreen(const Arg *arg)
 {
-    const char *const *argv = awl->cfg->lock.locker;
+    awl_server_t *srv = awl;
+    const char *const *argv = srv->cfg->lock.locker;
     pid_t pid;
     if (cur_lock)
         return;
@@ -249,7 +255,7 @@ lockscreen(const Arg *arg)
         return;
     }
     if (!argv || !argv[0]) {
-        awl_alert_set(AwlAlertLocker, "no locker configured");
+        awl_alert_set(srv, AwlAlertLocker, "no locker configured");
         return;
     }
     if ((pid = spawn_pid(&(Arg){.v = argv})) > 0) {
@@ -257,7 +263,7 @@ lockscreen(const Arg *arg)
         locker_locked = 0;
         snprintf(locker_name, sizeof(locker_name), "%s", argv[0]);
     } else {
-        awl_alert_set(AwlAlertLocker, "can't start %s", argv[0]);
+        awl_alert_set(srv, AwlAlertLocker, "can't start %s", argv[0]);
     }
 }
 
@@ -275,9 +281,9 @@ lockwake(void)
 }
 
 unsigned
-logindneeded(void)
+logindneeded(awl_server_t *srv)
 {
-    return AWL_LOGIND_LOCK | (awl->cfg->lock.on_suspend ? AWL_LOGIND_SLEEP : 0);
+    return AWL_LOGIND_LOCK | (srv->cfg->lock.on_suspend ? AWL_LOGIND_SLEEP : 0);
 }
 
 /** The logind alert: up once the logind thread hasn't listened for all of
@@ -285,14 +291,14 @@ logindneeded(void)
  * a plugin reload too), down as soon as it does. That covers a thread that
  * never reports at all, e.g. without a plugin library. */
 void
-logindupdate(void)
+logindupdate(awl_server_t *srv)
 {
-    if (!(logindneeded() & ~logind_flags)) {
+    if (!(logindneeded(srv) & ~logind_flags)) {
         logind_missing = 0;
         wl_event_source_timer_update(logind_timer, 0);
         awl_alert_clear(AwlAlertLogind);
     } else if (awl_alert_up(AwlAlertLogind)) {
-        logindtimeout(NULL); /* the text may change */
+        logindtimeout(srv); /* the text may change */
     } else if (!logind_missing) {
         /* only from when it stopped: a thread that keeps reconnecting and
          * failing must not keep the alert down */
@@ -304,23 +310,25 @@ logindupdate(void)
 int
 logindtimeout(void *data)
 {
-    unsigned missing = logindneeded() & ~logind_flags;
+    awl_server_t *srv = data;
+    unsigned missing = logindneeded(srv) & ~logind_flags;
     if (missing == (AWL_LOGIND_LOCK | AWL_LOGIND_SLEEP))
-        awl_alert_set(AwlAlertLogind, "Not listening to logind: NO LOCK ON SUSPEND");
+        awl_alert_set(srv, AwlAlertLogind, "Not listening to logind: NO LOCK ON SUSPEND");
     else if (missing & AWL_LOGIND_SLEEP)
-        awl_alert_set(AwlAlertLogind, "logind: NO LOCK ON SUSPEND");
+        awl_alert_set(srv, AwlAlertLogind, "logind: NO LOCK ON SUSPEND");
     else if (missing)
-        awl_alert_set(AwlAlertLogind, "logind: loginctl lock-session does nothing");
+        awl_alert_set(srv, AwlAlertLogind, "logind: loginctl lock-session does nothing");
     return 0;
 }
 
 void
 locksession(struct wl_listener *listener, void *data)
 {
+    awl_server_t *srv = wl_container_of(listener, srv, listen.new_session_lock);
     struct wlr_session_lock_v1 *session_lock = data;
     SessionLock *lock;
     Monitor *m;
-    if (locked_bg_blur && awl->cfg->lock.blur) {
+    if (locked_bg_blur && srv->cfg->lock.blur) {
         wlr_scene_node_set_enabled(&locked_bg_blur->node, 1);
         AWL_wlr_scene_blur_set_shatter(locked_bg_blur, 0.01);
     }
@@ -329,16 +337,17 @@ locksession(struct wl_listener *listener, void *data)
         return;
     }
     lock = session_lock->data = ecalloc(1, sizeof(*lock));
-    focusclient(NULL, 0);
+    lock->srv = srv;
+    focusclient(srv, NULL, 0);
     /* the launcher drops the keyboard, the menus go: they'd only wait under
      * the locker */
-    popupshideall();
+    popupshideall(srv);
 
-    lock->scene = wlr_scene_tree_create(awl->layers[LyrBlock]);
+    lock->scene = wlr_scene_tree_create(srv->layers[LyrBlock]);
     cur_lock = lock->lock = session_lock;
-    awl->locked = 1;
-    popupslocked();
-    updatepluginpause();
+    srv->locked = 1;
+    popupslocked(srv);
+    updatepluginpause(srv);
     if (locker_pid > 0)
         locker_locked = 1;
     awl_alert_clear(AwlAlertLocker);
@@ -350,30 +359,31 @@ locksession(struct wl_listener *listener, void *data)
     wlr_session_lock_v1_send_locked(session_lock);
 
     /* covered once every output has shown a frame of it */
-    wl_list_for_each(m, &awl->out.mons, link)
+    wl_list_for_each(m, &srv->out.mons, link)
         m->lock_shown = 0;
     covered_pending = 1;
     wl_event_source_timer_update(covered_timer, LOCK_COVER_MS);
-    lockcovered();
+    lockcovered(srv);
 }
 
 void
 unlocksession(struct wl_listener *listener, void *data)
 {
     SessionLock *lock = wl_container_of(listener, lock, unlock);
-    destroylock(lock, 1);
+    awl_server_t *srv = lock->srv;
+    destroylock(srv, lock, 1);
 }
 
 void
-lockinit(void)
+lockinit(awl_server_t *srv)
 {
     /* made either way, cfg->lock.blur can change with a reload */
     {
-        locked_bg_blur = wlr_scene_blur_create( awl->layers[LyrBlock], awl->out.sgeom.width, awl->out.sgeom.height );
-        wlr_scene_node_set_position(&locked_bg_blur->node, awl->out.sgeom.x, awl->out.sgeom.y);
-        wlr_scene_blur_set_size(locked_bg_blur, awl->out.sgeom.width, awl->out.sgeom.height);
-        wlr_scene_blur_set_strength( locked_bg_blur, awl->cfg->blur.strength );
-        wlr_scene_blur_set_alpha( locked_bg_blur, awl->cfg->blur.alpha );
+        locked_bg_blur = wlr_scene_blur_create( srv->layers[LyrBlock], srv->out.sgeom.width, srv->out.sgeom.height );
+        wlr_scene_node_set_position(&locked_bg_blur->node, srv->out.sgeom.x, srv->out.sgeom.y);
+        wlr_scene_blur_set_size(locked_bg_blur, srv->out.sgeom.width, srv->out.sgeom.height);
+        wlr_scene_blur_set_strength( locked_bg_blur, srv->cfg->blur.strength );
+        wlr_scene_blur_set_alpha( locked_bg_blur, srv->cfg->blur.alpha );
         wlr_scene_blur_set_should_only_blur_bottom_layer( locked_bg_blur, 0 );
         wlr_scene_node_set_enabled(&locked_bg_blur->node, 0);
         wlr_scene_node_lower_to_bottom(&locked_bg_blur->node);
@@ -381,11 +391,11 @@ lockinit(void)
     /* without it, requests and states are dropped (the logind alert stays) */
     atomic_store(&lock_fd, eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
     if (atomic_load(&lock_fd) >= 0)
-        lock_source = wl_event_loop_add_fd(awl->event_loop, atomic_load(&lock_fd),
-                WL_EVENT_READABLE, lockfire, NULL);
-    covered_timer = wl_event_loop_add_timer(awl->event_loop, coveredtimeout, NULL);
+        lock_source = wl_event_loop_add_fd(srv->event_loop, atomic_load(&lock_fd),
+                WL_EVENT_READABLE, lockfire, srv);
+    covered_timer = wl_event_loop_add_timer(srv->event_loop, coveredtimeout, NULL);
     /* the logind thread has until then to start listening (logind_missing) */
-    logind_timer = wl_event_loop_add_timer(awl->event_loop, logindtimeout, NULL);
+    logind_timer = wl_event_loop_add_timer(srv->event_loop, logindtimeout, srv);
     wl_event_source_timer_update(logind_timer, LOGIND_GRACE_MS);
 }
 
@@ -399,21 +409,21 @@ lockfini(void)
 }
 
 void
-lockshown(Monitor *m)
+lockshown(awl_server_t *srv, Monitor *m)
 {
     /* the locker's own surface, not just the blur behind it */
     if (covered_pending && m->lock_surface && wlr_surface_has_buffer(m->lock_surface->surface)) {
         m->lock_shown = 1;
-        lockcovered();
+        lockcovered(srv);
     }
 }
 
 void
-lockresize(void)
+lockresize(awl_server_t *srv)
 {
     if (locked_bg_blur) {
-        wlr_scene_node_set_position(&locked_bg_blur->node, awl->out.sgeom.x, awl->out.sgeom.y);
-        wlr_scene_blur_set_size(locked_bg_blur, awl->out.sgeom.width, awl->out.sgeom.height);
+        wlr_scene_node_set_position(&locked_bg_blur->node, srv->out.sgeom.x, srv->out.sgeom.y);
+        wlr_scene_blur_set_size(locked_bg_blur, srv->out.sgeom.width, srv->out.sgeom.height);
     }
 }
 
@@ -426,22 +436,22 @@ lockkeystroke(void)
 }
 
 void
-lockerexited(pid_t pid)
+lockerexited(awl_server_t *srv, pid_t pid)
 {
     if (pid != locker_pid)
         return;
     locker_pid = 0;
     if (!locker_locked)
-        awl_alert_set(AwlAlertLocker, "%s exited without locking", locker_name);
+        awl_alert_set(srv, AwlAlertLocker, "%s exited without locking", locker_name);
 }
 
 void
-lockconfigure(void)
+lockconfigure(awl_server_t *srv)
 {
     if (locked_bg_blur) {
-        wlr_scene_blur_set_strength(locked_bg_blur, awl->cfg->blur.strength);
-        wlr_scene_blur_set_alpha(locked_bg_blur, awl->cfg->blur.alpha);
-        if (awl->locked)
-            wlr_scene_node_set_enabled(&locked_bg_blur->node, awl->cfg->lock.blur);
+        wlr_scene_blur_set_strength(locked_bg_blur, srv->cfg->blur.strength);
+        wlr_scene_blur_set_alpha(locked_bg_blur, srv->cfg->blur.alpha);
+        if (srv->locked)
+            wlr_scene_node_set_enabled(&locked_bg_blur->node, srv->cfg->lock.blur);
     }
 }

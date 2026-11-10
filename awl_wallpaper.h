@@ -11,11 +11,11 @@
 #include "awl_server.h"
 
 /** the timer, unarmed until configapply() */
-void wallpaperinit(void);
+void wallpaperinit(awl_server_t *srv);
 void wallpaperfini(void);
 /** cfgdict's "wallpaper_mode": cfg->wallpaper.mode */
-void wallpapermodeinit(void);
+void wallpapermodeinit(awl_server_t *srv);
 /** after plugins_config.c changed: its interval and mode */
-void wallpaperconfigure(void);
+void wallpaperconfigure(awl_server_t *srv);
 /** shows a wallpaper the library has decoded since, if any */
-void wallpapertake(void);
+void wallpapertake(awl_server_t *srv);

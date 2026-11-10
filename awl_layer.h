@@ -12,4 +12,4 @@
 /** the layer shell's new surfaces */
 void createlayersurface(struct wl_listener *listener, void *data);
 /** places m's layer surfaces; arranges m if the window area changed */
-void arrangelayers(Monitor *m);
+void arrangelayers(awl_server_t *srv, Monitor *m);

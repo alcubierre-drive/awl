@@ -52,12 +52,24 @@ awl_config.h, awl_xwayland.h) and about 120 file-static ones.
    wallpaper, alert, background, desktop, sni, notifications, plugin_host and
    the config environment.
 4. **Passing it in:**
-   - `Monitor` and `Client` get a `srv` back pointer, so the many functions
-     that already take one need no new argument.
-   - Everything else takes `awl_server_t *srv` first.
-   - Actions become `void (*)(awl_server_t *, const Arg *)` and arranges keep
-     `(Monitor *)`. plugins_config.c only names `awl_actions.*`, so the user
-     config doesn't change.
+   - Every function that needs server state takes `awl_server_t *srv` first,
+     also when it takes a `Client *` or `Monitor *`. That way the signature
+     says it touches the server, and it works when the object is NULL
+     (`focusclient(srv, NULL, 0)` unfocuses; `focustop(srv, NULL)` walks the
+     focus stack with no monitors).
+   - Objects that own `wl_listener`s (`Client`, `Monitor`, `LayerSurface`,
+     `KeyboardGroup`, `InputDevice`, `SessionLock`, `PointerConstraint`) get a
+     `srv` back pointer, because their callbacks only get the object from
+     `wl_container_of`. Only the callback reads `x->srv`; it passes `srv` on.
+     Server listeners use `wl_container_of(listener, srv, listen.x)`.
+   - Why not back pointers instead (checked before B): of the 193 functions
+     that used `awl` after A, only 31 take a `Client *` or `Monitor *`, so
+     the pointer saves few arguments; several of those take NULL; and
+     `drawbar(m)` reaching `m->srv` hides what it touches as much as the
+     global did.
+   - Actions become `void (*)(awl_server_t *, const Arg *)` and arranges
+     `(awl_server_t *, Monitor *)`. plugins_config.c only names
+     `awl_actions.*`, so the user config doesn't change.
 5. **Process-wide state goes in one global struct**, `awl_process_t awl_proc`
    (awl_process.h). It is the only global in the core, and the place to look
    for anything that signal handlers or other threads reach without a
@@ -84,15 +96,30 @@ awl_config.h, awl_xwayland.h) and about 120 file-static ones.
 
 ## Order (each step builds and runs)
 
-Status: A is done (uncommitted). `awl_server_t` and its member structs
+Status: A is done (commit 9a9bd18): `awl_server_t` and its member structs
 (`awl_outputs_t`, `awl_clients_t`, `awl_cursor_t`) are in awl_server.h, the
-instance is awl.c's `server`, reached through `awl`. The names:
-`awl->out.{mons,selmon,sgeom,layout,mgr,in_cleanupmon}`,
-`awl->clients.{list,fstack,exclusive_focus,borders}`,
-`awl->cursor.{wlr,mgr,constraints,relative_mgr,drag_icon,mode,grabc}`;
-the rest flat (`awl->cfg`, `awl->seat`, `awl->popups`, `awl->locked`, ...),
-awl.c's listeners in `awl->listen`. The core exports no data but `awl` and
-the action tables. Next: B, starting at the leaves.
+instance is awl.c's `server`, reached through `awl`.
+
+B's parameters are done (uncommitted) for the whole core: every function
+that needs the server takes `awl_server_t *srv` first; listeners get it from
+`wl_container_of` on `srv->listen` (XWayland's two included now) or from
+their object's back pointer (`Client`, `Monitor`, `LayerSurface`,
+`KeyboardGroup`, `SessionLock`, `PointerConstraint`, and the small
+`DragIcon`/`IdleInhibitor` listener structs); timers, idles, fds, signals and
+the notification bus are registered with `srv` as their data. `TAGCOUNT(cfg)`
+and `TAGMASK(cfg)` take the config. `awl_plugins_reload()` hands `srv` to
+detach/attach.
+
+What still reads `awl`, all at the plugin ABI:
+- the actions, as `awl_server_t *srv = awl;` (and `main`);
+- awl_plugin_host.c's `host_*` wrappers, which give `awl_host` its old
+  signatures.
+
+Next, one ABI bump (42): `awl_host_t` gets `awl_server_t *srv` (opaque to the
+library), host functions take it first, actions become `(srv, arg)` (the
+core passes its `srv` to a binding's func), arranges `(srv, m)`. That removes
+the wrappers and the actions' `srv = awl`. Then the private module state (3.)
+and C.
 
 A. **Gather (mechanical):**
    - Add `awl_server_t` and its member structs.
@@ -102,7 +129,7 @@ A. **Gather (mechanical):**
    - About 40 externs become one.
 
 B. **Pass (needs judgment, module by module):**
-   - Add the `srv` back pointers and the `srv` parameters, starting at the
+   - Add the `srv` parameters (and the back pointers of 4.), starting at the
      leaves (cursor, output, client), then awl.c, then the actions.
    - Make the private modules opaque (3.).
 

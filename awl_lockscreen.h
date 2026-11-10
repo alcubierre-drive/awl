@@ -25,7 +25,7 @@
 
 /** the eventfd for the logind thread and its event handler, the timers,
  * the blur over the screen while locked; before the plugins start */
-void lockinit(void);
+void lockinit(awl_server_t *srv);
 /** removes the handler and the timers; :c:func:`awl_lock_fini` closes the eventfd */
 void lockfini(void);
 /** ext-session-lock's new locks */
@@ -34,15 +34,15 @@ void locksession(struct wl_listener *listener, void *data);
 void destroylocksurface(struct wl_listener *listener, void *data);
 /** m rendered a frame: with the locker's surface on it, that counts for
  * covering the screen */
-void lockshown(Monitor *m);
+void lockshown(awl_server_t *srv, Monitor *m);
 /** the output layout changed: the blur covers it all */
-void lockresize(void);
+void lockresize(awl_server_t *srv);
 /** a key was pressed while locked */
 void lockkeystroke(void);
 /** pid, a child, exited: if it was the locker, it may never have locked */
-void lockerexited(pid_t pid);
+void lockerexited(awl_server_t *srv, pid_t pid);
 /** after plugins_config.c changed: the blur */
-void lockconfigure(void);
+void lockconfigure(awl_server_t *srv);
 
 /** Asks awl to lock the screen. Any thread. */
 void awl_lock_request(void);

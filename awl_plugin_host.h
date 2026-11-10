@@ -1,5 +1,7 @@
 #pragma once
 
+typedef struct awl_server_t awl_server_t;
+
 /**
  * awl's side of ``libawlplugins.so`` (see awl_plugin_abi.h): loads it, swaps
  * it for a freshly built one on reload, and forwards to it. Main thread only.
@@ -28,11 +30,11 @@ int awl_plugins_load( int paused, awl_dict_t* cfg );
  * stays and its plugins are just restarted. Returns 0 if the new library
  * was swapped in.
  */
-int awl_plugins_reload( void (*detach)( void ), void (*attach)( void ) );
+int awl_plugins_reload( awl_server_t* srv, void (*detach)( awl_server_t* srv ), void (*attach)( awl_server_t* srv ) );
 
 /** Stops the plugins and unloads the library. Every bar's widgets must have
  * been cleared before. */
-void awl_plugins_unload( void );
+void awl_plugins_unload( awl_server_t *srv );
 
 /** :c:member:`awl_plugin_api_t.set_paused`, if a library is loaded */
 void awl_plugins_set_paused( int paused );

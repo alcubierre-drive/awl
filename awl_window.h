@@ -61,39 +61,39 @@ void awl_window_destroy( awl_window_t* win );
 void awl_window_reparent( awl_window_t* win, struct wlr_scene_tree* parent );
 
 /** plugins_config.c was reloaded */
-void awl_window_set_style( awl_window_t* win, const awl_window_style_t* style );
+void awl_window_set_style( awl_server_t* srv, awl_window_t* win, const awl_window_style_t* style );
 
 /** Replaces the text: rows separated by '\n', columns by '\t', plain text
  * (no markup). Columns are as wide as their widest cell. More rows than fit
  * the monitor's window area end in a row "…" instead. */
-void awl_window_set_text( awl_window_t* win, const char* text );
+void awl_window_set_text( awl_server_t* srv, awl_window_t* win, const char* text );
 
 /** Makes win draw itself with painter (copied; with data) instead of its
  * text, NULL for the text again (awl_window_draw.h). Parts stand in for
  * cells: clicks and scrolls get the part under the pointer as their row,
  * column 0 (-1, -1 off them), and with a click callback the painter gets
  * the hovered one. */
-void awl_window_set_painter( awl_window_t* win, const awl_window_painter_t* painter, void* data );
+void awl_window_set_painter( awl_server_t* srv, awl_window_t* win, const awl_window_painter_t* painter, void* data );
 /** what a painter draws changed: measures and paints it again if shown */
-void awl_window_redraw( awl_window_t* win );
+void awl_window_redraw( awl_server_t* srv, awl_window_t* win );
 
 /** Shows the window on m, or moves it there: on the bar's side of m's window
  * area (the top if top, else the bottom), centered on center_x (logical
  * pixels from m's left edge) but kept within m. It draws in m->popupfont,
  * else in the bar's font; with neither it stays hidden. */
-void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top );
+void awl_window_show( awl_server_t* srv, awl_window_t* win, Monitor* m, int center_x, int top );
 /** Shows the window on m, or moves it there, beside anchor (layout
  * coordinates; a row of another window, of the menu a submenu belongs to):
  * right of it (left, if left), else on the other side, where it fits on m,
  * its content's top at anchor's (:c:func:`awl_window_place_beside`). */
-void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left );
+void awl_window_show_beside( awl_server_t* srv, awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left );
 /** Shows the window on m, or moves it there, at a spot of m's window area,
  * an AWL_WINDOW_AT_* (awl.h), the margin away from its edges, moved by
  * dx, dy logical pixels (:c:func:`awl_window_place_at`); the strips
  * (:c:enumerator:`AWL_WINDOW_AT_BAR`, :c:enumerator:`AWL_WINDOW_AT_STRIP_TOP`, :c:enumerator:`AWL_WINDOW_AT_STRIP_BOTTOM`) instead cover m's
  * bar, or the bar's height along its top or bottom edge, flush (dx, dy
  * ignored). */
-void awl_window_show_at( awl_window_t* win, Monitor* m, int at, int dx, int dy );
+void awl_window_show_at( awl_server_t* srv, awl_window_t* win, Monitor* m, int at, int dx, int dy );
 /** hides win; it keeps its contents for the next show */
 void awl_window_hide( awl_window_t* win );
 /** the monitor it is shown on, NULL while hidden */
@@ -108,13 +108,13 @@ struct wlr_box awl_window_room( const awl_window_t* win, Monitor* m );
 /** m was arranged, or its font or scale changed: places and redraws the
  * window if it is shown there (cheap if nothing changed), hides it if m is
  * disabled */
-void awl_window_update( awl_window_t* win, Monitor* m );
+void awl_window_update( awl_server_t* srv, awl_window_t* win, Monitor* m );
 /** m is going away: hides the window if it is shown there */
 void awl_window_removemon( awl_window_t* win, Monitor* m );
 
 /** Gives win the pointer, presses going to click (with data); NULL lets it
  * all through again. */
-void awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* data );
+void awl_window_set_click( awl_server_t* srv, awl_window_t* win, awl_window_click_t click, void* data );
 /** While shown, win takes the keyboard: every key pressed goes to key
  * (with data) before awl's bindings, none to the clients (awl_popup.h
  * holds the grab); NULL: no more. */
@@ -125,7 +125,7 @@ int awl_window_takes_keys( const awl_window_t* win );
 int awl_window_key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods );
 /** Gives win the pointer, scrolling going to scroll (with data); NULL lets
  * it through again unless there is a click callback. */
-void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data );
+void awl_window_set_scroll( awl_server_t* srv, awl_window_t* win, awl_window_scroll_t scroll, void* data );
 /** Calls hidden (with data) whenever win is hidden from now on, NULL: no
  * more. */
 void awl_window_set_hidden( awl_window_t* win, awl_window_hidden_t hidden, void* data );
@@ -142,9 +142,9 @@ int awl_window_contains( const awl_window_t* win, double lx, double ly );
 int awl_window_takes_pointer( const awl_window_t* win, double lx, double ly );
 /** The pointer is at lx, ly over win: highlights the row there. Returns
  * it, -1 off the text. */
-int awl_window_pointer_motion( awl_window_t* win, double lx, double ly );
+int awl_window_pointer_motion( awl_server_t* srv, awl_window_t* win, double lx, double ly );
 /** the pointer left win: no row highlighted */
-void awl_window_pointer_leave( awl_window_t* win );
+void awl_window_pointer_leave( awl_server_t* srv, awl_window_t* win );
 /** A press at lx, ly: calls the click callback; the cell into ``*row``, ``*col``. */
 void awl_window_pointer_button( awl_window_t* win, double lx, double ly, uint32_t button, int* row, int* col );
 /** A scroll at lx, ly: calls the scroll callback, if any; the cell into

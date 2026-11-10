@@ -12,7 +12,7 @@
 /** starts cmd with /bin/sh, if not NULL */
 void spawnstartup(const char *cmd);
 /** starts cfg->autostart, once at awl's start */
-void autostartall(void);
+void autostartall(awl_server_t *srv);
 /** starts arg->v, an argv (:c:macro:`TRAY_ICONS` first: the rest in the tray's icon
  * theme); its pid, -1 if it couldn't */
 pid_t spawn_pid(const Arg *arg);

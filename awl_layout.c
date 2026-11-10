@@ -7,17 +7,17 @@
 
 static size_t pertagslot(const Monitor *m);
 static struct PertagLayout *monlt(Monitor *m);
-static const Layout *layoutmoved(const Layout *l, const Layout *old, size_t n_old);
+static const Layout *layoutmoved(awl_server_t *srv, const Layout *l, const Layout *old, size_t n_old);
 
 void
-arrange(Monitor *m)
+arrange(awl_server_t *srv, Monitor *m)
 {
     Client *c;
 
     if (!m->wlr_output->enabled)
         return;
 
-    wl_list_for_each(c, &awl->clients.list, link) {
+    wl_list_for_each(c, &srv->clients.list, link) {
         if (c->mon == m) {
             wlr_scene_node_set_enabled(&c->scene->node, VISIBLEON_ACTIVE(c, m));
             client_set_suspended(c, !VISIBLEON_ACTIVE(c, m));
@@ -25,40 +25,41 @@ arrange(Monitor *m)
     }
 
     wlr_scene_node_set_enabled(&m->fullscreen_bg->node,
-            (c = focustop(m)) && c->isfullscreen);
+            (c = focustop(srv, m)) && c->isfullscreen);
 
     strncpy(m->ltsymbol, sellayout(m)->symbol, LENGTH(m->ltsymbol)-1);
 
     /* We move all clients (except fullscreen and unmanaged) to LyrTile while
      * in floating layout to avoid "real" floating clients be always on top */
-    wl_list_for_each(c, &awl->clients.list, link) {
-        if (c->mon != m || c->scene->node.parent == awl->layers[LyrFS])
+    wl_list_for_each(c, &srv->clients.list, link) {
+        if (c->mon != m || c->scene->node.parent == srv->layers[LyrFS])
             continue;
 
         wlr_scene_node_reparent(&c->scene->node,
-                c->isontop ? awl->layers[LyrTop] :
+                c->isontop ? srv->layers[LyrTop] :
                 (!sellayout(m)->arrange && c->isfloating)
-                        ? awl->layers[LyrTile]
+                        ? srv->layers[LyrTile]
                         : (sellayout(m)->arrange && c->isfloating)
-                                ? awl->layers[LyrFloat]
+                                ? srv->layers[LyrFloat]
                                 : c->scene->node.parent);
     }
 
     if (sellayout(m)->arrange)
         sellayout(m)->arrange(m);
-    motionnotify(0, NULL, 0, 0, 0, 0);
-    checkidleinhibitor(NULL);
+    motionnotify(srv, 0, NULL, 0, 0, 0, 0);
+    checkidleinhibitor(srv, NULL);
     /* layout symbol, taskbar order and window states may have changed */
-    barsdirty();
+    barsdirty(srv);
 }
 
 void
 gaplessgrid(Monitor *m)
 {
+    awl_server_t *srv = m->srv;
     unsigned int n = 0, i = 0, ch, cw, cn, rn, rows, cols;
     Client *c;
 
-    wl_list_for_each(c, &awl->clients.list, link)
+    wl_list_for_each(c, &srv->clients.list, link)
         if (VISIBLEON_ACTIVE(c, m) && !c->isfloating && !c->ismaximized && !c->isfullscreen)
             n++;
     if (n == 0)
@@ -85,7 +86,7 @@ gaplessgrid(Monitor *m)
     cw = cols ? (unsigned int)(m->w.width / cols) : (unsigned int)(m->w.width);
     cn = 0; /* current column number */
     rn = 0; /* current row number */
-    wl_list_for_each(c, &awl->clients.list, link) {
+    wl_list_for_each(c, &srv->clients.list, link) {
         unsigned int cx, cy;
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->ismaximized || c->isfullscreen)
             continue;
@@ -95,7 +96,7 @@ gaplessgrid(Monitor *m)
         ch = rows ? (unsigned int)(m->w.height / rows) : (unsigned int)(m->w.height);
         cx = m->w.x + cn * cw;
         cy = m->w.y + rn * ch;
-        resize(c, (struct wlr_box) { cx, cy, cw, ch}, 0);
+        resize(srv, c, (struct wlr_box) { cx, cy, cw, ch}, 0);
         rn++;
         if (rn >= rows) {
             rn = 0;
@@ -108,12 +109,13 @@ gaplessgrid(Monitor *m)
 void
 bstack(Monitor *m)
 {
+    awl_server_t *srv = m->srv;
     int w, h, mh, mx, tx, ty, tw;
     int i, n = 0;
     Client *c;
     const struct PertagLayout *l = monlt(m);
 
-    wl_list_for_each(c, &awl->clients.list, link)
+    wl_list_for_each(c, &srv->clients.list, link)
         if (VISIBLEON_ACTIVE(c, m) && !c->isfloating && !c->ismaximized && !c->isfullscreen)
             n++;
     if (n == 0)
@@ -131,16 +133,16 @@ bstack(Monitor *m)
 
     i = mx = 0;
     tx = m-> w.x;
-    wl_list_for_each(c, &awl->clients.list, link) {
+    wl_list_for_each(c, &srv->clients.list, link) {
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->ismaximized || c->isfullscreen)
             continue;
         if (i < l->nmaster) {
             w = (m->w.width - mx) / (MIN(n, l->nmaster) - i);
-            resize(c, (struct wlr_box) { .x = m->w.x + mx, .y = m->w.y, .width = w, .height = mh }, 0);
+            resize(srv, c, (struct wlr_box) { .x = m->w.x + mx, .y = m->w.y, .width = w, .height = mh }, 0);
             mx += c->geom.width;
         } else {
             h = m->w.height - mh;
-            resize(c, (struct wlr_box) { .x = tx, .y = ty, .width = tw, .height = h }, 0);
+            resize(srv, c, (struct wlr_box) { .x = tx, .y = ty, .width = tw, .height = h }, 0);
             if (tw != m->w.width)
                 tx += c->geom.width;
         }
@@ -151,35 +153,37 @@ bstack(Monitor *m)
 void
 incnmaster(const Arg *arg)
 {
-    if (!arg || !awl->out.selmon)
+    awl_server_t *srv = awl;
+    if (!arg || !srv->out.selmon)
         return;
-    monlt(awl->out.selmon)->nmaster = MAX(monlt(awl->out.selmon)->nmaster + arg->i, 0);
-    arrange(awl->out.selmon);
+    monlt(srv->out.selmon)->nmaster = MAX(monlt(srv->out.selmon)->nmaster + arg->i, 0);
+    arrange(srv, srv->out.selmon);
 }
 
 void
 monocle(Monitor *m)
 {
+    awl_server_t *srv = m->srv;
     Client *c;
     int n = 0;
 
-    wl_list_for_each(c, &awl->clients.list, link) {
+    wl_list_for_each(c, &srv->clients.list, link) {
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->isfullscreen || c->ismaximized)
             continue;
-        resize(c, m->w, 0);
+        resize(srv, c, m->w, 0);
         n++;
     }
     if (n)
         snprintf(m->ltsymbol, LENGTH(m->ltsymbol), "[%d]", n);
-    if ((c = focustop(m)))
+    if ((c = focustop(srv, m)))
         wlr_scene_node_raise_to_top(&c->scene->node);
 }
 
 int
-layoutindex(const Layout *l)
+layoutindex(awl_server_t *srv, const Layout *l)
 {
-    uintptr_t p = (uintptr_t)l, first = (uintptr_t)awl->cfg->layouts.v;
-    if (p < first || p >= first + awl->cfg->layouts.n * sizeof(Layout))
+    uintptr_t p = (uintptr_t)l, first = (uintptr_t)srv->cfg->layouts.v;
+    if (p < first || p >= first + srv->cfg->layouts.n * sizeof(Layout))
         return -1;
     return (int)((p - first) / sizeof(Layout));
 }
@@ -215,27 +219,29 @@ sellayout(Monitor *m)
 void
 togglepertag(const Arg *arg)
 {
+    awl_server_t *srv = awl;
     size_t slot;
     (void)arg;
-    if (!awl->out.selmon)
+    if (!srv->out.selmon)
         return;
-    slot = pertagslot(awl->out.selmon);
-    awl->out.selmon->pertag = !awl->out.selmon->pertag;
-    if (awl->out.selmon->pertag)
-        awl->out.selmon->ptlt[slot] = awl->out.selmon->ptlt[0];
+    slot = pertagslot(srv->out.selmon);
+    srv->out.selmon->pertag = !srv->out.selmon->pertag;
+    if (srv->out.selmon->pertag)
+        srv->out.selmon->ptlt[slot] = srv->out.selmon->ptlt[0];
     else
-        awl->out.selmon->ptlt[0] = awl->out.selmon->ptlt[slot];
-    barsdirty();
+        srv->out.selmon->ptlt[0] = srv->out.selmon->ptlt[slot];
+    barsdirty(srv);
 }
 
 /** the next (arg->i > 0) or previous (< 0) of cfg->layouts on selmon */
 void
 cycle_layout(const Arg* arg)
 {
-    int i, n = (int)awl->cfg->layouts.n;
-    if (!awl->out.selmon || !arg || !arg->i)
+    awl_server_t *srv = awl;
+    int i, n = (int)srv->cfg->layouts.n;
+    if (!srv->out.selmon || !arg || !arg->i)
         return;
-    i = layoutindex(sellayout(awl->out.selmon)) + (arg->i > 0 ? 1 : -1);
+    i = layoutindex(srv, sellayout(srv->out.selmon)) + (arg->i > 0 ? 1 : -1);
     setlayout(&(Arg){.i = (i % n + n) % n});
 }
 
@@ -244,55 +250,56 @@ cycle_layout(const Arg* arg)
 void
 setlayout(const Arg *arg)
 {
+    awl_server_t *srv = awl;
     const Layout *l = NULL;
     struct PertagLayout *ml;
-    if (!awl->out.selmon || !arg || arg->i >= (int)awl->cfg->layouts.n)
+    if (!srv->out.selmon || !arg || arg->i >= (int)srv->cfg->layouts.n)
         return;
     if (arg->i >= 0)
-        l = &awl->cfg->layouts.v[arg->i];
-    ml = monlt(awl->out.selmon);
+        l = &srv->cfg->layouts.v[arg->i];
+    ml = monlt(srv->out.selmon);
     if (!l || l != ml->lt[ml->sellt])
         ml->sellt ^= 1;
     if (l)
         ml->lt[ml->sellt] = l;
-    arrange(awl->out.selmon);
-    barsdirty();
+    arrange(srv, srv->out.selmon);
+    barsdirty(srv);
 }
 
 /** l, pointing into the old layouts table, moved to the same index in the
  * new one, or its first */
 static const Layout *
-layoutmoved(const Layout *l, const Layout *old, size_t n_old)
+layoutmoved(awl_server_t *srv, const Layout *l, const Layout *old, size_t n_old)
 {
     size_t idx = l >= old && l < old + n_old ? (size_t)(l - old) : 0;
-    return &awl->cfg->layouts.v[MIN(idx, awl->cfg->layouts.n - 1)];
+    return &srv->cfg->layouts.v[MIN(idx, srv->cfg->layouts.n - 1)];
 }
 
 void
-tagsconfigure(void)
+tagsconfigure(awl_server_t *srv)
 {
     Monitor *m;
     Client *c;
     size_t i;
-    wl_list_for_each(m, &awl->out.mons, link)
+    wl_list_for_each(m, &srv->out.mons, link)
         for (i = 0; i < LENGTH(m->tagset); i++)
-            if (!(m->tagset[i] &= TAGMASK))
+            if (!(m->tagset[i] &= TAGMASK(srv->cfg)))
                 m->tagset[i] = 1;
-    wl_list_for_each(c, &awl->clients.list, link)
-        if (!(c->tags &= TAGMASK))
+    wl_list_for_each(c, &srv->clients.list, link)
+        if (!(c->tags &= TAGMASK(srv->cfg)))
             c->tags = 1;
 }
 
 void
-layoutsmoved(const Layout *old, size_t n_old)
+layoutsmoved(awl_server_t *srv, const Layout *old, size_t n_old)
 {
     Monitor *m;
     size_t i, j;
-    wl_list_for_each(m, &awl->out.mons, link) {
+    wl_list_for_each(m, &srv->out.mons, link) {
         for (j = 0; j < LENGTH(m->ptlt); j++)
             for (i = 0; i < LENGTH(m->ptlt[j].lt); i++)
-                m->ptlt[j].lt[i] = layoutmoved(m->ptlt[j].lt[i], old, n_old);
-        arrange(m);
+                m->ptlt[j].lt[i] = layoutmoved(srv, m->ptlt[j].lt[i], old, n_old);
+        arrange(srv, m);
     }
 }
 
@@ -300,47 +307,51 @@ layoutsmoved(const Layout *old, size_t n_old)
 void
 setmfact(const Arg *arg)
 {
+    awl_server_t *srv = awl;
     float f;
 
-    if (!arg || !awl->out.selmon || !sellayout(awl->out.selmon)->arrange)
+    if (!arg || !srv->out.selmon || !sellayout(srv->out.selmon)->arrange)
         return;
-    f = arg->f < 1.0f ? arg->f + monlt(awl->out.selmon)->mfact : arg->f - 1.0f;
+    f = arg->f < 1.0f ? arg->f + monlt(srv->out.selmon)->mfact : arg->f - 1.0f;
     if (f < 0.1 || f > 0.9)
         return;
-    monlt(awl->out.selmon)->mfact = f;
-    arrange(awl->out.selmon);
+    monlt(srv->out.selmon)->mfact = f;
+    arrange(srv, srv->out.selmon);
 }
 
 void
 tag(const Arg *arg)
 {
-    Client *sel = focustop(awl->out.selmon);
-    if (!sel || (arg->ui & TAGMASK) == 0)
+    awl_server_t *srv = awl;
+    Client *sel = focustop(srv, srv->out.selmon);
+    if (!sel || (arg->ui & TAGMASK(srv->cfg)) == 0)
         return;
 
-    sel->tags = arg->ui & TAGMASK;
-    focusclient(focustop(awl->out.selmon), 1);
-    arrange(awl->out.selmon);
-    barsdirty();
+    sel->tags = arg->ui & TAGMASK(srv->cfg);
+    focusclient(srv, focustop(srv, srv->out.selmon), 1);
+    arrange(srv, srv->out.selmon);
+    barsdirty(srv);
 }
 
 void
 tagmon(const Arg *arg)
 {
-    Client *sel = focustop(awl->out.selmon);
+    awl_server_t *srv = awl;
+    Client *sel = focustop(srv, srv->out.selmon);
     if (sel)
-        setmon(sel, nextmon(arg->i), 0);
+        setmon(srv, sel, nextmon(srv, arg->i), 0);
 }
 
 void
 tile(Monitor *m)
 {
+    awl_server_t *srv = m->srv;
     unsigned int mw, my, ty;
     int i, n = 0;
     Client *c;
     const struct PertagLayout *l = monlt(m);
 
-    wl_list_for_each(c, &awl->clients.list, link)
+    wl_list_for_each(c, &srv->clients.list, link)
         if (VISIBLEON_ACTIVE(c, m) && !c->isfloating && !c->isfullscreen && !c->ismaximized)
             n++;
     if (n == 0)
@@ -351,15 +362,15 @@ tile(Monitor *m)
     else
         mw = m->w.width;
     i = my = ty = 0;
-    wl_list_for_each(c, &awl->clients.list, link) {
+    wl_list_for_each(c, &srv->clients.list, link) {
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->isfullscreen || c->ismaximized)
             continue;
         if (i < l->nmaster) {
-            resize(c, (struct wlr_box){.x = m->w.x, .y = m->w.y + my, .width = mw,
+            resize(srv, c, (struct wlr_box){.x = m->w.x, .y = m->w.y + my, .width = mw,
                 .height = (m->w.height - my) / (MIN(n, l->nmaster) - i)}, 0);
             my += c->geom.height;
         } else {
-            resize(c, (struct wlr_box){.x = m->w.x + mw, .y = m->w.y + ty,
+            resize(srv, c, (struct wlr_box){.x = m->w.x + mw, .y = m->w.y + ty,
                 .width = m->w.width - mw, .height = (m->w.height - ty) / (n - i)}, 0);
             ty += c->geom.height;
         }
@@ -370,61 +381,65 @@ tile(Monitor *m)
 void
 toggletag(const Arg *arg)
 {
+    awl_server_t *srv = awl;
     uint32_t newtags;
-    Client *sel = focustop(awl->out.selmon);
-    if (!sel || !(newtags = sel->tags ^ (arg->ui & TAGMASK)))
+    Client *sel = focustop(srv, srv->out.selmon);
+    if (!sel || !(newtags = sel->tags ^ (arg->ui & TAGMASK(srv->cfg))))
         return;
 
     sel->tags = newtags;
-    focusclient(focustop(awl->out.selmon), 1);
-    arrange(awl->out.selmon);
-    barsdirty();
+    focusclient(srv, focustop(srv, srv->out.selmon), 1);
+    arrange(srv, srv->out.selmon);
+    barsdirty(srv);
 }
 
 void
 toggleview(const Arg *arg)
 {
+    awl_server_t *srv = awl;
     uint32_t newtagset;
-    if (!(newtagset = awl->out.selmon ? awl->out.selmon->tagset[awl->out.selmon->seltags] ^ (arg->ui & TAGMASK) : 0))
+    if (!(newtagset = srv->out.selmon ? srv->out.selmon->tagset[srv->out.selmon->seltags] ^ (arg->ui & TAGMASK(srv->cfg)) : 0))
         return;
 
-    awl->out.selmon->tagset[awl->out.selmon->seltags] = newtagset;
-    focusclient(focustop(awl->out.selmon), 1);
-    arrange(awl->out.selmon);
-    barsdirty();
+    srv->out.selmon->tagset[srv->out.selmon->seltags] = newtagset;
+    focusclient(srv, focustop(srv, srv->out.selmon), 1);
+    arrange(srv, srv->out.selmon);
+    barsdirty(srv);
 }
 
 void
 view(const Arg *arg)
 {
-    if (!awl->out.selmon || (arg->ui & TAGMASK) == awl->out.selmon->tagset[awl->out.selmon->seltags])
+    awl_server_t *srv = awl;
+    if (!srv->out.selmon || (arg->ui & TAGMASK(srv->cfg)) == srv->out.selmon->tagset[srv->out.selmon->seltags])
         return;
-    awl->out.selmon->seltags ^= 1; /* toggle sel tagset */
-    if (arg->ui & TAGMASK)
-        awl->out.selmon->tagset[awl->out.selmon->seltags] = arg->ui & TAGMASK;
-    focusclient(focustop(awl->out.selmon), 1);
-    arrange(awl->out.selmon);
-    barsdirty();
+    srv->out.selmon->seltags ^= 1; /* toggle sel tagset */
+    if (arg->ui & TAGMASK(srv->cfg))
+        srv->out.selmon->tagset[srv->out.selmon->seltags] = arg->ui & TAGMASK(srv->cfg);
+    focusclient(srv, focustop(srv, srv->out.selmon), 1);
+    arrange(srv, srv->out.selmon);
+    barsdirty(srv);
 }
 
 void
 cycle_view(const Arg* arg)
 {
+    awl_server_t *srv = awl;
     if (arg->i == 0) return;
     int tmax = -1;
     int tmin = 32;
-    int nt = TAGCOUNT;
+    int nt = TAGCOUNT(srv->cfg);
     for (int t=0; t<nt; ++t)
-        if (awl->out.selmon->tagset[awl->out.selmon->seltags] & (1 << t)) {
+        if (srv->out.selmon->tagset[srv->out.selmon->seltags] & (1 << t)) {
             tmax = MAX(tmax, t);
             tmin = MIN(tmin, t);
         }
 
-    awl->out.selmon->seltags ^= 1; /* toggle sel tagset */
+    srv->out.selmon->seltags ^= 1; /* toggle sel tagset */
     int next = arg->i > 0 ? (tmax + 1)%nt : (tmin - 1 + nt)%nt;
-    awl->out.selmon->tagset[awl->out.selmon->seltags] = (1 << next) & TAGMASK;
+    srv->out.selmon->tagset[srv->out.selmon->seltags] = (1 << next) & TAGMASK(srv->cfg);
 
-    focusclient(focustop(awl->out.selmon), 1);
-    arrange(awl->out.selmon);
-    barsdirty();
+    focusclient(srv, focustop(srv, srv->out.selmon), 1);
+    arrange(srv, srv->out.selmon);
+    barsdirty(srv);
 }

@@ -13,10 +13,10 @@
 #include "awl_server.h"
 
 /** the hover's timers, before the first monitor */
-void barinit(void);
+void barinit(awl_server_t *srv);
 void barfini(void);
 /** sets up m's bar with the library's widgets; it is drawn with the others */
-void baraddmon(Monitor *m);
+void baraddmon(awl_server_t *srv, Monitor *m);
 /** m is going: forgets the hover's widgets in its bar, releases its fonts
  * and tears its bar down (closemon() then leaves the bar alone);
  * cleanupmon() destroys the scene nodes and buffers */
@@ -24,41 +24,41 @@ void barremovemon(Monitor *m);
 /** before the plugin library goes (:c:func:`awl_plugins_reload`): ends the hover
  * (callback_leave, callback_view) while its widgets are still there, and
  * clears every bar's widgets */
-void barwidgetsclear(void);
+void barwidgetsclear(awl_server_t *srv);
 /** after it: every bar gets the library's widgets again */
-void barwidgetsattach(void);
+void barwidgetsattach(awl_server_t *srv);
 /** after plugins_config.c changed: the bars' fonts (and with them their
  * height), the popups' and the desktop file list's, the window list's blur */
-void barconfigure(void);
+void barconfigure(awl_server_t *srv);
 
 /** m's bar width, and its font and height if m's scale changed (or it has
  * none yet) */
-void updatebar(Monitor *m);
+void updatebar(awl_server_t *srv, Monitor *m);
 /** redraws every bar now; :c:func:`barsdirty` is what to call on a change */
-void drawbars(void);
+void drawbars(awl_server_t *srv);
 /** Something the bars show changed: they are redrawn once the event loop
  * has handled what it has now, however many changes came in. */
-void barsdirty(void);
+void barsdirty(awl_server_t *srv);
 /** shows or hides m's bar */
-void togglebar_mon(Monitor *m);
+void togglebar_mon(awl_server_t *srv, Monitor *m);
 /** a new, cleared Buffer of width x height pixels for the scene: the bars'
  * and the alerts' */
 Buffer *buffercreate(int width, int height);
 
 /** whether the pointer is on selmon's bar */
-int pointeronbar(void);
+int pointeronbar(awl_server_t *srv);
 /** c is the client under the pointer, which may cover the bar. Exclusive
  * focus (e.g. a launcher) deliberately doesn't reset the hover
  * state. */
-void updatehover(Client *c);
+void updatehover(awl_server_t *srv, Client *c);
 /** The wheel turned by delta with the pointer on selmon's bar: the widget
  * there gets it (its callback_scroll, in steps); returns whether one was
  * there. */
-int baraxis(double delta);
+int baraxis(awl_server_t *srv, double delta);
 /** A press with the pointer on selmon's bar: closes what the hover of the
  * widget there opened, or keeps it from opening. Returns 1 if the widget's
  * callback_click took the press; else ``*click`` becomes ClkBar. */
-int barbutton(uint32_t button, unsigned int *click);
+int barbutton(awl_server_t *srv, uint32_t button, unsigned int *click);
 
 /* m's awl_bar_t (awl_bar_type.h) */
 /** makes bar m's (m->bar, unused), without font or widgets */

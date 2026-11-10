@@ -29,8 +29,8 @@ typedef enum {
 /** Raises the alert id with the text fmt (short: the bar shows it), or
  * changes its text. If either is new, logs it and requests a redraw; only
  * raising it notifies. */
-void awl_alert_set( awl_alert_id_t id, const char* fmt, ... )
-    __attribute__(( format( printf, 2, 3 ) ));
+void awl_alert_set( awl_server_t* srv, awl_alert_id_t id, const char* fmt, ... )
+    __attribute__(( format( printf, 3, 4 ) ));
 /** Takes the alert id down, if up; logs that. */
 void awl_alert_clear( awl_alert_id_t id );
 /** Whether the alert id is up. */
@@ -39,17 +39,17 @@ int awl_alert_up( awl_alert_id_t id );
 const char* awl_alert_text( void );
 
 /** the alerts' tree, over everything, the lock screen included */
-void awl_alert_init( void );
+void awl_alert_init( awl_server_t *srv );
 /** m's alert, hidden until :c:func:`awl_alert_draw` */
-void awl_alert_addmon( Monitor* m );
+void awl_alert_addmon( awl_server_t* srv, Monitor* m );
 /** The alert on m, as cfg->alert says, in the bar's font: in the bottom
  * left corner of m's window area (m->w: clear of the bar and of exclusive
  * layer surfaces), cfg->alert.margin logical pixels from its edges, above
  * everything, the lock screen included. Redrawn only when the alert, m's
  * window area or its scale changed;
  * called on every redraw request and whenever m is arranged. */
-void awl_alert_draw( Monitor* m );
+void awl_alert_draw( awl_server_t* srv, Monitor* m );
 /** after the config changed: the alerts' look */
-void awl_alert_configure( void );
+void awl_alert_configure( awl_server_t *srv );
 /** :c:func:`awl_alert_draw` on every monitor */
-void awl_alert_draw_all( void );
+void awl_alert_draw_all( awl_server_t *srv );

@@ -4,11 +4,11 @@
 #include "awl_plugin_host.h"
 #include <limits.h>
 
-static int wallpapermodedict(void);
-static void wallpapermodeset(WallpaperMode mode);
-static void wallpapermodesync(void);
+static int wallpapermodedict(awl_server_t *srv);
+static void wallpapermodeset(awl_server_t *srv, WallpaperMode mode);
+static void wallpapermodesync(awl_server_t *srv);
 static void wallpapernext(WallpaperMode mode, int by_timer);
-static void wallpaperarm(void);
+static void wallpaperarm(awl_server_t *srv);
 static int wallpapertimeout(void *data);
 
 /** What cfg->wallpaper had, copied, to tell whether a
@@ -33,38 +33,38 @@ static const char *const wallpaper_mode_names[WallpaperModeCount] = {
 /** cfgdict's "wallpaper_mode" as a mode, -1 if it's missing or no mode's
  * name */
 static int
-wallpapermodedict(void)
+wallpapermodedict(awl_server_t *srv)
 {
     int mode = -1, i;
     awl_dict_val_t v;
 
-    awl_dict_lock(awl->cfgdict);
-    if (awl_dict_get(awl->cfgdict, "wallpaper_mode", &v) == AWL_DICT_OK
+    awl_dict_lock(srv->cfgdict);
+    if (awl_dict_get(srv->cfgdict, "wallpaper_mode", &v) == AWL_DICT_OK
             && v.kind == AWL_DICT_KIND_STR)
         for (i = 0; i < WallpaperModeCount; i++)
             if (!strcmp(v.str, wallpaper_mode_names[i]))
                 mode = i;
-    awl_dict_unlock(awl->cfgdict);
+    awl_dict_unlock(srv->cfgdict);
     return mode;
 }
 
 /** sets the timer's mode, and cfgdict's "wallpaper_mode" to match */
 static void
-wallpapermodeset(WallpaperMode mode)
+wallpapermodeset(awl_server_t *srv, WallpaperMode mode)
 {
     if (mode >= WallpaperModeCount)
         return;
     wallpaper_mode = mode;
-    awl_dict_set(awl->cfgdict, "wallpaper_mode", &AWL_DICT_STR(wallpaper_mode_names[mode]));
+    awl_dict_set(srv->cfgdict, "wallpaper_mode", &AWL_DICT_STR(wallpaper_mode_names[mode]));
     applied.mode_dict = mode;
 }
 
 /** takes a cfgdict "wallpaper_mode" set since: a plugin's, or the saved one
  * plugins/wallpaper.c loads at the start */
 static void
-wallpapermodesync(void)
+wallpapermodesync(awl_server_t *srv)
 {
-    int mode = wallpapermodedict();
+    int mode = wallpapermodedict(srv);
     if (mode >= 0 && mode != applied.mode_dict)
         wallpaper_mode = mode;
     applied.mode_dict = mode;
@@ -85,8 +85,9 @@ wallpapernext(WallpaperMode mode, int by_timer)
 void
 wallpaper(const Arg *arg)
 {
+    awl_server_t *srv = awl;
     WallpaperMode mode = arg->i;
-    wallpapermodesync();
+    wallpapermodesync(srv);
     if (mode == WallpaperTimerNext)
         mode = wallpaper_mode;
     else if (mode == WallpaperTimerBack)
@@ -96,12 +97,12 @@ wallpaper(const Arg *arg)
 }
 
 void
-wallpapertake(void)
+wallpapertake(awl_server_t *srv)
 {
     const awl_plugin_api_t *api = awl_plugins_api();
     awl_image_t *img = api ? api->wallpaper_take() : NULL;
     if (img)
-        background_set(img, awl->cfg->wallpaper.fade_ms);
+        background_set(img, srv->cfg->wallpaper.fade_ms);
 }
 
 /** cycles the timer's mode by arg->i (+1: random, next, previous, random...);
@@ -109,23 +110,24 @@ wallpapertake(void)
 void
 wallpapermode(const Arg *arg)
 {
+    awl_server_t *srv = awl;
     static const WallpaperMode order[] = { WallpaperRand, WallpaperNext, WallpaperPrev };
     const awl_plugin_api_t *api = awl_plugins_api();
     const int n = LENGTH(order);
     int i;
 
-    wallpapermodesync();
+    wallpapermodesync(srv);
     for (i = 0; i < n && order[i] != wallpaper_mode; i++);
-    wallpapermodeset(order[((i + arg->i) % n + n) % n]);
+    wallpapermodeset(srv, order[((i + arg->i) % n + n) % n]);
     if (api)
         api->wallpaper_mode(wallpaper_mode);
 }
 
 /** (re)starts the countdown to the next timed wallpaper change */
 static void
-wallpaperarm(void)
+wallpaperarm(awl_server_t *srv)
 {
-    unsigned int s = MIN(awl->cfg->wallpaper.interval, (unsigned int)INT_MAX / 1000);
+    unsigned int s = MIN(srv->cfg->wallpaper.interval, (unsigned int)INT_MAX / 1000);
     if (wallpaper_timer)
         wl_event_source_timer_update(wallpaper_timer, (int)(s * 1000));
 }
@@ -133,16 +135,17 @@ wallpaperarm(void)
 static int
 wallpapertimeout(void *data)
 {
-    wallpapermodesync();
+    awl_server_t *srv = data;
+    wallpapermodesync(srv);
     wallpapernext(wallpaper_mode, 1);
-    wallpaperarm();
+    wallpaperarm(srv);
     return 0;
 }
 
 void
-wallpaperinit(void)
+wallpaperinit(awl_server_t *srv)
 {
-    wallpaper_timer = wl_event_loop_add_timer(awl->event_loop, wallpapertimeout, NULL);
+    wallpaper_timer = wl_event_loop_add_timer(srv->event_loop, wallpapertimeout, srv);
 }
 
 void
@@ -155,31 +158,31 @@ wallpaperfini(void)
 }
 
 void
-wallpapermodeinit(void)
+wallpapermodeinit(awl_server_t *srv)
 {
-    wallpapermodeset(awl->cfg->wallpaper.mode);
-    applied.mode = awl->cfg->wallpaper.mode;
+    wallpapermodeset(srv, srv->cfg->wallpaper.mode);
+    applied.mode = srv->cfg->wallpaper.mode;
 }
 
 void
-wallpaperconfigure(void)
+wallpaperconfigure(awl_server_t *srv)
 {
     int mode;
 
     /* a new interval starts counting now; an unchanged one keeps counting */
-    if (awl->cfg->wallpaper.interval != applied.interval) {
-        applied.interval = awl->cfg->wallpaper.interval;
-        wallpaperarm();
+    if (srv->cfg->wallpaper.interval != applied.interval) {
+        applied.interval = srv->cfg->wallpaper.interval;
+        wallpaperarm(srv);
     }
     /* a new plugins_config.c mode replaces wallpapermode()'s, and goes to cfgdict;
      * an unchanged one doesn't. So does a new cfgdict "wallpaper_mode" (the
      * library's init() sets it before this runs), which wins when both
      * change. */
-    mode = wallpapermodedict();
-    if (awl->cfg->wallpaper.mode != applied.mode) {
-        applied.mode = awl->cfg->wallpaper.mode;
+    mode = wallpapermodedict(srv);
+    if (srv->cfg->wallpaper.mode != applied.mode) {
+        applied.mode = srv->cfg->wallpaper.mode;
         if (mode < 0 || mode == applied.mode_dict)
-            wallpapermodeset(awl->cfg->wallpaper.mode);
+            wallpapermodeset(srv, srv->cfg->wallpaper.mode);
     }
-    wallpapermodesync();
+    wallpapermodesync(srv);
 }

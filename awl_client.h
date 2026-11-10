@@ -26,7 +26,7 @@ void urgent(struct wl_listener *listener, void *data);
  * request gets the focus, switching to its tags (unless
  * cfg->notifications.activate_urgent); others only mark the window urgent. Valid for xdg-activation's timeout or until used; NULL
  * if it couldn't be made. */
-const char *activationtoken(void);
+const char *activationtoken(awl_server_t *srv);
 /* a client's events, XWayland's too */
 void mapnotify(struct wl_listener *listener, void *data);
 void unmapnotify(struct wl_listener *listener, void *data);
@@ -35,22 +35,22 @@ void fullscreennotify(struct wl_listener *listener, void *data);
 void updatetitle(struct wl_listener *listener, void *data);
 
 /** focuses c (NULL: none) and, if lift, raises it */
-void focusclient(Client *c, int lift);
+void focusclient(awl_server_t *srv, Client *c, int lift);
 /** shows c, or minimizes it (Client.isvisible), and arranges its monitor */
-void clientsetvisible(Client *c, int visible);
+void clientsetvisible(awl_server_t *srv, Client *c, int visible);
 /** the topmost visible client of m in focus order, NULL if none */
-Client *focustop(Monitor *m);
+Client *focustop(awl_server_t *srv, Monitor *m);
 /** c to geo (layout coordinates, with its border), within the layout's box
  * if interact (the user moves it), else within its monitor's window area */
-void resize(Client *c, struct wlr_box geo, int interact);
-void setfloating(Client *c, int floating);
-void setfullscreen(Client *c, int fullscreen);
+void resize(awl_server_t *srv, Client *c, struct wlr_box geo, int interact);
+void setfloating(awl_server_t *srv, Client *c, int floating);
+void setfullscreen(awl_server_t *srv, Client *c, int fullscreen);
 /** c to m (NULL: none), on newtags (0: m's shown ones) */
-void setmon(Client *c, Monitor *m, uint32_t newtags);
+void setmon(awl_server_t *srv, Client *c, Monitor *m, uint32_t newtags);
 /** wlr_scene_node_for_each_buffer()'s: data's (a Client's) translucency */
 void scenebuffersetopacity(struct wlr_scene_buffer *buffer, int sx, int sy, void *data);
 /** after plugins_config.c changed: border widths and colors, the blur */
-void clientsconfigure(void);
+void clientsconfigure(awl_server_t *srv);
 
 /*
  * Below, the helpers that tell xdg-shell and XWayland clients apart:
@@ -344,13 +344,13 @@ client_is_unmanaged(Client *c)
 }
 
 static inline void
-client_notify_enter(struct wlr_surface *s, struct wlr_keyboard *kb)
+client_notify_enter(awl_server_t *srv, struct wlr_surface *s, struct wlr_keyboard *kb)
 {
     if (kb)
-        wlr_seat_keyboard_notify_enter(awl->seat, s, kb->keycodes,
+        wlr_seat_keyboard_notify_enter(srv->seat, s, kb->keycodes,
                 kb->num_keycodes, &kb->modifiers);
     else
-        wlr_seat_keyboard_notify_enter(awl->seat, s, NULL, 0, NULL);
+        wlr_seat_keyboard_notify_enter(srv->seat, s, NULL, 0, NULL);
 }
 
 static inline void

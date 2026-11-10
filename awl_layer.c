@@ -39,7 +39,7 @@ arrangelayer(Monitor *m, struct wl_list *list, struct wlr_box *usable_area, int 
 }
 
 void
-arrangelayers(Monitor *m)
+arrangelayers(awl_server_t *srv, Monitor *m)
 {
     int i;
     struct wlr_box usable_area = m->m;
@@ -53,7 +53,7 @@ arrangelayers(Monitor *m)
 
     if (m->showbar) {
         usable_area.height -= m->bar_area.real_height;
-        usable_area.y += awl->cfg->bar.top ? m->bar_area.real_height : 0;
+        usable_area.y += srv->cfg->bar.top ? m->bar_area.real_height : 0;
     }
 
     /* Arrange exclusive surfaces from top->bottom */
@@ -62,7 +62,7 @@ arrangelayers(Monitor *m)
 
     if (!wlr_box_equal(&usable_area, &m->w)) {
         m->w = usable_area;
-        arrange(m);
+        arrange(srv, m);
     }
 
     /* Arrange non-exlusive surfaces from top->bottom */
@@ -71,17 +71,17 @@ arrangelayers(Monitor *m)
 
     desktop_update(m);
     background_update(m);
-    awl_alert_draw(m);
-    popupsupdate(m);
+    awl_alert_draw(srv, m);
+    popupsupdate(srv, m);
 
     /* Find topmost keyboard interactive layer, if such a layer exists */
     for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
         wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
-            if (awl->locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
+            if (srv->locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
                 continue;
-            focusclient(NULL, 0);
-            awl->clients.exclusive_focus = l;
-            client_notify_enter(l->layer_surface->surface, wlr_seat_get_keyboard(awl->seat));
+            focusclient(srv, NULL, 0);
+            srv->clients.exclusive_focus = l;
+            client_notify_enter(srv, l->layer_surface->surface, wlr_seat_get_keyboard(srv->seat));
             return;
         }
     }
@@ -91,8 +91,9 @@ void
 commitlayersurfacenotify(struct wl_listener *listener, void *data)
 {
     LayerSurface *l = wl_container_of(listener, l, surface_commit);
+    awl_server_t *srv = l->srv;
     struct wlr_layer_surface_v1 *layer_surface = l->layer_surface;
-    struct wlr_scene_tree *scene_layer = awl->layers[layermap[layer_surface->current.layer]];
+    struct wlr_scene_tree *scene_layer = srv->layers[layermap[layer_surface->current.layer]];
     struct wlr_layer_surface_v1_state old_state;
 
     if (l->layer_surface->initial_commit) {
@@ -102,7 +103,7 @@ commitlayersurfacenotify(struct wl_listener *listener, void *data)
          * so that we can easily arrange it */
         old_state = l->layer_surface->current;
         l->layer_surface->current = l->layer_surface->pending;
-        arrangelayers(l->mon);
+        arrangelayers(srv, l->mon);
         l->layer_surface->current = old_state;
         return;
     }
@@ -116,26 +117,28 @@ commitlayersurfacenotify(struct wl_listener *listener, void *data)
         wl_list_remove(&l->link);
         wl_list_insert(&l->mon->layers[layer_surface->current.layer], &l->link);
         wlr_scene_node_reparent(&l->popups->node, (layer_surface->current.layer
-                < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? awl->layers[LyrTop] : scene_layer));
+                < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? srv->layers[LyrTop] : scene_layer));
     }
 
-    arrangelayers(l->mon);
+    arrangelayers(srv, l->mon);
 }
 
 void
 createlayersurface(struct wl_listener *listener, void *data)
 {
+    awl_server_t *srv = wl_container_of(listener, srv, listen.new_layer_surface);
     struct wlr_layer_surface_v1 *layer_surface = data;
     LayerSurface *l;
     struct wlr_surface *surface = layer_surface->surface;
-    struct wlr_scene_tree *scene_layer = awl->layers[layermap[layer_surface->pending.layer]];
+    struct wlr_scene_tree *scene_layer = srv->layers[layermap[layer_surface->pending.layer]];
 
     if (!layer_surface->output
-            && !(layer_surface->output = awl->out.selmon ? awl->out.selmon->wlr_output : NULL)) {
+            && !(layer_surface->output = srv->out.selmon ? srv->out.selmon->wlr_output : NULL)) {
         wlr_layer_surface_v1_destroy(layer_surface);
         return;
     }
     l = layer_surface->data = ecalloc(1, sizeof(*l));
+    l->srv = srv;
     l->type = LayerShell;
     LISTEN(&surface->events.commit, &l->surface_commit, commitlayersurfacenotify);
     LISTEN(&surface->events.unmap, &l->unmap, unmaplayersurfacenotify);
@@ -147,7 +150,7 @@ createlayersurface(struct wl_listener *listener, void *data)
     l->scene = l->scene_layer->tree;
 
     l->popups = surface->data = wlr_scene_tree_create(layer_surface->current.layer
-            < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? awl->layers[LyrTop] : scene_layer);
+            < ZWLR_LAYER_SHELL_V1_LAYER_TOP ? srv->layers[LyrTop] : scene_layer);
     l->scene->node.data = l->popups->node.data = l;
 
     wl_list_insert(&l->mon->layers[layer_surface->pending.layer],&l->link);
@@ -172,14 +175,15 @@ void
 unmaplayersurfacenotify(struct wl_listener *listener, void *data)
 {
     LayerSurface *l = wl_container_of(listener, l, unmap);
+    awl_server_t *srv = l->srv;
 
     l->mapped = 0;
     wlr_scene_node_set_enabled(&l->scene->node, 0);
-    if (l == awl->clients.exclusive_focus)
-        awl->clients.exclusive_focus = NULL;
+    if (l == srv->clients.exclusive_focus)
+        srv->clients.exclusive_focus = NULL;
     if (l->layer_surface->output && (l->mon = l->layer_surface->output->data))
-        arrangelayers(l->mon);
-    if (l->layer_surface->surface == awl->seat->keyboard_state.focused_surface)
-        focusclient(focustop(awl->out.selmon), 1);
-    motionnotify(0, NULL, 0, 0, 0, 0);
+        arrangelayers(srv, l->mon);
+    if (l->layer_surface->surface == srv->seat->keyboard_state.focused_surface)
+        focusclient(srv, focustop(srv, srv->out.selmon), 1);
+    motionnotify(srv, 0, NULL, 0, 0, 0, 0);
 }

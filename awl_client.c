@@ -9,15 +9,15 @@
 #include "awl_popup.h"
 
 static void applybounds(Client *c, struct wlr_box *bbox);
-static void applyrules(Client *c);
-static void attachblur(Client *c);
+static void applyrules(awl_server_t *srv, Client *c);
+static void attachblur(awl_server_t *srv, Client *c);
 static void commitnotify(struct wl_listener *listener, void *data);
 static void commitpopup(struct wl_listener *listener, void *data);
 static void destroypopuplistener(struct wl_listener *listener, void *data);
 static void destroydecoration(struct wl_listener *listener, void *data);
 static void maximizenotify(struct wl_listener *listener, void *data);
 static void requestdecorationmode(struct wl_listener *listener, void *data);
-static void setontop(Client* c, int ontop);
+static void setontop(awl_server_t *srv, Client* c, int ontop);
 
 /** the border width plugins_config.c had, to tell whether a reload changed
  * it */
@@ -60,14 +60,14 @@ scenebuffersetopacity(struct wlr_scene_buffer *buffer, int sx, int sy, void *dat
 }
 
 void
-applyrules(Client *c)
+applyrules(awl_server_t *srv, Client *c)
 {
     /* rule matching */
     const char *appid, *title;
     uint32_t newtags = 0;
     int i;
     const Rule *r;
-    Monitor *mon = awl->out.selmon, *m;
+    Monitor *mon = srv->out.selmon, *m;
 
     appid = client_get_appid(c);
     title = client_get_title(c);
@@ -75,13 +75,13 @@ applyrules(Client *c)
     int apply_resize = 0;
     struct wlr_box rbox;
 
-    for (r = awl->cfg->rules.v; r < awl->cfg->rules.v + awl->cfg->rules.n; r++) {
+    for (r = srv->cfg->rules.v; r < srv->cfg->rules.v + srv->cfg->rules.n; r++) {
         if ((!r->title || strstr(title, r->title))
                 && (!r->id || strstr(appid, r->id))) {
             c->isfloating = r->isfloating;
             newtags |= r->tags;
             i = 0;
-            wl_list_for_each(m, &awl->out.mons, link) {
+            wl_list_for_each(m, &srv->out.mons, link) {
                 if (r->monitor == i++)
                     mon = m;
             }
@@ -96,17 +96,17 @@ applyrules(Client *c)
                 }
             }
             c->one_minus_alpha = r->one_minus_alpha;
-            if (r->blur && !c->blur) attachblur(c);
+            if (r->blur && !c->blur) attachblur(srv, c);
         }
     }
 
     c->isfloating |= client_is_float_type(c);
-    setmon(c, mon, newtags);
-    if (apply_resize) resize(c, rbox, 1);
+    setmon(srv, c, mon, newtags);
+    if (apply_resize) resize(srv, c, rbox, 1);
 }
 
 void
-attachblur(Client *c)
+attachblur(awl_server_t *srv, Client *c)
 {
     if (!c) return;
     struct wlr_scene_tree* tree = c->one_minus_alpha == 0 ? c->scene : c->scene_surface;
@@ -114,8 +114,8 @@ attachblur(Client *c)
     if (!c->blur) {
         c->blur = wlr_scene_blur_create(tree, 0, 0);
         wlr_scene_blur_set_size(c->blur, c->geom.width, c->geom.height);
-        wlr_scene_blur_set_strength(c->blur, awl->cfg->blur.strength);
-        wlr_scene_blur_set_alpha(c->blur, awl->cfg->blur.alpha);
+        wlr_scene_blur_set_strength(c->blur, srv->cfg->blur.strength);
+        wlr_scene_blur_set_alpha(c->blur, srv->cfg->blur.alpha);
         wlr_scene_blur_set_should_only_blur_bottom_layer(c->blur, 0);
         wlr_scene_node_lower_to_bottom(&c->blur->node);
         wlr_scene_node_set_enabled(&c->blur->node, 1);
@@ -126,6 +126,7 @@ void
 commitnotify(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, commit);
+    awl_server_t *srv = c->srv;
 
     if (c->surface.xdg->initial_commit) {
         /*
@@ -134,11 +135,11 @@ commitnotify(struct wl_listener *listener, void *data)
          * a different monitor based on its title, this will likely select
          * a wrong monitor.
          */
-        applyrules(c);
+        applyrules(srv, c);
         if (c->mon) {
             client_set_scale(client_surface(c), c->mon->wlr_output->scale);
         }
-        setmon(c, NULL, 0); /* Make sure to reapply rules in mapnotify() */
+        setmon(srv, c, NULL, 0); /* Make sure to reapply rules in mapnotify() */
 
         wlr_xdg_toplevel_set_wm_capabilities(c->surface.xdg->toplevel,
                 WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
@@ -148,7 +149,7 @@ commitnotify(struct wl_listener *listener, void *data)
         return;
     }
 
-    resize(c, c->geom, (c->isfloating && !c->isfullscreen));
+    resize(srv, c, c->geom, (c->isfloating && !c->isfullscreen));
 
     /* mark a pending resize as completed */
     if (c->resize && c->resize <= c->surface.xdg->current.configure_serial)
@@ -237,14 +238,16 @@ createdecoration(struct wl_listener *listener, void *data)
 void
 createnotify(struct wl_listener *listener, void *data)
 {
+    awl_server_t *srv = wl_container_of(listener, srv, listen.new_xdg_toplevel);
     /* This event is raised when a client creates a new toplevel (application window). */
     struct wlr_xdg_toplevel *toplevel = data;
     Client *c = NULL;
 
     /* Allocate a Client for this surface */
     c = toplevel->base->data = ecalloc(1, sizeof(*c));
+    c->srv = srv;
     c->surface.xdg = toplevel->base;
-    c->bw = awl->cfg->borderpx;
+    c->bw = srv->cfg->borderpx;
     c->isvisible = 1;
 
     LISTEN(&toplevel->base->surface->events.commit, &c->commit, commitnotify);
@@ -322,14 +325,14 @@ destroynotify(struct wl_listener *listener, void *data)
 }
 
 void
-focusclient(Client *c, int lift)
+focusclient(awl_server_t *srv, Client *c, int lift)
 {
-    struct wlr_surface *old = awl->seat->keyboard_state.focused_surface;
+    struct wlr_surface *old = srv->seat->keyboard_state.focused_surface;
     int unused_lx, unused_ly, old_client_type;
     Client *old_c = NULL;
     LayerSurface *old_l = NULL;
 
-    if (awl->locked)
+    if (srv->locked)
         return;
 
     /* Raise client in stacking order if requested */
@@ -348,14 +351,14 @@ focusclient(Client *c, int lift)
     /* Put the new client atop the focus stack and select its monitor */
     if (c && !client_is_unmanaged(c)) {
         wl_list_remove(&c->flink);
-        wl_list_insert(&awl->clients.fstack, &c->flink);
-        awl->out.selmon = c->mon;
+        wl_list_insert(&srv->clients.fstack, &c->flink);
+        srv->out.selmon = c->mon;
         c->isurgent = 0;
 
         /* Don't change border color if there is an exclusive focus or we are
          * handling a drag operation */
-        if (!awl->clients.exclusive_focus && !awl->seat->drag)
-            client_set_border_color(c, (float[])RGBA(awl->clients.borders[BorderSel]));
+        if (!srv->clients.exclusive_focus && !srv->seat->drag)
+            client_set_border_color(c, (float[])RGBA(srv->clients.borders[BorderSel]));
     }
 
     /* Deactivate old client if focus is changing */
@@ -367,33 +370,33 @@ focusclient(Client *c, int lift)
                     &old_l->scene->node, &unused_lx, &unused_ly)
                 && old_l->layer_surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP) {
             return;
-        } else if (old_c && old_c == awl->clients.exclusive_focus && client_wants_focus(old_c)) {
+        } else if (old_c && old_c == srv->clients.exclusive_focus && client_wants_focus(old_c)) {
             return;
         /* Don't deactivate old client if the new one wants focus, as this causes issues with winecfg
          * and probably other clients */
         } else if (old_c && !client_is_unmanaged(old_c) && (!c || !client_wants_focus(c))) {
-            client_set_border_color(old_c, (float[])RGBA(awl->clients.borders[BorderNorm]));
+            client_set_border_color(old_c, (float[])RGBA(srv->clients.borders[BorderNorm]));
             client_activate_surface(old, 0);
         }
     }
-    barsdirty();
+    barsdirty(srv);
 
     if (!c) {
         /* With no client, all we have left is to clear focus */
-        wlr_seat_keyboard_notify_clear_focus(awl->seat);
+        wlr_seat_keyboard_notify_clear_focus(srv->seat);
         return;
     }
 
     /* a popup has the keyboard (the launcher): c gets it once that is
      * closed (popupsgrabupdate()) */
-    if (popupkeyboard())
+    if (popupkeyboard(srv))
         return;
 
     /* Change cursor surface */
-    motionnotify(0, NULL, 0, 0, 0, 0);
+    motionnotify(srv, 0, NULL, 0, 0, 0, 0);
 
     /* Have a client, so focus its top-level wlr_surface */
-    client_notify_enter(client_surface(c), wlr_seat_get_keyboard(awl->seat));
+    client_notify_enter(srv, client_surface(c), wlr_seat_get_keyboard(srv->seat));
 
     /* Activate the new client */
     client_activate_surface(client_surface(c), 1);
@@ -402,54 +405,56 @@ focusclient(Client *c, int lift)
 void
 focusstack(const Arg *arg)
 {
+    awl_server_t *srv = awl;
     /* Focus the next or previous client (in tiling order) on selmon */
-    Client *c, *sel = focustop(awl->out.selmon);
+    Client *c, *sel = focustop(srv, srv->out.selmon);
     if (!sel || (sel->isfullscreen && !client_has_children(sel)))
         return;
     if (arg->i > 0) {
         wl_list_for_each(c, &sel->link, link) {
-            if (&c->link == &awl->clients.list)
+            if (&c->link == &srv->clients.list)
                 continue; /* wrap past the sentinel node */
-            if (VISIBLEON_ACTIVE(c, awl->out.selmon))
+            if (VISIBLEON_ACTIVE(c, srv->out.selmon))
                 break; /* found it */
         }
     } else {
         wl_list_for_each_reverse(c, &sel->link, link) {
-            if (&c->link == &awl->clients.list)
+            if (&c->link == &srv->clients.list)
                 continue; /* wrap past the sentinel node */
-            if (VISIBLEON_ACTIVE(c, awl->out.selmon))
+            if (VISIBLEON_ACTIVE(c, srv->out.selmon))
                 break; /* found it */
         }
     }
     /* If only one client is visible on selmon, then c == sel */
-    focusclient(c, 1);
+    focusclient(srv, c, 1);
 }
 
 void
 movestack(const Arg *arg)
 {
-    Client *c, *sel = focustop(awl->out.selmon);
+    awl_server_t *srv = awl;
+    Client *c, *sel = focustop(srv, srv->out.selmon);
 
-    if (!sel || wl_list_length(&awl->clients.list) <= 1)
+    if (!sel || wl_list_length(&srv->clients.list) <= 1)
         return;
 
     if (arg->i > 0) {
         wl_list_for_each(c, &sel->link, link) {
-            if (&c->link == &awl->clients.list) {
-                c = wl_container_of(&awl->clients.list, c, link);
+            if (&c->link == &srv->clients.list) {
+                c = wl_container_of(&srv->clients.list, c, link);
                 break; /* wrap past the sentinel node */
             }
-            if (VISIBLEON(c, awl->out.selmon) || &c->link == &awl->clients.list) {
+            if (VISIBLEON(c, srv->out.selmon) || &c->link == &srv->clients.list) {
                 break; /* found it */
             }
         }
     } else {
         wl_list_for_each_reverse(c, &sel->link, link) {
-            if (&c->link == &awl->clients.list) {
-                c = wl_container_of(&awl->clients.list, c, link);
+            if (&c->link == &srv->clients.list) {
+                c = wl_container_of(&srv->clients.list, c, link);
                 break; /* wrap past the sentinel node */
             }
-            if (VISIBLEON(c, awl->out.selmon) || &c->link == &awl->clients.list) {
+            if (VISIBLEON(c, srv->out.selmon) || &c->link == &srv->clients.list) {
                 break; /* found it */
             }
         }
@@ -459,14 +464,14 @@ movestack(const Arg *arg)
 
     wl_list_remove(&sel->link);
     wl_list_insert(&c->link, &sel->link);
-    arrange(awl->out.selmon);
+    arrange(srv, srv->out.selmon);
 }
 
 Client *
-focustop(Monitor *m)
+focustop(awl_server_t *srv, Monitor *m)
 {
     Client *c;
-    wl_list_for_each(c, &awl->clients.fstack, flink) {
+    wl_list_for_each(c, &srv->clients.fstack, flink) {
         if (VISIBLEON_ACTIVE(c, m))
             return c;
     }
@@ -477,13 +482,15 @@ void
 fullscreennotify(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, fullscreen);
-    setfullscreen(c, client_wants_fullscreen(c));
+    awl_server_t *srv = c->srv;
+    setfullscreen(srv, c, client_wants_fullscreen(c));
 }
 
 void
 killclient(const Arg *arg)
 {
-    Client *sel = focustop(awl->out.selmon);
+    awl_server_t *srv = awl;
+    Client *sel = focustop(srv, srv->out.selmon);
     if (sel)
         client_send_close(sel);
 }
@@ -494,11 +501,12 @@ mapnotify(struct wl_listener *listener, void *data)
     /* Called when the surface is mapped, or ready to display on-screen. */
     Client *p = NULL;
     Client *w, *c = wl_container_of(listener, c, map);
+    awl_server_t *srv = c->srv;
     Monitor *m;
     int i;
 
     /* Create scene tree for this client and its border */
-    c->scene = client_surface(c)->data = wlr_scene_tree_create(awl->layers[LyrTile]);
+    c->scene = client_surface(c)->data = wlr_scene_tree_create(srv->layers[LyrTile]);
     /* Enabled later by a call to arrange() */
     wlr_scene_node_set_enabled(&c->scene->node, client_is_unmanaged(c));
     c->scene_surface = c->type == XDGShell
@@ -511,19 +519,19 @@ mapnotify(struct wl_listener *listener, void *data)
     /* Handle unmanaged clients first so we can return prior create borders */
     if (client_is_unmanaged(c)) {
         /* Unmanaged clients always are floating */
-        wlr_scene_node_reparent(&c->scene->node, awl->layers[LyrFloat]);
+        wlr_scene_node_reparent(&c->scene->node, srv->layers[LyrFloat]);
         wlr_scene_node_set_position(&c->scene->node, c->geom.x, c->geom.y);
         client_set_size(c, c->geom.width, c->geom.height);
         if (client_wants_focus(c)) {
-            focusclient(c, 1);
-            awl->clients.exclusive_focus = c;
+            focusclient(srv, c, 1);
+            srv->clients.exclusive_focus = c;
         }
         goto unset_fullscreen;
     }
 
     for (i = 0; i < 4; i++) {
         c->border[i] = wlr_scene_rect_create(c->scene, 0, 0,
-            (float[])RGBA(awl->clients.borders[c->isurgent ? BorderUrg : BorderNorm]));
+            (float[])RGBA(srv->clients.borders[c->isurgent ? BorderUrg : BorderNorm]));
         c->border[i]->node.data = c;
     }
 
@@ -533,8 +541,8 @@ mapnotify(struct wl_listener *listener, void *data)
     c->geom.height += 2 * c->bw;
 
     /* Insert this client into client lists. */
-    wl_list_insert(&awl->clients.list, &c->link);
-    wl_list_insert(&awl->clients.fstack, &c->flink);
+    wl_list_insert(&srv->clients.list, &c->link);
+    wl_list_insert(&srv->clients.fstack, &c->flink);
 
     /* Set initial monitor, tags, floating status, and focus:
      * we always consider floating, clients that have parent and thus
@@ -542,17 +550,17 @@ mapnotify(struct wl_listener *listener, void *data)
      * If there is no parent, apply rules */
     if ((p = client_get_parent(c))) {
         c->isfloating = 1;
-        setmon(c, p->mon, p->tags);
+        setmon(srv, c, p->mon, p->tags);
     } else {
-        applyrules(c);
+        applyrules(srv, c);
     }
-    barsdirty();
+    barsdirty(srv);
 
 unset_fullscreen:
-    m = c->mon ? c->mon : xytomon(c->geom.x, c->geom.y);
-    wl_list_for_each(w, &awl->clients.list, link) {
+    m = c->mon ? c->mon : xytomon(srv, c->geom.x, c->geom.y);
+    wl_list_for_each(w, &srv->clients.list, link) {
         if (w != c && w != p && w->isfullscreen && m == w->mon && (w->tags & c->tags))
-            setfullscreen(w, 0);
+            setfullscreen(srv, w, 0);
     }
 }
 
@@ -584,7 +592,7 @@ requestdecorationmode(struct wl_listener *listener, void *data)
 }
 
 void
-resize(Client *c, struct wlr_box geo, int interact)
+resize(awl_server_t *srv, Client *c, struct wlr_box geo, int interact)
 {
     struct wlr_box *bbox;
     struct wlr_box clip;
@@ -593,7 +601,7 @@ resize(Client *c, struct wlr_box geo, int interact)
     if (!c->mon || !client_surface(c)->mapped)
         return;
 
-    bbox = interact ? &awl->out.sgeom : &c->mon->w;
+    bbox = interact ? &srv->out.sgeom : &c->mon->w;
 
     old_width = c->geom.width;
     old_height = c->geom.height;
@@ -629,59 +637,60 @@ resize(Client *c, struct wlr_box geo, int interact)
 }
 
 void
-setfloating(Client *c, int floating)
+setfloating(awl_server_t *srv, Client *c, int floating)
 {
     Client *p = client_get_parent(c);
     c->isfloating = floating;
     /* If in floating layout do not change the client's layer */
     if (!c->mon || !client_surface(c)->mapped || !sellayout(c->mon)->arrange)
         return;
-    wlr_scene_node_reparent(&c->scene->node, awl->layers[c->isfullscreen ||
+    wlr_scene_node_reparent(&c->scene->node, srv->layers[c->isfullscreen ||
             (p && p->isfullscreen) ? LyrFS
             : c->isfloating ? LyrFloat : LyrTile]);
-    arrange(c->mon);
-    barsdirty();
+    arrange(srv, c->mon);
+    barsdirty(srv);
 }
 
 void
-setfullscreen(Client *c, int fullscreen)
+setfullscreen(awl_server_t *srv, Client *c, int fullscreen)
 {
     c->isfullscreen = fullscreen;
     if (!c->mon || !client_surface(c)->mapped)
         return;
-    c->bw = fullscreen ? 0 : awl->cfg->borderpx;
+    c->bw = fullscreen ? 0 : srv->cfg->borderpx;
     client_set_fullscreen(c, fullscreen);
-    wlr_scene_node_reparent(&c->scene->node, awl->layers[c->isfullscreen
+    wlr_scene_node_reparent(&c->scene->node, srv->layers[c->isfullscreen
             ? LyrFS : c->isfloating ? LyrFloat : LyrTile]);
 
     if (fullscreen) {
         c->prev = c->geom;
-        resize(c, c->mon->m, 0);
+        resize(srv, c, c->mon->m, 0);
     } else {
         /* restore previous size instead of arrange for floating windows since
          * client positions are set by the user and cannot be recalculated */
-        resize(c, c->prev, 0);
+        resize(srv, c, c->prev, 0);
     }
-    arrange(c->mon);
-    barsdirty();
+    arrange(srv, c->mon);
+    barsdirty(srv);
 }
 
 void
 transluce(const Arg *arg)
 {
-    if (!awl->out.selmon) return;
+    awl_server_t *srv = awl;
+    if (!srv->out.selmon) return;
     if (!arg) return;
     float change = arg->i > 0 ? 0.1 : -0.1;
-    Client *c = focustop(awl->out.selmon);
+    Client *c = focustop(srv, srv->out.selmon);
     if (!c) return;
     c->one_minus_alpha -= change;
     c->one_minus_alpha = MAX(c->one_minus_alpha, 0.0);
     c->one_minus_alpha = MIN(c->one_minus_alpha, 1.0);
-    if (!c->blur) attachblur(c);
+    if (!c->blur) attachblur(srv, c);
 }
 
 void
-setmon(Client *c, Monitor *m, uint32_t newtags)
+setmon(awl_server_t *srv, Client *c, Monitor *m, uint32_t newtags)
 {
     Monitor *oldmon = c->mon;
 
@@ -692,53 +701,57 @@ setmon(Client *c, Monitor *m, uint32_t newtags)
 
     /* Scene graph sends surface leave/enter events on move and resize */
     if (oldmon)
-        arrange(oldmon);
+        arrange(srv, oldmon);
     if (m) {
         /* Make sure window actually overlaps with the monitor */
-        resize(c, c->geom, 0);
-        newtags &= TAGMASK;
+        resize(srv, c, c->geom, 0);
+        newtags &= TAGMASK(srv->cfg);
         c->tags = newtags ? newtags : m->tagset[m->seltags]; /* assign tags of target monitor */
-        setfullscreen(c, c->isfullscreen); /* This will call arrange(c->mon) */
-        setfloating(c, c->isfloating);
+        setfullscreen(srv, c, c->isfullscreen); /* This will call arrange(c->mon) */
+        setfloating(srv, c, c->isfloating);
     }
-    focusclient(focustop(awl->out.selmon), 1);
+    focusclient(srv, focustop(srv, srv->out.selmon), 1);
 }
 
 void
 togglebw(const Arg *arg)
 {
-    Client* sel = focustop(awl->out.selmon);
+    awl_server_t *srv = awl;
+    Client* sel = focustop(srv, srv->out.selmon);
     if (sel && !sel->isfullscreen) {
-        sel->bw = sel->bw ? 0 : awl->cfg->borderpx;
-        arrange(awl->out.selmon);
+        sel->bw = sel->bw ? 0 : srv->cfg->borderpx;
+        arrange(srv, srv->out.selmon);
     }
 }
 
 void
 changebw(const Arg *arg)
 {
-    Client* sel = focustop(awl->out.selmon);
+    awl_server_t *srv = awl;
+    Client* sel = focustop(srv, srv->out.selmon);
     if (sel && !sel->isfullscreen) {
         sel->bw += arg->i;
-        arrange(awl->out.selmon);
+        arrange(srv, srv->out.selmon);
     }
 }
 
 void
 togglefloating(const Arg *arg)
 {
-    Client *sel = focustop(awl->out.selmon);
+    awl_server_t *srv = awl;
+    Client *sel = focustop(srv, srv->out.selmon);
     /* return if fullscreen */
     if (sel && !sel->isfullscreen)
-        setfloating(sel, !sel->isfloating);
+        setfloating(srv, sel, !sel->isfloating);
 }
 
 void
 togglefullscreen(const Arg *arg)
 {
-    Client *sel = focustop(awl->out.selmon);
+    awl_server_t *srv = awl;
+    Client *sel = focustop(srv, srv->out.selmon);
     if (sel)
-        setfullscreen(sel, !sel->isfullscreen);
+        setfullscreen(srv, sel, !sel->isfullscreen);
 }
 
 void
@@ -746,44 +759,46 @@ unmapnotify(struct wl_listener *listener, void *data)
 {
     /* Called when the surface is unmapped, and should no longer be shown. */
     Client *c = wl_container_of(listener, c, unmap);
-    if (c == awl->cursor.grabc) {
-        awl->cursor.mode = CurNormal;
-        awl->cursor.grabc = NULL;
+    awl_server_t *srv = c->srv;
+    if (c == srv->cursor.grabc) {
+        srv->cursor.mode = CurNormal;
+        srv->cursor.grabc = NULL;
     }
 
     if (client_is_unmanaged(c)) {
-        if (c == awl->clients.exclusive_focus) {
-            awl->clients.exclusive_focus = NULL;
-            focusclient(focustop(awl->out.selmon), 1);
+        if (c == srv->clients.exclusive_focus) {
+            srv->clients.exclusive_focus = NULL;
+            focusclient(srv, focustop(srv, srv->out.selmon), 1);
         }
     } else {
         wl_list_remove(&c->link);
-        setmon(c, NULL, 0);
+        setmon(srv, c, NULL, 0);
         wl_list_remove(&c->flink);
     }
 
     wlr_scene_node_destroy(&c->scene->node);
-    barsdirty();
-    motionnotify(0, NULL, 0, 0, 0, 0);
+    barsdirty(srv);
+    motionnotify(srv, 0, NULL, 0, 0, 0, 0);
 }
 
 void
 updatetitle(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, set_title);
+    awl_server_t *srv = c->srv;
     /* the task bar lists every window of its monitor's current tags */
     if (c->mon && (c->tags & c->mon->tagset[c->mon->seltags]))
-        barsdirty();
+        barsdirty(srv);
 }
 
 /* marks awl's own tokens (wlr_xdg_activation_token_v1.data) */
 static char activationmark;
 
 const char *
-activationtoken(void)
+activationtoken(awl_server_t *srv)
 {
     struct wlr_xdg_activation_token_v1 *t;
-    if (!awl->activation || !(t = wlr_xdg_activation_token_v1_create(awl->activation)))
+    if (!srv->activation || !(t = wlr_xdg_activation_token_v1_create(srv->activation)))
         return NULL;
     t->data = &activationmark;
     return wlr_xdg_activation_token_v1_get_name(t);
@@ -792,137 +807,142 @@ activationtoken(void)
 void
 urgent(struct wl_listener *listener, void *data)
 {
+    awl_server_t *srv = wl_container_of(listener, srv, listen.request_activate);
     struct wlr_xdg_activation_v1_request_activate_event *event = data;
     Client *c = NULL;
     toplevel_from_wlr_surface(event->surface, &c, NULL);
-    if (!c || c == focustop(awl->out.selmon))
+    if (!c || c == focustop(srv, srv->out.selmon))
         return;
 
     /* the user asked for it (activationtoken()): to the window, on its
      * monitor's view of its tags, back if it was minimized; unless the
      * config has it only urgent */
-    if (event->token->data == &activationmark && c->mon && !awl->locked
-            && !awl->cfg->notifications.activate_urgent) {
-        if (!VISIBLEON(c, c->mon) && (c->tags & TAGMASK)) {
+    if (event->token->data == &activationmark && c->mon && !srv->locked
+            && !srv->cfg->notifications.activate_urgent) {
+        if (!VISIBLEON(c, c->mon) && (c->tags & TAGMASK(srv->cfg))) {
             c->mon->seltags ^= 1;
-            c->mon->tagset[c->mon->seltags] = c->tags & TAGMASK;
+            c->mon->tagset[c->mon->seltags] = c->tags & TAGMASK(srv->cfg);
         }
         c->isvisible = 1;
-        awl->out.selmon = c->mon;
-        focusclient(c, 1);
-        arrange(c->mon);
-        barsdirty();
+        srv->out.selmon = c->mon;
+        focusclient(srv, c, 1);
+        arrange(srv, c->mon);
+        barsdirty(srv);
         return;
     }
 
     c->isurgent = 1;
-    barsdirty();
+    barsdirty(srv);
 
     if (client_surface(c)->mapped)
-        client_set_border_color(c, (float[])RGBA(awl->clients.borders[BorderUrg]));
+        client_set_border_color(c, (float[])RGBA(srv->clients.borders[BorderUrg]));
 }
 
 void
-setontop(Client* c, int ontop)
+setontop(awl_server_t *srv, Client* c, int ontop)
 {
     c->isontop = ontop;
     if (!c->mon) return;
-    wlr_scene_node_reparent(&c->scene->node, c->isontop ? awl->layers[LyrTop] : c->isfloating ? awl->layers[LyrFloat] : awl->layers[LyrTile]);
-    arrange(c->mon);
-    barsdirty();
+    wlr_scene_node_reparent(&c->scene->node, c->isontop ? srv->layers[LyrTop] : c->isfloating ? srv->layers[LyrFloat] : srv->layers[LyrTile]);
+    arrange(srv, c->mon);
+    barsdirty(srv);
 }
 
 void
 toggleontop(const Arg* arg)
 {
+    awl_server_t *srv = awl;
     (void)arg;
-    Client* sel = focustop(awl->out.selmon);
-    if (sel && !sel->isfullscreen) setontop(sel, !sel->isontop);
+    Client* sel = focustop(srv, srv->out.selmon);
+    if (sel && !sel->isfullscreen) setontop(srv, sel, !sel->isontop);
 }
 
 void
-clientsetvisible(Client *c, int visible)
+clientsetvisible(awl_server_t *srv, Client *c, int visible)
 {
     c->isvisible = !!visible;
     if (c->mon)
-        arrange(c->mon);
+        arrange(srv, c->mon);
 }
 
 void
 minimize(const Arg* arg)
 {
+    awl_server_t *srv = awl;
     (void)arg;
-    Client* sel = focustop(awl->out.selmon);
+    Client* sel = focustop(srv, srv->out.selmon);
     if (!sel) return;
     sel->isvisible = 0;
-    focusclient(focustop(awl->out.selmon), 1);
-    arrange(sel->mon);
-    barsdirty();
+    focusclient(srv, focustop(srv, srv->out.selmon), 1);
+    arrange(srv, sel->mon);
+    barsdirty(srv);
 }
 
 void
 unminimize(const Arg* arg)
 {
+    awl_server_t *srv = awl;
     Client *c = NULL;
     int found_client = 0;
-    wl_list_for_each(c, &awl->clients.fstack, flink) {
-        if (VISIBLEON(c, awl->out.selmon) && !c->isvisible) {
+    wl_list_for_each(c, &srv->clients.fstack, flink) {
+        if (VISIBLEON(c, srv->out.selmon) && !c->isvisible) {
             c->isvisible = 1;
             found_client = 1;
             break;
         }
     }
     if (!found_client) return;
-    focusclient(c, 1);
-    arrange(awl->out.selmon);
-    barsdirty();
+    focusclient(srv, c, 1);
+    arrange(srv, srv->out.selmon);
+    barsdirty(srv);
 }
 
 void
 maximize(const Arg* arg)
 {
-    Client* sel = focustop(awl->out.selmon);
+    awl_server_t *srv = awl;
+    Client* sel = focustop(srv, srv->out.selmon);
     if (!sel) return;
     sel->ismaximized = !sel->ismaximized;
     if (sel->ismaximized)
         sel->geom = sel->mon->w;
-    arrange(sel->mon);
-    barsdirty();
+    arrange(srv, sel->mon);
+    barsdirty(srv);
 }
 
 void
-clientsconfigure(void)
+clientsconfigure(awl_server_t *srv)
 {
     Monitor *m;
-    Client *c, *sel = focustop(awl->out.selmon);
+    Client *c, *sel = focustop(srv, srv->out.selmon);
 
     /* borders: those at the old default width get the new one */
-    if (awl->cfg->borderpx != applied_borderpx) {
-        wl_list_for_each(c, &awl->clients.list, link) {
+    if (srv->cfg->borderpx != applied_borderpx) {
+        wl_list_for_each(c, &srv->clients.list, link) {
             if (c->isfullscreen || c->bw != applied_borderpx)
                 continue;
-            c->bw = awl->cfg->borderpx;
+            c->bw = srv->cfg->borderpx;
             if (c->mon)
-                resize(c, c->geom, 0);
+                resize(srv, c, c->geom, 0);
         }
-        applied_borderpx = awl->cfg->borderpx;
-        wl_list_for_each(m, &awl->out.mons, link)
-            arrange(m);
+        applied_borderpx = srv->cfg->borderpx;
+        wl_list_for_each(m, &srv->out.mons, link)
+            arrange(srv, m);
     }
 
-    awl->clients.borders[BorderNorm] = awl->cfg->colors.border;
-    awl->clients.borders[BorderSel] = awl->cfg->colors.border_focused;
-    awl->clients.borders[BorderUrg] = awl->cfg->colors.border_urgent;
-    wl_list_for_each(c, &awl->clients.list, link)
+    srv->clients.borders[BorderNorm] = srv->cfg->colors.border;
+    srv->clients.borders[BorderSel] = srv->cfg->colors.border_focused;
+    srv->clients.borders[BorderUrg] = srv->cfg->colors.border_urgent;
+    wl_list_for_each(c, &srv->clients.list, link)
         if (c->border[0])
-            client_set_border_color(c, (float[])RGBA(awl->clients.borders[c->isurgent ? BorderUrg
+            client_set_border_color(c, (float[])RGBA(srv->clients.borders[c->isurgent ? BorderUrg
                     : c == sel ? BorderSel : BorderNorm]));
 
     /* blur */
-    wl_list_for_each(c, &awl->clients.list, link) {
+    wl_list_for_each(c, &srv->clients.list, link) {
         if (!c->blur)
             continue;
-        wlr_scene_blur_set_strength(c->blur, awl->cfg->blur.strength);
-        wlr_scene_blur_set_alpha(c->blur, awl->cfg->blur.alpha);
+        wlr_scene_blur_set_strength(c->blur, srv->cfg->blur.strength);
+        wlr_scene_blur_set_alpha(c->blur, srv->cfg->blur.alpha);
     }
 }

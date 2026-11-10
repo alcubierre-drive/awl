@@ -30,17 +30,19 @@ testoutputadd_backend(struct wlr_backend *b, void *data)
 static int
 testoutputadd(int signo, void *data)
 {
-    wlr_multi_for_each_backend(awl->backend, testoutputadd_backend, NULL);
+    awl_server_t *srv = data;
+    wlr_multi_for_each_backend(srv->backend, testoutputadd_backend, NULL);
     return 0;
 }
 
 static int
 testoutputremove(int signo, void *data)
 {
+    awl_server_t *srv = data;
     /* the newest monitor, createmon() inserts at the head; never the last one */
     Monitor *m;
-    if (wl_list_length(&awl->out.mons) > 1) {
-        m = wl_container_of(awl->out.mons.next, m, link);
+    if (wl_list_length(&srv->out.mons) > 1) {
+        m = wl_container_of(srv->out.mons.next, m, link);
         wlr_output_destroy(m->wlr_output);
     }
     return 0;
@@ -149,7 +151,7 @@ testunescape(char *s)
  *                            errors COUNT (lines rejected so far)
  */
 static void
-testwincmd(char *line)
+testwincmd(awl_server_t *srv, char *line)
 {
     static int errors;
     char cmd[16] = "", mon[64] = "", tmp[PATH_MAX], onoff[4] = "";
@@ -171,7 +173,7 @@ testwincmd(char *line)
         return;
     line += off;
     if (strcmp(cmd, "nidle") && strcmp(cmd, "dump"))
-        awl_notifications_activity();
+        awl_notifications_activity(srv);
     if (*line == ' ')
         line++;
     toggle = !strcmp(cmd, "toggle");
@@ -194,48 +196,48 @@ testwincmd(char *line)
     testunescape(line);
 
     if (toggle || !strcmp(cmd, "show")) {
-        wl_list_for_each(it, &awl->out.mons, link)
+        wl_list_for_each(it, &srv->out.mons, link)
             if (!strcmp(it->wlr_output->name, mon))
                 m = it;
         if (!m)
             goto bad;
         if (!testwins[n])
-            testwins[n] = popupnew(0);
+            testwins[n] = popupnew(srv, 0);
         if (toggle && awl_window_monitor(testwins[n]) == m) {
             awl_window_hide(testwins[n]);
         } else {
-            awl_window_set_text(testwins[n], line);
-            popupshow(testwins[n], m, x);
+            awl_window_set_text(srv, testwins[n], line);
+            popupshow(srv, testwins[n], m, x);
         }
     } else if (!strcmp(cmd, "update")) {
         if (awl_window_monitor(testwins[n]))
-            awl_window_set_text(testwins[n], line);
+            awl_window_set_text(srv, testwins[n], line);
     } else if (!strcmp(cmd, "hide")) {
         awl_window_hide(testwins[n]);
     } else if (!strcmp(cmd, "destroy")) {
-        popupdestroy(testwins[n]);
+        popupdestroy(srv, testwins[n]);
     } else if (!strcmp(cmd, "input")) {
         if (!testwins[n])
             goto bad;
-        awl_window_set_click(testwins[n], strcmp(onoff, "on") ? NULL : testwinclick, (void *)(intptr_t)n);
+        awl_window_set_click(srv, testwins[n], strcmp(onoff, "on") ? NULL : testwinclick, (void *)(intptr_t)n);
     } else if (!strcmp(cmd, "scroll")) {
         if (!testwins[n])
             goto bad;
-        awl_window_set_scroll(testwins[n], strcmp(onoff, "on") ? NULL : testwinscroll, (void *)(intptr_t)n);
+        awl_window_set_scroll(srv, testwins[n], strcmp(onoff, "on") ? NULL : testwinscroll, (void *)(intptr_t)n);
     } else if (!strcmp(cmd, "persist")) {
         if (!testwins[n])
             goto bad;
-        popupsetpersistent(testwins[n], !strcmp(onoff, "on"));
+        popupsetpersistent(srv, testwins[n], !strcmp(onoff, "on"));
     } else if (!strcmp(cmd, "lock")) {
         /* as awl_lockscreen.c does, without a locker */
         if (sscanf(line, "%d", &x) != 1)
             goto bad;
         if (x)
-            popupshideall();
-        awl->locked = !!x;
-        popupslocked();
+            popupshideall(srv);
+        srv->locked = !!x;
+        popupslocked(srv);
     } else if (!strcmp(cmd, "hideall")) {
-        popupshideall();
+        popupshideall(srv);
     } else if (!strcmp(cmd, "restart")) {
         plugin_restart(NULL);
     } else if (!strcmp(cmd, "nclose") || !strcmp(cmd, "nhold")) {
@@ -244,7 +246,7 @@ testwincmd(char *line)
         if (!strcmp(cmd, "nclose"))
             awl_notifications_close(id, x);
         else
-            awl_notifications_hold(id, x);
+            awl_notifications_hold(srv, id, x);
     } else if (!strcmp(cmd, "nsend")) {
         awl_notif_send_t s = AWL_NOTIF_SEND_INIT;
         char *body;
@@ -264,7 +266,7 @@ testwincmd(char *line)
             *body++ = 0;
             s.body = body;
         }
-        if (!awl_notifications_send(&s))
+        if (!awl_notifications_send(srv, &s))
             goto bad;
     } else if (!strcmp(cmd, "nforget")) {
         unsigned long long seq;
@@ -273,10 +275,10 @@ testwincmd(char *line)
         awl_notifications_forget(seq);
     } else if (!strcmp(cmd, "nshow")) {
         unsigned long long seq;
-        if (sscanf(line, "%llu", &seq) != 1 || !awl_notifications_show(seq))
+        if (sscanf(line, "%llu", &seq) != 1 || !awl_notifications_show(srv, seq))
             goto bad;
     } else if (!strcmp(cmd, "nidle")) {
-        awl_notifications_idle();
+        awl_notifications_idle(srv);
     } else if (!strcmp(cmd, "nactive")) {
         /* above */
     } else if (!strcmp(cmd, "ninvoke")) {
@@ -287,7 +289,7 @@ testwincmd(char *line)
         snprintf(tmp, sizeof(tmp), "%s.tmp", line);
         if (!(f = fopen(tmp, "w")))
             goto bad;
-        wl_list_for_each(it, &awl->out.mons, link)
+        wl_list_for_each(it, &srv->out.mons, link)
             fprintf(f, "mon %s %d %d %d %d %d %d %d %d %g %d\n", it->wlr_output->name,
                     it->m.x, it->m.y, it->m.width, it->m.height,
                     it->w.x, it->w.y, it->w.width, it->w.height,
@@ -299,7 +301,7 @@ testwincmd(char *line)
             m = awl_window_monitor(testwins[n]);
             fprintf(f, "win %d %s %d %d %d %d %d %d %d\n", n, m ? m->wlr_output->name : "-",
                     box.x, box.y, box.width, box.height, x, awl_window_hover_row(testwins[n]),
-                    popuppersistent(testwins[n]));
+                    popuppersistent(srv, testwins[n]));
             for (int r = 0; x && r < 8 && awl_window_cell_center(testwins[n], r, 0, &cx, &cy); r++)
                 for (int c = 0; awl_window_cell_center(testwins[n], r, c, &cx, &cy); c++)
                     fprintf(f, "cell %d %d %d %.0f %.0f\n", n, r, c, cx, cy);
@@ -307,7 +309,7 @@ testwincmd(char *line)
         fputs(testclicks, f);
         testclicks[0] = 0;
         n = 0;
-        wl_list_for_each(p, &awl->popups, link) {
+        wl_list_for_each(p, &srv->popups, link) {
             for (i = 0; i < (int)LENGTH(testwins) && testwins[i] != p->win; i++);
             if (i < (int)LENGTH(testwins))
                 continue;
@@ -323,7 +325,7 @@ testwincmd(char *line)
             n++;
         }
         /* barwidgetat()'s layout of the right-hand widgets */
-        wl_list_for_each(it, &awl->out.mons, link) {
+        wl_list_for_each(it, &srv->out.mons, link) {
             d = &it->bar;
             if (!d->m || !it->scene_buffer || !it->wlr_output->enabled)
                 continue;
@@ -358,9 +360,9 @@ testwincmd(char *line)
             fprintf(f, "past %llu %u %d %s\n", (unsigned long long)past[i]->seq, past[i]->id,
                     past[i]->reason, past[i]->summary);
         fprintf(f, "pasts %d\n", nn);
-        i = popuppersistentlayer(&x);
+        i = popuppersistentlayer(srv, &x);
         fprintf(f, "persistent %s %d\n", i == LyrOverlay ? "overlay" : i == LyrTop ? "top" : "-", x);
-        fprintf(f, "margin %d\n", awl->cfg->popup.margin);
+        fprintf(f, "margin %d\n", srv->cfg->popup.margin);
         fprintf(f, "errors %d\n", errors);
         fclose(f);
         rename(tmp, line);
@@ -377,6 +379,7 @@ bad:
 static int
 testwinctl(int fd, uint32_t mask, void *data)
 {
+    awl_server_t *srv = data;
     static char buf[4096];
     static size_t len;
     char *line, *nl;
@@ -387,7 +390,7 @@ testwinctl(int fd, uint32_t mask, void *data)
         buf[len] = 0;
         for (line = buf; (nl = strchr(line, '\n')); line = nl + 1) {
             *nl = 0;
-            testwincmd(line);
+            testwincmd(srv, line);
         }
         len -= (size_t)(line - buf);
         memmove(buf, line, len);
@@ -398,13 +401,13 @@ testwinctl(int fd, uint32_t mask, void *data)
 }
 
 void
-testinit(void)
+testinit(awl_server_t *srv)
 {
     /* for testing (test/live.sh): SIGUSR1 adds an output, SIGUSR2 removes
      * the newest one; headless and nested (wayland) backends only */
     if (getenv("AWL_TEST_OUTPUTS")) {
-        wl_event_loop_add_signal(awl->event_loop, SIGUSR1, testoutputadd, NULL);
-        wl_event_loop_add_signal(awl->event_loop, SIGUSR2, testoutputremove, NULL);
+        wl_event_loop_add_signal(srv->event_loop, SIGUSR1, testoutputadd, srv);
+        wl_event_loop_add_signal(srv->event_loop, SIGUSR2, testoutputremove, srv);
     }
     /* for testing (test/live.sh's win, test/windows.sh): a FIFO of commands
      * for the text popups, see testwincmd(); O_RDWR, so it never reads EOF
@@ -413,7 +416,7 @@ testinit(void)
         int fd = open(getenv("AWL_TEST_WINDOWS"), O_RDWR | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0)
             die("AWL_TEST_WINDOWS %s:", getenv("AWL_TEST_WINDOWS"));
-        wl_event_loop_add_fd(awl->event_loop, fd, WL_EVENT_READABLE, testwinctl, NULL);
+        wl_event_loop_add_fd(srv->event_loop, fd, WL_EVENT_READABLE, testwinctl, srv);
     }
 }
 

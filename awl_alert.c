@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static void notify( const char* text );
+static void notify( awl_server_t* srv, const char* text );
 
 static const char* names[AwlAlertLast] = {
     [AwlAlertLogind] = "logind",
@@ -18,7 +18,7 @@ static const char* names[AwlAlertLast] = {
 static char texts[AwlAlertLast][128];
 static unsigned int version;
 
-void awl_alert_set( awl_alert_id_t id, const char* fmt, ... ) {
+void awl_alert_set( awl_server_t* srv, awl_alert_id_t id, const char* fmt, ... ) {
     char text[sizeof texts[0]];
     va_list ap;
     va_start( ap, fmt );
@@ -27,7 +27,7 @@ void awl_alert_set( awl_alert_id_t id, const char* fmt, ... ) {
     if (!strcmp( text, texts[id] )) return;
     awl_err_printf( "ALERT (%s): %s\n", names[id], text );
     /* one notification per alert, not per change of its text */
-    if (!texts[id][0]) notify( text );
+    if (!texts[id][0]) notify( srv, text );
     memcpy( texts[id], text, sizeof text );
     version++;
     awl_redraw_request();
@@ -52,12 +52,12 @@ const char* awl_alert_text( void ) {
 }
 
 /** a critical notification of text, awl's own (no bus needed) */
-static void notify( const char* text ) {
+static void notify( awl_server_t* srv, const char* text ) {
     awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
     n.summary = "awl alert";
     n.body = text;
     n.urgency = AWL_NOTIF_CRITICAL;
-    if (!awl_notifications_send( &n ))
+    if (!awl_notifications_send( srv, &n ))
         awl_wrn_printf( "alert: no notification (the server isn't running)\n" );
 }
 
@@ -71,32 +71,32 @@ static bool accepts_input( struct wlr_scene_buffer* buffer, double* sx, double* 
     return false;
 }
 
-void awl_alert_init( void ) {
-    tree = wlr_scene_tree_create( &awl->scene->tree );
+void awl_alert_init( awl_server_t *srv ) {
+    tree = wlr_scene_tree_create( &srv->scene->tree );
 }
 
-void awl_alert_addmon( Monitor* m ) {
+void awl_alert_addmon( awl_server_t* srv, Monitor* m ) {
     m->alert = wlr_scene_buffer_create( tree, NULL );
     m->alert->point_accepts_input = accepts_input;
-    wlr_scene_buffer_set_opacity( m->alert, awl->cfg->alert.opacity );
+    wlr_scene_buffer_set_opacity( m->alert, srv->cfg->alert.opacity );
     wlr_scene_node_set_enabled( &m->alert->node, 0 );
     m->alert_version = (unsigned int)-1;
 }
 
-void awl_alert_configure( void ) {
+void awl_alert_configure( awl_server_t *srv ) {
     Monitor* m;
-    wl_list_for_each( m, &awl->out.mons, link ) {
+    wl_list_for_each( m, &srv->out.mons, link ) {
         if (!m->alert) continue;
-        wlr_scene_buffer_set_opacity( m->alert, awl->cfg->alert.opacity );
+        wlr_scene_buffer_set_opacity( m->alert, srv->cfg->alert.opacity );
         m->alert_version = (unsigned int)-1;
     }
-    awl_alert_draw_all();
+    awl_alert_draw_all(srv);
 }
 
-void awl_alert_draw( Monitor* m ) {
-    const pixman_color_t fg = color_8bit_to_16bit( awl->cfg->colors.alert_fg ),
-                         bg = color_8bit_to_16bit( awl->cfg->colors.alert_bg );
-    const int margin = awl->cfg->alert.margin;
+void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
+    const pixman_color_t fg = color_8bit_to_16bit( srv->cfg->colors.alert_fg ),
+                         bg = color_8bit_to_16bit( srv->cfg->colors.alert_bg );
+    const int margin = srv->cfg->alert.margin;
     const char* text = awl_alert_text();
     const float s = m->wlr_output->scale;
     struct fcft_font* font;
@@ -119,7 +119,7 @@ void awl_alert_draw( Monitor* m ) {
     }
 
     /* the font only while drawing; the registry keeps it loaded */
-    if (!(font = awl_font_get( awl->cfg->font, awl->cfg->fontsize * awl->cfg->alert.font_scale, s ))) {
+    if (!(font = awl_font_get( srv->cfg->font, srv->cfg->fontsize * srv->cfg->alert.font_scale, s ))) {
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
         return;
     }
@@ -150,8 +150,8 @@ void awl_alert_draw( Monitor* m ) {
     wlr_scene_node_set_enabled( &m->alert->node, 1 );
 }
 
-void awl_alert_draw_all( void ) {
+void awl_alert_draw_all( awl_server_t *srv ) {
     Monitor* m;
-    wl_list_for_each( m, &awl->out.mons, link )
-        awl_alert_draw( m );
+    wl_list_for_each( m, &srv->out.mons, link )
+        awl_alert_draw( srv, m );
 }

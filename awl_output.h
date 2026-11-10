@@ -19,14 +19,14 @@ void outputmgrtest(struct wl_listener *listener, void *data);
 void powermgrsetmode(struct wl_listener *listener, void *data);
 
 /** the monitor at x, y (layout coordinates), NULL if none */
-Monitor *xytomon(double x, double y);
+Monitor *xytomon(awl_server_t *srv, double x, double y);
 /** the enabled monitor add places after selmon (or before, add < 0), NULL
  * if none is enabled */
-Monitor *nextmon(int add);
+Monitor *nextmon(awl_server_t *srv, int add);
 /** selects m; the bars mark which one is */
-void setselmon(Monitor *m);
+void setselmon(awl_server_t *srv, Monitor *m);
 /** the monitor whose output is named name, NULL if none */
-Monitor *monitornamed(const char *name);
+Monitor *monitornamed(awl_server_t *srv, const char *name);
 /** selmon, for the host table */
-Monitor *monitorselected(void);
+Monitor *monitorselected(awl_server_t *srv);
 float monitorscale(Monitor *m);

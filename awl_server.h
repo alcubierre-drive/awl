@@ -68,7 +68,7 @@ typedef struct {
 } awl_cursor_t;
 
 /** The compositor: one, made by setup() */
-typedef struct {
+typedef struct awl_server_t {
     struct wl_display *dpy;
     struct wl_event_loop *event_loop;
     struct wlr_backend *backend;
@@ -157,6 +157,10 @@ typedef struct {
         struct wl_listener request_start_drag;
         struct wl_listener start_drag;
         struct wl_listener new_session_lock;
+#ifdef XWAYLAND
+        struct wl_listener new_xwayland_surface;
+        struct wl_listener xwayland_ready;
+#endif
     } listen;
 } awl_server_t;
 

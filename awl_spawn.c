@@ -31,16 +31,17 @@ static int Autostarted_pids_sz = 0;
 int
 handlesigchld(int signo, void *data)
 {
+    awl_server_t *srv = data;
     siginfo_t in;
     /* wlroots reaps the Xwayland fork itself and gives up on Xwayland if
      * that fails, so look first (WNOWAIT) and leave that one alone */
     while (!waitid(P_ALL, 0, &in, WEXITED | WNOHANG | WNOWAIT) && in.si_pid) {
 #ifdef XWAYLAND
-        if (awl->xwayland && awl->xwayland->server && in.si_pid == awl->xwayland->server->pid)
+        if (srv->xwayland && srv->xwayland->server && in.si_pid == srv->xwayland->server->pid)
             break;
 #endif
         waitpid(in.si_pid, NULL, 0);
-        lockerexited(in.si_pid);
+        lockerexited(srv, in.si_pid);
     }
     return 0;
 }
@@ -180,10 +181,10 @@ spawnstartup(const char *cmd)
 }
 
 void
-autostartall(void)
+autostartall(awl_server_t *srv)
 {
-    for (size_t i = 0; i < awl->cfg->autostart.n; ++i) {
-        if (!awl->cfg->autostart.v[i][0]) continue; /* { NULL }: an empty entry */
-        autostart(awl->cfg->autostart.v[i]);
+    for (size_t i = 0; i < srv->cfg->autostart.n; ++i) {
+        if (!srv->cfg->autostart.v[i][0]) continue; /* { NULL }: an empty entry */
+        autostart(srv->cfg->autostart.v[i]);
     }
 }

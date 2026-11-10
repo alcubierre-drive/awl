@@ -111,6 +111,8 @@ typedef struct {
     struct wl_listener destroy;
     struct wl_listener unmap;
     struct wl_listener surface_commit;
+    /** for its listeners, which only get the surface */
+    awl_server_t *srv;
 } LayerSurface;
 
 /** A ``wlr_buffer`` of ARGB pixels in memory, for the bar and the desktop

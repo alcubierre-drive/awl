@@ -28,12 +28,12 @@
  * the main loop, cleanup() takes it all down again. Everything else is in
  * the modules, see awl_server.h. */
 
-static void cleanup(void);
-static void cleanuplisteners(void);
+static void cleanup(awl_server_t *srv);
+static void cleanuplisteners(awl_server_t *srv);
 static void gpureset(struct wl_listener *listener, void *data);
 static int handlesigquit(int signo, void *data);
-static void run(char *startup_cmd);
-static void setup(void);
+static void run(awl_server_t *srv, char *startup_cmd);
+static void setup(awl_server_t *srv);
 
 static awl_server_t server = {
     /* empty from the start: no init in setup() */
@@ -74,13 +74,14 @@ awl_server_t *awl = &server;
 /** bars are redrawn on demand: see awl_redraw.h */
 static struct wl_event_source* redraw_source = NULL;
 static int redraw_fire( int fd, uint32_t mask, void* data ) {
+    awl_server_t *srv = data;
     (void)fd; (void)mask; (void)data;
     awl_redraw_drain();
     awl_plugins_redraw();
-    drawbars();
+    drawbars(srv);
     desktop_update_all();
-    wallpapertake();
-    awl_alert_draw_all();
+    wallpapertake(srv);
+    awl_alert_draw_all(srv);
     return 0;
 }
 
@@ -88,11 +89,12 @@ static int redraw_fire( int fd, uint32_t mask, void* data ) {
 void
 chvt(const Arg *arg)
 {
-    wlr_session_change_vt(awl->session, arg->ui);
+    awl_server_t *srv = awl;
+    wlr_session_change_vt(srv->session, arg->ui);
 }
 
 void
-cleanup(void)
+cleanup(awl_server_t *srv)
 {
     sigset_t quitsigs;
 
@@ -115,90 +117,91 @@ cleanup(void)
     sigaddset(&quitsigs, SIGTERM);
     sigprocmask(SIG_UNBLOCK, &quitsigs, NULL);
 
-    cleanuplisteners();
+    cleanuplisteners(srv);
 #ifdef XWAYLAND
-    xwaylandfini();
+    xwaylandfini(srv);
 #endif
-    wl_display_destroy_clients(awl->dpy);
+    wl_display_destroy_clients(srv->dpy);
     stopchildren();
-    wlr_xcursor_manager_destroy(awl->cursor.mgr);
+    wlr_xcursor_manager_destroy(srv->cursor.mgr);
 
     inputfini();
 
     /* If it's not destroyed manually, it will cause a use-after-free of wlr_seat.
      * Destroy it until it's fixed on the wlroots side */
-    wlr_backend_destroy(awl->backend);
+    wlr_backend_destroy(srv->backend);
 
     /* The monitors, and with them the bars' widgets, are gone: the plugins
      * stop while their popups' scene and their timers' loop are still there
      * to give back. cfg points into the library. */
-    awl->cfg = builtinconfig();
-    awl_plugins_unload();
+    srv->cfg = builtinconfig();
+    awl_plugins_unload(srv);
 
-    wl_display_destroy(awl->dpy);
+    wl_display_destroy(srv->dpy);
     popupsfini();
-    wlr_scene_node_destroy(&awl->scene->tree.node);
+    wlr_scene_node_destroy(&srv->scene->tree.node);
     awl_draw_fini();
-    configfini();
+    configfini(srv);
     /* only now nothing can request a redraw or a lock anymore */
     awl_redraw_fini();
     awl_lock_fini();
 }
 
 void
-cleanuplisteners(void)
+cleanuplisteners(awl_server_t *srv)
 {
-    wl_list_remove(&awl->listen.cursor_axis.link);
-    wl_list_remove(&awl->listen.cursor_button.link);
-    wl_list_remove(&awl->listen.cursor_frame.link);
-    wl_list_remove(&awl->listen.cursor_motion.link);
-    wl_list_remove(&awl->listen.cursor_motion_absolute.link);
-    wl_list_remove(&awl->listen.gpu_reset.link);
-    wl_list_remove(&awl->listen.new_idle_inhibitor.link);
-    wl_list_remove(&awl->listen.layout_change.link);
-    wl_list_remove(&awl->listen.new_input_device.link);
-    wl_list_remove(&awl->listen.new_virtual_keyboard.link);
-    wl_list_remove(&awl->listen.new_virtual_pointer.link);
-    wl_list_remove(&awl->listen.new_pointer_constraint.link);
-    wl_list_remove(&awl->listen.new_output.link);
-    wl_list_remove(&awl->listen.new_xdg_toplevel.link);
-    wl_list_remove(&awl->listen.new_xdg_decoration.link);
-    wl_list_remove(&awl->listen.new_xdg_popup.link);
-    wl_list_remove(&awl->listen.new_layer_surface.link);
-    wl_list_remove(&awl->listen.output_mgr_apply.link);
-    wl_list_remove(&awl->listen.output_mgr_test.link);
-    wl_list_remove(&awl->listen.output_power_mgr_set_mode.link);
-    wl_list_remove(&awl->listen.request_activate.link);
-    wl_list_remove(&awl->listen.request_cursor.link);
-    wl_list_remove(&awl->listen.request_set_psel.link);
-    wl_list_remove(&awl->listen.request_set_sel.link);
-    wl_list_remove(&awl->listen.request_set_cursor_shape.link);
-    wl_list_remove(&awl->listen.request_start_drag.link);
-    wl_list_remove(&awl->listen.start_drag.link);
-    wl_list_remove(&awl->listen.new_session_lock.link);
+    wl_list_remove(&srv->listen.cursor_axis.link);
+    wl_list_remove(&srv->listen.cursor_button.link);
+    wl_list_remove(&srv->listen.cursor_frame.link);
+    wl_list_remove(&srv->listen.cursor_motion.link);
+    wl_list_remove(&srv->listen.cursor_motion_absolute.link);
+    wl_list_remove(&srv->listen.gpu_reset.link);
+    wl_list_remove(&srv->listen.new_idle_inhibitor.link);
+    wl_list_remove(&srv->listen.layout_change.link);
+    wl_list_remove(&srv->listen.new_input_device.link);
+    wl_list_remove(&srv->listen.new_virtual_keyboard.link);
+    wl_list_remove(&srv->listen.new_virtual_pointer.link);
+    wl_list_remove(&srv->listen.new_pointer_constraint.link);
+    wl_list_remove(&srv->listen.new_output.link);
+    wl_list_remove(&srv->listen.new_xdg_toplevel.link);
+    wl_list_remove(&srv->listen.new_xdg_decoration.link);
+    wl_list_remove(&srv->listen.new_xdg_popup.link);
+    wl_list_remove(&srv->listen.new_layer_surface.link);
+    wl_list_remove(&srv->listen.output_mgr_apply.link);
+    wl_list_remove(&srv->listen.output_mgr_test.link);
+    wl_list_remove(&srv->listen.output_power_mgr_set_mode.link);
+    wl_list_remove(&srv->listen.request_activate.link);
+    wl_list_remove(&srv->listen.request_cursor.link);
+    wl_list_remove(&srv->listen.request_set_psel.link);
+    wl_list_remove(&srv->listen.request_set_sel.link);
+    wl_list_remove(&srv->listen.request_set_cursor_shape.link);
+    wl_list_remove(&srv->listen.request_start_drag.link);
+    wl_list_remove(&srv->listen.start_drag.link);
+    wl_list_remove(&srv->listen.new_session_lock.link);
 }
 
 void
 gpureset(struct wl_listener *listener, void *data)
 {
-    struct wlr_renderer *old_renderer = awl->renderer;
-    struct wlr_allocator *old_alloc = awl->alloc;
+    awl_server_t *srv = wl_container_of(listener, srv, listen.gpu_reset);
+    struct wlr_renderer *old_renderer = srv->renderer;
+    struct wlr_allocator *old_alloc = srv->alloc;
     struct Monitor *m;
     /* must match setup(): the scene holds scenefx-only nodes (blur,
      * per-node opacity) that a plain wlroots renderer cannot render */
-    if (!(awl->renderer = fx_renderer_create(awl->backend)))
+    if (!(srv->renderer = fx_renderer_create(srv->backend)))
         die("couldn't recreate renderer");
 
-    if (!(awl->alloc = wlr_allocator_autocreate(awl->backend, awl->renderer)))
+    if (!(srv->alloc = wlr_allocator_autocreate(srv->backend, srv->renderer)))
         die("couldn't recreate allocator");
 
-    wl_list_remove(&awl->listen.gpu_reset.link);
-    wl_signal_add(&awl->renderer->events.lost, &awl->listen.gpu_reset);
+    wl_list_remove(&srv->listen.gpu_reset.link);
+    wl_signal_add(&srv->renderer->events.lost, &srv->listen.gpu_reset);
 
-    wlr_compositor_set_renderer(awl->compositor, awl->renderer);
+    wlr_compositor_set_renderer(srv->compositor, srv->renderer);
 
-    wl_list_for_each(m, &awl->out.mons, link) {
-        wlr_output_init_render(m->wlr_output, awl->alloc, awl->renderer);
+    wl_list_for_each(m, &srv->out.mons, link) {
+        wlr_output_init_render(m->wlr_output, srv->alloc, srv->renderer);
         /* the bar's texture dies with the old renderer, and the scene
          * no longer has the buffer to re-upload it from */
         m->bar_shown = NULL;
@@ -219,31 +222,32 @@ handlesigquit(int signo, void *data)
 void
 quit(const Arg *arg)
 {
-    wl_display_terminate(awl->dpy);
+    awl_server_t *srv = awl;
+    wl_display_terminate(srv->dpy);
 }
 
 void
-run(char *startup_cmd)
+run(awl_server_t *srv, char *startup_cmd)
 {
     /* Add a Unix socket to the Wayland display. */
-    const char *socket = wl_display_add_socket_auto(awl->dpy);
+    const char *socket = wl_display_add_socket_auto(srv->dpy);
     if (!socket)
         die("startup: display_add_socket_auto");
     setenv("WAYLAND_DISPLAY", socket, 1);
     /* the rest of awl's environment is the config's (configapply()) */
     environmentimport();
     /* the icon theme of the programs started with TRAY_ICONS */
-    awl_tray_app_set_theme(awl->cfg->tray.icon_theme);
+    awl_tray_app_set_theme(srv->cfg->tray.icon_theme);
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM
      * master, etc */
-    if (!wlr_backend_start(awl->backend))
+    if (!wlr_backend_start(srv->backend))
         die("startup: backend_start");
 
     /* Now that the socket exists and the backend is started, run the
      * startup command and cfg->autostart */
     spawnstartup(startup_cmd);
-    autostartall();
+    autostartall(srv);
 
     /* Mark stdout as non-blocking to avoid the startup script
      * causing awl to freeze when a user neither closes stdin
@@ -252,31 +256,31 @@ run(char *startup_cmd)
     if (fd_set_nonblock(STDOUT_FILENO) < 0)
         close(STDOUT_FILENO);
 
-    barsdirty();
+    barsdirty(srv);
 
     /* At this point the outputs are initialized, choose initial selmon based on
      * cursor position, and set default cursor image */
-    awl->out.selmon = xytomon(awl->cursor.wlr->x, awl->cursor.wlr->y);
+    srv->out.selmon = xytomon(srv, srv->cursor.wlr->x, srv->cursor.wlr->y);
 
     /* TODO hack to get cursor to display in its initial location (100, 100)
      * instead of (0, 0) and then jumping. Still may not be fully
      * initialized, as the image/coordinates are not transformed for the
      * monitor when displayed here */
-    wlr_cursor_warp_closest(awl->cursor.wlr, NULL, awl->cursor.wlr->x, awl->cursor.wlr->y);
-    wlr_cursor_set_xcursor(awl->cursor.wlr, awl->cursor.mgr, "default");
+    wlr_cursor_warp_closest(srv->cursor.wlr, NULL, srv->cursor.wlr->x, srv->cursor.wlr->y);
+    wlr_cursor_set_xcursor(srv->cursor.wlr, srv->cursor.mgr, "default");
 
-    if (awl->cfg->lock.at_start)
+    if (srv->cfg->lock.at_start)
         lockscreen(NULL);
 
     /* Run the Wayland event loop. This does not return until you exit the
      * compositor. Starting the backend rigged up all of the necessary event
      * loop configuration to listen to libinput events, DRM events, generate
      * frame events at the refresh rate, and so on. */
-    wl_display_run(awl->dpy);
+    wl_display_run(srv->dpy);
 }
 
 void
-setup(void)
+setup(awl_server_t *srv)
 {
     int drm_fd, i;
     sigset_t handled;
@@ -298,49 +302,49 @@ setup(void)
     signal(SIGPIPE, SIG_IGN);
 
     /* until the library is loaded */
-    awl->cfg = builtinconfig();
+    srv->cfg = builtinconfig();
 
-    wlrloginit();
+    wlrloginit(srv);
 
     /* The Wayland display is managed by libwayland. It handles accepting
      * clients from the Unix socket, manging Wayland globals, and so on. */
-    awl->dpy = wl_display_create();
-    awl->event_loop = wl_display_get_event_loop(awl->dpy);
-    wl_event_loop_add_signal(awl->event_loop, SIGCHLD, handlesigchld, NULL);
-    wl_event_loop_add_signal(awl->event_loop, SIGINT, handlesigquit, NULL);
-    wl_event_loop_add_signal(awl->event_loop, SIGTERM, handlesigquit, NULL);
-    barinit();
-    wallpaperinit();
+    srv->dpy = wl_display_create();
+    srv->event_loop = wl_display_get_event_loop(srv->dpy);
+    wl_event_loop_add_signal(srv->event_loop, SIGCHLD, handlesigchld, srv);
+    wl_event_loop_add_signal(srv->event_loop, SIGINT, handlesigquit, NULL);
+    wl_event_loop_add_signal(srv->event_loop, SIGTERM, handlesigquit, NULL);
+    barinit(srv);
+    wallpaperinit(srv);
 
     /* The backend is a wlroots feature which abstracts the underlying input and
      * output hardware. The autocreate option will choose the most suitable
      * backend based on the current environment, such as opening an X11 window
      * if an X11 server is running. */
-    if (!(awl->backend = wlr_backend_autocreate(awl->event_loop, &awl->session)))
+    if (!(srv->backend = wlr_backend_autocreate(srv->event_loop, &srv->session)))
         die("couldn't create backend");
     /* the hooks of test/live.sh and test/windows.sh, if asked for */
-    testinit();
+    testinit(srv);
 
     /* Initialize the scene graph used to lay out windows */
-    awl->scene = wlr_scene_create();
-    awl->root_bg = wlr_scene_rect_create(&awl->scene->tree, 0, 0, (float[4])RGBA(awl->cfg->colors.root));
+    srv->scene = wlr_scene_create();
+    srv->root_bg = wlr_scene_rect_create(&srv->scene->tree, 0, 0, (float[4])RGBA(srv->cfg->colors.root));
     for (i = 0; i < NUM_LAYERS; i++) {
-        awl->layers[i] = wlr_scene_tree_create(&awl->scene->tree);
+        srv->layers[i] = wlr_scene_tree_create(&srv->scene->tree);
     }
-    awl->cursor.drag_icon = wlr_scene_tree_create(&awl->scene->tree);
-    wlr_scene_node_place_below(&awl->cursor.drag_icon->node, &awl->layers[LyrBlock]->node);
+    srv->cursor.drag_icon = wlr_scene_tree_create(&srv->scene->tree);
+    wlr_scene_node_place_below(&srv->cursor.drag_icon->node, &srv->layers[LyrBlock]->node);
     /* the wallpaper, under background layer surfaces (see awl_background.h) */
-    awl->background_tree = wlr_scene_tree_create(&awl->scene->tree);
-    wlr_scene_node_place_below(&awl->background_tree->node, &awl->layers[LyrBg]->node);
-    background_init(awl->background_tree, awl->event_loop);
+    srv->background_tree = wlr_scene_tree_create(&srv->scene->tree);
+    wlr_scene_node_place_below(&srv->background_tree->node, &srv->layers[LyrBg]->node);
+    background_init(srv->background_tree, srv->event_loop);
     /* the desktop_dir panels, over the wallpaper (see awl_desktop.h) */
-    awl->desktop_tree = wlr_scene_tree_create(&awl->scene->tree);
-    wlr_scene_node_place_above(&awl->desktop_tree->node, &awl->layers[LyrBg]->node);
-    desktop_init(awl->desktop_tree, &(desktop_style_t){
-            .blur = awl->cfg->blur.popups, .radius = awl->cfg->desktop.radius,
-            .blur_strength = awl->cfg->blur.strength, .blur_alpha = awl->cfg->blur.alpha });
+    srv->desktop_tree = wlr_scene_tree_create(&srv->scene->tree);
+    wlr_scene_node_place_above(&srv->desktop_tree->node, &srv->layers[LyrBg]->node);
+    desktop_init(srv->desktop_tree, &(desktop_style_t){
+            .blur = srv->cfg->blur.popups, .radius = srv->cfg->desktop.radius,
+            .blur_strength = srv->cfg->blur.strength, .blur_alpha = srv->cfg->blur.alpha });
     /* the alerts, over everything (awl_alert_draw() keeps it on top) */
-    awl_alert_init();
+    awl_alert_init(srv);
 
     /* Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The user
      * can also specify a renderer using the WLR_RENDERER env var.
@@ -349,32 +353,32 @@ setup(void)
 
     // TODO this is for scenefx
     // if (!(renderer = wlr_renderer_autocreate(backend)))
-    if (!(awl->renderer = fx_renderer_create(awl->backend)))
+    if (!(srv->renderer = fx_renderer_create(srv->backend)))
         die("couldn't create renderer");
-    wl_signal_add(&awl->renderer->events.lost, &awl->listen.gpu_reset);
+    wl_signal_add(&srv->renderer->events.lost, &srv->listen.gpu_reset);
 
     /* Create shm, drm and linux_dmabuf interfaces by ourselves.
      * The simplest way is to call:
      *      wlr_renderer_init_wl_display(renderer);
      * but we need to create the linux_dmabuf interface manually to integrate it
      * with wlr_scene. */
-    wlr_renderer_init_wl_shm(awl->renderer, awl->dpy);
+    wlr_renderer_init_wl_shm(srv->renderer, srv->dpy);
 
-    if (wlr_renderer_get_texture_formats(awl->renderer, WLR_BUFFER_CAP_DMABUF)) {
-        wlr_drm_create(awl->dpy, awl->renderer);
-        wlr_scene_set_linux_dmabuf_v1(awl->scene,
-                wlr_linux_dmabuf_v1_create_with_renderer(awl->dpy, 5, awl->renderer));
+    if (wlr_renderer_get_texture_formats(srv->renderer, WLR_BUFFER_CAP_DMABUF)) {
+        wlr_drm_create(srv->dpy, srv->renderer);
+        wlr_scene_set_linux_dmabuf_v1(srv->scene,
+                wlr_linux_dmabuf_v1_create_with_renderer(srv->dpy, 5, srv->renderer));
     }
 
-    if ((drm_fd = wlr_renderer_get_drm_fd(awl->renderer)) >= 0 && awl->renderer->features.timeline
-            && awl->backend->features.timeline)
-        wlr_linux_drm_syncobj_manager_v1_create(awl->dpy, 1, drm_fd);
+    if ((drm_fd = wlr_renderer_get_drm_fd(srv->renderer)) >= 0 && srv->renderer->features.timeline
+            && srv->backend->features.timeline)
+        wlr_linux_drm_syncobj_manager_v1_create(srv->dpy, 1, drm_fd);
 
     /* Autocreates an allocator for us.
      * The allocator is the bridge between the renderer and the backend. It
      * handles the buffer creation, allowing wlroots to render onto the
      * screen */
-    if (!(awl->alloc = wlr_allocator_autocreate(awl->backend, awl->renderer)))
+    if (!(srv->alloc = wlr_allocator_autocreate(srv->backend, srv->renderer)))
         die("couldn't create allocator");
 
     /* This creates some hands-off wlroots interfaces. The compositor is
@@ -383,42 +387,42 @@ setup(void)
      * to dig your fingers in and play with their behavior if you want. Note that
      * the clients cannot set the selection directly without compositor approval,
      * see the setsel() function. */
-    awl->compositor = wlr_compositor_create(awl->dpy, 6, awl->renderer);
-    wlr_subcompositor_create(awl->dpy);
-    wlr_data_device_manager_create(awl->dpy);
-    wlr_export_dmabuf_manager_v1_create(awl->dpy);
-    wlr_screencopy_manager_v1_create(awl->dpy);
-    wlr_ext_image_copy_capture_manager_v1_create(awl->dpy, 1);
-    wlr_ext_output_image_capture_source_manager_v1_create(awl->dpy, 1);
-    wlr_data_control_manager_v1_create(awl->dpy);
-    wlr_primary_selection_v1_device_manager_create(awl->dpy);
-    wlr_viewporter_create(awl->dpy);
-    wlr_single_pixel_buffer_manager_v1_create(awl->dpy);
-    wlr_fractional_scale_manager_v1_create(awl->dpy, 1);
-    wlr_presentation_create(awl->dpy, awl->backend, 2);
-    wlr_alpha_modifier_v1_create(awl->dpy);
+    srv->compositor = wlr_compositor_create(srv->dpy, 6, srv->renderer);
+    wlr_subcompositor_create(srv->dpy);
+    wlr_data_device_manager_create(srv->dpy);
+    wlr_export_dmabuf_manager_v1_create(srv->dpy);
+    wlr_screencopy_manager_v1_create(srv->dpy);
+    wlr_ext_image_copy_capture_manager_v1_create(srv->dpy, 1);
+    wlr_ext_output_image_capture_source_manager_v1_create(srv->dpy, 1);
+    wlr_data_control_manager_v1_create(srv->dpy);
+    wlr_primary_selection_v1_device_manager_create(srv->dpy);
+    wlr_viewporter_create(srv->dpy);
+    wlr_single_pixel_buffer_manager_v1_create(srv->dpy);
+    wlr_fractional_scale_manager_v1_create(srv->dpy, 1);
+    wlr_presentation_create(srv->dpy, srv->backend, 2);
+    wlr_alpha_modifier_v1_create(srv->dpy);
 
     /* Initializes the interface used to implement urgency hints, and
      * awl's own tokens (activationtoken()) */
-    awl->activation = wlr_xdg_activation_v1_create(awl->dpy);
-    wl_signal_add(&awl->activation->events.request_activate, &awl->listen.request_activate);
+    srv->activation = wlr_xdg_activation_v1_create(srv->dpy);
+    wl_signal_add(&srv->activation->events.request_activate, &srv->listen.request_activate);
 
-    wlr_scene_set_gamma_control_manager_v1(awl->scene, wlr_gamma_control_manager_v1_create(awl->dpy));
+    wlr_scene_set_gamma_control_manager_v1(srv->scene, wlr_gamma_control_manager_v1_create(srv->dpy));
 
-    awl->power_mgr = wlr_output_power_manager_v1_create(awl->dpy);
-    wl_signal_add(&awl->power_mgr->events.set_mode, &awl->listen.output_power_mgr_set_mode);
+    srv->power_mgr = wlr_output_power_manager_v1_create(srv->dpy);
+    wl_signal_add(&srv->power_mgr->events.set_mode, &srv->listen.output_power_mgr_set_mode);
 
     /* Creates an output layout, which is a wlroots utility for working with an
      * arrangement of screens in a physical layout. */
-    awl->out.layout = wlr_output_layout_create(awl->dpy);
-    wl_signal_add(&awl->out.layout->events.change, &awl->listen.layout_change);
+    srv->out.layout = wlr_output_layout_create(srv->dpy);
+    wl_signal_add(&srv->out.layout->events.change, &srv->listen.layout_change);
 
-    wlr_xdg_output_manager_v1_create(awl->dpy, awl->out.layout);
+    wlr_xdg_output_manager_v1_create(srv->dpy, srv->out.layout);
 
     /* Configure a listener to be notified when new outputs are available on the
      * backend. */
-    wl_list_init(&awl->out.mons);
-    wl_signal_add(&awl->backend->events.new_output, &awl->listen.new_output);
+    wl_list_init(&srv->out.mons);
+    wl_signal_add(&srv->backend->events.new_output, &srv->listen.new_output);
 
     /* Set up our client lists, the xdg-shell and the layer-shell. The xdg-shell is a
      * Wayland protocol which is used for application windows. For more
@@ -426,49 +430,49 @@ setup(void)
      *
      * https://drewdevault.com/2018/07/29/Wayland-shells.html
      */
-    wl_list_init(&awl->clients.list);
-    wl_list_init(&awl->clients.fstack);
+    wl_list_init(&srv->clients.list);
+    wl_list_init(&srv->clients.fstack);
 
-    awl->xdg_shell = wlr_xdg_shell_create(awl->dpy, 6);
-    wl_signal_add(&awl->xdg_shell->events.new_toplevel, &awl->listen.new_xdg_toplevel);
-    wl_signal_add(&awl->xdg_shell->events.new_popup, &awl->listen.new_xdg_popup);
+    srv->xdg_shell = wlr_xdg_shell_create(srv->dpy, 6);
+    wl_signal_add(&srv->xdg_shell->events.new_toplevel, &srv->listen.new_xdg_toplevel);
+    wl_signal_add(&srv->xdg_shell->events.new_popup, &srv->listen.new_xdg_popup);
 
-    awl->layer_shell = wlr_layer_shell_v1_create(awl->dpy, 3);
-    wl_signal_add(&awl->layer_shell->events.new_surface, &awl->listen.new_layer_surface);
+    srv->layer_shell = wlr_layer_shell_v1_create(srv->dpy, 3);
+    wl_signal_add(&srv->layer_shell->events.new_surface, &srv->listen.new_layer_surface);
 
-    awl->idle_notifier = wlr_idle_notifier_v1_create(awl->dpy);
+    srv->idle_notifier = wlr_idle_notifier_v1_create(srv->dpy);
 
-    awl->idle_inhibit_mgr = wlr_idle_inhibit_v1_create(awl->dpy);
-    wl_signal_add(&awl->idle_inhibit_mgr->events.new_inhibitor, &awl->listen.new_idle_inhibitor);
+    srv->idle_inhibit_mgr = wlr_idle_inhibit_v1_create(srv->dpy);
+    wl_signal_add(&srv->idle_inhibit_mgr->events.new_inhibitor, &srv->listen.new_idle_inhibitor);
 
-    awl->keyboard_shortcuts_inhibit_mgr = wlr_keyboard_shortcuts_inhibit_v1_create(awl->dpy);
-    awl->session_lock_mgr = wlr_session_lock_manager_v1_create(awl->dpy);
-    wl_signal_add(&awl->session_lock_mgr->events.new_lock, &awl->listen.new_session_lock);
+    srv->keyboard_shortcuts_inhibit_mgr = wlr_keyboard_shortcuts_inhibit_v1_create(srv->dpy);
+    srv->session_lock_mgr = wlr_session_lock_manager_v1_create(srv->dpy);
+    wl_signal_add(&srv->session_lock_mgr->events.new_lock, &srv->listen.new_session_lock);
 
     /* Use decoration protocols to negotiate server-side decorations */
     wlr_server_decoration_manager_set_default_mode(
-            wlr_server_decoration_manager_create(awl->dpy),
+            wlr_server_decoration_manager_create(srv->dpy),
             WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
-    awl->xdg_decoration_mgr = wlr_xdg_decoration_manager_v1_create(awl->dpy);
-    wl_signal_add(&awl->xdg_decoration_mgr->events.new_toplevel_decoration, &awl->listen.new_xdg_decoration);
+    srv->xdg_decoration_mgr = wlr_xdg_decoration_manager_v1_create(srv->dpy);
+    wl_signal_add(&srv->xdg_decoration_mgr->events.new_toplevel_decoration, &srv->listen.new_xdg_decoration);
 
-    awl->cursor.constraints = wlr_pointer_constraints_v1_create(awl->dpy);
-    wl_signal_add(&awl->cursor.constraints->events.new_constraint, &awl->listen.new_pointer_constraint);
+    srv->cursor.constraints = wlr_pointer_constraints_v1_create(srv->dpy);
+    wl_signal_add(&srv->cursor.constraints->events.new_constraint, &srv->listen.new_pointer_constraint);
 
-    awl->cursor.relative_mgr = wlr_relative_pointer_manager_v1_create(awl->dpy);
+    srv->cursor.relative_mgr = wlr_relative_pointer_manager_v1_create(srv->dpy);
 
     /*
      * Creates a cursor, which is a wlroots utility for tracking the cursor
      * image shown on screen.
      */
-    awl->cursor.wlr = wlr_cursor_create();
-    wlr_cursor_attach_output_layout(awl->cursor.wlr, awl->out.layout);
+    srv->cursor.wlr = wlr_cursor_create();
+    wlr_cursor_attach_output_layout(srv->cursor.wlr, srv->out.layout);
 
     /* Creates an xcursor manager, another wlroots utility which loads up
      * Xcursor themes to source cursor images from and makes sure that cursor
      * images are available at all scale factors on the screen (necessary for
      * HiDPI support). Scaled cursors will be loaded with each output. */
-    awl->cursor.mgr = wlr_xcursor_manager_create(NULL, 24);
+    srv->cursor.mgr = wlr_xcursor_manager_create(NULL, 24);
     setenv("XCURSOR_SIZE", "24", 1);
 
     /*
@@ -481,14 +485,14 @@ setup(void)
      *
      * And more comments are sprinkled throughout the notify functions above.
      */
-    wl_signal_add(&awl->cursor.wlr->events.motion, &awl->listen.cursor_motion);
-    wl_signal_add(&awl->cursor.wlr->events.motion_absolute, &awl->listen.cursor_motion_absolute);
-    wl_signal_add(&awl->cursor.wlr->events.button, &awl->listen.cursor_button);
-    wl_signal_add(&awl->cursor.wlr->events.axis, &awl->listen.cursor_axis);
-    wl_signal_add(&awl->cursor.wlr->events.frame, &awl->listen.cursor_frame);
+    wl_signal_add(&srv->cursor.wlr->events.motion, &srv->listen.cursor_motion);
+    wl_signal_add(&srv->cursor.wlr->events.motion_absolute, &srv->listen.cursor_motion_absolute);
+    wl_signal_add(&srv->cursor.wlr->events.button, &srv->listen.cursor_button);
+    wl_signal_add(&srv->cursor.wlr->events.axis, &srv->listen.cursor_axis);
+    wl_signal_add(&srv->cursor.wlr->events.frame, &srv->listen.cursor_frame);
 
-    awl->cursor_shape_mgr = wlr_cursor_shape_manager_v1_create(awl->dpy, 1);
-    wl_signal_add(&awl->cursor_shape_mgr->events.request_set_shape, &awl->listen.request_set_cursor_shape);
+    srv->cursor_shape_mgr = wlr_cursor_shape_manager_v1_create(srv->dpy, 1);
+    wl_signal_add(&srv->cursor_shape_mgr->events.request_set_shape, &srv->listen.request_set_cursor_shape);
 
     /*
      * Configures a seat, which is a single "seat" at which a user sits and
@@ -496,44 +500,44 @@ setup(void)
      * pointer, touch, and drawing tablet device. We also rig up a listener to
      * let us know when new input devices are available on the backend.
      */
-    wl_signal_add(&awl->backend->events.new_input, &awl->listen.new_input_device);
-    awl->virtual_keyboard_mgr = wlr_virtual_keyboard_manager_v1_create(awl->dpy);
-    wl_signal_add(&awl->virtual_keyboard_mgr->events.new_virtual_keyboard,
-            &awl->listen.new_virtual_keyboard);
-    awl->virtual_pointer_mgr = wlr_virtual_pointer_manager_v1_create(awl->dpy);
-    wl_signal_add(&awl->virtual_pointer_mgr->events.new_virtual_pointer,
-            &awl->listen.new_virtual_pointer);
+    wl_signal_add(&srv->backend->events.new_input, &srv->listen.new_input_device);
+    srv->virtual_keyboard_mgr = wlr_virtual_keyboard_manager_v1_create(srv->dpy);
+    wl_signal_add(&srv->virtual_keyboard_mgr->events.new_virtual_keyboard,
+            &srv->listen.new_virtual_keyboard);
+    srv->virtual_pointer_mgr = wlr_virtual_pointer_manager_v1_create(srv->dpy);
+    wl_signal_add(&srv->virtual_pointer_mgr->events.new_virtual_pointer,
+            &srv->listen.new_virtual_pointer);
 
-    awl->seat = wlr_seat_create(awl->dpy, "seat0");
+    srv->seat = wlr_seat_create(srv->dpy, "seat0");
     /* there is always a cursor (see inputdevice()), even before the first
      * pointer device or with only a virtual one, which doesn't come through
      * inputdevice() */
-    wlr_seat_set_capabilities(awl->seat, WL_SEAT_CAPABILITY_POINTER);
-    wl_signal_add(&awl->seat->events.request_set_cursor, &awl->listen.request_cursor);
-    wl_signal_add(&awl->seat->events.request_set_selection, &awl->listen.request_set_sel);
-    wl_signal_add(&awl->seat->events.request_set_primary_selection, &awl->listen.request_set_psel);
-    wl_signal_add(&awl->seat->events.request_start_drag, &awl->listen.request_start_drag);
-    wl_signal_add(&awl->seat->events.start_drag, &awl->listen.start_drag);
+    wlr_seat_set_capabilities(srv->seat, WL_SEAT_CAPABILITY_POINTER);
+    wl_signal_add(&srv->seat->events.request_set_cursor, &srv->listen.request_cursor);
+    wl_signal_add(&srv->seat->events.request_set_selection, &srv->listen.request_set_sel);
+    wl_signal_add(&srv->seat->events.request_set_primary_selection, &srv->listen.request_set_psel);
+    wl_signal_add(&srv->seat->events.request_start_drag, &srv->listen.request_start_drag);
+    wl_signal_add(&srv->seat->events.start_drag, &srv->listen.start_drag);
 
-    inputinit();
+    inputinit(srv);
 
-    awl->out.mgr = wlr_output_manager_v1_create(awl->dpy);
-    wl_signal_add(&awl->out.mgr->events.apply, &awl->listen.output_mgr_apply);
-    wl_signal_add(&awl->out.mgr->events.test, &awl->listen.output_mgr_test);
+    srv->out.mgr = wlr_output_manager_v1_create(srv->dpy);
+    wl_signal_add(&srv->out.mgr->events.apply, &srv->listen.output_mgr_apply);
+    wl_signal_add(&srv->out.mgr->events.test, &srv->listen.output_mgr_test);
 
-    configinit();
+    configinit(srv);
     /* before the plugins: their threads wake these from the start, and a
      * wake without the eventfd is lost (the logind state then stays unseen
      * and its alert up) */
     if (awl_redraw_init() >= 0)
-        redraw_source = wl_event_loop_add_fd(awl->event_loop, awl_redraw_fd(),
-                WL_EVENT_READABLE, redraw_fire, NULL);
-    lockinit();
+        redraw_source = wl_event_loop_add_fd(srv->event_loop, awl_redraw_fd(),
+                WL_EVENT_READABLE, redraw_fire, srv);
+    lockinit(srv);
     /* before the plugins: their tray widget asks it for the items */
-    awl_sni_watcher_start(awl->event_loop);
-    awl_notifications_start(awl->event_loop, awl_plugins_notifications_changed);
-    awl_plugins_load(0, awl->cfgdict);
-    configuse();
+    awl_sni_watcher_start(srv->event_loop);
+    awl_notifications_start(srv, srv->event_loop, awl_plugins_notifications_changed);
+    awl_plugins_load(0, srv->cfgdict);
+    configuse(srv);
     awl_draw_init();
 
     /* Make sure XWayland clients don't connect to the parent X server,
@@ -541,13 +545,14 @@ setup(void)
      * compositor has Xwayland support */
     unsetenv("DISPLAY");
 #ifdef XWAYLAND
-    xwaylandinit();
+    xwaylandinit(srv);
 #endif
 }
 
 int
 main(int argc, char *argv[])
 {
+    awl_server_t *srv = awl;
     char *startup_cmd = NULL;
     const char *logfile = AWL_LOGFILE;
     int c;
@@ -575,10 +580,10 @@ main(int argc, char *argv[])
     /* only now: awl -v or a usage error must not truncate a running awl's log */
     awl_log_init(logfile);
 
-    setup();
+    setup(srv);
 
-    run(startup_cmd);
-    cleanup();
+    run(srv, startup_cmd);
+    cleanup(srv);
     return EXIT_SUCCESS;
 
 usage:

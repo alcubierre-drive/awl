@@ -153,10 +153,10 @@ static float clampf( float f ) {
 }
 
 /** the idle check due idle_pause after the last activity */
-static void idle_arm( void ) {
-    const int pause = awl->cfg->notifications.idle_pause;
+static void idle_arm( awl_server_t *srv ) {
+    const int pause = srv->cfg->notifications.idle_pause;
     if (N.idle_armed || N.paused || pause <= 0 || !N.loop) return;
-    if (!N.idle_timer && !(N.idle_timer = wl_event_loop_add_timer( N.loop, idle_check, NULL ))) return;
+    if (!N.idle_timer && !(N.idle_timer = wl_event_loop_add_timer( N.loop, idle_check, srv ))) return;
     int64_t left = N.last_activity + pause - now_ms();
     if (left < 1) left = 1;
     if (left > pause) left = pause;
@@ -166,8 +166,8 @@ static void idle_arm( void ) {
 
 /** (re)starts n's timer, with what was left when the user went away or
  * else the whole timeout, unless it is held, has none or the user is away */
-static void arm( notif_t* n ) {
-    if (n->pub.timeout > 0) idle_arm();
+static void arm( awl_server_t* srv, notif_t* n ) {
+    if (n->pub.timeout > 0) idle_arm(srv);
     if (n->held || n->pub.timeout <= 0 || N.paused) {
         if (n->timer) wl_event_source_timer_update( n->timer, 0 );
         n->deadline = 0;
@@ -291,14 +291,14 @@ void awl_notifications_invoke( uint32_t id, const char* key, const char* token )
     if (!(n->pub.flags & AWL_NOTIF_RESIDENT)) close_past( i, AWL_NOTIF_DISMISSED, 0 );
 }
 
-void awl_notifications_idle( void ) {
+void awl_notifications_idle( awl_server_t *srv ) {
     if (N.paused) return;
     awl_vrb_printf( "notifications: idle, timeouts stopped\n" );
     N.paused = 1;
     /* the user went away somewhere between the last activity and now: the
      * idle_giveback of that is given back, the rest counts as seen */
-    const float back = clampf( awl->cfg->notifications.idle_giveback ),
-                keep = clampf( awl->cfg->notifications.idle_floor );
+    const float back = clampf( srv->cfg->notifications.idle_giveback ),
+                keep = clampf( srv->cfg->notifications.idle_floor );
     const int64_t now = now_ms();
     const int64_t away = now - (int64_t)((float)(now - N.last_activity) * back);
     for (int i = 0; i < N.nopen; i++) {
@@ -315,37 +315,38 @@ void awl_notifications_idle( void ) {
             if (left < 1) left = 1;
             n->left = (int)left;
         }
-        arm( n );
+        arm( srv, n );
     }
 }
 
 /** idle_pause since the last activity: the timeouts stop; else checks
  * again when that will be, while something is open */
 static int idle_check( void* data ) {
+    awl_server_t *srv = data;
     (void)data;
     N.idle_armed = 0;
     if (!N.nopen) return 0;
-    const int pause = awl->cfg->notifications.idle_pause;
-    if (pause > 0 && now_ms() - N.last_activity >= pause) awl_notifications_idle();
-    else idle_arm();
+    const int pause = srv->cfg->notifications.idle_pause;
+    if (pause > 0 && now_ms() - N.last_activity >= pause) awl_notifications_idle(srv);
+    else idle_arm(srv);
     return 0;
 }
 
-void awl_notifications_activity( void ) {
+void awl_notifications_activity( awl_server_t *srv ) {
     N.last_activity = now_ms();
     if (!N.paused) return;
     awl_vrb_printf( "notifications: active, timeouts resumed\n" );
     N.paused = 0;
-    for (int i = 0; i < N.nopen; i++) arm( N.open[i] );
+    for (int i = 0; i < N.nopen; i++) arm( srv, N.open[i] );
 }
 
-void awl_notifications_hold( uint32_t id, int held ) {
+void awl_notifications_hold( awl_server_t* srv, uint32_t id, int held ) {
     int i = find( id );
     if (i < 0 || N.open[i]->held == !!held) return;
     N.open[i]->held = !!held;
     /* released, it starts from the beginning */
     N.open[i]->left = 0;
-    arm( N.open[i] );
+    arm( srv, N.open[i] );
 }
 
 /* ---- Notify ---- */
@@ -535,15 +536,15 @@ static uint32_t new_id( uint32_t replaces_id ) {
 }
 
 /** the timeout for urgency when the sender leaves it to the server */
-static int default_timeout( awl_notif_urgency_t urgency ) {
+static int default_timeout( awl_server_t* srv, awl_notif_urgency_t urgency ) {
     return urgency == AWL_NOTIF_CRITICAL ? 0
-         : urgency == AWL_NOTIF_LOW ? awl->cfg->notifications.timeout_low
-         : awl->cfg->notifications.timeout_normal;
+         : urgency == AWL_NOTIF_LOW ? srv->cfg->notifications.timeout_low
+         : srv->cfg->notifications.timeout_normal;
 }
 
 /** opens n (complete, with its generation), or replaces the open one it
  * replaces with it; returns its id. n is the store's now. */
-static uint32_t post( notif_t* n, uint32_t replaces_id ) {
+static uint32_t post( awl_server_t* srv, notif_t* n, uint32_t replaces_id ) {
     int i = replaced( n, replaces_id );
     if (i >= 0) {
         /* in place: its id, place, timer (its data is old) and hold stay */
@@ -571,7 +572,7 @@ static uint32_t post( notif_t* n, uint32_t replaces_id ) {
         N.nopen++;
         awl_vrb_printf( "notifications: %u from '%s'\n", n->pub.id, n->pub.app );
     }
-    arm( n );
+    arm( srv, n );
     changed();
     return n->pub.id;
 }
@@ -579,7 +580,8 @@ static uint32_t post( notif_t* n, uint32_t replaces_id ) {
 /** Notify(s app_name, u replaces_id, s app_icon, s summary, s body,
  * as actions, a{sv} hints, i expire_timeout) -> u id */
 static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)userdata; (void)ret_error;
+    awl_server_t *srv = userdata;
+    (void)ret_error;
     const char *app, *icon, *summary, *body;
     uint32_t replaces_id;
     int32_t expire_timeout;
@@ -599,9 +601,9 @@ static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_e
         goto fail;
     n->pub.timeout = n->pub.urgency == AWL_NOTIF_CRITICAL ? 0
                    : expire_timeout >= 0 ? expire_timeout
-                   : default_timeout( n->pub.urgency );
+                   : default_timeout( srv, n->pub.urgency );
     n->pub.generation = ++N.generation;
-    return sd_bus_reply_method_return( m, "u", post( n, replaces_id ) );
+    return sd_bus_reply_method_return( m, "u", post( srv, n, replaces_id ) );
 fail:
     notif_free( n );
     return r;
@@ -674,7 +676,7 @@ static char* copy_utf8( const char* s, size_t max ) {
     return c;
 }
 
-uint32_t awl_notifications_send( const awl_notif_send_t* s ) {
+uint32_t awl_notifications_send( awl_server_t* srv, const awl_notif_send_t* s ) {
     if (!N.loop || !s) return 0;
     notif_t* n = calloc( 1, sizeof(*n) );
     if (!n) return 0;
@@ -684,7 +686,7 @@ uint32_t awl_notifications_send( const awl_notif_send_t* s ) {
     n->pub.flags = AWL_NOTIF_AWL | (s->flags & (AWL_NOTIF_TRANSIENT | AWL_NOTIF_OSD));
     if (n->pub.flags & AWL_NOTIF_OSD) n->pub.flags |= AWL_NOTIF_TRANSIENT;
     n->pub.look = s->look;
-    n->pub.timeout = s->timeout >= 0 ? s->timeout : default_timeout( n->pub.urgency );
+    n->pub.timeout = s->timeout >= 0 ? s->timeout : default_timeout( srv, n->pub.urgency );
     if (!(n->pub.app = strdup( "awl" )) || !(n->pub.summary = copy_utf8( s->summary, MAX_SUMMARY )) ||
         !(n->pub.body = copy_utf8( s->body, MAX_BODY )) || !(n->pub.image_path = copy_utf8( s->image, MAX_PATH )) ||
         !(n->tag = copy_utf8( s->tag, MAX_SHORT )) || strings_set( n ) < 0) {
@@ -692,11 +694,11 @@ uint32_t awl_notifications_send( const awl_notif_send_t* s ) {
         return 0;
     }
     n->pub.generation = ++N.generation;
-    return post( n, 0 );
+    return post( srv, n, 0 );
 }
 
 /** history entry seq open again, as a new one */
-uint32_t awl_notifications_show( uint64_t seq ) {
+uint32_t awl_notifications_show( awl_server_t* srv, uint64_t seq ) {
     int i = 0;
     while (i < N.npast && N.past[i].pub.seq != seq) i++;
     if (!N.loop || !seq || i == N.npast) return 0;
@@ -714,7 +716,7 @@ uint32_t awl_notifications_show( uint64_t seq ) {
     n->deadline = 0;
     n->pub.generation = ++N.generation;
     awl_vrb_printf( "notifications: %llu shown again\n", (unsigned long long)seq );
-    return post( n, 0 );
+    return post( srv, n, 0 );
 }
 
 /* ---- the bus ---- */
@@ -744,10 +746,9 @@ static int on_acquired( sd_bus_message* m, void* userdata, sd_bus_error* ret_err
 
 /** awl_bus_ops_t.setup */
 static int setup( sd_bus* bus, void* data ) {
-    (void)data;
     int r;
     N.bus = bus;
-    if ((r = sd_bus_add_object_vtable( bus, &N.vtable, PATH, IFACE, vtable, NULL )) < 0 ||
+    if ((r = sd_bus_add_object_vtable( bus, &N.vtable, PATH, IFACE, vtable, data )) < 0 ||
         (r = sd_bus_match_signal( bus, NULL, "org.freedesktop.DBus", "/org/freedesktop/DBus",
                 "org.freedesktop.DBus", "NameAcquired", on_acquired, NULL )) < 0)
         return r;
@@ -768,12 +769,12 @@ static const awl_bus_ops_t ops = {
     .dropped = dropped,
 };
 
-int awl_notifications_start( struct wl_event_loop* loop, void (*changed)( void ) ) {
+int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( void ) ) {
     if (N.loop) return 0;
     N.loop = loop;
     N.changed = changed;
     N.last_activity = now_ms();
-    if (!(N.conn = awl_bus_start( loop, &ops, NULL ))) {
+    if (!(N.conn = awl_bus_start( loop, &ops, srv ))) {
         N.loop = NULL;
         return -1;
     }

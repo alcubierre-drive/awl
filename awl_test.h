@@ -12,6 +12,6 @@
  * newest one (headless and nested backends only; setup() blocks them for
  * the event loop). With AWL_TEST_WINDOWS, a FIFO of commands for the text
  * popups, see testwincmd(). After the backend is made. */
-void testinit(void);
+void testinit(awl_server_t *srv);
 /** win, a popup, is gone */
 void testpopupdestroyed(awl_window_t *win);

@@ -19,11 +19,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void configapply(void);
-static void pluginsdetach(void);
-static void pluginsattach(void);
+static void configapply(awl_server_t *srv);
+static void pluginsdetach(awl_server_t *srv);
+static void pluginsattach(awl_server_t *srv);
 static void pluginrestart(void *data);
-static void cfgdictdefaults(void);
+static void cfgdictdefaults(awl_server_t *srv);
 
 #define AWL_ACTION_REGISTER(name) .name = name,
 #define AWL_LAYOUT_REGISTER(name) .name = name,
@@ -37,47 +37,47 @@ static awl_config_t loaded;
 static struct wl_event_source *plugin_restart_source;
 
 void
-configinit(void)
+configinit(awl_server_t *srv)
 {
     /* NULL is fine: every lookup then fails with AWL_DICT_ERR_INVALID */
-    if (!(awl->cfgdict = awl_dict_new()))
+    if (!(srv->cfgdict = awl_dict_new()))
         awl_err_printf("out of memory for the config dictionary\n");
-    cfgdictdefaults();
+    cfgdictdefaults(srv);
 }
 
 void
-configfini(void)
+configfini(awl_server_t *srv)
 {
-    awl_dict_destroy(awl->cfgdict);
-    awl->cfgdict = NULL;
+    awl_dict_destroy(srv->cfgdict);
+    srv->cfgdict = NULL;
 }
 
 /** the config dictionary's keys awl sets when it starts */
 static void
-cfgdictdefaults(void)
+cfgdictdefaults(awl_server_t *srv)
 {
     /* "t_awl_started": when awl started, in cfgdict_stamp()'s format; the
      * library sets "plugins_loaded" alike (plugins.c) */
     char buf[32];
     if (!awl_localtime(buf))
-        awl_dict_set(awl->cfgdict, "t_awl_started", &AWL_DICT_STR(buf));
+        awl_dict_set(srv->cfgdict, "t_awl_started", &AWL_DICT_STR(buf));
 
     /* "desktop_dir": the folder the desktop panels list, $HOME/Desktop */
     char dir[PATH_MAX];
     const char *home = getenv("HOME");
     snprintf(dir, sizeof(dir), "%s/Desktop", home ? home : "/tmp");
-    awl_dict_set(awl->cfgdict, "desktop_dir", &AWL_DICT_STR(dir));
+    awl_dict_set(srv->cfgdict, "desktop_dir", &AWL_DICT_STR(dir));
 
     /* "wallpaper_dir": the folder the wallpapers come from, the default
      * cfg->wallpaper.dir, relative to $HOME unless absolute;
      * none for a NULL one, then there's no wallpaper */
-    const char *wp = awl->cfg->wallpaper.dir;
+    const char *wp = srv->cfg->wallpaper.dir;
     if (wp) {
         if (wp[0] == '/')
             snprintf(dir, sizeof(dir), "%s", wp);
         else
             snprintf(dir, sizeof(dir), "%s/%s", home ? home : "/tmp", wp);
-        awl_dict_set(awl->cfgdict, "wallpaper_dir", &AWL_DICT_STR(dir));
+        awl_dict_set(srv->cfgdict, "wallpaper_dir", &AWL_DICT_STR(dir));
     }
 
     /* "config_home": $XDG_CONFIG_HOME, else $HOME/.config; the spec says
@@ -87,7 +87,7 @@ cfgdictdefaults(void)
         snprintf(dir, sizeof(dir), "%s", xdg);
     else
         snprintf(dir, sizeof(dir), "%s/.config", home ? home : "/tmp");
-    awl_dict_set(awl->cfgdict, "config_home", &AWL_DICT_STR(dir));
+    awl_dict_set(srv->cfgdict, "config_home", &AWL_DICT_STR(dir));
 
     /* "state_home": $XDG_STATE_HOME, else $HOME/.local/state, likewise */
     xdg = getenv("XDG_STATE_HOME");
@@ -95,22 +95,22 @@ cfgdictdefaults(void)
         snprintf(dir, sizeof(dir), "%s", xdg);
     else
         snprintf(dir, sizeof(dir), "%s/.local/state", home ? home : "/tmp");
-    awl_dict_set(awl->cfgdict, "state_home", &AWL_DICT_STR(dir));
+    awl_dict_set(srv->cfgdict, "state_home", &AWL_DICT_STR(dir));
 
     /* "wallpaper_mode": the timer's mode by name (wallpaper_mode_names),
      * cfg->wallpaper.mode to begin with; awl keeps it current, and a plugin may set
      * it. plugins/wallpaper.c saves it in plugins/persistent.h's file and
      * at the start loads the saved one over this. */
-    wallpapermodeinit();
+    wallpapermodeinit(srv);
 
     /* "desktop_file_mode": what the desktop panels list, "off", "on" or
      * "all" (hidden files too); plugins_desktop_panel.c keeps it current
      * and, like "wallpaper_mode", saved */
-    awl_dict_set(awl->cfgdict, "desktop_file_mode", &AWL_DICT_STR("on"));
+    awl_dict_set(srv->cfgdict, "desktop_file_mode", &AWL_DICT_STR("on"));
 
     /* "lock_on_suspend": cfg->lock.on_suspend, for plugins/logind.c; the
      * library sets it from its own config before its logind thread starts */
-    awl_dict_set(awl->cfgdict, "lock_on_suspend", &AWL_DICT_NUM(awl->cfg->lock.on_suspend));
+    awl_dict_set(srv->cfgdict, "lock_on_suspend", &AWL_DICT_NUM(srv->cfg->lock.on_suspend));
 }
 
 /* wlroots' (and scenefx') messages; wlroots drops those above its level */
@@ -124,22 +124,22 @@ wlrlog(enum wlr_log_importance importance, const char *fmt, va_list ap)
 }
 
 void
-wlrloginit(void)
+wlrloginit(awl_server_t *srv)
 {
-    int level = awl->cfg->wlr_log_level;
+    int level = srv->cfg->wlr_log_level;
     if (awl_log_level() >= awl_loglevel_vrb) /* awl -d */
         level = WLR_DEBUG;
     wlr_log_init(level < WLR_SILENT ? WLR_SILENT : level > WLR_DEBUG ? WLR_DEBUG : level, wlrlog);
 }
 
 void
-updatepluginpause(void)
+updatepluginpause(awl_server_t *srv)
 {
     Monitor *m;
     int visible = 0;
-    wl_list_for_each(m, &awl->out.mons, link)
+    wl_list_for_each(m, &srv->out.mons, link)
         visible |= m->wlr_output->enabled;
-    awl_plugins_set_paused(awl->locked || !visible);
+    awl_plugins_set_paused(srv->locked || !visible);
 }
 
 /** each variable the config's environment changed, with its value from
@@ -149,11 +149,11 @@ static struct { char *name, *orig; } *envsaved;
 static size_t nenvsaved;
 
 static int
-envconfigured(const char *name)
+envconfigured(awl_server_t *srv, const char *name)
 {
     size_t i;
-    for (i = 0; i < awl->cfg->environment.n; i++)
-        if (awl->cfg->environment.v[i].name && !strcmp(awl->cfg->environment.v[i].name, name))
+    for (i = 0; i < srv->cfg->environment.n; i++)
+        if (srv->cfg->environment.v[i].name && !strcmp(srv->cfg->environment.v[i].name, name))
             return 1;
     return 0;
 }
@@ -193,14 +193,14 @@ environmentimport(void)
 
 /** cfg->environment into awl's environment */
 static void
-environmentapply(void)
+environmentapply(awl_server_t *srv)
 {
     size_t i, j;
     for (i = 0; i < nenvsaved; i++)
-        if (!envconfigured(envsaved[i].name))
+        if (!envconfigured(srv, envsaved[i].name))
             envset(envsaved[i].name, envsaved[i].orig);
-    for (i = 0; i < awl->cfg->environment.n; i++) {
-        const EnvVar *e = &awl->cfg->environment.v[i];
+    for (i = 0; i < srv->cfg->environment.n; i++) {
+        const EnvVar *e = &srv->cfg->environment.v[i];
         if (!e->name || !*e->name || strchr(e->name, '=')) {
             awl_wrn_printf("environment: no variable \"%s\"\n", e->name ? e->name : "(null)");
             continue;
@@ -225,14 +225,14 @@ environmentapply(void)
         envset(e->name, e->value);
     }
     /* grim's default folder: the desktop's, unless the config sets it */
-    if (!envconfigured("GRIM_DEFAULT_DIR")) {
+    if (!envconfigured(srv, "GRIM_DEFAULT_DIR")) {
         awl_dict_val_t dir;
         char path[PATH_MAX] = "";
-        awl_dict_lock(awl->cfgdict);
-        if (awl_dict_get(awl->cfgdict, "desktop_dir", &dir) == AWL_DICT_OK
+        awl_dict_lock(srv->cfgdict);
+        if (awl_dict_get(srv->cfgdict, "desktop_dir", &dir) == AWL_DICT_OK
                 && dir.kind == AWL_DICT_KIND_STR)
             snprintf(path, sizeof(path), "%s", dir.str);
-        awl_dict_unlock(awl->cfgdict);
+        awl_dict_unlock(srv->cfgdict);
         if (*path)
             envset("GRIM_DEFAULT_DIR", path);
     }
@@ -245,86 +245,87 @@ environmentapply(void)
  * and button bindings, rules, focus behaviour, which new layer surfaces get
  * blurred) needs nothing here. */
 void
-configapply(void)
+configapply(awl_server_t *srv)
 {
     Monitor *m;
 
-    environmentapply();
-    wlrloginit();
-    inputconfigure();
-    tagsconfigure();
-    barconfigure();
-    clientsconfigure();
-    wlr_scene_rect_set_color(awl->root_bg, (float[4])RGBA(awl->cfg->colors.root));
-    wl_list_for_each(m, &awl->out.mons, link)
-        wlr_scene_rect_set_color(m->fullscreen_bg, (float[4])RGBA(awl->cfg->colors.fullscreen));
-    lockconfigure();
-    wallpaperconfigure();
+    environmentapply(srv);
+    wlrloginit(srv);
+    inputconfigure(srv);
+    tagsconfigure(srv);
+    barconfigure(srv);
+    clientsconfigure(srv);
+    wlr_scene_rect_set_color(srv->root_bg, (float[4])RGBA(srv->cfg->colors.root));
+    wl_list_for_each(m, &srv->out.mons, link)
+        wlr_scene_rect_set_color(m->fullscreen_bg, (float[4])RGBA(srv->cfg->colors.fullscreen));
+    lockconfigure(srv);
+    wallpaperconfigure(srv);
     desktop_configure(&(desktop_style_t){
-            .blur = awl->cfg->blur.popups, .radius = awl->cfg->desktop.radius,
-            .blur_strength = awl->cfg->blur.strength, .blur_alpha = awl->cfg->blur.alpha });
-    popupsrestyle();
-    awl_alert_configure();
+            .blur = srv->cfg->blur.popups, .radius = srv->cfg->desktop.radius,
+            .blur_strength = srv->cfg->blur.strength, .blur_alpha = srv->cfg->blur.alpha });
+    popupsrestyle(srv);
+    awl_alert_configure(srv);
 
-    barsdirty();
+    barsdirty(srv);
 }
 
 void
-configuse(void)
+configuse(awl_server_t *srv)
 {
     const awl_plugin_api_t *api = awl_plugins_api();
-    const Layout *old = awl->cfg->layouts.v;
-    size_t n_old = awl->cfg->layouts.n;
+    const Layout *old = srv->cfg->layouts.v;
+    size_t n_old = srv->cfg->layouts.n;
     if (api) {
         /* the old one's lists point into the library, so only its layouts'
          * address survives this, for layoutsmoved() */
         api->config(&loaded);
         /* the library fills it in itself; filling it twice changes nothing */
         awl_config_fill_defaults(&loaded);
-        awl->cfg = &loaded;
+        srv->cfg = &loaded;
     } else {
-        awl->cfg = builtinconfig();
+        srv->cfg = builtinconfig();
     }
-    layoutsmoved(old, n_old);
-    configapply();
+    layoutsmoved(srv, old, n_old);
+    configapply(srv);
 }
 
 /** :c:func:`awl_plugins_reload`: the bars' widgets come from the library */
 static void
-pluginsdetach(void)
+pluginsdetach(awl_server_t *srv)
 {
-    const Layout *old = awl->cfg->layouts.v;
-    size_t n_old = awl->cfg->layouts.n;
+    const Layout *old = srv->cfg->layouts.v;
+    size_t n_old = srv->cfg->layouts.n;
 
-    barwidgetsclear();
+    barwidgetsclear(srv);
     /* the popups stay until the library's fini gives them back (or
      * pluginsreap() destroys them): its painters and callbacks are still
      * there until then. cfg points into the library */
-    awl->cfg = builtinconfig();
-    layoutsmoved(old, n_old);
+    srv->cfg = builtinconfig();
+    layoutsmoved(srv, old, n_old);
 }
 
 /** :c:func:`awl_plugins_reload`: the new library's config (:c:func:`configuse`),
  * the bars' widgets from it, the desktop panels redrawn */
 static void
-pluginsattach(void)
+pluginsattach(awl_server_t *srv)
 {
-    configuse();
-    barwidgetsattach();
-    barsdirty();
+    configuse(srv);
+    barwidgetsattach(srv);
+    barsdirty(srv);
     desktop_reloaded();
 }
 
 static void
 pluginrestart(void *data)
 {
+    awl_server_t *srv = data;
     plugin_restart_source = NULL;
     /* picks up a rebuilt libawlplugins.so; with an unchanged (or broken)
      * one this is a plain restart of the plugin threads */
-    awl_plugins_reload(pluginsdetach, pluginsattach);
+    awl_plugins_reload(srv, pluginsdetach, pluginsattach);
 
     /* the reloaded config's tray icon theme */
-    awl_tray_app_set_theme(awl->cfg->tray.icon_theme);
+    awl_tray_app_set_theme(srv->cfg->tray.icon_theme);
 }
 
 /** The plugin_restart action: reloads ``libawlplugins.so`` (its tray widget
@@ -334,11 +335,12 @@ pluginrestart(void *data)
 void
 plugin_restart(const Arg* arg)
 {
+    awl_server_t *srv = awl;
     (void)arg;
     /* Not from here: this is usually called through a key binding, from the
      * library's code the reload unloads */
     if (!plugin_restart_source)
-        plugin_restart_source = wl_event_loop_add_idle(awl->event_loop, pluginrestart, NULL);
+        plugin_restart_source = wl_event_loop_add_idle(srv->event_loop, pluginrestart, srv);
 }
 
 void

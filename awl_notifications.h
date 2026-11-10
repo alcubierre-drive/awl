@@ -1,5 +1,7 @@
 #pragma once
 
+typedef struct awl_server_t awl_server_t;
+
 /**
  * The notification server, part of awl: org.freedesktop.Notifications on
  * the session bus (the Desktop Notifications Specification 1.2), on awl's
@@ -51,7 +53,7 @@ struct wl_event_loop;
 /** Starts it on loop; it connects from the loop. changed, if not NULL, is
  * called once per loop round after the open notifications changed.
  * Returns 0, or -1 (logged). */
-int awl_notifications_start( struct wl_event_loop* loop, void (*changed)( void ) );
+int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( void ) );
 /** Stops it, letting go of the name; the open notifications are dropped
  * without a signal. Nothing if it isn't running. */
 void awl_notifications_stop( void );
@@ -64,19 +66,19 @@ void awl_notifications_close( uint32_t id, awl_notif_reason_t reason );
 void awl_notifications_invoke( uint32_t id, const char* key, const char* token );
 /** :c:member:`awl_host_t.notif_send`: awl's own notifications, the library's and
  * the core's (awl_alert.c) */
-uint32_t awl_notifications_send( const awl_notif_send_t* send );
+uint32_t awl_notifications_send( awl_server_t* srv, const awl_notif_send_t* send );
 /** :c:member:`awl_host_t.notif_history` */
 int awl_notifications_history( const awl_notif_past_t** out, int max );
 /** :c:member:`awl_host_t.notif_forget` */
 void awl_notifications_forget( uint64_t seq );
 /** :c:member:`awl_host_t.notif_show` */
-uint32_t awl_notifications_show( uint64_t seq );
+uint32_t awl_notifications_show( awl_server_t* srv, uint64_t seq );
 /** :c:member:`awl_host_t.notif_hold` */
-void awl_notifications_hold( uint32_t id, int held );
+void awl_notifications_hold( awl_server_t* srv, uint32_t id, int held );
 /** a key or the pointer moved: timeouts stopped for idleness
  * (:c:member:`awl_config_t.notifications.idle_pause`) resume. Cheap enough for
  * every motion. */
-void awl_notifications_activity( void );
+void awl_notifications_activity( awl_server_t *srv );
 /** as if idle_pause had passed now (the test FIFO's nidle): the timeouts
  * stop until the next activity */
-void awl_notifications_idle( void );
+void awl_notifications_idle( awl_server_t *srv );

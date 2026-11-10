@@ -81,6 +81,8 @@ typedef struct {
 
 typedef struct Monitor Monitor;
 typedef struct Client Client;
+/* the compositor (awl_server.h); objects with listeners point back to it */
+typedef struct awl_server_t awl_server_t;
 /** A window, XDG shell or XWayland. */
 struct Client {
     /* Must keep these three elements in this order */
@@ -88,6 +90,8 @@ struct Client {
     struct wlr_box geom; /* layout-relative, includes border */
     Monitor *mon;
     struct wlr_scene_tree *scene;
+    /** for its listeners, which only get the client */
+    awl_server_t *srv;
     struct wlr_scene_rect *border[4]; /* top, bottom, left, right */
     struct wlr_scene_blur *blur;
     float one_minus_alpha;
@@ -162,6 +166,8 @@ typedef struct Buffer Buffer;
 /** An output, with its bar. */
 struct Monitor {
     struct wl_list link;
+    /** for its listeners, which only get the monitor */
+    awl_server_t *srv;
     struct wlr_output *wlr_output;
     struct wlr_scene_output *scene_output;
     struct wlr_scene_buffer *scene_buffer; /* bar buffer */

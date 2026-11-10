@@ -19,11 +19,11 @@ void configdefaults(awl_config_t *c);
 const awl_config_t *builtinconfig(void);
 /** creates cfgdict with its defaults (see there); NULL out of memory, then
  * every lookup fails */
-void configinit(void);
-void configfini(void);
+void configinit(awl_server_t *srv);
+void configfini(awl_server_t *srv);
 /** switches to the loaded library's config, or awl's defaults,
  * and brings everything set up from it up to date */
-void configuse(void);
+void configuse(awl_server_t *srv);
 /** Hands DISPLAY, WAYLAND_DISPLAY and XDG_CURRENT_DESKTOP to systemd's and
  * the session bus' environment (:c:func:`awl_bus_import_environment`), once they
  * are set at the start; after that, every reload that changes one of them
@@ -31,10 +31,10 @@ void configuse(void);
 void environmentimport(void);
 /** wlroots' log level: cfg->wlr_log_level, WLR_DEBUG with awl -d; at
  * startup and after every config change */
-void wlrloginit(void);
+void wlrloginit(awl_server_t *srv);
 /** No bar is visible while locked or with every output off (unplugged or
  * powered down), so the plugins' 1 s polling can stop. */
-void updatepluginpause(void);
+void updatepluginpause(awl_server_t *srv);
 
 /* the functions the config binds keys and buttons to (`Key.func`,
  * `Button.func`) and arranges its layouts with (`Layout.arrange`), defined

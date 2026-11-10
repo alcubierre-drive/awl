@@ -25,9 +25,9 @@ void createpointerconstraint(struct wl_listener *listener, void *data);
 /** The pointer moved by dx, dy (unaccelerated: dx_unaccel, dy_unaccel) on
  * device; time 0 only looks again what is under it, after a change of the
  * scene (pointer focus, the cursor image, the hover). */
-void motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double dy,
+void motionnotify(awl_server_t *srv, uint32_t time, struct wlr_input_device *device, double dx, double dy,
         double dx_unaccel, double dy_unaccel);
 /** what is at x, y: the surface, its client or layer surface (each may be
  * NULL), and x, y in the node's coordinates */
-void xytonode(double x, double y, struct wlr_surface **psurface,
+void xytonode(awl_server_t *srv, double x, double y, struct wlr_surface **psurface,
         Client **pc, LayerSurface **pl, double *nx, double *ny);

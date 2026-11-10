@@ -124,36 +124,36 @@ void awl_window_reparent( awl_window_t* win, struct wlr_scene_tree* parent ) {
     wlr_scene_node_reparent( &win->tree->node, parent );
 }
 
-void awl_window_set_style( awl_window_t* win, const awl_window_style_t* style ) {
+void awl_window_set_style( awl_server_t* srv, awl_window_t* win, const awl_window_style_t* style ) {
     win->style = *style;
     configure( win );
     win->drawn = 0;
-    if (win->m) awl_window_update( win, win->m );
+    if (win->m) awl_window_update( srv, win, win->m );
 }
 
-void awl_window_set_text( awl_window_t* win, const char* text ) {
+void awl_window_set_text( awl_server_t* srv, awl_window_t* win, const char* text ) {
     if (!win) return;
     if (!text) text = "";
     if (win->text && !strcmp( win->text, text )) return;
     free( win->text );
     win->text = strdup( text );
     win->drawn = 0;
-    if (win->m) awl_window_update( win, win->m );
+    if (win->m) awl_window_update( srv, win, win->m );
 }
 
-void awl_window_set_painter( awl_window_t* win, const awl_window_painter_t* painter, void* data ) {
+void awl_window_set_painter( awl_server_t* srv, awl_window_t* win, const awl_window_painter_t* painter, void* data ) {
     if (!win) return;
     win->painter = painter ? *painter : (awl_window_painter_t){ 0 };
     win->painter_data = data;
     win->hover = -1;
     win->drawn = 0;
-    if (win->m) awl_window_update( win, win->m );
+    if (win->m) awl_window_update( srv, win, win->m );
 }
 
-void awl_window_redraw( awl_window_t* win ) {
+void awl_window_redraw( awl_server_t* srv, awl_window_t* win ) {
     if (!win) return;
     win->drawn = 0;
-    if (win->m) awl_window_update( win, win->m );
+    if (win->m) awl_window_update( srv, win, win->m );
 }
 
 /** what m's popups draw with: the popup font, else the bar's */
@@ -246,11 +246,11 @@ static int draw( awl_window_t* win ) {
     return 1;
 }
 
-static void place( awl_window_t* win ) {
+static void place( awl_server_t* srv, awl_window_t* win ) {
     Monitor* m = win->m;
     int x, y;
     if (as_strip( win )) {
-        const int top = win->at == AWL_WINDOW_AT_BAR ? awl->cfg->bar.top : win->at == AWL_WINDOW_AT_STRIP_TOP;
+        const int top = win->at == AWL_WINDOW_AT_BAR ? srv->cfg->bar.top : win->at == AWL_WINDOW_AT_STRIP_TOP;
         x = m->m.x;
         y = top ? m->m.y : m->m.y + m->m.height - win->lh;
     } else if (win->placement == PLACE_AT)
@@ -267,7 +267,7 @@ static void place( awl_window_t* win ) {
     wlr_scene_node_set_position( &win->tree->node, x, y );
 }
 
-void awl_window_update( awl_window_t* win, Monitor* m ) {
+void awl_window_update( awl_server_t* srv, awl_window_t* win, Monitor* m ) {
     if (!win || win->m != m || !m) return;
     if (!m->wlr_output->enabled || !m->bar.m || !font_of( m )) {
         wlr_scene_node_set_enabled( &win->tree->node, 0 );
@@ -283,29 +283,29 @@ void awl_window_update( awl_window_t* win, Monitor* m ) {
         wlr_scene_node_set_enabled( &win->tree->node, 0 );
         return;
     }
-    place( win );
+    place( srv, win );
     wlr_scene_node_set_enabled( &win->tree->node, 1 );
 }
 
-void awl_window_show( awl_window_t* win, Monitor* m, int center_x, int top ) {
+void awl_window_show( awl_server_t* srv, awl_window_t* win, Monitor* m, int center_x, int top ) {
     if (win->m != m || as_strip( win )) win->drawn = 0;
     win->m = m;
     win->center_x = center_x;
     win->top = top;
     win->placement = PLACE_BAR;
-    awl_window_update( win, m );
+    awl_window_update( srv, win, m );
 }
 
-void awl_window_show_beside( awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left ) {
+void awl_window_show_beside( awl_server_t* srv, awl_window_t* win, Monitor* m, const struct wlr_box* anchor, int left ) {
     if (win->m != m || as_strip( win )) win->drawn = 0;
     win->m = m;
     win->placement = PLACE_BESIDE;
     win->left = left;
     win->anchor = *anchor;
-    awl_window_update( win, m );
+    awl_window_update( srv, win, m );
 }
 
-void awl_window_show_at( awl_window_t* win, Monitor* m, int at, int dx, int dy ) {
+void awl_window_show_at( awl_server_t* srv, awl_window_t* win, Monitor* m, int at, int dx, int dy ) {
     /* to, from or between strips: its size, frame or place change */
     if (win->m != m || ((as_strip( win ) || is_strip( at )) && (win->placement != PLACE_AT || win->at != at)))
         win->drawn = 0;
@@ -314,7 +314,7 @@ void awl_window_show_at( awl_window_t* win, Monitor* m, int at, int dx, int dy )
     win->at = at;
     win->dx = dx;
     win->dy = dy;
-    awl_window_update( win, m );
+    awl_window_update( srv, win, m );
 }
 
 void awl_window_hide( awl_window_t* win ) {
@@ -348,11 +348,11 @@ void awl_window_removemon( awl_window_t* win, Monitor* m ) {
     if (win && win->m == m) awl_window_hide( win );
 }
 
-void awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* data ) {
+void awl_window_set_click( awl_server_t* srv, awl_window_t* win, awl_window_click_t click, void* data ) {
     if (!win) return;
     win->click = click;
     win->click_data = data;
-    if (!click) awl_window_pointer_leave( win );
+    if (!click) awl_window_pointer_leave( srv, win );
 }
 
 void awl_window_set_hidden( awl_window_t* win, awl_window_hidden_t hidden, void* data ) {
@@ -381,11 +381,11 @@ int awl_window_key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t 
     return win->key && win->key( win, sym, utf8, mods, win->key_data );
 }
 
-void awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data ) {
+void awl_window_set_scroll( awl_server_t* srv, awl_window_t* win, awl_window_scroll_t scroll, void* data ) {
     if (!win) return;
     win->scroll = scroll;
     win->scroll_data = data;
-    if (!scroll && !win->click) awl_window_pointer_leave( win );
+    if (!scroll && !win->click) awl_window_pointer_leave( srv, win );
 }
 
 /** whether win is visible at lx, ly, or less than gx, gy beside it */
@@ -424,7 +424,7 @@ static int cell_at( const awl_window_t* win, double lx, double ly, int* row, int
                                (int)((ly - win->tree->node.y) * win->scale), row, col );
 }
 
-int awl_window_pointer_motion( awl_window_t* win, double lx, double ly ) {
+int awl_window_pointer_motion( awl_server_t* srv, awl_window_t* win, double lx, double ly ) {
     int row, col;
     cell_at( win, lx, ly, &row, &col );
     const int entered = !win->pointer_in;
@@ -432,7 +432,7 @@ int awl_window_pointer_motion( awl_window_t* win, double lx, double ly ) {
     if (row != win->hover) {
         win->hover = row;
         win->drawn = 0;
-        awl_window_update( win, win->m );
+        awl_window_update( srv, win, win->m );
     } else if (!entered)
         return row;
     /* last: it may hide or show windows, this one too */
@@ -440,13 +440,13 @@ int awl_window_pointer_motion( awl_window_t* win, double lx, double ly ) {
     return row;
 }
 
-void awl_window_pointer_leave( awl_window_t* win ) {
+void awl_window_pointer_leave( awl_server_t* srv, awl_window_t* win ) {
     const int was_in = win->pointer_in;
     win->pointer_in = 0;
     if (win->hover != -1) {
         win->hover = -1;
         win->drawn = 0;
-        if (win->m) awl_window_update( win, win->m );
+        if (win->m) awl_window_update( srv, win, win->m );
     }
     if (was_in && win->hover_cb) win->hover_cb( win, -1, 0, win->hover_data );
 }
