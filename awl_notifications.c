@@ -52,7 +52,7 @@ typedef struct {
      * left of it when the user went away, 0 the whole timeout */
     int64_t deadline;
     int left;
-    /** the store it's in, for expire() */
+    /** the store it's in, for expire(); set by post() */
     awl_notifs_t* N;
 } notif_t;
 
@@ -182,10 +182,7 @@ static void arm( awl_server_t* srv, notif_t* n ) {
     }
     const int ms = n->left > 0 ? n->left : n->pub.timeout;
     n->left = 0;
-    if (!n->timer) {
-        n->N = N;
-        n->timer = wl_event_loop_add_timer( N->loop, expire, n );
-    }
+    if (!n->timer) n->timer = wl_event_loop_add_timer( N->loop, expire, n );
     if (n->timer) wl_event_source_timer_update( n->timer, ms );
     n->deadline = now_ms() + ms;
 }
@@ -573,6 +570,8 @@ static int default_timeout( awl_server_t* srv, awl_notif_urgency_t urgency ) {
  * replaces with it; returns its id. n is the store's now. */
 static uint32_t post( awl_server_t* srv, notif_t* n, uint32_t replaces_id ) {
     awl_notifs_t* N = srv->notifs;
+    /* before the copy below: one that replaces another becomes it */
+    n->N = N;
     int i = replaced( N, n, replaces_id );
     if (i >= 0) {
         /* in place: its id, place, timer (its data is old) and hold stay */

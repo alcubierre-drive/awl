@@ -517,6 +517,7 @@ void
 inputfini(awl_server_t *srv)
 {
     destroykeyboardgroup(&srv->input->kb_group->destroy, NULL);
+    srv->input->kb_group = NULL;
 }
 
 void
