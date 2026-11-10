@@ -14,6 +14,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <glib.h>
+
+/** the longest zone label and time kept, with the \0 */
+#define MAX_STRLEN_ZONES 32
+
+/* on id == NULL return local time */
+static int gettime_tz(const char* id, const char* format, char out[], size_t nout);
 
 /* the parts: the buttons, the event list (only scrolls) and the 6 x 7 days */
 enum {
@@ -46,6 +53,11 @@ static struct {
     struct fcft_font* font;
     float scale;
     int widest_day, widest_month, widest_wday;
+
+    /* other time zones: label and time, and measure()'s row for each */
+    int n_zones;
+    char zones[AWL_PLUGINS_MAX_N_ZONES][2][MAX_STRLEN_ZONES];
+    box_t zone_row[AWL_PLUGINS_MAX_N_ZONES];
 
     /* measure()'s layout */
     box_t part[P_COUNT];
@@ -166,6 +178,7 @@ static const char* app_label( void ) {
 
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
     const awl_popup_config_t* c = &awl_config()->popup;
+    const awl_plugin_config_t* pc = awl_plugin_config();
     if (!font) return 0;
     C.scale = scale;
     if (C.font != font) {
@@ -213,8 +226,28 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     cell_w = W / 8;
     const int grid_x = (W - 8 * cell_w) / 2;
 
-    /* the month and the year, each with its arrows */
     int y = 0;
+
+    /* the TZs */
+    const char* zfmt = pc->calendar.zone_format;
+    char tLoc[MAX_STRLEN_ZONES] = {0}; gettime_tz(NULL, zfmt, tLoc, sizeof tLoc);
+    C.n_zones = 0;
+    for (int z=0; z<MIN(pc->calendar.n_zones, AWL_PLUGINS_MAX_N_ZONES); ++z) {
+        char tId[MAX_STRLEN_ZONES] = {0};
+        int err = gettime_tz(pc->calendar.zones[z].zone, zfmt, tId, sizeof tId);
+        if (err) continue;
+        if (strcmp(tLoc, tId)) {
+            const char* id = pc->calendar.zones[z].id ? pc->calendar.zones[z].id : "";
+            strncpy(C.zones[C.n_zones][0], id, MAX_STRLEN_ZONES - 1);
+            C.zones[C.n_zones][0][MAX_STRLEN_ZONES - 1] = '\0';
+            strcpy(C.zones[C.n_zones][1], tId); /* gettime_tz() terminated it */
+            C.zone_row[C.n_zones] = (box_t){ 0, y, W, bh };
+            y += bh + px( 2 );
+            C.n_zones++;
+        }
+    }
+
+    /* the month and the year, each with its arrows */
     set_part( P_MPREV, 0, y, arrow_w, bh );
     C.month_label = (box_t){ arrow_w, y, month_w, bh };
     set_part( P_MNEXT, arrow_w + month_w, y, arrow_w, bh );
@@ -281,6 +314,17 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     if (hover >= 0 && hover != P_LIST && C.has[hover]) {
         box_t b = C.part[hover];
         awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0, c->popup_hover );
+    }
+
+    /* the timezones */
+    for (int z=0; z<C.n_zones; ++z) {
+        const box_t b = C.zone_row[z];
+        int twl = (int)awl_host->text_width( font, C.zones[z][0] );
+        int twr = (int)awl_host->text_width( font, C.zones[z][1] );
+        awl_host->text_over( pix, font, x0 + b.x, y0 + b.y,
+                (unsigned)twl + 1, (unsigned)b.h, C.zones[z][0], c->popup_dim );
+        awl_host->text_over( pix, font, x0 + b.x + b.w - twr, y0 + b.y,
+                (unsigned)twr + 1, (unsigned)b.h, C.zones[z][1], c->popup_fg );
     }
 
     /* the heading */
@@ -571,4 +615,21 @@ void awl_calpopup_poll( void ) {
         changed = 1;
     }
     if (changed && C.win && awl_host->window_monitor( C.win )) redraw();
+}
+
+static int gettime_tz(const char* id, const char* format, char out[], size_t nout) {
+    if (!format || !*format || !nout) return 1;
+    GTimeZone *tz = id ? g_time_zone_new_identifier(id) : g_time_zone_new_local();
+    if (!tz) return 1;
+    GDateTime *now = g_date_time_new_now(tz);
+    gchar *formatted = g_date_time_format(now, format);
+    int result = 0;
+    if (formatted)
+        strncpy(out, formatted, nout-1), out[nout-1] = '\0';
+    else
+        result = 1;
+    g_free(formatted);
+    g_date_time_unref(now);
+    g_time_zone_unref(tz);
+    return result;
 }

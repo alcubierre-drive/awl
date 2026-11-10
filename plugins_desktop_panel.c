@@ -4,6 +4,7 @@
 
 #include "plugins.h"
 #include "plugins/colors.h"
+#include "plugins/osd.h"
 #include "plugins/persistent.h"
 #include "plugins/readdir.h"
 #include "plugins/thread.h"
@@ -389,16 +390,13 @@ void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* da
 }
 
 /* plain clicks change the wallpaper, Shift+clicks the panel and the timer */
-/* what a toggle changed, from show/hidden before it to now */
+/* what a toggle changed, from show/hidden before it to now (a click
+ * changes one of them) */
 static void notify_toggle( int show, int hidden ) {
-    char body[128];
-    int len = 0;
     if (show != desk.show)
-        len += snprintf( body + len, sizeof(body) - len, "%svisible", desk.show ? "" : "not " );
-    if (hidden != desk.hidden)
-        snprintf( body + len, sizeof(body) - len, "%s%s hidden files",
-                  len ? ", " : "", desk.hidden ? "show" : "hide" );
-    awl_notify( "Desktop files", body );
+        awl_osd_desktop( desk.show ? "Desktop files shown" : "Desktop files hidden" );
+    else if (hidden != desk.hidden)
+        awl_osd_desktop( desk.hidden ? "Hidden files shown" : "Hidden files not shown" );
 }
 
 int awl_desktop_click( int button, uint32_t mods ) {
@@ -410,18 +408,13 @@ int awl_desktop_click( int button, uint32_t mods ) {
         case BTN_MIDDLE: mode = WallpaperRand; break;
         default: return 0;
         }
-        awl_notify_wallpaper_shown( "Wallpaper" );
+        awl_osd_wallpaper_ask();
         if (mode == WallpaperRand) awl_wallpaper_random();
         else awl_wallpaper_step( mode == WallpaperNext ? +1 : -1 );
         return 1;
     } else if (mods == WLR_MODIFIER_CTRL) {
         // the button is ignored here, could be taken in the future.
-        int cur, n;
-        char body[32];
-        if (awl_wallpaper_settled( &cur, &n )) {
-            snprintf( body, sizeof(body), "%d/%d", cur + 1, n );
-            awl_notify( "Wallpaper Info", body );
-        }
+        awl_osd_wallpaper();
         return 1;
     } else if (mods == WLR_MODIFIER_SHIFT) {
         int show = desk.show, hidden = desk.hidden;

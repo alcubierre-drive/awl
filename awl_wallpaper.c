@@ -7,7 +7,7 @@
 static int wallpapermodedict(void);
 static void wallpapermodeset(WallpaperMode mode);
 static void wallpapermodesync(void);
-static void wallpapernext(WallpaperMode mode);
+static void wallpapernext(WallpaperMode mode, int by_timer);
 static void wallpaperarm(void);
 static int wallpapertimeout(void *data);
 
@@ -72,11 +72,11 @@ wallpapermodesync(void)
 
 /** the library's thread does it (plugins/wallpaper.c), off the main thread */
 void
-wallpapernext(WallpaperMode mode)
+wallpapernext(WallpaperMode mode, int by_timer)
 {
     const awl_plugin_api_t *api = awl_plugins_api();
     if (api)
-        api->wallpaper(mode);
+        api->wallpaper(mode, by_timer);
 }
 
 /** the wallpaper action: switches to the wallpaper arg->i says (a
@@ -92,7 +92,7 @@ wallpaper(const Arg *arg)
     else if (mode == WallpaperTimerBack)
         mode = wallpaper_mode == WallpaperNext ? WallpaperPrev
              : wallpaper_mode == WallpaperPrev ? WallpaperNext : WallpaperBack;
-    wallpapernext(mode);
+    wallpapernext(mode, 0);
 }
 
 void
@@ -134,7 +134,7 @@ static int
 wallpapertimeout(void *data)
 {
     wallpapermodesync();
-    wallpapernext(wallpaper_mode);
+    wallpapernext(wallpaper_mode, 1);
     wallpaperarm();
     return 0;
 }

@@ -165,6 +165,23 @@ typedef struct awl_plugin_config_t {
          * button. */
         const char* const* app;
         const char* app_label;
+#ifndef AWL_PLUGINS_MAX_N_ZONES
+#define AWL_PLUGINS_MAX_N_ZONES 4
+#endif
+        /** other time zones, a row each above the month: the label (id)
+         * left, the zone's time right. zone is an IANA identifier
+         * (``Europe/Berlin``, as g_time_zone_new_identifier() takes it);
+         * an unknown zone is left out, and so is a zone whose time reads
+         * as the local one. Labels and times are cut at 31 bytes. */
+        struct {
+            const char* id;
+            const char* zone;
+        } zones[AWL_PLUGINS_MAX_N_ZONES];
+        /** how many of zones are set, AWL_PLUGINS_MAX_N_ZONES at most */
+        int n_zones;
+        /** the zones' times, a g_date_time_format() format; NULL or "":
+         * no zones are shown */
+        const char* zone_format;
     } calendar;
     /** the launcher (plugins/launcher.h), a popup: styled as the others
      * (:c:member:`awl_config_t.popup`, blurred with blur.popups; its own colors are
@@ -228,7 +245,8 @@ typedef struct awl_plugin_config_t {
         const char* bell_icon_dnd;
     } notify;
     /** the notification a volume or brightness change brings
-     * (plugins/osd.h): the new value as a bar beside an icon, no text,
+     * (plugins/osd.h), and the wallpaper's and the desktop files'
+     * (wallpaper_icon, desktop_icon): the new value as a bar beside an icon, no text,
      * replaced in place while the changes go on; in colors.notify_low_*,
      * the bar in colors.osd_progress, or for a change awl didn't ask for
      * in colors.osd_unasked with its cause as the summary; above 100%
@@ -252,6 +270,14 @@ typedef struct awl_plugin_config_t {
          * before), the volume's by :c:type:`pulse_cause_t` */
         struct { const char* unknown, * start, * timer, * update, * adjust; } brightness_unasked;
         struct { const char* connect, * other, * sink, * port; } volume_unasked;
+        /** the wallpaper's (a change, the timer's mode, a Ctrl+click on
+         * the desktop) and the desktop files' (a Shift+click's toggle)
+         * icons, as notify's bell_icon; none found: no icon */
+        const char* wallpaper_icon;
+        const char* desktop_icon;
+        /** whether the timer's wallpaper changes show too, not only the
+         * user's */
+        int wallpaper_timer;
     } osd;
 } awl_plugin_config_t;
 
@@ -307,10 +333,6 @@ uint32_t awl_notify_send( const awl_notif_send_t* n );
  * dictionary frees) as ``key=pointer(free function)``; its lines aren't
  * capped (but by the screen). Main thread. */
 void awl_notify_config( void );
-/** plugins.c: a notification "x/N" once the wallpaper all changes asked for
- * end on is shown; main thread */
-void awl_notify_wallpaper_shown( const char* title );
-
 /** plugins.c: the default sink's volume up (delta > 0) or down by delta (1
  * is 100%), up no further than the config's volume.max
  * (:c:func:`pulse_volume_adjust`); for a

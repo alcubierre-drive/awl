@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 40
+#define AWL_PLUGIN_ABI 41
 /** The name of the library's only exported symbol, an :c:type:`awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -117,8 +117,9 @@ typedef struct awl_plugin_api_t {
      * ones; returns whether it was taken */
     int (*desktop_click)( int button, uint32_t mods );
 
-    /** changes the wallpaper (plugins/wallpaper.h); returns at once */
-    void (*wallpaper)( WallpaperMode mode );
+    /** changes the wallpaper (plugins/wallpaper.h); by_timer: the
+     * wallpaper timer's change, not the user's; returns at once */
+    void (*wallpaper)( WallpaperMode mode, int by_timer );
     /** the newest decoded wallpaper not taken yet, or NULL; the caller owns
      * it. A redraw request announces one. */
     awl_image_t* (*wallpaper_take)( void );

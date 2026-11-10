@@ -105,6 +105,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     .calendar = {
         .app = default_calendar_app,
         .app_label = "Evolution",
+        .zone_format = "%a, %b %d, %H:%M",
     },
     .notify = {
         .at = AWL_WINDOW_AT_TOP_RIGHT, .dx = 0, .dy = 0, .gap = 6,
@@ -146,5 +147,8 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
             .sink = "Output switched",
             .port = "Port switched",
         },
+        .wallpaper_icon = "image-x-generic-symbolic;image-x-generic",
+        .desktop_icon = "text-x-generic-symbolic;text-x-generic",
+        .wallpaper_timer = 0,
     },
 };

@@ -94,7 +94,7 @@ typedef struct {
     int laid_w, laid_lines;
     /** the content's height at most (restack(): what room is left), 0 any */
     int max_h;
-    int w, h, img_sz, text_x, text_w, sum_h, body_y, bar_y, bar_h;
+    int w, h, img_sz, text_x, text_w, sum_y, sum_h, body_y, bar_y, bar_h;
     box_t act[MAX_ACTIONS];
 } note_t;
 
@@ -242,7 +242,20 @@ static void image_for( note_t* n, int full ) {
 /** the parts' places below the summary, the body cut at lines (0 any, < 0
  * none); returns the content's height, -1 when out of memory */
 static int stack( note_t* n, struct fcft_font* font, int lines ) {
-    const int gap = px( n, 6 );
+    const int osd = (n->flags & AWL_NOTIF_OSD) && !n->nactions;
+    int gap = px( n, 6 );
+    n->bar_h = 0;
+    if (n->value >= 0) {
+        n->bar_h = px( n, (float)CFG->progress_height );
+        if (n->bar_h < 1) n->bar_h = 1;
+    }
+    /* an OSD's title over its bar: closer if need be, not higher than the
+     * image */
+    if (osd && n->sum_h && n->bar_h && !n->body.len && n->img_sz) {
+        const int room = n->img_sz - n->sum_h - n->bar_h;
+        if (room < gap) gap = room > 0 ? room : 0;
+    }
+    n->sum_y = 0;
     int y = n->sum_h;
     n->body_y = 0;
     if (n->body.len && lines >= 0) {
@@ -260,10 +273,7 @@ static int stack( note_t* n, struct fcft_font* font, int lines ) {
         awl_markup_layout_free( &n->layout );
         n->laid = 0;
     }
-    n->bar_h = 0;
-    if (n->value >= 0) {
-        n->bar_h = px( n, (float)CFG->progress_height );
-        if (n->bar_h < 1) n->bar_h = 1;
+    if (n->bar_h) {
         n->bar_y = y ? y + gap : 0;
         y = n->bar_y + n->bar_h;
     }
@@ -282,8 +292,13 @@ static int stack( note_t* n, struct fcft_font* font, int lines ) {
         y = by + bh;
     }
     if (!y) y = font->height;
-    /* a bar alone: in the middle of the image */
-    if (n->bar_h && y == n->bar_h && y < n->img_sz) n->bar_y = (n->img_sz - y) / 2;
+    /* a bar alone, or an OSD's parts: in the middle of the image */
+    if ((osd || (n->bar_h && y == n->bar_h)) && y < n->img_sz) {
+        const int top = (n->img_sz - y) / 2;
+        n->sum_y += top;
+        n->body_y += top;
+        n->bar_y += top;
+    }
     return y > n->img_sz ? y : n->img_sz;
 }
 
@@ -389,7 +404,11 @@ static void paint_title( note_t* n, pixman_image_t* pix, int x0, int y0, uint32_
     } else if (sum_w > n->text_w) {
         sum_w = n->text_w;
     }
-    const int x = x0 + n->text_x;
+    int x = x0 + n->text_x;
+    y0 += n->sum_y;
+    /* an OSD's text alone: centered */
+    if ((n->flags & AWL_NOTIF_OSD) && !n->app && n->value < 0 && !n->body.len && !n->nactions)
+        x += (n->text_w - sum_w) / 2;
     /* text_over() cuts at a width it doesn't exceed: one more when whole */
     const int whole = *n->summary && sum_w == (int)awl_host->text_width( b, n->summary );
     if (sum_w > 0)

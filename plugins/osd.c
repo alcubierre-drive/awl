@@ -1,7 +1,11 @@
-/* The volume's and brightness's notifications, see osd.h. Main thread only. */
+/* The volume's, brightness's, wallpaper's and desktop files' notifications,
+ * see osd.h. Main thread only. */
 
 #include "osd.h"
 #include "../plugins.h"
+#include "wallpaper.h"
+
+#include <stdio.h>
 
 #include <math.h>
 #include <string.h>
@@ -38,6 +42,9 @@ static struct {
     /** what the brightness asks under way should come to, per mille, as
      * shown already; -1: none under way, or no guess */
     long long guess;
+    /** a wallpaper change is under way that shows once it's done
+     * (:c:func:`awl_osd_wallpaper_ask`) */
+    int wallpaper_due;
 } O;
 
 static long long now_ms( void ) {
@@ -81,7 +88,9 @@ static long long brightness_looks( long long s ) {
 /** k's notification for state s (known); label: NULL for an answer to our
  * asks, else the summary of a change we didn't ask for, which also gets
  * the bar in colors.osd_unasked */
-static void send( kind_t k, long long s, const char* label ) {
+/** what all of them share: low, an OSD, the osd config's size, no frame;
+ * the bar (if any) in colors.osd_progress */
+static awl_notif_send_t base( void ) {
     const awl_plugin_config_t* pc = awl_plugin_config();
     awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
     n.urgency = AWL_NOTIF_LOW;
@@ -92,7 +101,14 @@ static void send( kind_t k, long long s, const char* label ) {
     AWL_SET( n.look.frame_width, 0 );
     /* the low urgency's frame is too dim for the bar's fill: osd_progress
      * falls back on the text's */
-    AWL_SET( n.look.progress, label ? pc->colors.osd_unasked : pc->colors.osd_progress.v );
+    AWL_SET( n.look.progress, pc->colors.osd_progress.v );
+    return n;
+}
+
+static void send( kind_t k, long long s, const char* label ) {
+    const awl_plugin_config_t* pc = awl_plugin_config();
+    awl_notif_send_t n = base();
+    if (label) AWL_SET( n.look.progress, pc->colors.osd_unasked );
     n.summary = label;
     if (k == OSD_VOLUME) {
         const float v = (float)(s / 4) / 1000.0f, max = pc->volume.max;
@@ -278,4 +294,50 @@ void awl_osd_stop( void ) {
     memset( &O, 0, sizeof O );
     O.guess = -1;
     for (int k = 0; k < OSD_N; k++) O.w[k].seen = -1;
+}
+
+/* ---- the wallpaper and the desktop files ---- */
+
+void awl_osd_wallpaper( void ) {
+    awl_notif_send_t n = base();
+    int cur, count;
+    const int settled = awl_wallpaper_settled( &cur, &count ) && count > 0;
+    /* the timer's mode, as awl keeps it in the config dictionary */
+    char mode[16] = "";
+    awl_dict_val_t v;
+    AWL_HOST_CFG_LOCK( awl_host );
+    if (AWL_HOST_CFG_GET( awl_host, "wallpaper_mode", &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR)
+        snprintf( mode, sizeof mode, "%s", v.str );
+    AWL_HOST_CFG_UNLOCK( awl_host );
+    const char* off = awl_config()->wallpaper.interval ? "" : " (off)";
+    char title[64];
+    if (settled)
+        snprintf( title, sizeof title, "%d/%d%s%s%s", cur + 1, count, *mode ? " · " : "", mode, off );
+    else
+        snprintf( title, sizeof title, "%s%s", *mode ? mode : "Wallpaper", off );
+    n.tag = "osd-wallpaper";
+    n.summary = title;
+    n.image = CFG->wallpaper_icon && *CFG->wallpaper_icon ? CFG->wallpaper_icon : NULL;
+    /* the position in the folder; no bar while a change is under way */
+    n.value = settled ? (cur + 1) * 100 / count : -1;
+    awl_notify_send( &n );
+}
+
+void awl_osd_wallpaper_ask( void ) {
+    O.wallpaper_due = 1;
+}
+
+void awl_osd_wallpaper_taken( void ) {
+    int cur, count;
+    if (!O.wallpaper_due || !awl_wallpaper_settled( &cur, &count )) return;
+    O.wallpaper_due = 0;
+    awl_osd_wallpaper();
+}
+
+void awl_osd_desktop( const char* text ) {
+    awl_notif_send_t n = base();
+    n.tag = "osd-desktop";
+    n.summary = text;
+    n.image = CFG->desktop_icon && *CFG->desktop_icon ? CFG->desktop_icon : NULL;
+    awl_notify_send( &n );
 }

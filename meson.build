@@ -69,6 +69,8 @@ fcft      = dependency('fcft')
 libsystemd = dependency('libsystemd')
 libpulse  = dependency('libpulse')
 threads   = dependency('threads')
+# the calendar popup's time zones (g_time_zone_new_identifier())
+glib      = dependency('glib-2.0')
 libm      = cc.find_library('m')
 
 xcb = dependency('xcb', required: get_option('xwayland'))
@@ -157,7 +159,7 @@ awl = executable('awl',
 # headers' cflags of awl's dependencies, not their libraries: those are awl's.
 plugins_c_args = awl_c_args + ['-DAWL_HOSTED']
 plugins_deps = [
-  libpulse, libsystemd, pixman, fcft, threads, libm,
+  libpulse, libsystemd, pixman, fcft, threads, libm, glib,
   wlroots.partial_dependency(compile_args: true, includes: true),
   wayland.partial_dependency(compile_args: true, includes: true),
   xkbcommon.partial_dependency(compile_args: true, includes: true),

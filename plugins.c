@@ -196,7 +196,8 @@ static void api_set_paused( int paused ) {
     if (plugin_data->poller) poller_set_paused( plugin_data->poller, paused );
 }
 
-static void api_wallpaper( WallpaperMode mode ) {
+static void api_wallpaper( WallpaperMode mode, int by_timer ) {
+    if (!by_timer || awl_plugin_config()->osd.wallpaper_timer) awl_osd_wallpaper_ask();
     switch (mode) {
     case WallpaperNext: awl_wallpaper_step( +1 ); break;
     case WallpaperPrev: awl_wallpaper_step( -1 ); break;
@@ -344,43 +345,19 @@ void awl_notify_config( void ) {
     free( body );
 }
 
-/** the wallpaper to tell about once it's shown (:c:func:`awl_notify_wallpaper_shown`);
- * main thread */
-static const char* shown_title;
-
-void awl_notify_wallpaper_shown( const char* title ) {
-    shown_title = title;
-}
-
 /** awl takes the wallpaper to show it: if all changes asked for are done,
  * this is the one they end on */
 static awl_image_t* api_wallpaper_take( void ) {
     awl_image_t* img = awl_wallpaper_take();
-    int cur, n;
-    if (img && shown_title && awl_wallpaper_settled( &cur, &n )) {
-        char body[32];
-        snprintf( body, sizeof(body), "%d/%d", cur + 1, n );
-        awl_notify( shown_title, body );
-        shown_title = NULL;
-    }
+    if (img) awl_osd_wallpaper_taken();
     return img;
 }
 
-/** the wallpaper timer's mode changed (wallpapermode) */
+/** the wallpaper timer's mode changed (wallpapermode); awl set the config
+ * dictionary's "wallpaper_mode" before, which the OSD reads */
 static void api_wallpaper_mode( WallpaperMode mode ) {
-    static const char* names[] = {
-        [WallpaperRand] = "rand", [WallpaperNext] = "next", [WallpaperPrev] = "prev",
-        [WallpaperModeCount] = "",
-    };
-    const char* off = awl_config()->wallpaper.interval ? "" : " (timer off)";
-    char body[64];
-    int cur, n;
-    /* where it stands now, as awl_notify_wallpaper_shown() tells it */
-    if (awl_wallpaper_settled( &cur, &n ))
-        snprintf( body, sizeof(body), "%s: %d/%d%s", names[mode], cur + 1, n, off );
-    else
-        snprintf( body, sizeof(body), "%s%s", names[mode], off );
-    awl_notify( "Wallpaper timer", body );
+    (void)mode;
+    awl_osd_wallpaper();
 }
 
 static const awl_plugin_api_t api = {

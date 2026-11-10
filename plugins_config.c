@@ -340,6 +340,13 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the tray */
     c->tray.icon_theme = "Papirus-Dark";
 
+    /* calendar popup: time zones */
+    p->calendar.n_zones = 0;
+    p->calendar.zones[p->calendar.n_zones].id = "Berlin";
+    p->calendar.zones[p->calendar.n_zones++].zone = "Europe/Berlin";
+    p->calendar.zones[p->calendar.n_zones].id = "New York";
+    p->calendar.zones[p->calendar.n_zones++].zone = "America/New_York";
+
     /* the notifications' bell, from the icon theme */
     p->notify.bell_icon = "notifications-symbolic;preferences-system-notifications-symbolic";
     p->notify.bell_icon_dnd = "notifications-disabled-symbolic";

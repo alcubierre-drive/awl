@@ -18,7 +18,13 @@ extern Monitor *selmon;
 extern struct wlr_box sgeom;
 extern struct wlr_output_layout *output_layout;
 extern struct wlr_output_manager_v1 *output_mgr;
-/** set while a monitor is destroyed (cleanupmon()): no bar is drawn then */
+/** set while a monitor is destroyed (cleanupmon()): no bar is drawn then.
+ * The dying monitor's own bar is safe without it (barremovemon() clears
+ * m->bar.m first, and m is off mons before closemon()); what it still holds
+ * back is the other monitors' redraws while closemon() moves the clients
+ * over (arrange() and focus changes draw the bars), so they draw once,
+ * afterwards. Dates from a crash fix before barremovemon() existed; to drop
+ * it, test unplugging and replugging a monitor. */
 extern int in_cleanupmon;
 
 /* the backend's new outputs, the output layout's changes, and requests of

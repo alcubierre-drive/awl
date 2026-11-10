@@ -4,7 +4,8 @@
  * The notification a volume or brightness change brings
  * (:c:member:`awl_plugin_config_t.osd`): the new value as a bar beside an icon, no
  * text, one each for the volume and the brightness, replaced in place
- * while the changes go on. Main thread.
+ * while the changes go on. The wallpaper's and the desktop files' are
+ * further below. Main thread.
  *
  * The daemons answer on their own threads, which wake awl for a redraw
  * (:c:func:`awl_osd_redraw`): for a while after a change is asked for, what the
@@ -36,3 +37,19 @@ void awl_osd_brightness( float delta );
  * corrects the brightness's guess, and sends a change nobody here asked for
  * by its cause */
 void awl_osd_redraw( void );
+
+/* The wallpaper and the desktop files: no watch, their changes are events.
+ * Each has one notification (by tag), replaced in place. */
+
+/** the wallpaper's now: "i/N · mode" (the timer's mode, "(off)" without a
+ * timer) above its position in the folder as a bar, osd.wallpaper_icon
+ * beside it; the mode alone while a change is under way */
+void awl_osd_wallpaper( void );
+/** a wallpaper change was just asked for: :c:func:`awl_osd_wallpaper` follows once
+ * the image it ends on is taken */
+void awl_osd_wallpaper_ask( void );
+/** awl took a wallpaper (:c:member:`awl_plugin_api_t.wallpaper_take`): shows it if a
+ * change was asked for and all asked for are done */
+void awl_osd_wallpaper_taken( void );
+/** the desktop files' text alone, centered, osd.desktop_icon beside it */
+void awl_osd_desktop( const char* text );
