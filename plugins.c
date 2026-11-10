@@ -215,7 +215,7 @@ void awl_notify( const char* title, const char* body ) {
 }
 
 uint32_t awl_notify_send( const awl_notif_send_t* n ) {
-    uint32_t id = awl_host->notif_send( n );
+    uint32_t id = awl_host->notif_send( awl_host->srv, n );
     if (!id) awl_wrn_printf( "notify: '%s' not sent\n", n->summary ? n->summary : "" );
     return id;
 }

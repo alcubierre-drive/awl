@@ -333,9 +333,8 @@ pluginrestart(void *data)
  * to the event loop's next idle round, since the binding calling it is in the
  * library the reload unloads. */
 void
-plugin_restart(const Arg* arg)
+plugin_restart(awl_server_t *srv, const Arg* arg)
 {
-    awl_server_t *srv = awl;
     (void)arg;
     /* Not from here: this is usually called through a key binding, from the
      * library's code the reload unloads */

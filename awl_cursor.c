@@ -164,7 +164,7 @@ buttonpress(struct wl_listener *listener, void *data)
             if (CLEANMASK(mods) == CLEANMASK(bindmods(srv, b->mod)) &&
                     event->button == b->button && b->func) {
                 if (b->click == click) {
-                    b->func(&b->arg);
+                    b->func(srv, &b->arg);
                     return;
                 }
             }
@@ -396,9 +396,8 @@ motionrelative(struct wl_listener *listener, void *data)
 }
 
 void
-moveresize(const Arg *arg)
+moveresize(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     if (srv->cursor.mode != CurNormal && srv->cursor.mode != CurPressed)
         return;
     xytonode(srv, srv->cursor.wlr->x, srv->cursor.wlr->y, NULL, &srv->cursor.grabc, NULL, NULL, NULL);

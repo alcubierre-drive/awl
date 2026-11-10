@@ -19,7 +19,7 @@ typedef struct awl_server_t awl_server_t;
  * dictionary; it stays awl's and must outlive :c:func:`awl_plugins_unload`. Returns
  * 0 on success; on failure awl runs on with empty bars until a reload
  * succeeds. */
-int awl_plugins_load( int paused, awl_dict_t* cfg );
+int awl_plugins_load( awl_server_t* srv, int paused, awl_dict_t* cfg );
 
 /**
  * Loads the library from disk again and swaps it in. :c:var:`detach() <awl_plugins_reload.detach>` must clear

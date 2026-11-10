@@ -54,6 +54,10 @@ enum CursorMode { CurNormal, CurPressed, CurMove, CurResize };
 /** where a click went, :c:member:`Button.click` */
 enum ClickRegion { ClkBar, ClkClient, ClkRoot };
 
+/* the compositor (awl_server.h); key bindings take it, objects with
+ * listeners point back to it */
+typedef struct awl_server_t awl_server_t;
+
 /** The argument a key or button binding passes to its function. */
 typedef union {
     /** an int: a direction, a count, an index */
@@ -75,14 +79,12 @@ typedef struct {
     /** a BTN_* */
     unsigned int button;
     /** what it does, called with arg */
-    void (*func)(const Arg *);
+    void (*func)(awl_server_t *, const Arg *);
     const Arg arg;
 } Button;
 
 typedef struct Monitor Monitor;
 typedef struct Client Client;
-/* the compositor (awl_server.h); objects with listeners point back to it */
-typedef struct awl_server_t awl_server_t;
 /** A window, XDG shell or XWayland. */
 struct Client {
     /* Must keep these three elements in this order */
@@ -140,7 +142,7 @@ typedef struct {
     uint32_t mod;
     xkb_keysym_t keysym;
     /** what it does, called with arg */
-    void (*func)(const Arg *);
+    void (*func)(awl_server_t *, const Arg *);
     const Arg arg;
 } Key;
 
@@ -148,7 +150,7 @@ typedef struct {
 typedef struct {
     const char *symbol;
     /** NULL: floating */
-    void (*arrange)(Monitor *);
+    void (*arrange)(awl_server_t *, Monitor *);
 } Layout;
 
 /** a view's layout and its settings, :c:member:`Monitor.ptlt` */

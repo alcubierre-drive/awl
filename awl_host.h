@@ -30,6 +30,8 @@ typedef struct awl_config_t awl_config_t;
 /** a timer on awl's event loop (:c:member:`awl_host_t.timer_add`); opaque */
 typedef struct awl_timer awl_timer_t;
 typedef struct Client Client;
+/* the compositor; opaque to the library, which only passes it back */
+typedef struct awl_server_t awl_server_t;
 typedef struct awl_actions_t awl_actions_t;
 typedef struct awl_arranges_t awl_arranges_t;
 
@@ -264,6 +266,11 @@ typedef struct awl_host_t {
 
     /* ---- awl's state and actions ---- */
 
+    /** the compositor, which the functions here take first, as do actions
+     * (:c:type:`awl_actions_t`) and arranges; the library only passes it
+     * back. Main thread only, like everything that takes it. */
+    awl_server_t* srv;
+
     /** :c:func:`configdefaults`: fills in c with awl's defaults
      * (awl_config_defaults.h), which plugins_config.c changes; they point into awl, so they stay
      * valid */
@@ -273,16 +280,16 @@ typedef struct awl_host_t {
     /** what the config's layouts arrange with */
     const awl_arranges_t* arranges;
     /** :c:func:`focusclient` */
-    void (*focusclient)( Client* c, int lift );
+    void (*focusclient)( awl_server_t* srv, Client* c, int lift );
     /** :c:func:`clientsetvisible`: shows c, or minimizes it, and arranges its
      * monitor */
-    void (*client_set_visible)( Client* c, int visible );
+    void (*client_set_visible)( awl_server_t* srv, Client* c, int visible );
     /** :c:func:`arrange` */
-    void (*arrange)( Monitor* m );
+    void (*arrange)( awl_server_t* srv, Monitor* m );
     /** :c:func:`monitornamed`: the monitor of the output named name, NULL if none */
-    Monitor* (*monitor_named)( const char* name );
+    Monitor* (*monitor_named)( awl_server_t* srv, const char* name );
     /** the selected monitor (:c:member:`awl_outputs_t.selmon`), NULL if there is none */
-    Monitor* (*monitor_selected)( void );
+    Monitor* (*monitor_selected)( awl_server_t* srv );
     /** m's output scale (what its popups are drawn at), 1 for NULL */
     float (*monitor_scale)( Monitor* m );
 
@@ -291,58 +298,58 @@ typedef struct awl_host_t {
     /** :c:func:`popupcreate`: a hidden, empty popup, NULL before awl is set up.
      * The library destroys what it made before it is unloaded (its fini);
      * awl removes what it left then, with a warning */
-    awl_window_t* (*window_create)( void );
+    awl_window_t* (*window_create)( awl_server_t* srv );
     /** :c:func:`popupdestroy` */
-    void (*window_destroy)( awl_window_t* win );
+    void (*window_destroy)( awl_server_t* srv, awl_window_t* win );
     /** :c:func:`popupsetmenustyle`: the window looks like a menu,
      * :c:type:`awl_colors_t`'s menu_* and :c:member:`awl_popup_config_t.menu`, from now on */
-    void (*window_set_menu_style)( awl_window_t* win );
+    void (*window_set_menu_style)( awl_server_t* srv, awl_window_t* win );
     /** :c:func:`popupsetpersistent`: the window stays until it is hidden (a
      * notification): a press elsewhere and other popups shown leave it,
      * showing it closes no menu, and it is above the other popups, over
      * fullscreen clients too if :c:member:`awl_config_t.popup`'s persistent_overlay;
      * out of sight while the screen is locked, back after. 0: an ordinary
      * popup again. */
-    void (*window_set_persistent)( awl_window_t* win, int persistent );
+    void (*window_set_persistent)( awl_server_t* srv, awl_window_t* win, int persistent );
     /** :c:func:`popupsetcolors`: the window's own background, text and border
      * colors (0xRRGGBBAA; a painter's content is its own), 0 for the
      * popups' (:c:member:`awl_config_t.popup`) */
-    void (*window_set_colors)( awl_window_t* win, uint32_t bg, uint32_t fg, uint32_t border );
+    void (*window_set_colors)( awl_server_t* srv, awl_window_t* win, uint32_t bg, uint32_t fg, uint32_t border );
     /** :c:func:`popupsetborderwidth`: the window's own border width, logical
      * pixels (0: none), < 0 for the popups' (:c:member:`awl_config_t.popup`) */
-    void (*window_set_border_width)( awl_window_t* win, int width );
+    void (*window_set_border_width)( awl_server_t* srv, awl_window_t* win, int width );
     /** :c:func:`popuproom`: the room the window has on m at a spot
      * (window_show_at): m's window area less the window's margins, layout
      * coordinates */
-    void (*window_room)( awl_window_t* win, Monitor* m, int* x, int* y, int* w, int* h );
+    void (*window_room)( awl_server_t* srv, awl_window_t* win, Monitor* m, int* x, int* y, int* w, int* h );
     /** :c:func:`popupbox`: where the window was last placed, layout coordinates
      * and logical size, its frame included; returns whether it is visible */
-    int (*window_box)( awl_window_t* win, int* x, int* y, int* w, int* h );
+    int (*window_box)( awl_server_t* srv, awl_window_t* win, int* x, int* y, int* w, int* h );
     /** :c:func:`awl_window_set_text`: rows separated by '\n', columns by '\t';
      * a shown window follows at once */
-    void (*window_set_text)( awl_window_t* win, const char* text );
+    void (*window_set_text)( awl_server_t* srv, awl_window_t* win, const char* text );
     /** :c:func:`awl_window_set_painter`: the window draws itself with painter
      * (awl.h; copied, with data) instead of its text, NULL for
      * the text again. Its parts stand in for the cells: clicks and scrolls
      * get the part as row, column 0. */
-    void (*window_set_painter)( awl_window_t* win, const awl_window_painter_t* painter, void* data );
+    void (*window_set_painter)( awl_server_t* srv, awl_window_t* win, const awl_window_painter_t* painter, void* data );
     /** :c:func:`awl_window_redraw`: what the painter draws changed */
-    void (*window_redraw)( awl_window_t* win );
+    void (*window_redraw)( awl_server_t* srv, awl_window_t* win );
     /** :c:func:`popupshow`: shows the window for a bar widget on m, centered on
      * center_x (logical pixels from m's left edge), on the bar's side; one
      * that isn't a menu closes the menus open */
-    void (*window_show)( awl_window_t* win, Monitor* m, int center_x );
+    void (*window_show)( awl_server_t* srv, awl_window_t* win, Monitor* m, int center_x );
     /** :c:func:`popupshowbeside`: shows the window on m beside the box x, y, w, h
      * (layout coordinates, logical size), a row of another window: a
      * submenu beside its menu, on the right unless left, else where it fits */
-    void (*window_show_beside)( awl_window_t* win, Monitor* m, int x, int y, int w, int h, int left );
+    void (*window_show_beside)( awl_server_t* srv, awl_window_t* win, Monitor* m, int x, int y, int w, int h, int left );
     /** :c:func:`popupshowat`: shows the window on m at a spot of its window
      * area, an AWL_WINDOW_AT_* (awl.h; the margin away from its edges),
      * moved by dx, dy logical pixels (the strips: over the bar, or along an edge);
      * one that isn't a menu closes the menus open */
-    void (*window_show_at)( awl_window_t* win, Monitor* m, int at, int dx, int dy );
+    void (*window_show_at)( awl_server_t* srv, awl_window_t* win, Monitor* m, int at, int dx, int dy );
     /** :c:func:`popuphide` */
-    void (*window_hide)( awl_window_t* win );
+    void (*window_hide)( awl_server_t* srv, awl_window_t* win );
     /** :c:func:`awl_window_monitor`: where the window is shown, NULL while hidden
      * (awl also hides it, on a press elsewhere unless it is persistent, or
      * with its monitor) */
@@ -352,7 +359,7 @@ typedef struct awl_host_t {
     int (*window_part_box)( awl_window_t* win, int part, int* x, int* y, int* w, int* h );
     /** :c:func:`awl_window_set_click`: the window takes the pointer, presses go to
      * click (row, col: the cell, -1 off the text; button a BTN_*) */
-    void (*window_set_click)( awl_window_t* win,
+    void (*window_set_click)( awl_server_t* srv, awl_window_t* win,
             void (*click)( awl_window_t* win, int row, int col, uint32_t button, void* data ), void* data );
     /** :c:func:`awl_window_set_scroll`: the window takes the pointer, scrolling
      * goes to scroll (row, col as for window_set_click; orientation a
@@ -360,7 +367,7 @@ typedef struct awl_host_t {
      * value120 a wheel's in 120ths of a notch, 0 for a touchpad's). Like
      * window_set_click, a window with either callback takes all of the
      * pointer: presses and scrolling its callbacks don't take are dropped. */
-    void (*window_set_scroll)( awl_window_t* win,
+    void (*window_set_scroll)( awl_server_t* srv, awl_window_t* win,
             void (*scroll)( awl_window_t* win, int row, int col, uint32_t orientation,
                             double delta, int32_t value120, void* data ), void* data );
     /** :c:func:`awl_window_set_hover`: hover( win, row, inside, data ) whenever
@@ -380,7 +387,7 @@ typedef struct awl_host_t {
      * focus meanwhile. sym an XKB_KEY_*, utf8 what the key types ("" for
      * nothing, a control character), mods WLR_MODIFIER_*'s. Locking the
      * screen hides it. NULL: no more. */
-    void (*window_set_key)( awl_window_t* win,
+    void (*window_set_key)( awl_server_t* srv, awl_window_t* win,
             int (*key)( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods, void* data ),
             void* data );
 
@@ -398,14 +405,14 @@ typedef struct awl_host_t {
      * client may focus a window with (:c:func:`activationtoken`; or only make it
      * urgent: :c:member:`awl_config_t.notifications.activate_urgent`); then it closes,
      * unless it is resident */
-    void (*notif_invoke)( uint32_t id, const char* key );
+    void (*notif_invoke)( awl_server_t* srv, uint32_t id, const char* key );
     /** held: id doesn't expire (the pointer is over it); released, its
      * timeout starts over */
-    void (*notif_hold)( uint32_t id, int held );
+    void (*notif_hold)( awl_server_t* srv, uint32_t id, int held );
     /** sends n (copied) as awl's own notification, past D-Bus: it comes
      * whether or not a client could reach the server; returns its id, 0 if
      * it couldn't (out of memory, the server not started) */
-    uint32_t (*notif_send)( const awl_notif_send_t* n );
+    uint32_t (*notif_send)( awl_server_t* srv, const awl_notif_send_t* n );
     /** the history into out, newest first, at most max; returns how many
      * there are. Valid as notif_list's, and until notif_forget. A change
      * fires :c:member:`awl_plugin_api_t.notifications_changed` too. */
@@ -415,14 +422,14 @@ typedef struct awl_host_t {
     /** opens history entry seq again, out of the history, as a new
      * notification (:c:enumerator:`AWL_NOTIF_SHOWN`, without actions, its timeout from the
      * start); returns its id, 0 if there is no such entry */
-    uint32_t (*notif_show)( uint64_t seq );
+    uint32_t (*notif_show)( awl_server_t* srv, uint64_t seq );
 
     /* ---- timers on awl's main loop ---- */
 
     /** a timer calling fn( data ), unarmed; NULL before
      * setup(). Like the popups, the library removes its timers before it is
      * unloaded; awl removes what it left then, with a warning */
-    awl_timer_t* (*timer_add)( void (*fn)( void* data ), void* data );
+    awl_timer_t* (*timer_add)( awl_server_t* srv, void (*fn)( void* data ), void* data );
     /** fn in ms milliseconds, instead of when it was due; 0
      * disarms it */
     void (*timer_set)( awl_timer_t* t, int ms );

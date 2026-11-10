@@ -837,7 +837,7 @@ static void icons_take( void ) {
                 break;
             }
     msgs_free( found );
-    if (any) awl_host->window_redraw( L.win );
+    if (any) awl_host->window_redraw( awl_host->srv, L.win );
 }
 
 static void index_take( void );
@@ -846,7 +846,7 @@ static void timer_fire( void* data ) {
     if (!awl_host->window_monitor( L.win )) return;
     if (ix && atomic_load( &ix->pending )) {
         index_take();
-        awl_host->window_redraw( L.win );
+        awl_host->window_redraw( awl_host->srv, L.win );
     }
     icons_take();
     if (L.waiting > 0 || !L.idx) awl_host->timer_set( L.timer, ICON_POLL_MS );
@@ -1208,16 +1208,16 @@ static void choose( int r ) {
     if (r >= L.nres) r = L.nres - 1;
     L.sel = r;
     if (bar()) {
-        awl_host->window_redraw( L.win );
+        awl_host->window_redraw( awl_host->srv, L.win );
         return;
     }
     if (L.sel < L.top) L.top = L.sel;
     if (L.rows > 0 && L.sel >= L.top + L.rows) L.top = L.sel - L.rows + 1;
-    awl_host->window_redraw( L.win );
+    awl_host->window_redraw( awl_host->srv, L.win );
 }
 
 static void close_launcher( void ) {
-    awl_host->window_hide( L.win );
+    awl_host->window_hide( awl_host->srv, L.win );
 }
 
 /** counts a launch of name on the thread: an application's id (run 0), or
@@ -1262,7 +1262,7 @@ static void launch( int r ) {
         for (int i = 0; i < nt; i++) full[k++] = term[i];
         for (int i = 0; i < n; i++) full[k++] = argv[i];
         awl_log_printf( "launcher: %s\n", en->id );
-        awl_host->actions->spawn( &(Arg){ .v = full } );
+        awl_host->actions->spawn( awl_host->srv, &(Arg){ .v = full } );
         free( full );
     }
     awl_desktop_argv_free( argv );
@@ -1291,7 +1291,7 @@ static void run_line( const char* line, int term ) {
     full[k++] = "-c";
     full[k++] = buf;
     awl_log_printf( "launcher: runs %s\n", buf );
-    awl_host->actions->spawn( &(Arg){ .v = full } );
+    awl_host->actions->spawn( awl_host->srv, &(Arg){ .v = full } );
     free( full );
     count_launch( buf, 1 );
     close_launcher();
@@ -1309,7 +1309,7 @@ static void complete( void ) {
     if (L.sel < 0 || L.sel >= L.nres) return;
     snprintf( L.query, sizeof L.query, "%s", name_of( L.sel ) );
     filter();
-    awl_host->window_redraw( L.win );
+    awl_host->window_redraw( awl_host->srv, L.win );
 }
 
 /** the query lost its last character (word: its last word, and the
@@ -1354,7 +1354,7 @@ static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods
     case XKB_KEY_BackSpace:
         query_back( ctrl );
         filter();
-        awl_host->window_redraw( win );
+        awl_host->window_redraw( awl_host->srv, win );
         return 1;
     }
     if (ctrl) {
@@ -1366,7 +1366,7 @@ static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods
         default: return 0;
         }
         filter();
-        awl_host->window_redraw( win );
+        awl_host->window_redraw( awl_host->srv, win );
         return 1;
     }
     if (!*utf8) return 0;
@@ -1374,7 +1374,7 @@ static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods
     if (n + add < sizeof L.query) {
         memcpy( L.query + n, utf8, add + 1 );
         filter();
-        awl_host->window_redraw( win );
+        awl_host->window_redraw( awl_host->srv, win );
     }
     return 1;
 }
@@ -1413,29 +1413,29 @@ void awl_launcher_toggle( int mode ) {
         /* the other mode's: the same query */
         L.mode = mode;
         filter();
-        awl_host->window_redraw( L.win );
+        awl_host->window_redraw( awl_host->srv, L.win );
         return;
     }
-    Monitor* m = awl_host->monitor_selected();
+    Monitor* m = awl_host->monitor_selected( awl_host->srv );
     if (!m) return;
     L.mode = mode;
     if (!L.win) {
-        if (!(L.win = awl_host->window_create())) return;
-        awl_host->window_set_painter( L.win, &painter, NULL );
-        awl_host->window_set_click( L.win, click, NULL );
-        awl_host->window_set_scroll( L.win, scroll, NULL );
+        if (!(L.win = awl_host->window_create( awl_host->srv ))) return;
+        awl_host->window_set_painter( awl_host->srv, L.win, &painter, NULL );
+        awl_host->window_set_click( awl_host->srv, L.win, click, NULL );
+        awl_host->window_set_scroll( awl_host->srv, L.win, scroll, NULL );
         awl_host->window_set_hover( L.win, hover, NULL );
         awl_host->window_set_hidden( L.win, hidden, NULL );
-        awl_host->window_set_key( L.win, key, NULL );
+        awl_host->window_set_key( awl_host->srv, L.win, key, NULL );
     }
-    if (!L.timer) L.timer = awl_host->timer_add( timer_fire, NULL );
+    if (!L.timer) L.timer = awl_host->timer_add( awl_host->srv, timer_fire, NULL );
     index_take();
     L.query[0] = '\0';
     filter();
     if (bar())
-        awl_host->window_show_at( L.win, m, CFG->strip_at, 0, 0 );
+        awl_host->window_show_at( awl_host->srv, L.win, m, CFG->strip_at, 0, 0 );
     else
-        awl_host->window_show_at( L.win, m, CFG->at, 0, CFG->dy );
+        awl_host->window_show_at( awl_host->srv, L.win, m, CFG->at, 0, CFG->dy );
     /* no index yet: it comes while it is open */
     if (!L.idx) awl_host->timer_set( L.timer, ICON_POLL_MS );
 }
@@ -1461,7 +1461,7 @@ void awl_launcher_start( void ) {
 }
 
 int awl_launcher_stop( void ) {
-    awl_host->window_destroy( L.win );
+    awl_host->window_destroy( awl_host->srv, L.win );
     awl_host->timer_remove( L.timer );
     L.win = NULL;
     L.timer = NULL;

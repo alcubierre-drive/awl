@@ -83,9 +83,8 @@ wallpapernext(WallpaperMode mode, int by_timer)
  * :c:enum:`WallpaperMode`; the timer's next or back: as the timer's mode
  * goes) */
 void
-wallpaper(const Arg *arg)
+wallpaper(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     WallpaperMode mode = arg->i;
     wallpapermodesync(srv);
     if (mode == WallpaperTimerNext)
@@ -108,9 +107,8 @@ wallpapertake(awl_server_t *srv)
 /** cycles the timer's mode by arg->i (+1: random, next, previous, random...);
  * the library tells the user */
 void
-wallpapermode(const Arg *arg)
+wallpapermode(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     static const WallpaperMode order[] = { WallpaperRand, WallpaperNext, WallpaperPrev };
     const awl_plugin_api_t *api = awl_plugins_api();
     const int n = LENGTH(order);

@@ -87,7 +87,7 @@ spawn_pid(const Arg *arg)
     return pid < 0 ? -1 : pid;
 }
 
-void spawn(const Arg *arg) { spawn_pid(arg); }
+void spawn(awl_server_t *srv, const Arg *arg) { spawn_pid(arg); }
 
 /** spawns argv and remembers it, so it is stopped when awl exits; refuses to
  * start it at all if there is no room left to remember it */

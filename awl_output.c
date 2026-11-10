@@ -246,9 +246,8 @@ setselmon(awl_server_t *srv, Monitor *m)
 }
 
 void
-focusmon(const Arg *arg)
+focusmon(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Monitor *m = nextmon(srv, arg->i);
     /* nextmon() returns NULL when no monitor is enabled -- keep selmon as it
      * is rather than handing NULL to everything that dereferences it */
@@ -369,9 +368,8 @@ profilerefused(awl_server_t *srv, const char *name, const char *why, const char 
 
 /** The outputprofile action: applies the :c:type:`OutputProfile` named arg->v. */
 void
-outputprofile(const Arg *arg)
+outputprofile(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     const char *name = arg->v;
     const OutputProfile *p = NULL;
     const OutputSetting *s;

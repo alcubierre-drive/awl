@@ -39,9 +39,9 @@ void updatepluginpause(awl_server_t *srv);
 /* the functions the config binds keys and buttons to (`Key.func`,
  * `Button.func`) and arranges its layouts with (`Layout.arrange`), defined
  * in the modules they belong to */
-#define AWL_ACTION_REGISTER(name) void name(const Arg *arg);
+#define AWL_ACTION_REGISTER(name) void name(awl_server_t *srv, const Arg *arg);
 AWL_ACTIONS
 #undef AWL_ACTION_REGISTER
-#define AWL_LAYOUT_REGISTER(name) void name(Monitor *m);
+#define AWL_LAYOUT_REGISTER(name) void name(awl_server_t *srv, Monitor *m);
 AWL_ARRANGES
 #undef AWL_LAYOUT_REGISTER

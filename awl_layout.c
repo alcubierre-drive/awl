@@ -45,7 +45,7 @@ arrange(awl_server_t *srv, Monitor *m)
     }
 
     if (sellayout(m)->arrange)
-        sellayout(m)->arrange(m);
+        sellayout(m)->arrange(srv, m);
     motionnotify(srv, 0, NULL, 0, 0, 0, 0);
     checkidleinhibitor(srv, NULL);
     /* layout symbol, taskbar order and window states may have changed */
@@ -53,9 +53,8 @@ arrange(awl_server_t *srv, Monitor *m)
 }
 
 void
-gaplessgrid(Monitor *m)
+gaplessgrid(awl_server_t *srv, Monitor *m)
 {
-    awl_server_t *srv = m->srv;
     unsigned int n = 0, i = 0, ch, cw, cn, rn, rows, cols;
     Client *c;
 
@@ -107,9 +106,8 @@ gaplessgrid(Monitor *m)
 }
 
 void
-bstack(Monitor *m)
+bstack(awl_server_t *srv, Monitor *m)
 {
-    awl_server_t *srv = m->srv;
     int w, h, mh, mx, tx, ty, tw;
     int i, n = 0;
     Client *c;
@@ -151,9 +149,8 @@ bstack(Monitor *m)
 }
 
 void
-incnmaster(const Arg *arg)
+incnmaster(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     if (!arg || !srv->out.selmon)
         return;
     monlt(srv->out.selmon)->nmaster = MAX(monlt(srv->out.selmon)->nmaster + arg->i, 0);
@@ -161,9 +158,8 @@ incnmaster(const Arg *arg)
 }
 
 void
-monocle(Monitor *m)
+monocle(awl_server_t *srv, Monitor *m)
 {
-    awl_server_t *srv = m->srv;
     Client *c;
     int n = 0;
 
@@ -217,9 +213,8 @@ sellayout(Monitor *m)
  * (except views of several tags: their ptlt[0] is also the pertag-off one),
  * off, all views share the current ones. */
 void
-togglepertag(const Arg *arg)
+togglepertag(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     size_t slot;
     (void)arg;
     if (!srv->out.selmon)
@@ -235,22 +230,20 @@ togglepertag(const Arg *arg)
 
 /** the next (arg->i > 0) or previous (< 0) of cfg->layouts on selmon */
 void
-cycle_layout(const Arg* arg)
+cycle_layout(awl_server_t *srv, const Arg* arg)
 {
-    awl_server_t *srv = awl;
     int i, n = (int)srv->cfg->layouts.n;
     if (!srv->out.selmon || !arg || !arg->i)
         return;
     i = layoutindex(srv, sellayout(srv->out.selmon)) + (arg->i > 0 ? 1 : -1);
-    setlayout(&(Arg){.i = (i % n + n) % n});
+    setlayout(srv, &(Arg){.i = (i % n + n) % n});
 }
 
 /** like dwm: cfg->layouts.v[arg->i] for selmon; with a negative arg->i (or
  * the one it has), back to its previous layout */
 void
-setlayout(const Arg *arg)
+setlayout(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     const Layout *l = NULL;
     struct PertagLayout *ml;
     if (!srv->out.selmon || !arg || arg->i >= (int)srv->cfg->layouts.n)
@@ -305,9 +298,8 @@ layoutsmoved(awl_server_t *srv, const Layout *old, size_t n_old)
 
 /** arg > 1.0 will set mfact absolutely */
 void
-setmfact(const Arg *arg)
+setmfact(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     float f;
 
     if (!arg || !srv->out.selmon || !sellayout(srv->out.selmon)->arrange)
@@ -320,9 +312,8 @@ setmfact(const Arg *arg)
 }
 
 void
-tag(const Arg *arg)
+tag(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Client *sel = focustop(srv, srv->out.selmon);
     if (!sel || (arg->ui & TAGMASK(srv->cfg)) == 0)
         return;
@@ -334,18 +325,16 @@ tag(const Arg *arg)
 }
 
 void
-tagmon(const Arg *arg)
+tagmon(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Client *sel = focustop(srv, srv->out.selmon);
     if (sel)
         setmon(srv, sel, nextmon(srv, arg->i), 0);
 }
 
 void
-tile(Monitor *m)
+tile(awl_server_t *srv, Monitor *m)
 {
-    awl_server_t *srv = m->srv;
     unsigned int mw, my, ty;
     int i, n = 0;
     Client *c;
@@ -379,9 +368,8 @@ tile(Monitor *m)
 }
 
 void
-toggletag(const Arg *arg)
+toggletag(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     uint32_t newtags;
     Client *sel = focustop(srv, srv->out.selmon);
     if (!sel || !(newtags = sel->tags ^ (arg->ui & TAGMASK(srv->cfg))))
@@ -394,9 +382,8 @@ toggletag(const Arg *arg)
 }
 
 void
-toggleview(const Arg *arg)
+toggleview(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     uint32_t newtagset;
     if (!(newtagset = srv->out.selmon ? srv->out.selmon->tagset[srv->out.selmon->seltags] ^ (arg->ui & TAGMASK(srv->cfg)) : 0))
         return;
@@ -408,9 +395,8 @@ toggleview(const Arg *arg)
 }
 
 void
-view(const Arg *arg)
+view(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     if (!srv->out.selmon || (arg->ui & TAGMASK(srv->cfg)) == srv->out.selmon->tagset[srv->out.selmon->seltags])
         return;
     srv->out.selmon->seltags ^= 1; /* toggle sel tagset */
@@ -422,9 +408,8 @@ view(const Arg *arg)
 }
 
 void
-cycle_view(const Arg* arg)
+cycle_view(awl_server_t *srv, const Arg* arg)
 {
-    awl_server_t *srv = awl;
     if (arg->i == 0) return;
     int tmax = -1;
     int tmin = 32;

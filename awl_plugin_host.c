@@ -83,37 +83,6 @@ static void pluginsreap( awl_server_t *srv ) {
         awl_wrn_printf( "plugins: the library left %d popup(s) and %d timer(s), removed\n", np, nt );
 }
 
-/* The library calls these without a server: the plugin ABI has no argument for
- * it. */
-static void host_focusclient( Client* c, int lift ) { focusclient( awl, c, lift ); }
-static Monitor* host_monitor_named( const char* name ) { return monitornamed( awl, name ); }
-static Monitor* host_monitor_selected( void ) { return monitorselected( awl ); }
-static void host_clientsetvisible( Client *c, int visible ) { clientsetvisible( awl, c, visible ); }
-static void host_arrange( Monitor *m ) { arrange( awl, m ); }
-static awl_window_t * host_popupcreate( void ) { return popupcreate( awl ); }
-static void host_popupdestroy( awl_window_t *win ) { popupdestroy( awl, win ); }
-static void host_popupsetmenustyle( awl_window_t *win ) { popupsetmenustyle( awl, win ); }
-static void host_popupsetpersistent( awl_window_t *win, int persistent ) { popupsetpersistent( awl, win, persistent ); }
-static void host_popupsetcolors( awl_window_t *win, uint32_t bg, uint32_t fg, uint32_t border ) { popupsetcolors( awl, win, bg, fg, border ); }
-static void host_popupsetborderwidth( awl_window_t *win, int width ) { popupsetborderwidth( awl, win, width ); }
-static void host_popuproom( awl_window_t *win, Monitor *m, int *x, int *y, int *w, int *h ) { popuproom( awl, win, m, x, y, w, h ); }
-static int host_popupbox( awl_window_t *win, int *x, int *y, int *w, int *h ) { return popupbox( awl, win, x, y, w, h ); }
-static void host_awl_window_set_text( awl_window_t* win, const char* text ) { awl_window_set_text( awl, win, text ); }
-static void host_awl_window_set_painter( awl_window_t* win, const awl_window_painter_t* painter, void* data ) { awl_window_set_painter( awl, win, painter, data ); }
-static void host_awl_window_redraw( awl_window_t* win ) { awl_window_redraw( awl, win ); }
-static void host_popupshow( awl_window_t *win, Monitor *m, int center_x ) { popupshow( awl, win, m, center_x ); }
-static void host_popupshowbeside( awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left ) { popupshowbeside( awl, win, m, x, y, w, h, left ); }
-static void host_popupshowat( awl_window_t *win, Monitor *m, int at, int dx, int dy ) { popupshowat( awl, win, m, at, dx, dy ); }
-static void host_popuphide( awl_window_t *win ) { popuphide( awl, win ); }
-static void host_awl_window_set_click( awl_window_t* win, awl_window_click_t click, void* data ) { awl_window_set_click( awl, win, click, data ); }
-static void host_awl_window_set_scroll( awl_window_t* win, awl_window_scroll_t scroll, void* data ) { awl_window_set_scroll( awl, win, scroll, data ); }
-static void host_popupsetkey( awl_window_t *win, awl_window_key_t key, void *data ) { popupsetkey( awl, win, key, data ); }
-static void host_notifinvoke( uint32_t id, const char* key ) { notifinvoke( awl, id, key ); }
-static void host_awl_notifications_hold( uint32_t id, int held ) { awl_notifications_hold( awl, id, held ); }
-static uint32_t host_awl_notifications_send( const awl_notif_send_t* send ) { return awl_notifications_send( awl, send ); }
-static uint32_t host_awl_notifications_show( uint64_t seq ) { return awl_notifications_show( awl, seq ); }
-static awl_timer_t* host_timer_add( void (*fn)( void* data ), void* data ) { return timer_add( awl, fn, data ); }
-
 static awl_host_t host = {
     .abi = AWL_PLUGIN_ABI,
     .sizeof_host = sizeof(awl_host_t),
@@ -147,46 +116,46 @@ static awl_host_t host = {
     .config_defaults = configdefaults,
     .actions = &awl_actions,
     .arranges = &awl_arranges,
-    .focusclient = host_focusclient,
-    .client_set_visible = host_clientsetvisible,
-    .arrange = host_arrange,
-    .monitor_named = host_monitor_named,
-    .monitor_selected = host_monitor_selected,
+    .focusclient = focusclient,
+    .client_set_visible = clientsetvisible,
+    .arrange = arrange,
+    .monitor_named = monitornamed,
+    .monitor_selected = monitorselected,
     .monitor_scale = monitorscale,
 
-    .window_create = host_popupcreate,
-    .window_destroy = host_popupdestroy,
-    .window_set_menu_style = host_popupsetmenustyle,
-    .window_set_persistent = host_popupsetpersistent,
-    .window_set_colors = host_popupsetcolors,
-    .window_set_border_width = host_popupsetborderwidth,
-    .window_room = host_popuproom,
-    .window_box = host_popupbox,
-    .window_set_text = host_awl_window_set_text,
-    .window_set_painter = host_awl_window_set_painter,
-    .window_redraw = host_awl_window_redraw,
-    .window_show = host_popupshow,
-    .window_show_beside = host_popupshowbeside,
-    .window_show_at = host_popupshowat,
-    .window_hide = host_popuphide,
+    .window_create = popupcreate,
+    .window_destroy = popupdestroy,
+    .window_set_menu_style = popupsetmenustyle,
+    .window_set_persistent = popupsetpersistent,
+    .window_set_colors = popupsetcolors,
+    .window_set_border_width = popupsetborderwidth,
+    .window_room = popuproom,
+    .window_box = popupbox,
+    .window_set_text = awl_window_set_text,
+    .window_set_painter = awl_window_set_painter,
+    .window_redraw = awl_window_redraw,
+    .window_show = popupshow,
+    .window_show_beside = popupshowbeside,
+    .window_show_at = popupshowat,
+    .window_hide = popuphide,
     .window_monitor = awl_window_monitor,
     .window_part_box = popuppartbox,
-    .window_set_click = host_awl_window_set_click,
-    .window_set_scroll = host_awl_window_set_scroll,
+    .window_set_click = awl_window_set_click,
+    .window_set_scroll = awl_window_set_scroll,
     .window_set_hover = awl_window_set_hover,
     .window_set_hidden = awl_window_set_hidden,
-    .window_set_key = host_popupsetkey,
+    .window_set_key = popupsetkey,
 
     .notif_list = awl_notifications_list,
     .notif_close = awl_notifications_close,
-    .notif_invoke = host_notifinvoke,
-    .notif_hold = host_awl_notifications_hold,
-    .notif_send = host_awl_notifications_send,
+    .notif_invoke = notifinvoke,
+    .notif_hold = awl_notifications_hold,
+    .notif_send = awl_notifications_send,
     .notif_history = awl_notifications_history,
     .notif_forget = awl_notifications_forget,
-    .notif_show = host_awl_notifications_show,
+    .notif_show = awl_notifications_show,
 
-    .timer_add = host_timer_add,
+    .timer_add = timer_add,
     .timer_set = timer_set,
     .timer_remove = timer_remove,
 };
@@ -280,7 +249,8 @@ static const awl_plugin_api_t* libopen( void** out, int* out_fd ) {
     return a;
 }
 
-int awl_plugins_load( int p, awl_dict_t* cfg ) {
+int awl_plugins_load( awl_server_t* srv, int p, awl_dict_t* cfg ) {
+    host.srv = srv;
     paused = p;
     host.cfg.s = cfg;
     if (!(api = libopen( &handle, &handle_fd )))

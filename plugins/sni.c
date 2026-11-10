@@ -270,7 +270,7 @@ static uint64_t now_ms( void ) {
 
 /** poll_timer in ms */
 static void poll_arm( awl_sni_t* s, int ms ) {
-    if (!s->poll_timer) s->poll_timer = awl_host->timer_add( poll_fire, s );
+    if (!s->poll_timer) s->poll_timer = awl_host->timer_add( awl_host->srv, poll_fire, s );
     awl_host->timer_set( s->poll_timer, ms );
 }
 

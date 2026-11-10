@@ -509,7 +509,7 @@ barsdirty(awl_server_t *srv)
         redraw_idle = wl_event_loop_add_idle(srv->event_loop, redrawidle, srv);
 }
 
-void togglebar(const Arg *arg) { awl_server_t *srv = awl; togglebar_mon(srv, srv->out.selmon); }
+void togglebar(awl_server_t *srv, const Arg *arg) { togglebar_mon(srv, srv->out.selmon); }
 void togglebar_mon(awl_server_t *srv, Monitor* m) {
     if (!m) return;
     m->showbar = !m->showbar;

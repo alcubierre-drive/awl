@@ -403,9 +403,8 @@ focusclient(awl_server_t *srv, Client *c, int lift)
 }
 
 void
-focusstack(const Arg *arg)
+focusstack(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     /* Focus the next or previous client (in tiling order) on selmon */
     Client *c, *sel = focustop(srv, srv->out.selmon);
     if (!sel || (sel->isfullscreen && !client_has_children(sel)))
@@ -430,9 +429,8 @@ focusstack(const Arg *arg)
 }
 
 void
-movestack(const Arg *arg)
+movestack(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Client *c, *sel = focustop(srv, srv->out.selmon);
 
     if (!sel || wl_list_length(&srv->clients.list) <= 1)
@@ -487,9 +485,8 @@ fullscreennotify(struct wl_listener *listener, void *data)
 }
 
 void
-killclient(const Arg *arg)
+killclient(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Client *sel = focustop(srv, srv->out.selmon);
     if (sel)
         client_send_close(sel);
@@ -675,9 +672,8 @@ setfullscreen(awl_server_t *srv, Client *c, int fullscreen)
 }
 
 void
-transluce(const Arg *arg)
+transluce(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     if (!srv->out.selmon) return;
     if (!arg) return;
     float change = arg->i > 0 ? 0.1 : -0.1;
@@ -714,9 +710,8 @@ setmon(awl_server_t *srv, Client *c, Monitor *m, uint32_t newtags)
 }
 
 void
-togglebw(const Arg *arg)
+togglebw(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Client* sel = focustop(srv, srv->out.selmon);
     if (sel && !sel->isfullscreen) {
         sel->bw = sel->bw ? 0 : srv->cfg->borderpx;
@@ -725,9 +720,8 @@ togglebw(const Arg *arg)
 }
 
 void
-changebw(const Arg *arg)
+changebw(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Client* sel = focustop(srv, srv->out.selmon);
     if (sel && !sel->isfullscreen) {
         sel->bw += arg->i;
@@ -736,9 +730,8 @@ changebw(const Arg *arg)
 }
 
 void
-togglefloating(const Arg *arg)
+togglefloating(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Client *sel = focustop(srv, srv->out.selmon);
     /* return if fullscreen */
     if (sel && !sel->isfullscreen)
@@ -746,9 +739,8 @@ togglefloating(const Arg *arg)
 }
 
 void
-togglefullscreen(const Arg *arg)
+togglefullscreen(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     Client *sel = focustop(srv, srv->out.selmon);
     if (sel)
         setfullscreen(srv, sel, !sel->isfullscreen);
@@ -849,9 +841,8 @@ setontop(awl_server_t *srv, Client* c, int ontop)
 }
 
 void
-toggleontop(const Arg* arg)
+toggleontop(awl_server_t *srv, const Arg* arg)
 {
-    awl_server_t *srv = awl;
     (void)arg;
     Client* sel = focustop(srv, srv->out.selmon);
     if (sel && !sel->isfullscreen) setontop(srv, sel, !sel->isontop);
@@ -866,9 +857,8 @@ clientsetvisible(awl_server_t *srv, Client *c, int visible)
 }
 
 void
-minimize(const Arg* arg)
+minimize(awl_server_t *srv, const Arg* arg)
 {
-    awl_server_t *srv = awl;
     (void)arg;
     Client* sel = focustop(srv, srv->out.selmon);
     if (!sel) return;
@@ -879,9 +869,8 @@ minimize(const Arg* arg)
 }
 
 void
-unminimize(const Arg* arg)
+unminimize(awl_server_t *srv, const Arg* arg)
 {
-    awl_server_t *srv = awl;
     Client *c = NULL;
     int found_client = 0;
     wl_list_for_each(c, &srv->clients.fstack, flink) {
@@ -898,9 +887,8 @@ unminimize(const Arg* arg)
 }
 
 void
-maximize(const Arg* arg)
+maximize(awl_server_t *srv, const Arg* arg)
 {
-    awl_server_t *srv = awl;
     Client* sel = focustop(srv, srv->out.selmon);
     if (!sel) return;
     sel->ismaximized = !sel->ismaximized;

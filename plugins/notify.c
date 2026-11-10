@@ -506,8 +506,8 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
     if (button == BTN_MIDDLE) awl_notify_dismiss_all();
     else if (button == BTN_RIGHT) awl_host->notif_close( n->id, AWL_NOTIF_DISMISSED );
     else if (button != BTN_LEFT) return;
-    else if (row >= 1 && row <= n->nactions) awl_host->notif_invoke( n->id, n->actions[2 * (row - 1)] );
-    else if (n->has_default) awl_host->notif_invoke( n->id, "default" );
+    else if (row >= 1 && row <= n->nactions) awl_host->notif_invoke( awl_host->srv, n->id, n->actions[2 * (row - 1)] );
+    else if (n->has_default) awl_host->notif_invoke( awl_host->srv, n->id, "default" );
     else awl_host->notif_close( n->id, AWL_NOTIF_DISMISSED );
 }
 
@@ -517,7 +517,7 @@ static void hover( awl_window_t* win, int row, int in, void* data ) {
     (void)row;
     if (in == n->held) return;
     n->held = in;
-    awl_host->notif_hold( n->id, in );
+    awl_host->notif_hold( awl_host->srv, n->id, in );
 }
 
 /* ---- the windows ---- */
@@ -560,7 +560,7 @@ static void image_timer( void* data ) {
         }
         if (r->px == n->img_want) n->img_want = 0;
         n->ready = 1;
-        awl_host->window_redraw( n->win );
+        awl_host->window_redraw( awl_host->srv, n->win );
         changed = 1;
     }
     awl_notify_image_free( done );
@@ -610,7 +610,7 @@ static void sources( note_t* n, const awl_notif_t* r ) {
         return;
     }
     /* at the size measure() will want on the selected monitor */
-    const float scale = awl_host->monitor_scale( awl_host->monitor_selected() );
+    const float scale = awl_host->monitor_scale( awl_host->monitor_selected( awl_host->srv ) );
     image_want( n, (int)lroundf( (float)n->look.image_size.v * scale ) );
     if (!n->img_want) n->ready = 1;
     else if (!n->ready) n->ready_by = now_ms() + IMAGE_WAIT_MS;
@@ -663,15 +663,15 @@ static int fill( note_t* n, const awl_notif_t* r ) {
     n->flags = r->flags;
     sources( n, r );
     n->laid = 0;
-    awl_host->window_set_colors( n->win, n->look.bg.v, n->look.fg.v, n->look.frame.v );
-    awl_host->window_set_border_width( n->win, n->look.frame_width.v );
+    awl_host->window_set_colors( awl_host->srv, n->win, n->look.bg.v, n->look.fg.v, n->look.frame.v );
+    awl_host->window_set_border_width( awl_host->srv, n->win, n->look.frame_width.v );
     return 1;
 }
 
 static void note_free( note_t* n ) {
     if (!n) return;
-    if (n->held) awl_host->notif_hold( n->id, 0 );
-    awl_host->window_destroy( n->win );
+    if (n->held) awl_host->notif_hold( awl_host->srv, n->id, 0 );
+    awl_host->window_destroy( awl_host->srv, n->win );
     fonts_release( n );
     awl_markup_layout_free( &n->layout );
     awl_markup_free( &n->body );
@@ -686,20 +686,20 @@ static void note_free( note_t* n ) {
 
 static note_t* note_new( const awl_notif_t* r ) {
     note_t* n = calloc( 1, sizeof(*n) );
-    if (!n || !(n->win = awl_host->window_create())) {
+    if (!n || !(n->win = awl_host->window_create( awl_host->srv ))) {
         free( n );
         return NULL;
     }
     n->id = r->id;
     n->scale = 1;
     if (!fill( n, r )) {
-        awl_host->window_destroy( n->win );
+        awl_host->window_destroy( awl_host->srv, n->win );
         free( n );
         return NULL;
     }
-    awl_host->window_set_persistent( n->win, 1 );
-    awl_host->window_set_painter( n->win, &painter, n );
-    awl_host->window_set_click( n->win, click, n );
+    awl_host->window_set_persistent( awl_host->srv, n->win, 1 );
+    awl_host->window_set_painter( awl_host->srv, n->win, &painter, n );
+    awl_host->window_set_click( awl_host->srv, n->win, click, n );
     awl_host->window_set_hover( n->win, hover, n );
     awl_host->window_set_hidden( n->win, hidden, NULL );
     return n;
@@ -723,21 +723,21 @@ static int more_show( Monitor* m, int k, int off ) {
     char text[32];
     int x, y, w, h;
     if (!N.more) {
-        if (!(N.more = awl_host->window_create())) return 0;
-        awl_host->window_set_persistent( N.more, 1 );
-        awl_host->window_set_click( N.more, more_click, NULL );
+        if (!(N.more = awl_host->window_create( awl_host->srv ))) return 0;
+        awl_host->window_set_persistent( awl_host->srv, N.more, 1 );
+        awl_host->window_set_click( awl_host->srv, N.more, more_click, NULL );
     }
     snprintf( text, sizeof text, "+%d more", k );
-    awl_host->window_set_text( N.more, text );
-    awl_host->window_show_at( N.more, m, CFG->at, CFG->dx, CFG->dy + (downward( CFG->at ) ? off : -off) );
-    return awl_host->window_box( N.more, &x, &y, &w, &h ) ? h : 0;
+    awl_host->window_set_text( awl_host->srv, N.more, text );
+    awl_host->window_show_at( awl_host->srv, N.more, m, CFG->at, CFG->dx, CFG->dy + (downward( CFG->at ) ? off : -off) );
+    return awl_host->window_box( awl_host->srv, N.more, &x, &y, &w, &h ) ? h : 0;
 }
 
 /** caps n's window to h logical pixels, its frame included, shown at off;
  * returns whether anything of it fits */
 static int cap( note_t* n, Monitor* m, int h, int off ) {
     int x, y, w, wh;
-    if (!awl_host->window_box( n->win, &x, &y, &w, &wh )) return 0;
+    if (!awl_host->window_box( awl_host->srv, n->win, &x, &y, &w, &wh )) return 0;
     /* the frame as drawn, physical pixels, around measure()'s content */
     const int frame = (int)lroundf( (float)wh * n->scale ) - n->h;
     n->max_h = (int)floorf( (float)h * n->scale ) - frame;
@@ -745,8 +745,8 @@ static int cap( note_t* n, Monitor* m, int h, int off ) {
         n->max_h = 0;
         return 0;
     }
-    awl_host->window_redraw( n->win );
-    awl_host->window_show_at( n->win, m, CFG->at, CFG->dx, CFG->dy + (downward( CFG->at ) ? off : -off) );
+    awl_host->window_redraw( awl_host->srv, n->win );
+    awl_host->window_show_at( awl_host->srv, n->win, m, CFG->at, CFG->dx, CFG->dy + (downward( CFG->at ) ? off : -off) );
     return 1;
 }
 
@@ -765,8 +765,8 @@ static int showable( const note_t* n, int dnd ) {
 
 /** hides n's window, releasing its hold: the pointer can't leave it now */
 static void note_hide( note_t* n ) {
-    awl_host->window_hide( n->win );
-    if (n->held) awl_host->notif_hold( n->id, 0 );
+    awl_host->window_hide( awl_host->srv, n->win );
+    if (n->held) awl_host->notif_hold( awl_host->srv, n->id, 0 );
     n->held = 0;
 }
 
@@ -776,13 +776,13 @@ static void note_hide( note_t* n ) {
  * rest hidden behind "+k more", which always fits. Those not showable
  * don't count. An open menu covers them (awl_popup.c). */
 static void restack( void ) {
-    Monitor* m = awl_host->monitor_selected();
+    Monitor* m = awl_host->monitor_selected( awl_host->srv );
     const int down = downward( CFG->at ), max = CFG->max_shown > 0 ? CFG->max_shown : MAX_OPEN;
     int off = 0, shown = 0, full = 0, base = 0, more_h = -1, x, y, w, h, rx = 0, ry = 0, rw = 0, rh = 0;
     int ready = 0, seen = 0;
     const int dnd = awl_notify_dnd();
     N.restacking = 1;
-    if (m && N.n) awl_host->window_room( N.v[0]->win, m, &rx, &ry, &rw, &rh );
+    if (m && N.n) awl_host->window_room( awl_host->srv, N.v[0]->win, m, &rx, &ry, &rw, &rh );
     for (int i = 0; i < N.n; i++) ready += showable( N.v[i], dnd );
     for (int i = 0; i < N.n; i++) {
         note_t* n = N.v[i];
@@ -798,10 +798,10 @@ static void restack( void ) {
         if (n->max_h) {
             /* whole again, unless it still doesn't fit */
             n->max_h = 0;
-            awl_host->window_redraw( n->win );
+            awl_host->window_redraw( awl_host->srv, n->win );
         }
-        awl_host->window_show_at( n->win, m, CFG->at, CFG->dx, CFG->dy + (down ? off : -off) );
-        if (!awl_host->window_box( n->win, &x, &y, &w, &h )) continue;
+        awl_host->window_show_at( awl_host->srv, n->win, m, CFG->at, CFG->dx, CFG->dy + (down ? off : -off) );
+        if (!awl_host->window_box( awl_host->srv, n->win, &x, &y, &w, &h )) continue;
         if (!shown) base = down ? y : y + h;
         /* from where it belongs (the placement keeps it inside, on top of
          * the others) to the room's far edge */
@@ -817,7 +817,7 @@ static void restack( void ) {
             /* no less than a line of it (as high as "+k more") */
             if (more_h < 0) more_h = more_show( m, N.n, off );
             const int left = room - (need - h);
-            if (left < more_h || !cap( n, m, left, off ) || !awl_host->window_box( n->win, &x, &y, &w, &h )) {
+            if (left < more_h || !cap( n, m, left, off ) || !awl_host->window_box( awl_host->srv, n->win, &x, &y, &w, &h )) {
                 note_hide( n );
                 continue;
             }
@@ -826,7 +826,7 @@ static void restack( void ) {
         shown++;
     }
     if (m && shown < ready) more_show( m, ready - shown, off );
-    else if (N.more) awl_host->window_hide( N.more );
+    else if (N.more) awl_host->window_hide( awl_host->srv, N.more );
     N.restacking = 0;
 }
 
@@ -848,7 +848,7 @@ void awl_notify_changed( void ) {
         if (!n) {
             if (!(n = note_new( open[i] ))) continue;
         } else if (n->generation != open[i]->generation) {
-            if (fill( n, open[i] )) awl_host->window_redraw( n->win );
+            if (fill( n, open[i] )) awl_host->window_redraw( awl_host->srv, n->win );
         }
         next[nn++] = n;
     }
@@ -908,8 +908,8 @@ void awl_notify_reveal( uint32_t id ) {
     n->revealed = 1;
     /* its timeout starts over, as the history's: a hold released does that */
     if (!n->held) {
-        awl_host->notif_hold( id, 1 );
-        awl_host->notif_hold( id, 0 );
+        awl_host->notif_hold( awl_host->srv, id, 1 );
+        awl_host->notif_hold( awl_host->srv, id, 0 );
     }
     restack();
     awl_notify_menu_changed();
@@ -974,8 +974,8 @@ pixman_image_t* awl_notify_bell( int px, int dnd, int* symbolic ) {
 void awl_notify_start( void ) {
     if (N.started) return;
     N.started = 1;
-    N.timer = awl_host->timer_add( restack_timer, NULL );
-    N.img_timer = awl_host->timer_add( image_timer, NULL );
+    N.timer = awl_host->timer_add( awl_host->srv, restack_timer, NULL );
+    N.img_timer = awl_host->timer_add( awl_host->srv, image_timer, NULL );
     awl_notify_changed();
 }
 
@@ -983,7 +983,7 @@ int awl_notify_stop( void ) {
     if (!N.started) return 0;
     awl_notify_menu_stop();
     for (int i = 0; i < N.n; i++) note_free( N.v[i] );
-    awl_host->window_destroy( N.more );
+    awl_host->window_destroy( awl_host->srv, N.more );
     awl_host->timer_remove( N.timer );
     awl_host->timer_remove( N.img_timer );
     bar_icons_free();

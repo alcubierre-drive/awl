@@ -239,7 +239,7 @@ testwincmd(awl_server_t *srv, char *line)
     } else if (!strcmp(cmd, "hideall")) {
         popupshideall(srv);
     } else if (!strcmp(cmd, "restart")) {
-        plugin_restart(NULL);
+        plugin_restart(srv, NULL);
     } else if (!strcmp(cmd, "nclose") || !strcmp(cmd, "nhold")) {
         if (sscanf(line, "%u %d", &id, &x) != 2)
             goto bad;

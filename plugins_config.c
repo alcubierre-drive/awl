@@ -24,71 +24,71 @@
 #include "plugins/logind.h"
 
 #define AWL_ACTION_REGISTER( name ) \
-    void AWL_ACTION( name )( const Arg* arg ) { awl_host->actions->name( arg ); }
+    void AWL_ACTION( name )( awl_server_t* srv, const Arg* arg ) { awl_host->actions->name( srv, arg ); }
 AWL_ACTIONS
 #undef AWL_ACTION_REGISTER
 
 #define AWL_LAYOUT_REGISTER( name ) \
-    void AWL_LAYOUT( name )( Monitor* m ) { awl_host->arranges->name( m ); }
+    void AWL_LAYOUT( name )( awl_server_t* srv, Monitor* m ) { awl_host->arranges->name( srv, m ); }
 AWL_ARRANGES
 #undef AWL_LAYOUT_REGISTER
 
 /** the notifications' config popup (:c:func:`awl_notify_config`) */
-static void AWL_ACTION( notifyconfig )( const Arg* arg ) {
+static void AWL_ACTION( notifyconfig )( awl_server_t* srv, const Arg* arg ) {
     awl_notify_config();
 }
 
 /** opens or closes the launcher, arg->i its mode (:c:enumerator:`AWL_LAUNCHER_APPS`, :c:enumerator:`AWL_LAUNCHER_RUN`) (:c:func:`awl_launcher_toggle`) */
-static void AWL_ACTION( launcher )( const Arg* arg ) {
+static void AWL_ACTION( launcher )( awl_server_t* srv, const Arg* arg ) {
     awl_launcher_toggle( arg->i );
 }
 
 /** switches the backlight daemon's automatic updates on or off (:c:func:`backlight_toggle`) */
-static void AWL_ACTION( backlighttoggle )( const Arg* arg ) {
+static void AWL_ACTION( backlighttoggle )( awl_server_t* srv, const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
     if (p) backlight_toggle( p->backlight );
 }
 
 /** forces an automatic backlight update (:c:func:`backlight_update`) */
-static void AWL_ACTION( backlightupdate )( const Arg* arg ) {
+static void AWL_ACTION( backlightupdate )( awl_server_t* srv, const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
     if (p) backlight_update( p->backlight );
 }
 
 /** changes the screen's brightness by arg->f (:c:func:`awl_brightness_adjust`) */
-static void AWL_ACTION( brightness )( const Arg* arg ) {
+static void AWL_ACTION( brightness )( awl_server_t* srv, const Arg* arg ) {
     awl_brightness_adjust( arg->f );
 }
 
 /** changes the volume by arg->f (:c:func:`awl_volume_adjust`) */
-static void AWL_ACTION( volume )( const Arg* arg ) {
+static void AWL_ACTION( volume )( awl_server_t* srv, const Arg* arg ) {
     awl_volume_adjust( arg->f );
 }
 
 /** mutes or unmutes the sink (:c:func:`awl_volume_mute_toggle`) */
-static void AWL_ACTION( volumemute )( const Arg* arg ) {
+static void AWL_ACTION( volumemute )( awl_server_t* srv, const Arg* arg ) {
     awl_volume_mute_toggle();
 }
 
 /** mutes or unmutes the source (:c:func:`awl_mic_mute_toggle`) */
-static void AWL_ACTION( micmute )( const Arg* arg ) {
+static void AWL_ACTION( micmute )( awl_server_t* srv, const Arg* arg ) {
     awl_mic_mute_toggle();
 }
 
 /** mutes or unmutes the speaker port only (:c:func:`awl_speaker_mute_toggle`) */
-static void AWL_ACTION( speakermute )( const Arg* arg ) {
+static void AWL_ACTION( speakermute )( awl_server_t* srv, const Arg* arg ) {
     awl_speaker_mute_toggle();
 }
 
 /** suspends through logind (:c:func:`awl_logind_suspend`) */
-static void AWL_ACTION( suspend )( const Arg* arg ) {
+static void AWL_ACTION( suspend )( awl_server_t* srv, const Arg* arg ) {
     awl_logind_suspend();
 }
 
 /** sends the window to the monitor arg->i over and follows it there */
-static void AWL_ACTION( tagmonf )( const Arg* arg ) {
-    AWL_ACTION(tagmon)(arg);
-    AWL_ACTION(focusmon)(arg);
+static void AWL_ACTION( tagmonf )( awl_server_t* srv, const Arg* arg ) {
+    AWL_ACTION(tagmon)(srv, arg);
+    AWL_ACTION(focusmon)(srv, arg);
 }
 
 /* ======================================================================

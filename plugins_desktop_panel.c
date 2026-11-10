@@ -428,7 +428,7 @@ int awl_desktop_click( int button, uint32_t mods ) {
             desk.show = 1;
             break;
         case BTN_RIGHT:
-            awl_host->actions->wallpapermode( &(Arg){ .i = +1 } );
+            awl_host->actions->wallpapermode( awl_host->srv, &(Arg){ .i = +1 } );
             return 1;
         default:
             return 0;

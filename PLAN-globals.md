@@ -110,16 +110,15 @@ the notification bus are registered with `srv` as their data. `TAGCOUNT(cfg)`
 and `TAGMASK(cfg)` take the config. `awl_plugins_reload()` hands `srv` to
 detach/attach.
 
-What still reads `awl`, all at the plugin ABI:
-- the actions, as `awl_server_t *srv = awl;` (and `main`);
-- awl_plugin_host.c's `host_*` wrappers, which give `awl_host` its old
-  signatures.
+The ABI bump is done too (uncommitted, `AWL_PLUGIN_ABI` 42): `awl_host_t.srv`
+is the server, opaque to the library, which passes it back as the first
+argument of the host functions that need it (the windows, notifications,
+timers, focus and monitors); actions are `(srv, arg)` (a binding gets the
+core's `srv`), arranges and `Layout.arrange` `(srv, m)`.
+`awl_plugins_load(srv, ...)` sets `host.srv`. The `host_*` wrappers are gone.
 
-Next, one ABI bump (42): `awl_host_t` gets `awl_server_t *srv` (opaque to the
-library), host functions take it first, actions become `(srv, arg)` (the
-core passes its `srv` to a binding's func), arranges `(srv, m)`. That removes
-the wrappers and the actions' `srv = awl`. Then the private module state (3.)
-and C.
+The core reads `awl` only in `main()` now. Next: the private module state
+(3.), then C (`main` makes the server, `awl` goes; `awl_proc`).
 
 A. **Gather (mechanical):**
    - Add `awl_server_t` and its member structs.

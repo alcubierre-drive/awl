@@ -274,7 +274,7 @@ keybinding(awl_server_t *srv, uint32_t mods, xkb_keysym_t sym)
         if (CLEANMASK(mods) == CLEANMASK(bindmods(srv, k->mod))
                 && sym == k->keysym && k->func) {
             // awl_vrb_printf( "keybinding: (mod:%u key:%u func:%p arg:%li)\n", k->mod, k->keysym, k->func, k->arg.v );
-            k->func(&k->arg);
+            k->func(srv, &k->arg);
             return 1;
         }
     }

@@ -446,7 +446,7 @@ static const awl_window_painter_t painter = { measure, paint, hit, box };
 /* ---- what it does ---- */
 
 static void redraw( void ) {
-    if (C.win) awl_host->window_redraw( C.win );
+    if (C.win) awl_host->window_redraw( awl_host->srv, C.win );
 }
 
 /** selects the day (mktime() normalizes it), fetching its month anew */
@@ -490,7 +490,7 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
     case P_DNEXT: step_day( 1 ); break;
     case P_TODAY: go_today(); break;
     case P_EVO:
-        awl_host->actions->spawn( &(Arg){ .v = awl_plugin_config()->calendar.app } );
+        awl_host->actions->spawn( awl_host->srv, &(Arg){ .v = awl_plugin_config()->calendar.app } );
         awl_calpopup_hide();
         return;
     case P_LIST: return;
@@ -544,7 +544,7 @@ int awl_calpopup_stop( void ) {
         m = next;
     }
     if (C.loc) freelocale( C.loc );
-    awl_host->window_destroy( C.win );
+    awl_host->window_destroy( awl_host->srv, C.win );
     memset( &C, 0, sizeof C );
     return stuck;
 }
@@ -552,10 +552,10 @@ int awl_calpopup_stop( void ) {
 /** the window, made on first use; NULL before awl is set up */
 static awl_window_t* window( void ) {
     if (C.win) return C.win;
-    if (!(C.win = awl_host->window_create())) return NULL;
-    awl_host->window_set_painter( C.win, &painter, NULL );
-    awl_host->window_set_click( C.win, click, NULL );
-    awl_host->window_set_scroll( C.win, scroll, NULL );
+    if (!(C.win = awl_host->window_create( awl_host->srv ))) return NULL;
+    awl_host->window_set_painter( awl_host->srv, C.win, &painter, NULL );
+    awl_host->window_set_click( awl_host->srv, C.win, click, NULL );
+    awl_host->window_set_scroll( awl_host->srv, C.win, scroll, NULL );
     return C.win;
 }
 
@@ -568,12 +568,12 @@ void awl_calpopup_show( widget_t* w, int center_x ) {
     /* always opens on today */
     go_today();
     C.acc = 0;
-    awl_host->window_redraw( win );
-    awl_host->window_show( win, m, center_x );
+    awl_host->window_redraw( awl_host->srv, win );
+    awl_host->window_show( awl_host->srv, win, m, center_x );
 }
 
 void awl_calpopup_hide( void ) {
-    if (C.win) awl_host->window_hide( C.win );
+    if (C.win) awl_host->window_hide( awl_host->srv, C.win );
 }
 
 void awl_calpopup_scroll( int amount ) {

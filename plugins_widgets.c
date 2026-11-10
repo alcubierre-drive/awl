@@ -1160,7 +1160,7 @@ static uint32_t ipwidget_measure( widget_t* w ) {
     // an open popup follows the addresses and routes
     if (memcmp( &t, &u->table, sizeof t )) {
         u->table = t;
-        if (u->win) awl_host->window_redraw( u->win );
+        if (u->win) awl_host->window_redraw( awl_host->srv, u->win );
     }
     return textsnap_width( w );
 }
@@ -1246,49 +1246,49 @@ static void ipwidget_hover( widget_t* w ) {
             .measure = &ipwidget_window_measure,
             .paint = &ipwidget_window_paint,
         };
-        w->popup_window = u->win = awl_host->window_create();
-        awl_host->window_set_painter( u->win, &painter, u );
+        w->popup_window = u->win = awl_host->window_create( awl_host->srv );
+        awl_host->window_set_painter( awl_host->srv, u->win, &painter, u );
     }
     float center = (float)u->x + (float)w->width / 2.0f;
-    awl_host->window_show( u->win, w->bar->m, (int)(center / w->bar->scale + 0.5f) );
+    awl_host->window_show( awl_host->srv, u->win, w->bar->m, (int)(center / w->bar->scale + 0.5f) );
 }
 
 static void ipwidget_leave( widget_t* w ) {
     ipwidget_userdata_t* u = w->userdata;
-    if (u && u->win) awl_host->window_hide( u->win );
+    if (u && u->win) awl_host->window_hide( awl_host->srv, u->win );
 }
 
 /* with the bar: a monitor going away, or the plugins detaching */
 static void ipwidget_free( void* userdata ) {
     ipwidget_userdata_t* u = userdata;
-    if (u && u->win) awl_host->window_destroy( u->win );
+    if (u && u->win) awl_host->window_destroy( awl_host->srv, u->win );
     free( u );
 }
 
 static void tagwidget_scroll( widget_t* w, uint32_t x, int amount ) {
     (void)w;
     (void)x;
-    awl_host->actions->cycle_view( &(Arg){.i=amount} );
+    awl_host->actions->cycle_view( awl_host->srv, &(Arg){.i=amount} );
 }
 static void tagwidget_click( widget_t* w, uint32_t x, int button ) {
     int t = (double)x / (double)w->width * w->bar->ntags;
     switch (button) {
-        case BTN_LEFT: awl_host->actions->view( &(Arg){.ui = (1 << t)} ); break;
-        case BTN_RIGHT: awl_host->actions->toggleview( &(Arg){.ui = (1 << t)} ); break;
-        case BTN_MIDDLE: awl_host->actions->view( &(Arg){.ui = ~0} ); break;
+        case BTN_LEFT: awl_host->actions->view( awl_host->srv, &(Arg){.ui = (1 << t)} ); break;
+        case BTN_RIGHT: awl_host->actions->toggleview( awl_host->srv, &(Arg){.ui = (1 << t)} ); break;
+        case BTN_MIDDLE: awl_host->actions->view( awl_host->srv, &(Arg){.ui = ~0} ); break;
         default: break;
     }
 }
 
 static void layoutwidget_scroll( widget_t* w, uint32_t x, int amount ) {
-    (void)w; (void)x; awl_host->actions->cycle_layout( &(Arg){.i=amount} );
+    (void)w; (void)x; awl_host->actions->cycle_layout( awl_host->srv, &(Arg){.i=amount} );
 }
 static void layoutwidget_click( widget_t* w, uint32_t x, int button ) {
-    (void)w; (void)x; awl_host->actions->cycle_layout( &(Arg){.i=button==BTN_LEFT?1:-1} );
+    (void)w; (void)x; awl_host->actions->cycle_layout( awl_host->srv, &(Arg){.i=button==BTN_LEFT?1:-1} );
 }
 
 static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount ) {
-    awl_host->actions->focusstack( &(Arg){.i=amount} );
+    awl_host->actions->focusstack( awl_host->srv, &(Arg){.i=amount} );
 }
 static void taskbarwidget_click( widget_t* w, uint32_t x, int button ) {
     if (w->bar->n_tagwindows <= 0) return;
@@ -1300,20 +1300,20 @@ static void taskbarwidget_click( widget_t* w, uint32_t x, int button ) {
     // a minimized window comes back, an unfocused one gets the focus, the
     // focused one is minimized; client_set_visible() arranges
     if (!windows[win_idx].visible) {
-        awl_host->client_set_visible(c, 1);
-        awl_host->focusclient(c, 1);
+        awl_host->client_set_visible(awl_host->srv, c, 1);
+        awl_host->focusclient(awl_host->srv, c, 1);
     } else if (!windows[win_idx].focused) {
-        awl_host->focusclient(c, 1);
-        awl_host->client_set_visible(c, 1);
+        awl_host->focusclient(awl_host->srv, c, 1);
+        awl_host->client_set_visible(awl_host->srv, c, 1);
     } else {
-        awl_host->client_set_visible(c, 0);
+        awl_host->client_set_visible(awl_host->srv, c, 0);
     }
 }
 
 static void pulsewidget_click( widget_t* w, uint32_t x, int button ) {
     (void)w; (void)x; (void)button;
     const char* const* mixer = awl_plugin_config()->volume.mixer;
-    if (mixer && mixer[0]) awl_host->actions->spawn( &(Arg){.v=mixer} );
+    if (mixer && mixer[0]) awl_host->actions->spawn( awl_host->srv, &(Arg){.v=mixer} );
 }
 static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount ) {
     (void)w; (void)x;
@@ -1650,7 +1650,7 @@ static void notifywidget_tiptext( notifysnap_t* s ) {
     const int n = awl_notify_unread();
     if (n) snprintf( text, sizeof(text), "%d unread notification%s", n, n == 1 ? "" : "s" );
     else snprintf( text, sizeof(text), "No unread notifications" );
-    awl_host->window_set_text( s->tip, text );
+    awl_host->window_set_text( awl_host->srv, s->tip, text );
 }
 
 static uint32_t notifywidget_measure( widget_t* w ) {
@@ -1663,7 +1663,7 @@ static uint32_t notifywidget_measure( widget_t* w ) {
     s->open = awl_notify_count( NULL ) > 0;
     /* a shown popup follows the count */
     int bx, by, bw, bh;
-    if (s->tip && awl_host->window_box( s->tip, &bx, &by, &bw, &bh )) notifywidget_tiptext( s );
+    if (s->tip && awl_host->window_box( awl_host->srv, s->tip, &bx, &by, &bw, &bh )) notifywidget_tiptext( s );
     bar_icon_keep( &s->icon, awl_notify_bell( bar_icon_px( w ), dnd, &s->symbolic ) );
     s->bell_font = w->bar->emojifont ? w->bar->emojifont : w->bar->font;
     s->bell = w->bar->emojifont ? (dnd ? "🔕" : "🔔") : (dnd ? "Z" : "N");
@@ -1723,22 +1723,22 @@ static void notifywidget_view( widget_t* w, int32_t x ) {
 static void notifywidget_hover( widget_t* w ) {
     notifysnap_t* s = w->userdata;
     if (!s || awl_notify_menu_is_open()) return;
-    if (!s->tip) w->popup_window = s->tip = awl_host->window_create();
+    if (!s->tip) w->popup_window = s->tip = awl_host->window_create( awl_host->srv );
     if (!s->tip) return;
     notifywidget_tiptext( s );
     float center = (float)s->x + (float)w->width / 2.0f;
-    awl_host->window_show( s->tip, w->bar->m, (int)(center / w->bar->scale + 0.5f) );
+    awl_host->window_show( awl_host->srv, s->tip, w->bar->m, (int)(center / w->bar->scale + 0.5f) );
 }
 
 static void notifywidget_leave( widget_t* w ) {
     notifysnap_t* s = w->userdata;
-    if (s && s->tip) awl_host->window_hide( s->tip );
+    if (s && s->tip) awl_host->window_hide( awl_host->srv, s->tip );
 }
 
 /* with the bar: a monitor going away, or the plugins detaching */
 static void notifywidget_free( void* userdata ) {
     notifysnap_t* s = userdata;
-    if (s && s->tip) awl_host->window_destroy( s->tip );
+    if (s && s->tip) awl_host->window_destroy( awl_host->srv, s->tip );
     if (s && s->icon) pixman_image_unref( s->icon );
     free( s );
 }

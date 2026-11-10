@@ -358,11 +358,11 @@ static void close_from( int k, int events ) {
         int32_t id = M.snap && L->node >= 0 && L->node < M.snap->nnodes ? M.snap->nodes[L->node].id : 0;
         level_free( L );
         M.inside[M.depth] = 0;
-        awl_host->window_hide( L->win );
+        awl_host->window_hide( awl_host->srv, L->win );
         if (events && id) awl_tray_menu_event( M.serial, id, "closed" );
     }
     /* the row that had it open isn't highlighted any more */
-    if (M.depth > 0) awl_host->window_redraw( M.lv[M.depth - 1].win );
+    if (M.depth > 0) awl_host->window_redraw( awl_host->srv, M.lv[M.depth - 1].win );
     /* the pointer may have been on them */
     leave_check();
 }
@@ -386,12 +386,12 @@ static void place_level( int k ) {
     if (!m || row < 0 || !awl_host->window_part_box( M.lv[k - 1].win, row, &x, &y, &w, &h )) {
         M.inside[k] = 0;
         M.quiet++;
-        awl_host->window_hide( L->win );
+        awl_host->window_hide( awl_host->srv, L->win );
         M.quiet--;
         return;
     }
-    awl_host->window_redraw( L->win );
-    awl_host->window_show_beside( L->win, m, x, y, w, h, M.lv[k - 1].left );
+    awl_host->window_redraw( awl_host->srv, L->win );
+    awl_host->window_show_beside( awl_host->srv, L->win, m, x, y, w, h, M.lv[k - 1].left );
     int cx, cy, cw, ch;
     if (L->shown && awl_host->window_part_box( L->win, L->top, &cx, &cy, &cw, &ch )) L->left = cx < x;
 }
@@ -407,16 +407,16 @@ static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods
 static awl_window_t* window( int k ) {
     level_t* L = &M.lv[k];
     if (L->win) return L->win;
-    if (!(L->win = awl_host->window_create())) return NULL;
+    if (!(L->win = awl_host->window_create( awl_host->srv ))) return NULL;
     void* data = (void*)(intptr_t)k;
-    awl_host->window_set_painter( L->win, &painter, L );
-    awl_host->window_set_click( L->win, click, data );
-    awl_host->window_set_scroll( L->win, scroll, data );
+    awl_host->window_set_painter( awl_host->srv, L->win, &painter, L );
+    awl_host->window_set_click( awl_host->srv, L->win, click, data );
+    awl_host->window_set_scroll( awl_host->srv, L->win, scroll, data );
     awl_host->window_set_hover( L->win, hover, data );
     awl_host->window_set_hidden( L->win, hidden, data );
     /* the menu has the keys, for all its levels */
-    if (!k) awl_host->window_set_key( L->win, key, NULL );
-    awl_host->window_set_menu_style( L->win );
+    if (!k) awl_host->window_set_key( awl_host->srv, L->win, key, NULL );
+    awl_host->window_set_menu_style( awl_host->srv, L->win );
     return L->win;
 }
 
@@ -436,8 +436,8 @@ static void open_sub( int k, int row ) {
     /* lazy menus (Qt's) fill it now: a new layout comes */
     awl_tray_menu_event( M.serial, M.snap->nodes[node].id, "opened" );
     /* setting it again forgets the hovered row of the one shown before */
-    awl_host->window_set_painter( L->win, &painter, L );
-    awl_host->window_redraw( P->win );
+    awl_host->window_set_painter( awl_host->srv, L->win, &painter, L );
+    awl_host->window_redraw( awl_host->srv, P->win );
     place_level( k + 1 );
 }
 
@@ -482,7 +482,7 @@ static void close_menu( int events ) {
     M.depth = 0;
     /* first: hiding calls hidden() */
     reset();
-    if (M.lv[0].win) awl_host->window_hide( M.lv[0].win );
+    if (M.lv[0].win) awl_host->window_hide( awl_host->srv, M.lv[0].win );
     if (events && open) awl_tray_menu_event( serial, 0, "closed" );
 }
 
@@ -525,7 +525,7 @@ static void hover( awl_window_t* win, int row, int inside, void* data ) {
     M.inside[k] = (char)inside;
     if (M.lv[k].sel != row) {
         M.lv[k].sel = row;
-        awl_host->window_redraw( win );
+        awl_host->window_redraw( awl_host->srv, win );
     }
     leave_check();
     /* into a submenu in time: what hovering its menus asked for doesn't
@@ -585,7 +585,7 @@ static void move_sel( int k, int dir ) {
     L->sel = i;
     if (i < L->top) L->top = i;
     else if (L->shown && i >= L->top + L->shown) L->top = i - L->shown + 1;
-    awl_host->window_redraw( L->win );
+    awl_host->window_redraw( awl_host->srv, L->win );
     if (k + 1 < M.depth) place_level( k + 1 );
 }
 
@@ -647,7 +647,7 @@ static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, d
     L->acc -= steps;
     L->top += steps;
     if (L->top < 0) L->top = 0;
-    awl_host->window_redraw( L->win );
+    awl_host->window_redraw( awl_host->srv, L->win );
     /* its submenu moves with its row */
     if (k + 1 < M.depth) place_level( k + 1 );
 }
@@ -706,7 +706,7 @@ static void apply( awl_tray_menu_snap_t* snap ) {
     M.snap = snap;
     for (int k = 0; k < M.depth; k++) {
         M.lv[k].node = nodes[k];
-        awl_host->window_redraw( M.lv[k].win );
+        awl_host->window_redraw( awl_host->srv, M.lv[k].win );
         if (k) place_level( k );
     }
     if (plabel) {
@@ -739,9 +739,9 @@ void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int cent
     }
     close_menu( 1 );
     if (!window( 0 )) return;
-    if (!M.timer) M.timer = awl_host->timer_add( pend_fire, NULL );
-    if (!M.held_timer) M.held_timer = awl_host->timer_add( held_fire, NULL );
-    if (!M.leave_timer) M.leave_timer = awl_host->timer_add( leave_fire, NULL );
+    if (!M.timer) M.timer = awl_host->timer_add( awl_host->srv, pend_fire, NULL );
+    if (!M.held_timer) M.held_timer = awl_host->timer_add( awl_host->srv, held_fire, NULL );
+    if (!M.leave_timer) M.leave_timer = awl_host->timer_add( awl_host->srv, leave_fire, NULL );
     M.serial = serial;
     /* opened by a click on it */
     M.on_icon = 1;
@@ -782,7 +782,7 @@ void awl_tray_menu_window_snap( awl_tray_menu_snap_t* snap ) {
         return;
     }
     M.snap = snap;
-    Monitor* m = awl_host->monitor_named( M.monitor );
+    Monitor* m = awl_host->monitor_named( awl_host->srv, M.monitor );
     if (!m || !snap->nodes[0].n) {
         if (m) awl_log_printf( "tray: menu has no entries\n" );
         reset();
@@ -791,8 +791,8 @@ void awl_tray_menu_window_snap( awl_tray_menu_snap_t* snap ) {
     level_free( &M.lv[0] );
     M.lv[0].node = 0;
     M.depth = 1;
-    awl_host->window_set_painter( M.lv[0].win, &painter, &M.lv[0] );
-    awl_host->window_show( M.lv[0].win, m, M.center_x );
+    awl_host->window_set_painter( awl_host->srv, M.lv[0].win, &painter, &M.lv[0] );
+    awl_host->window_show( awl_host->srv, M.lv[0].win, m, M.center_x );
     awl_tray_menu_event( M.serial, 0, "opened" );
 }
 
@@ -816,7 +816,7 @@ void awl_tray_menu_window_fini( void ) {
     awl_host->timer_remove( M.leave_timer );
     M.timer = M.held_timer = M.leave_timer = NULL;
     for (int k = 0; k < MAX_LEVELS; k++) {
-        if (M.lv[k].win) awl_host->window_destroy( M.lv[k].win );
+        if (M.lv[k].win) awl_host->window_destroy( awl_host->srv, M.lv[k].win );
         M.lv[k].win = NULL;
     }
 }

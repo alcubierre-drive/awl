@@ -87,9 +87,8 @@ static int redraw_fire( int fd, uint32_t mask, void* data ) {
 
 
 void
-chvt(const Arg *arg)
+chvt(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     wlr_session_change_vt(srv->session, arg->ui);
 }
 
@@ -215,14 +214,14 @@ gpureset(struct wl_listener *listener, void *data)
 int
 handlesigquit(int signo, void *data)
 {
-    quit(NULL);
+    awl_server_t *srv = data;
+    quit(srv, NULL);
     return 0;
 }
 
 void
-quit(const Arg *arg)
+quit(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     wl_display_terminate(srv->dpy);
 }
 
@@ -270,7 +269,7 @@ run(awl_server_t *srv, char *startup_cmd)
     wlr_cursor_set_xcursor(srv->cursor.wlr, srv->cursor.mgr, "default");
 
     if (srv->cfg->lock.at_start)
-        lockscreen(NULL);
+        lockscreen(srv, NULL);
 
     /* Run the Wayland event loop. This does not return until you exit the
      * compositor. Starting the backend rigged up all of the necessary event
@@ -311,8 +310,8 @@ setup(awl_server_t *srv)
     srv->dpy = wl_display_create();
     srv->event_loop = wl_display_get_event_loop(srv->dpy);
     wl_event_loop_add_signal(srv->event_loop, SIGCHLD, handlesigchld, srv);
-    wl_event_loop_add_signal(srv->event_loop, SIGINT, handlesigquit, NULL);
-    wl_event_loop_add_signal(srv->event_loop, SIGTERM, handlesigquit, NULL);
+    wl_event_loop_add_signal(srv->event_loop, SIGINT, handlesigquit, srv);
+    wl_event_loop_add_signal(srv->event_loop, SIGTERM, handlesigquit, srv);
     barinit(srv);
     wallpaperinit(srv);
 
@@ -536,7 +535,7 @@ setup(awl_server_t *srv)
     /* before the plugins: their tray widget asks it for the items */
     awl_sni_watcher_start(srv->event_loop);
     awl_notifications_start(srv, srv->event_loop, awl_plugins_notifications_changed);
-    awl_plugins_load(0, srv->cfgdict);
+    awl_plugins_load(srv, 0, srv->cfgdict);
     configuse(srv);
     awl_draw_init();
 

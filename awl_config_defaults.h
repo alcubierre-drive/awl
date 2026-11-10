@@ -16,7 +16,7 @@ static const char *menucmd[] = { "wmenu-run", NULL };
 /* the screen lock's locker */
 static const char *locker[] = { "swaylock", "-c", "00000000", NULL };
 
-static void tagmonf(const Arg *arg) { AWL_ACTION(tagmon)(arg); AWL_ACTION(focusmon)(arg); }
+static void tagmonf(awl_server_t *srv, const Arg *arg) { AWL_ACTION(tagmon)(srv, arg); AWL_ACTION(focusmon)(srv, arg); }
 
 static const Key keys[] = {
     /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */

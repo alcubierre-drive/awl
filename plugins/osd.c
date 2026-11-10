@@ -285,7 +285,7 @@ int awl_osd_start( void ) {
     memset( &O, 0, sizeof O );
     O.guess = -1;
     for (int k = 0; k < OSD_N; k++) O.w[k].seen = -1;
-    O.timer = awl_host->timer_add( quiet, NULL );
+    O.timer = awl_host->timer_add( awl_host->srv, quiet, NULL );
     return 0;
 }
 

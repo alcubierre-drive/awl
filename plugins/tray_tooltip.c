@@ -22,22 +22,22 @@ static struct {
 } T;
 
 static void show( void* data ) {
-    Monitor* m = awl_host->monitor_named( T.monitor );
+    Monitor* m = awl_host->monitor_named( awl_host->srv, T.monitor );
     if (!T.token || !m || awl_tray_menu_window_is_open()) return;
-    awl_host->window_set_text( T.win, T.text );
-    awl_host->window_show( T.win, m, T.center_x );
+    awl_host->window_set_text( awl_host->srv, T.win, T.text );
+    awl_host->window_show( awl_host->srv, T.win, m, T.center_x );
 }
 
 void awl_tray_tooltip_hide( void ) {
     T.token = 0;
     if (T.timer) awl_host->timer_set( T.timer, 0 );
-    if (T.win) awl_host->window_hide( T.win );
+    if (T.win) awl_host->window_hide( awl_host->srv, T.win );
 }
 
 void awl_tray_tooltip_show( uint32_t token, const char* monitor, int center_x, const char* text ) {
     char* t = strdup( text );
-    if (!t || !(T.win || (T.win = awl_host->window_create())) ||
-        !(T.timer || (T.timer = awl_host->timer_add( show, NULL )))) {
+    if (!t || !(T.win || (T.win = awl_host->window_create( awl_host->srv ))) ||
+        !(T.timer || (T.timer = awl_host->timer_add( awl_host->srv, show, NULL )))) {
         free( t );
         return;
     }
@@ -59,7 +59,7 @@ void awl_tray_tooltip_drop( uint32_t token ) {
 void awl_tray_tooltip_fini( void ) {
     awl_tray_tooltip_hide();
     awl_host->timer_remove( T.timer );
-    if (T.win) awl_host->window_destroy( T.win );
+    if (T.win) awl_host->window_destroy( awl_host->srv, T.win );
     free( T.text );
     memset( &T, 0, sizeof T );
 }

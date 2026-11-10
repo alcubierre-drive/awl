@@ -397,8 +397,8 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
         row -= M.n;
         if (button == BTN_LEFT) {
             const row_t r = M.rows[row];
-            awl_host->window_hide( win );
-            if (r.kind == ROW_PAST) awl_host->notif_show( r.seq );
+            awl_host->window_hide( awl_host->srv, win );
+            if (r.kind == ROW_PAST) awl_host->notif_show( awl_host->srv, r.seq );
             else awl_notify_reveal( r.id );
             return;
         }
@@ -417,16 +417,16 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
         if (button == BTN_RIGHT || (button == BTN_LEFT && !r->has_default)) {
             awl_host->notif_close( r->id, AWL_NOTIF_DISMISSED );
         } else if (button == BTN_LEFT) {
-            awl_host->notif_invoke( r->id, "default" );
-            awl_host->window_hide( win );
+            awl_host->notif_invoke( awl_host->srv, r->id, "default" );
+            awl_host->window_hide( awl_host->srv, win );
         }
         return;
     case ROW_ACTION:
         if (button == BTN_RIGHT) {
             awl_host->notif_close( r->id, AWL_NOTIF_DISMISSED );
         } else if (button == BTN_LEFT) {
-            awl_host->notif_invoke( r->id, r->key );
-            awl_host->window_hide( win );
+            awl_host->notif_invoke( awl_host->srv, r->id, r->key );
+            awl_host->window_hide( awl_host->srv, win );
         }
         return;
     case ROW_HISTORY:
@@ -454,7 +454,7 @@ static void leave_fire( void* data ) {
     M.leaving = 0;
     if (awl_notify_menu_is_open() && !M.inside && !M.on_source) {
         awl_vrb_printf( "notify: menu: pointer left, closing\n" );
-        awl_host->window_hide( M.win );
+        awl_host->window_hide( awl_host->srv, M.win );
     }
 }
 
@@ -487,16 +487,16 @@ static void hidden( awl_window_t* win, void* data ) {
 /** the window with the rows for now, NULL if it can't be made */
 static awl_window_t* prepare( void ) {
     if (!M.win) {
-        if (!(M.win = awl_host->window_create())) return NULL;
-        awl_host->window_set_menu_style( M.win );
-        awl_host->window_set_painter( M.win, &painter, NULL );
-        awl_host->window_set_click( M.win, click, NULL );
+        if (!(M.win = awl_host->window_create( awl_host->srv ))) return NULL;
+        awl_host->window_set_menu_style( awl_host->srv, M.win );
+        awl_host->window_set_painter( awl_host->srv, M.win, &painter, NULL );
+        awl_host->window_set_click( awl_host->srv, M.win, click, NULL );
         awl_host->window_set_hidden( M.win, hidden, NULL );
         awl_host->window_set_hover( M.win, hover, NULL );
     }
-    if (!M.leave_timer) M.leave_timer = awl_host->timer_add( leave_fire, NULL );
+    if (!M.leave_timer) M.leave_timer = awl_host->timer_add( awl_host->srv, leave_fire, NULL );
     rows_build();
-    awl_host->window_redraw( M.win );
+    awl_host->window_redraw( awl_host->srv, M.win );
     return M.win;
 }
 
@@ -506,23 +506,23 @@ int awl_notify_menu_is_open( void ) {
 
 void awl_notify_menu_toggle( Monitor* m, int center_x ) {
     if (awl_notify_menu_is_open()) {
-        awl_host->window_hide( M.win );
+        awl_host->window_hide( awl_host->srv, M.win );
     } else if (m && prepare()) {
         /* opened by a click on the widget */
         M.on_source = 1;
-        awl_host->window_show( M.win, m, center_x );
+        awl_host->window_show( awl_host->srv, M.win, m, center_x );
         leave_check();
     }
 }
 
 void awl_notify_menu_at( Monitor* m, int at, int dx, int dy ) {
     if (awl_notify_menu_is_open()) {
-        awl_host->window_hide( M.win );
+        awl_host->window_hide( awl_host->srv, M.win );
     } else if (m && prepare()) {
         /* by a click on "+k more", under it now: until the pointer gets
          * into the menu, it stays */
         M.on_source = -1;
-        awl_host->window_show_at( M.win, m, at, dx, dy );
+        awl_host->window_show_at( awl_host->srv, M.win, m, at, dx, dy );
         leave_check();
     }
 }
@@ -530,11 +530,11 @@ void awl_notify_menu_at( Monitor* m, int at, int dx, int dy ) {
 void awl_notify_menu_changed( void ) {
     if (!awl_notify_menu_is_open()) return;
     rows_build();
-    awl_host->window_redraw( M.win );
+    awl_host->window_redraw( awl_host->srv, M.win );
 }
 
 void awl_notify_menu_stop( void ) {
-    awl_host->window_destroy( M.win );
+    awl_host->window_destroy( awl_host->srv, M.win );
     awl_host->timer_remove( M.leave_timer );
     rows_free();
     fonts_release();

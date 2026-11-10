@@ -231,7 +231,7 @@ lockfire(int fd, uint32_t mask, void *data)
     if (read(fd, &count, sizeof count) < 0) {}
     flags = atomic_load(&lock_logind_flags);
     if (atomic_exchange(&lock_requested, 0))
-        lockscreen(NULL);
+        lockscreen(srv, NULL);
     if (flags != logind_flags) {
         logind_flags = flags;
         logindupdate(srv);
@@ -243,9 +243,8 @@ lockfire(int fd, uint32_t mask, void *data)
  * it) or the one started last is still running and yet to lock. While
  * locked without a lock (the locker crashed), a new locker takes over. */
 void
-lockscreen(const Arg *arg)
+lockscreen(awl_server_t *srv, const Arg *arg)
 {
-    awl_server_t *srv = awl;
     const char *const *argv = srv->cfg->lock.locker;
     pid_t pid;
     if (cur_lock)

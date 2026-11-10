@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 41
+#define AWL_PLUGIN_ABI 42
 /** The name of the library's only exported symbol, an :c:type:`awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -59,8 +59,8 @@
     AWL_ACTION_REGISTER( unminimize ) AWL_ACTION_REGISTER( view ) \
     AWL_ACTION_REGISTER( wallpaper ) AWL_ACTION_REGISTER( wallpapermode )
 
-#define AWL_ACTION_REGISTER( name ) void (*name)( const Arg* arg );
-/** awl's functions of :c:macro:`AWL_ACTIONS`, one ``void (*name)( const Arg* )`` each */
+#define AWL_ACTION_REGISTER( name ) void (*name)( awl_server_t* srv, const Arg* arg );
+/** awl's functions of :c:macro:`AWL_ACTIONS`, one ``void (*name)( awl_server_t*, const Arg* )`` each */
 typedef struct awl_actions_t {
     AWL_ACTIONS
 } awl_actions_t;
@@ -72,8 +72,8 @@ typedef struct awl_actions_t {
     AWL_LAYOUT_REGISTER( bstack ) AWL_LAYOUT_REGISTER( gaplessgrid ) \
     AWL_LAYOUT_REGISTER( monocle ) AWL_LAYOUT_REGISTER( tile )
 
-#define AWL_LAYOUT_REGISTER( name ) void (*name)( Monitor* m );
-/** the functions of :c:macro:`AWL_ARRANGES`, one ``void (*name)( Monitor* )`` each */
+#define AWL_LAYOUT_REGISTER( name ) void (*name)( awl_server_t* srv, Monitor* m );
+/** the functions of :c:macro:`AWL_ARRANGES`, one ``void (*name)( awl_server_t*, Monitor* )`` each */
 typedef struct awl_arranges_t {
     AWL_ARRANGES
 } awl_arranges_t;
