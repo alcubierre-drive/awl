@@ -820,6 +820,15 @@ static int statuswidget_column( const widget_t* w ) {
     return c > 1 ? c : 1;
 }
 
+/** how many samples a graph of n shows: it is n logical pixels (n * scale
+ * bar pixels) wide on every scale, as on 1.0, so it takes as many whole
+ * columns as fit (at 1.5, three samples for four; at 1.25, five for four,
+ * from the history beyond n) */
+static int statuswidget_columns( const widget_t* w, int n ) {
+    const int c = (int)lroundf( (float)n * w->bar->scale / (float)statuswidget_column( w ) );
+    return c < AWL_STATS_HIST ? c : AWL_STATS_HIST;
+}
+
 static uint32_t statuswidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->stats) return 0;
@@ -832,8 +841,9 @@ static uint32_t statuswidget_measure( widget_t* w ) {
     statuswidget_userdata_t* u = w->userdata;
     u->nswp = atomic_load( &st->has_swap ) ? st->nswp : 0;
 
-    // one column per sample, statuswidget_column() wide
-    int n = st->ncpu + st->nmem + u->nswp;
+    // the newest samples that fit, statuswidget_column() wide each
+    int n = statuswidget_columns( w, st->ncpu ) + statuswidget_columns( w, st->nmem ) +
+            statuswidget_columns( w, u->nswp );
     return cell_width( w, (uint32_t)(n * statuswidget_column( w )) );
 }
 
@@ -844,7 +854,8 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     awl_stats_t* st = P->stats;
     u->x = x;
 
-    const int n[3] = { st->ncpu, st->nmem, u->nswp };
+    const int n[3] = { statuswidget_columns( w, st->ncpu ), statuswidget_columns( w, st->nmem ),
+                       statuswidget_columns( w, u->nswp ) };
     _Atomic float* graph[3] = { st->cpu, st->mem, st->swp };
     const pixman_color_t* fg[3] = { &P->colors.cpu, &P->colors.mem,
                                     &P->colors.swap };
