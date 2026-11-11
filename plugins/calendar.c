@@ -10,7 +10,7 @@
 /** at most this many months queued; the popup asks for one or two */
 #define QUEUE_MAX 16
 
-typedef struct {
+struct awl_calendar {
     awl_thread_t thread;
     pthread_mutex_t lock;
     /** under lock: the months to fetch, and what came back (results is the
@@ -20,9 +20,8 @@ typedef struct {
     awl_cal_month_t *results, *last;
     /** the thread's only */
     cal_backend_t* backend;
-} worker_t;
-
-static worker_t* W = NULL;
+};
+typedef awl_calendar_t worker_t;
 
 time_t awl_calendar_month_start( int key ) {
     struct tm t = { .tm_year = key / 12 - 1900, .tm_mon = key % 12, .tm_mday = 1, .tm_isdst = -1 };
@@ -104,26 +103,22 @@ static void* worker( void* arg ) {
     return NULL;
 }
 
-int awl_calendar_start( void ) {
-    if (W) return 0;
+awl_calendar_t* awl_calendar_start( void ) {
     worker_t* w = calloc( 1, sizeof(*w) );
-    if (!w) return -1;
+    if (!w) return NULL;
     pthread_mutex_init( &w->lock, NULL );
     w->backend = cal_backend_open( log_backend );
     if (awl_thread_start( &w->thread, "calendar", worker, w )) {
         cal_backend_close( w->backend );
         pthread_mutex_destroy( &w->lock );
         free( w );
-        return -1;
+        return NULL;
     }
-    W = w;
-    return 0;
+    return w;
 }
 
-int awl_calendar_stop( void ) {
-    worker_t* w = W;
+int awl_calendar_stop( awl_calendar_t* w ) {
     if (!w) return 0;
-    W = NULL;
     /* a query blocked on D-Bus returns once cancelled */
     if (w->backend) cal_backend_cancel( w->backend );
     if (awl_thread_stop( &w->thread, 1000 )) return 1;
@@ -138,8 +133,7 @@ int awl_calendar_stop( void ) {
     return 0;
 }
 
-void awl_calendar_request( int key ) {
-    worker_t* w = W;
+void awl_calendar_request( awl_calendar_t* w, int key ) {
     if (!w || key < 0) return;
     pthread_mutex_lock( &w->lock );
     int queued = 0;
@@ -149,8 +143,7 @@ void awl_calendar_request( int key ) {
     awl_thread_wake( &w->thread );
 }
 
-awl_cal_month_t* awl_calendar_take( void ) {
-    worker_t* w = W;
+awl_cal_month_t* awl_calendar_take( awl_calendar_t* w ) {
     if (!w) return NULL;
     pthread_mutex_lock( &w->lock );
     awl_cal_month_t* m = w->results;

@@ -20,6 +20,8 @@
 #define MAX_PATHS 8
 
 struct sni_menu {
+    /** the tray it is one of */
+    awl_sni_t* sni;
     uint64_t serial;
     sd_bus* bus;
     char *bus_name, *path, *theme_path;
@@ -35,15 +37,11 @@ struct sni_menu {
     sni_menu_t* next;
 };
 
-static sni_menu_t* menus;
-static uint64_t next_serial = 1;
+/* async calls get the serial in a cookie (sni_call_method_async()), not
+ * the menu: it may be gone by then */
 
-/** async calls get the serial, not the menu: it may be gone by then */
-#define SERIAL_DATA( s ) ((void*)(uintptr_t)(s))
-#define DATA_SERIAL( p ) ((uint64_t)(uintptr_t)(p))
-
-sni_menu_t* sni_menu_find( uint64_t serial ) {
-    for (sni_menu_t* m = menus; m; m = m->next)
+sni_menu_t* sni_menu_find( awl_sni_t* s, uint64_t serial ) {
+    for (sni_menu_t* m = sni_menus( s )->head; m; m = m->next)
         if (m->serial == serial) return m;
     return NULL;
 }
@@ -157,7 +155,7 @@ typedef struct {
 
 static void icons_init( icons_t* ic, sni_menu_t* menu ) {
     memset( ic, 0, sizeof *ic );
-    ic->themes = sni_themes();
+    ic->themes = sni_themes( menu->sni );
     int n = 0;
     if (menu->theme_path && *menu->theme_path) ic->extra[n++] = menu->theme_path;
     for (char** p = menu->paths; *p; p++)
@@ -383,7 +381,8 @@ static void fetch( sni_menu_t* menu );
 /** GetLayout -> (u revision, (ia{sv}av) layout) */
 static int layout_done( sd_bus_message* m, void* data, sd_bus_error* ret_error ) {
     (void)ret_error;
-    sni_menu_t* menu = sni_menu_find( DATA_SERIAL( data ) );
+    const sni_cookie_t* c = data;
+    sni_menu_t* menu = sni_menu_find( c->s, c->v );
     if (!menu) return 0;
     menu->fetching = 0;
     const sd_bus_error* e = sd_bus_message_get_error( m );
@@ -404,7 +403,7 @@ static int layout_done( sd_bus_message* m, void* data, sd_bus_error* ret_error )
             snap->serial = menu->serial;
             snap->gen = menu->gen;
             snap->revision = revision;
-            sni_to_main_snap( snap );
+            sni_to_main_snap( menu->sni, snap );
         }
     }
     if (menu->again) {
@@ -423,7 +422,7 @@ static void fetch( sni_menu_t* menu ) {
     sd_bus_message* call = NULL;
     if (sd_bus_message_new_method_call( menu->bus, &call, menu->bus_name, menu->path, MENU_IFACE, "GetLayout" ) < 0 ||
         sd_bus_message_append( call, "ii", 0, -1 ) < 0 || sd_bus_message_append_strv( call, (char*[]){ NULL } ) < 0 ||
-        sd_bus_call_async( menu->bus, NULL, call, layout_done, SERIAL_DATA( menu->serial ), 0 ) < 0)
+        sni_call_async( menu->sni, menu->serial, menu->bus, call, layout_done ) < 0)
         awl_wrn_printf( "sni: menu %s%s: can't ask for its layout\n", menu->bus_name, menu->path );
     else
         menu->fetching = 1;
@@ -437,8 +436,9 @@ static void fetch( sni_menu_t* menu ) {
  * update in the lowest. */
 static int about_to_show_done( sd_bus_message* m, void* data, sd_bus_error* ret_error ) {
     (void)ret_error;
-    uint64_t v = DATA_SERIAL( data );
-    sni_menu_t* menu = sni_menu_find( v >> 1 );
+    const sni_cookie_t* c = data;
+    const uint64_t v = c->v;
+    sni_menu_t* menu = sni_menu_find( c->s, v >> 1 );
     int need = 0;
     int ok = !sd_bus_message_is_method_error( m, NULL ) && sd_bus_message_read( m, "b", &need ) >= 0;
     if (menu && ((v & 1) || (ok && need))) fetch( menu );
@@ -446,8 +446,8 @@ static int about_to_show_done( sd_bus_message* m, void* data, sd_bus_error* ret_
 }
 
 static void about_to_show( sni_menu_t* menu, int32_t id, int update ) {
-    if (sd_bus_call_method_async( menu->bus, NULL, menu->bus_name, menu->path, MENU_IFACE, "AboutToShow",
-                                  about_to_show_done, SERIAL_DATA( menu->serial << 1 | !!update ), "i", id ) < 0 &&
+    if (sni_call_method_async( menu->sni, menu->serial << 1 | !!update, menu->bus, menu->bus_name, menu->path,
+                               MENU_IFACE, "AboutToShow", about_to_show_done, "i", id ) < 0 &&
         update)
         fetch( menu );
 }
@@ -455,8 +455,9 @@ static void about_to_show( sni_menu_t* menu, int32_t id, int update ) {
 /** LayoutUpdated, ItemsPropertiesUpdated: a new layout, if it's shown */
 static int on_signal( sd_bus_message* m, void* data, sd_bus_error* ret_error ) {
     (void)ret_error;
-    sni_menu_t* menu = sni_menu_find( DATA_SERIAL( data ) );
-    if (menu && menu->open &&
+    /* the match is the menu's: gone with it */
+    sni_menu_t* menu = data;
+    if (menu->open &&
         (sd_bus_message_is_signal( m, MENU_IFACE, "LayoutUpdated" ) ||
          sd_bus_message_is_signal( m, MENU_IFACE, "ItemsPropertiesUpdated" )))
         fetch( menu );
@@ -466,7 +467,8 @@ static int on_signal( sd_bus_message* m, void* data, sd_bus_error* ret_error ) {
 /** Get( IconThemePath ) -> v(as) */
 static int paths_done( sd_bus_message* m, void* data, sd_bus_error* ret_error ) {
     (void)ret_error;
-    sni_menu_t* menu = sni_menu_find( DATA_SERIAL( data ) );
+    const sni_cookie_t* c = data;
+    sni_menu_t* menu = sni_menu_find( c->s, c->v );
     if (!menu || sd_bus_message_is_method_error( m, NULL ) ||
         sd_bus_message_enter_container( m, 'v', "as" ) <= 0 || sd_bus_message_enter_container( m, 'a', "s" ) <= 0)
         return 0;
@@ -480,10 +482,13 @@ static int paths_done( sd_bus_message* m, void* data, sd_bus_error* ret_error ) 
 
 /* ---- the menus ---- */
 
-sni_menu_t* sni_menu_new( sd_bus* bus, const char* bus_name, const char* path, const char* theme_path ) {
+sni_menu_t* sni_menu_new( awl_sni_t* s, sd_bus* bus, const char* bus_name, const char* path,
+                          const char* theme_path ) {
     sni_menu_t* menu = calloc( 1, sizeof(*menu) );
     if (!menu) return NULL;
-    menu->serial = next_serial++;
+    sni_menus_t* menus = sni_menus( s );
+    menu->sni = s;
+    menu->serial = ++menus->next_serial;
     menu->bus = bus;
     menu->bus_name = strdup( bus_name );
     menu->path = strdup( path );
@@ -497,23 +502,23 @@ sni_menu_t* sni_menu_new( sd_bus* bus, const char* bus_name, const char* path, c
     }
     char rule[1024];
     snprintf( rule, sizeof rule, "type='signal',sender='%s',path='%s',interface='" MENU_IFACE "'", bus_name, path );
-    sd_bus_add_match_async( bus, &menu->match, rule, on_signal, NULL, SERIAL_DATA( menu->serial ) );
-    sd_bus_call_method_async( bus, NULL, bus_name, path, "org.freedesktop.DBus.Properties", "Get", paths_done,
-                              SERIAL_DATA( menu->serial ), "ss", MENU_IFACE, "IconThemePath" );
-    menu->next = menus;
-    menus = menu;
+    sd_bus_add_match_async( bus, &menu->match, rule, on_signal, NULL, menu );
+    sni_call_method_async( s, menu->serial, bus, bus_name, path, "org.freedesktop.DBus.Properties", "Get", paths_done,
+                           "ss", MENU_IFACE, "IconThemePath" );
+    menu->next = menus->head;
+    menus->head = menu;
     return menu;
 }
 
 void sni_menu_free( sni_menu_t* menu ) {
     if (!menu) return;
-    for (sni_menu_t** p = &menus; *p; p = &(*p)->next)
+    for (sni_menu_t** p = &sni_menus( menu->sni )->head; *p; p = &(*p)->next)
         if (*p == menu) {
             *p = menu->next;
             break;
         }
     /* the main thread may show it, or wait for it */
-    sni_to_main_gone( menu->serial );
+    sni_to_main_gone( menu->sni, menu->serial );
     sd_bus_slot_unref( menu->match );
     for (char** p = menu->paths; *p; p++) free( *p );
     free( menu->bus_name );

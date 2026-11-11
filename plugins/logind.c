@@ -22,7 +22,7 @@
 #define RETRY_USEC (5 * 1000000ull)
 #define CALL_TIMEOUT_USEC (5 * 1000000ull)
 
-typedef struct {
+struct awl_logind {
     awl_thread_t t;
     sd_bus* bus;
     sd_bus_slot *owner_match, *lock_match, *unlock_match, *sleep_match;
@@ -51,10 +51,8 @@ typedef struct {
     int failures;
     /** :c:func:`awl_logind_suspend` asked, the thread hasn't called Suspend yet */
     atomic_int suspend;
-} logind_t;
-
-static logind_t lg = { .inhibit_fd = -1, .hint = -1 };
-static int running;
+};
+typedef awl_logind_t logind_t;
 
 static uint64_t now_usec( void ) {
     struct timespec ts;
@@ -333,32 +331,40 @@ static void* run( void* arg ) {
     return NULL;
 }
 
-int awl_logind_start( void ) {
-    if (running) return 0;
-    lg.inhibit_fd = -1;
-    lg.hint = -1;
-    lg.reported = 0;
-    if (awl_thread_start( &lg.t, "logind", run, &lg )) return -1;
-    running = 1;
+awl_logind_t* awl_logind_start( void ) {
+    logind_t* lg = calloc( 1, sizeof *lg );
+    if (!lg) {
+        awl_err_printf( "logind: out of memory\n" );
+        return NULL;
+    }
+    lg->inhibit_fd = -1;
+    lg->hint = -1;
+    if (awl_thread_start( &lg->t, "logind", run, lg )) {
+        free( lg );
+        return NULL;
+    }
+    return lg;
+}
+
+int awl_logind_stop( awl_logind_t* lg ) {
+    if (!lg) return 0;
+    /* stuck: lg stays, the thread's */
+    if (awl_thread_stop( &lg->t, 2000 )) return 1;
+    free( lg );
     return 0;
 }
 
-int awl_logind_stop( void ) {
-    if (!running) return 0;
-    running = 0;
-    return awl_thread_stop( &lg.t, 2000 ) ? 1 : 0;
+void awl_logind_covered( awl_logind_t* lg, int covered ) {
+    if (!lg) return;
+    atomic_store( &lg->covered, !!covered );
+    awl_thread_wake( &lg->t );
 }
 
-void awl_logind_covered( int covered ) {
-    atomic_store( &lg.covered, !!covered );
-    if (running) awl_thread_wake( &lg.t );
-}
-
-void awl_logind_suspend( void ) {
-    if (!running) {
+void awl_logind_suspend( awl_logind_t* lg ) {
+    if (!lg) {
         awl_wrn_printf( "logind: not running, can't suspend\n" );
         return;
     }
-    atomic_store( &lg.suspend, 1 );
-    awl_thread_wake( &lg.t );
+    atomic_store( &lg->suspend, 1 );
+    awl_thread_wake( &lg->t );
 }

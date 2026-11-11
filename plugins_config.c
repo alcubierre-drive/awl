@@ -40,7 +40,7 @@ static void AWL_ACTION( notifyconfig )( awl_server_t* srv, const Arg* arg ) {
 
 /** opens or closes the launcher, arg->i its mode (:c:enumerator:`AWL_LAUNCHER_APPS`, :c:enumerator:`AWL_LAUNCHER_RUN`) (:c:func:`awl_launcher_toggle`) */
 static void AWL_ACTION( launcher )( awl_server_t* srv, const Arg* arg ) {
-    awl_launcher_toggle( arg->i );
+    awl_launcher_toggle( AWL_PLUGIN_MODULE( launcher ), arg->i );
 }
 
 /** switches the backlight daemon's automatic updates on or off (:c:func:`backlight_toggle`) */
@@ -82,7 +82,7 @@ static void AWL_ACTION( speakermute )( awl_server_t* srv, const Arg* arg ) {
 
 /** suspends through logind (:c:func:`awl_logind_suspend`) */
 static void AWL_ACTION( suspend )( awl_server_t* srv, const Arg* arg ) {
-    awl_logind_suspend();
+    awl_logind_suspend( AWL_PLUGIN_MODULE( logind ) );
 }
 
 /** sends the window to the monitor arg->i over and follows it there */
@@ -391,15 +391,12 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
  * CUSTOM end: below is the library's again.
  * ====================================================================== */
 
-static awl_config_t cfg;
-static awl_plugin_config_t plugin_cfg;
-
-void awl_config_init( void ) {
-    awl_host->config_defaults( &cfg );
-    plugin_cfg = awl_plugin_config_defaults;
-    configure( &cfg, &plugin_cfg );
-    awl_config_fill_defaults( &cfg );
-    awl_plugin_config_fill_defaults( &plugin_cfg, &cfg );
+void awl_config_init( awl_plugin_data_t* p ) {
+    awl_host->config_defaults( &p->config );
+    p->plugin_config = awl_plugin_config_defaults;
+    configure( &p->config, &p->plugin_config );
+    awl_config_fill_defaults( &p->config );
+    awl_plugin_config_fill_defaults( &p->plugin_config, &p->config );
 }
 
 void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t* c ) {
@@ -424,13 +421,18 @@ void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t
 }
 
 const awl_config_t* awl_config( void ) {
-    return &cfg;
+    return &awl_plugin_get()->config;
 }
 
 const awl_plugin_config_t* awl_plugin_config( void ) {
-    return &plugin_cfg;
+    return &awl_plugin_get()->plugin_config;
 }
 
 void awl_config_fill( awl_config_t* c ) {
-    *c = *awl_config();
+    if (awl_plugin_get()) {
+        *c = *awl_config();
+    } else {
+        awl_host->config_defaults( c );
+        awl_config_fill_defaults( c );
+    }
 }

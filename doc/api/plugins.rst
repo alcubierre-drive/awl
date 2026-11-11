@@ -6,6 +6,14 @@ The data the bar shows, collected off the main thread (see
 read while drawing, and asks for a redraw when it changed (awl_redraw.h,
 in :doc:`bar`).
 
+The library's state
+-------------------
+
+plugins/handles.h
+^^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/handles.h
+
 Threads
 -------
 

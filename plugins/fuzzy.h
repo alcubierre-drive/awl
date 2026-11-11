@@ -23,8 +23,8 @@
  * (fewer only if the query has fewer); so errors can't glue unrelated parts
  * of a text together.
  *
- * One query at a time, on one thread: the matcher keeps its tables in
- * static memory.
+ * The matcher's tables are the caller's (:c:type:`awl_fuzzy_tables_t`, too
+ * large for a stack): one match at a time per tables.
  */
 
 #include <stdint.h>
@@ -38,6 +38,15 @@ enum {
     /** errors a query may have at most, however long */
     AWL_FUZZY_MAX_ERRORS = 3,
 };
+
+/** the matcher's tables: (errors + 1) x query x text cells, per kind of
+ * cell a score and how it came about; :c:func:`awl_fuzzy_match`'s scratch,
+ * about 1.3 MB */
+typedef struct awl_fuzzy_tables_t {
+#define AWL_FUZZY_CELLS ((AWL_FUZZY_MAX_ERRORS + 1) * AWL_FUZZY_MAX_QUERY * AWL_FUZZY_MAX_TEXT)
+    int D[AWL_FUZZY_CELLS], L[AWL_FUZZY_CELLS], O[AWL_FUZZY_CELLS], G[AWL_FUZZY_CELLS];
+    uint8_t BD[AWL_FUZZY_CELLS], BL[AWL_FUZZY_CELLS], BO[AWL_FUZZY_CELLS], BG[AWL_FUZZY_CELLS];
+} awl_fuzzy_tables_t;
 
 /** a query, folded for matching */
 typedef struct awl_fuzzy_query_t {
@@ -54,11 +63,11 @@ int awl_fuzzy_budget( int n );
 /** Folds text (UTF-8) into q, its budget by its length. */
 void awl_fuzzy_query( awl_fuzzy_query_t* q, const char* text );
 
-/** Matches q against text (UTF-8). Returns 0 if it doesn't match, else 1
+/** Matches q against text (UTF-8), in tb's tables (whatever they hold). Returns 0 if it doesn't match, else 1
  * with its score in ``*score`` (higher is better; the errors' penalty already
  * in it) and the errors in ``*errors`` (either may be NULL). An empty query
  * matches everything with score 0. pos (NULL: not wanted) gets, for each
  * of q's characters, the byte offset in text of the character it matched,
  * -1 for one that is an error (wrong or extra); a swapped pair matched
  * both. */
-int awl_fuzzy_match( const awl_fuzzy_query_t* q, const char* text, int* score, int* errors, int* pos );
+int awl_fuzzy_match( awl_fuzzy_tables_t* tb, const awl_fuzzy_query_t* q, const char* text, int* score, int* errors, int* pos );

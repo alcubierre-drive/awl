@@ -8,32 +8,34 @@
  */
 
 #include "../awl.h" /* awl_image_t */
+#include "handles.h"
 
 /** Starts the thread on the config dictionary's ``wallpaper_dir``, if it's set; awl sets it from
  * its default :c:member:`awl_config_t.wallpaper.dir <awl_wallpaper_config_t.dir>`, a plugin may change it before this. The thread starts with the
  * wallpaper the config dictionary's ``wallpaper_index`` names; at awl's start, before anything
  * set that, the one persistent.h's file names; then, also once per awl run, the file's
  * ``wallpaper_mode`` replaces the dictionary's (:c:func:`awl_persistent_load_str`). Logs if it
- * can't start. */
-void awl_wallpaper_start( void );
+ * can't start. Returns the thread's handle, NULL without one (the functions below take
+ * NULL: nothing changes). */
+awl_wallpaper_thread_t* awl_wallpaper_start( void );
 /** Stops the thread, which first writes the index and ``wallpaper_mode`` to persistent.h's
  * file if they changed.
- * Returns nonzero if it had to be left running (see thread.h). */
-int awl_wallpaper_stop( void );
+ * Frees ch, unless it returns nonzero: it had to be left running (see thread.h). */
+int awl_wallpaper_stop( awl_wallpaper_thread_t* ch );
 /** steps forward (negative: back) in the sorted list; main thread */
-void awl_wallpaper_step( int steps );
+void awl_wallpaper_step( awl_wallpaper_thread_t* ch, int steps );
 /** any other one; main thread */
-void awl_wallpaper_random( void );
+void awl_wallpaper_random( awl_wallpaper_thread_t* ch );
 /** the one shown before the current one (one more each time), as long as
  * the thread remembers; main thread */
-void awl_wallpaper_back( void );
+void awl_wallpaper_back( awl_wallpaper_thread_t* ch );
 /** where the list stood at the last change: the current index, its length
  * and the index the next random change goes to. 0 if not known yet. Main
  * thread. */
-int awl_wallpaper_position( int* cur, int* n, int* rand_next );
+int awl_wallpaper_position( awl_wallpaper_thread_t* ch, int* cur, int* n, int* rand_next );
 /** like :c:func:`awl_wallpaper_position`, but 0 also while a step or random change
  * asked for isn't done yet. Main thread. */
-int awl_wallpaper_settled( int* cur, int* n );
+int awl_wallpaper_settled( awl_wallpaper_thread_t* ch, int* cur, int* n );
 /** the newest decoded wallpaper not taken yet, or NULL; the caller owns it.
  * A redraw request announces one. Main thread. */
-awl_image_t* awl_wallpaper_take( void );
+awl_image_t* awl_wallpaper_take( awl_wallpaper_thread_t* ch );

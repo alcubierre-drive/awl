@@ -5,6 +5,7 @@
 #include "../plugins.h"
 #include "tray_menu.h"
 #include <errno.h>
+#include <stdarg.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,8 @@ static const char* const item_ifaces[] = { "org.kde.StatusNotifierItem", "org.fr
 #define MAX_PIXMAP_BYTES (4 * (size_t)AWL_ICON_MAX_BYTES)
 
 typedef struct item {
+    /** the tray it is one of */
+    awl_sni_t* s;
     uint64_t serial;
     /** "bus/path" as the watcher lists it */
     char *id, *bus_name, *path;
@@ -94,6 +97,10 @@ struct awl_sni_t {
     item_t** items;
     int nitems, cap;
     uint64_t next_serial;
+    sni_menus_t menus;
+    /** the config's tray.icon_theme, copied before the loop runs (NULL:
+     * none), and the themes it names, looked up on first use */
+    char* icon_theme;
     awl_icons_t* themes;
     int px;
 
@@ -111,6 +118,8 @@ struct awl_sni_t {
      * drawn (none is, while hidden or locked) */
     awl_timer_t* poll_timer;
     uint64_t poll_until;
+    /** the menus' window, which the mail goes to */
+    awl_tray_menu_window_t* menu_window;
 };
 
 enum {
@@ -120,9 +129,6 @@ enum {
      * and a bit */
     ACTIVATE_WAIT_MS = 30000,
 };
-
-/** the one there is, for tray_menu_window.c's requests and sni_menu.c */
-static awl_sni_t* the;
 
 static void bus_lost( awl_sni_t* s );
 
@@ -215,40 +221,34 @@ static void mail( awl_sni_t* s, mail_t* m ) {
     pthread_mutex_unlock( &s->lock );
 }
 
-void sni_to_main_snap( awl_tray_menu_snap_t* snap ) {
+void sni_to_main_snap( awl_sni_t* s, awl_tray_menu_snap_t* snap ) {
     mail_t* m = calloc( 1, sizeof(*m) );
-    if (!m || !the) {
+    if (!m) {
         free( m );
         awl_tray_menu_snap_free( snap );
         return;
     }
     m->kind = MAIL_SNAP;
     m->snap = snap;
-    mail( the, m );
+    mail( s, m );
 }
 
-void sni_to_main_gone( uint64_t serial ) {
+void sni_to_main_gone( awl_sni_t* s, uint64_t serial ) {
     mail_t* m = calloc( 1, sizeof(*m) );
-    if (!m || !the) {
-        free( m );
-        return;
-    }
+    if (!m) return;
     m->kind = MAIL_GONE;
     m->serial = serial;
-    mail( the, m );
+    mail( s, m );
 }
 
-static void to_main_toggle( uint64_t serial, const char* monitor, int center_x ) {
+static void to_main_toggle( awl_sni_t* s, uint64_t serial, const char* monitor, int center_x ) {
     mail_t* m = calloc( 1, sizeof(*m) );
-    if (!m || !the) {
-        free( m );
-        return;
-    }
+    if (!m) return;
     m->kind = MAIL_TOGGLE;
     m->serial = serial;
     snprintf( m->monitor, sizeof m->monitor, "%s", monitor );
     m->center_x = center_x;
-    mail( the, m );
+    mail( s, m );
 }
 
 static void poll_fire( void* data );
@@ -279,13 +279,15 @@ static void poll_fire( void* data ) {
     for (mail_t* m = take_mail( s ), *next; m; m = next) {
         next = m->next;
         switch (m->kind) {
-        case MAIL_SNAP: awl_tray_menu_window_snap( m->snap ); break;
-        case MAIL_GONE: awl_tray_menu_window_gone( m->serial ); break;
-        case MAIL_TOGGLE: awl_tray_menu_window_toggle( m->serial, m->monitor, m->center_x ); break;
+        case MAIL_SNAP: awl_tray_menu_window_snap( s->menu_window, m->snap ); break;
+        case MAIL_GONE: awl_tray_menu_window_gone( s->menu_window, m->serial ); break;
+        case MAIL_TOGGLE:
+            awl_tray_menu_window_toggle( s->menu_window, m->serial, m->monitor, m->center_x );
+            break;
         }
         free( m );
     }
-    if (awl_tray_menu_window_is_open() || now_ms() < s->poll_until) poll_arm( s, POLL_MS );
+    if (awl_tray_menu_window_is_open( s->menu_window ) || now_ms() < s->poll_until) poll_arm( s, POLL_MS );
 }
 
 void sni_main_poll( awl_sni_t* s ) {
@@ -350,30 +352,72 @@ void sni_set_icon_px( awl_sni_t* s, int px ) {
 }
 
 /* tray_menu_window.c's, on the main thread (tray_menu.h) */
-void awl_tray_menu_request( uint64_t serial, uint32_t gen ) {
-    req_t* r = the ? req_new( REQ_MENU_REQUEST, serial ) : NULL;
+void awl_tray_menu_request( awl_sni_t* s, uint64_t serial, uint32_t gen ) {
+    req_t* r = s ? req_new( REQ_MENU_REQUEST, serial ) : NULL;
     if (!r) return;
     r->gen = gen;
-    request( the, r );
+    request( s, r );
     /* its layouts come by mail, as long as it is open */
-    poll_arm( the, POLL_MS );
+    poll_arm( s, POLL_MS );
 }
 
-void awl_tray_menu_event( uint64_t serial, int32_t id, const char* event ) {
-    req_t* r = the ? req_new( REQ_MENU_EVENT, serial ) : NULL;
+void awl_tray_menu_event( awl_sni_t* s, uint64_t serial, int32_t id, const char* event ) {
+    req_t* r = s ? req_new( REQ_MENU_EVENT, serial ) : NULL;
     if (!r) return;
     r->id = id;
     snprintf( r->event, sizeof r->event, "%s", event );
-    request( the, r );
+    request( s, r );
+}
+
+/* ---- the menus' (sni_menu.h) ---- */
+
+sni_menus_t* sni_menus( awl_sni_t* s ) {
+    return &s->menus;
+}
+
+int sni_call_method_async( awl_sni_t* s, uint64_t v, sd_bus* bus, const char* destination, const char* path,
+                           const char* interface, const char* member, sd_bus_message_handler_t callback,
+                           const char* types, ... ) {
+    sni_cookie_t* c = malloc( sizeof *c );
+    if (!c) return -ENOMEM;
+    *c = (sni_cookie_t){ s, v };
+    sd_bus_slot* slot = NULL;
+    va_list ap;
+    va_start( ap, types );
+    int r = sd_bus_call_method_asyncv( bus, &slot, destination, path, interface, member, callback, c, types, ap );
+    va_end( ap );
+    if (r < 0) {
+        free( c );
+        return r;
+    }
+    /* the bus's from now on, which frees c with it */
+    sd_bus_slot_set_destroy_callback( slot, free );
+    sd_bus_slot_set_floating( slot, 1 );
+    sd_bus_slot_unref( slot );
+    return r;
+}
+
+int sni_call_async( awl_sni_t* s, uint64_t v, sd_bus* bus, sd_bus_message* call, sd_bus_message_handler_t callback ) {
+    sni_cookie_t* c = malloc( sizeof *c );
+    if (!c) return -ENOMEM;
+    *c = (sni_cookie_t){ s, v };
+    sd_bus_slot* slot = NULL;
+    int r = sd_bus_call_async( bus, &slot, call, callback, c, 0 );
+    if (r < 0) {
+        free( c );
+        return r;
+    }
+    sd_bus_slot_set_destroy_callback( slot, free );
+    sd_bus_slot_set_floating( slot, 1 );
+    sd_bus_slot_unref( slot );
+    return r;
 }
 
 /* ---- the icons ---- */
 
-awl_icons_t* sni_themes( void ) {
-    awl_sni_t* s = the;
-    if (!s) return NULL;
+awl_icons_t* sni_themes( awl_sni_t* s ) {
     if (!s->themes) {
-        s->themes = awl_icons_new_desktop( awl_config()->tray.icon_theme );
+        s->themes = awl_icons_new_desktop( s->icon_theme );
     }
     return s->themes;
 }
@@ -405,7 +449,7 @@ static void resolve( awl_sni_t* s, item_t* it ) {
         it->looked_up = strdup( key );
         awl_sni_blob_t* file = NULL;
         unsigned flags = 0;
-        awl_icons_t* themes = sni_themes();
+        awl_icons_t* themes = sni_themes( s );
         if (name && *name && themes) {
             const char* extra[] = { it->theme_path, NULL };
             unsigned f = 0;
@@ -558,14 +602,15 @@ static void set_menu( awl_sni_t* s, item_t* it ) {
         return;
     }
     sni_menu_free( it->menu );
-    it->menu = none ? NULL : sni_menu_new( s->bus, it->bus_name, path, it->theme_path );
+    it->menu = none ? NULL : sni_menu_new( s, s->bus, it->bus_name, path, it->theme_path );
 }
 
 /** GetAll -> a{sv} */
 static int on_props( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
-    awl_sni_t* s = the;
-    item_t* it = s ? item_find( s, (uint64_t)(uintptr_t)userdata ) : NULL;
+    const sni_cookie_t* c = userdata;
+    awl_sni_t* s = c->s;
+    item_t* it = item_find( s, c->v );
     if (!it) return 0;
     it->fetching = 0;
     int nprops = 0, r = 0;
@@ -631,8 +676,8 @@ static void fetch( awl_sni_t* s, item_t* it ) {
         it->again = 1;
         return;
     }
-    if (sd_bus_call_method_async( s->bus, NULL, it->bus_name, it->path, "org.freedesktop.DBus.Properties", "GetAll",
-                                  on_props, (void*)(uintptr_t)it->serial, "s", item_ifaces[it->iface] ) < 0)
+    if (sni_call_method_async( s, it->serial, s->bus, it->bus_name, it->path, "org.freedesktop.DBus.Properties",
+                               "GetAll", on_props, "s", item_ifaces[it->iface] ) < 0)
         bus_lost( s );
     else
         it->fetching = 1;
@@ -640,24 +685,23 @@ static void fetch( awl_sni_t* s, item_t* it ) {
 
 static int debounce_fire( sd_event_source* e, uint64_t usec, void* userdata ) {
     (void)usec;
-    awl_sni_t* s = the;
-    item_t* it = s ? item_find( s, (uint64_t)(uintptr_t)userdata ) : NULL;
+    /* the item's, gone with it */
+    item_t* it = userdata;
     sd_event_source_disable_unref( e );
-    if (!it) return 0;
     it->debounce = NULL;
-    fetch( s, it );
+    fetch( it->s, it );
     return 0;
 }
 
 /** any signal of the item: its New* ones re-read the properties */
 static int on_item_signal( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
-    awl_sni_t* s = the;
-    item_t* it = s ? item_find( s, (uint64_t)(uintptr_t)userdata ) : NULL;
+    /* the match is the item's: gone with it */
+    item_t* it = userdata;
     const char* member = sd_bus_message_get_member( m );
-    if (!it || !member || (strncmp( member, "New", 3 ) && strncmp( member, "XAyatanaNew", 11 ))) return 0;
-    if (!it->debounce && sd_event_add_time_relative( s->event, &it->debounce, CLOCK_MONOTONIC, DEBOUNCE_USEC, 0,
-                                                      debounce_fire, userdata ) < 0)
+    if (!member || (strncmp( member, "New", 3 ) && strncmp( member, "XAyatanaNew", 11 ))) return 0;
+    if (!it->debounce && sd_event_add_time_relative( it->s->event, &it->debounce, CLOCK_MONOTONIC, DEBOUNCE_USEC, 0,
+                                                      debounce_fire, it ) < 0)
         it->debounce = NULL;
     return 0;
 }
@@ -666,6 +710,7 @@ static item_t* item_new( awl_sni_t* s, const char* id ) {
     item_t* it = calloc( 1, sizeof(*it) );
     if (!it) return NULL;
     const char* slash = strchr( id, '/' );
+    it->s = s;
     it->serial = ++s->next_serial;
     it->status = AWL_SNI_ACTIVE;
     it->id = strdup( id );
@@ -679,7 +724,7 @@ static item_t* item_new( awl_sni_t* s, const char* id ) {
     }
     char rule[1024];
     snprintf( rule, sizeof rule, "type='signal',sender='%s',path='%s'", it->bus_name, it->path );
-    if (sd_bus_add_match_async( s->bus, &it->match, rule, on_item_signal, NULL, (void*)(uintptr_t)it->serial ) < 0)
+    if (sd_bus_add_match_async( s->bus, &it->match, rule, on_item_signal, NULL, it ) < 0)
         bus_lost( s );
     /* after the match: a change between the two isn't missed */
     fetch( s, it );
@@ -807,6 +852,7 @@ static int on_subscribed( sd_bus_message* m, void* userdata, sd_bus_error* ret_e
 /* ---- the requests, on the loop ---- */
 
 typedef struct {
+    awl_sni_t* s;
     uint64_t serial;
     char monitor[64];
     int center_x;
@@ -819,12 +865,12 @@ static int on_activate( sd_bus_message* m, void* userdata, sd_bus_error* ret_err
     (void)ret_error;
     activate_t* a = userdata;
     const sd_bus_error* e = sd_bus_message_get_error( m );
-    item_t* it = the && e ? item_find( the, a->serial ) : NULL;
+    item_t* it = e ? item_find( a->s, a->serial ) : NULL;
     if (it && !sd_bus_error_has_name( e, SD_BUS_ERROR_NO_REPLY ) &&
         !sd_bus_error_has_name( e, SD_BUS_ERROR_TIMEOUT )) {
         awl_vrb_printf( "sni: item %s: Activate failed (%s), its menu instead\n", it->id,
                         e->message ? e->message : e->name );
-        if (it->menu) to_main_toggle( sni_menu_serial( it->menu ), a->monitor, a->center_x );
+        if (it->menu) to_main_toggle( a->s, sni_menu_serial( it->menu ), a->monitor, a->center_x );
     }
     free( a );
     return 0;
@@ -839,10 +885,10 @@ static void run( awl_sni_t* s, req_t* r ) {
         return;
     }
     if (r->kind == REQ_MENU_REQUEST || r->kind == REQ_MENU_EVENT) {
-        sni_menu_t* menu = s->bus ? sni_menu_find( r->serial ) : NULL;
+        sni_menu_t* menu = s->bus ? sni_menu_find( s, r->serial ) : NULL;
         if (!menu) {
             /* it went away before the main thread knew: let it know */
-            if (r->kind == REQ_MENU_REQUEST) sni_to_main_gone( r->serial );
+            if (r->kind == REQ_MENU_REQUEST) sni_to_main_gone( s, r->serial );
         } else if (r->kind == REQ_MENU_REQUEST) {
             sni_menu_request( menu, r->gen );
         } else {
@@ -859,6 +905,7 @@ static void run( awl_sni_t* s, req_t* r ) {
     } else if (r->what == AWL_SNI_ACTIVATE) {
         activate_t* a = calloc( 1, sizeof(*a) );
         if (!a) return;
+        a->s = s;
         a->serial = it->serial;
         snprintf( a->monitor, sizeof a->monitor, "%s", r->monitor );
         a->center_x = r->center_x;
@@ -978,31 +1025,31 @@ static void schedule_retry( awl_sni_t* s, uint64_t usec ) {
         s->retry = NULL;
 }
 
-awl_sni_t* sni_new( sd_event* event ) {
-    if (the) return NULL;
+awl_sni_t* sni_new( sd_event* event, awl_tray_menu_window_t* menu_window ) {
     awl_sni_t* s = calloc( 1, sizeof(*s) );
     if (!s) return NULL;
+    s->menu_window = menu_window;
     s->event = sd_event_ref( event );
     s->wake_fd = eventfd( 0, EFD_CLOEXEC | EFD_NONBLOCK );
     pthread_mutex_init( &s->lock, NULL );
     s->reqs_tail = &s->reqs;
     s->mail_tail = &s->mail;
     atomic_init( &s->want_px, 16 );
-    if (s->wake_fd < 0 || !(s->snap = snap_new( 0 )) ||
+    const char* theme = awl_config()->tray.icon_theme;
+    if ((theme && !(s->icon_theme = strdup( theme ))) || s->wake_fd < 0 || !(s->snap = snap_new( 0 )) ||
         sd_event_add_io( event, &s->wake, s->wake_fd, EPOLLIN, wake_callback, s ) < 0)
         goto fail;
-    the = s;
     /* the first connection from the loop: no socket work on the caller's thread */
     schedule_retry( s, 0 );
     if (!s->retry) goto fail;
     return s;
 fail:
-    the = NULL;
     sd_event_source_disable_unref( s->wake );
     if (s->wake_fd >= 0) close( s->wake_fd );
     sd_event_unref( s->event );
     sni_snap_unref( s->snap );
     pthread_mutex_destroy( &s->lock );
+    free( s->icon_theme );
     free( s );
     return NULL;
 }
@@ -1030,10 +1077,10 @@ void sni_free( awl_sni_t* s ) {
         free( r );
     }
     awl_icons_free( s->themes );
+    free( s->icon_theme );
     free( s->items );
     sni_snap_unref( s->snap );
     pthread_mutex_destroy( &s->lock );
     sd_event_unref( s->event );
-    the = NULL;
     free( s );
 }

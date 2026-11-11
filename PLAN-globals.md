@@ -167,7 +167,38 @@ arrays of awl_config_defaults.h and awl_alert.c's names are `*const` now.
 `objdump -t` shows `awl_proc` as the core's only object in .data/.bss; the
 rest is const (.data.rel.ro). The unit tests link awl_process.c.
 
-Next: 6. (the library), lower priority.
+6. is done (uncommitted; the ABI is unchanged, the library's entry points
+wrap what they call): `objdump -t` of libawlplugins shows `awl_host`, the
+root pointer `plugin_data` and persistent.c's file lock as the only writable
+data (besides vendor/'s stb and wuffs tables). plugins/handles.h names the
+structs and states the rule:
+- Each module's state is a struct defined in its .c, made by its start and
+  freed by its stop, a pointer in `awl_plugin_data_t` (osd, calpopup and its
+  calendar thread, batpopup, sysmon, notify with notify_menu and
+  notify_image, wallpaper's thread (`awl_wallpaper_thread_t`: the core has a
+  `struct awl_wallpaper`), the desktop panel, logind, the launcher, the tray's
+  menu window and tooltip, the widgets' shared state). Its functions take it,
+  its callbacks get it as data, it keeps the root as `->p` where it reaches
+  other modules. NULL (out of memory) is a no-op everywhere.
+- The entry points (api, actions, bar widgets) start from
+  `awl_plugin_get()` / `AWL_PLUGIN_MODULE( m )`; no module calls them.
+- The configs moved into the root (`awl_config()` reads it). No thread reads
+  them: sni copies its icon theme before its loop starts, as the launcher
+  and notify_image already did.
+- Threads own their structs (a stuck one's is leaked), never the root.
+- sni's `the`, and sni_menu's list and serial: async calls get a cookie
+  (tray, serial) freed with their slot (`sni_call_method_async()`); matches
+  and timers owned by an item or menu get it directly. The menus' list is
+  in the tray.
+- Scratch moved: fuzzy.c's 1.3 MB tables are the caller's
+  (`awl_fuzzy_tables_t`, the launcher's), persistent.c's buffers are
+  malloc()ed per call, function-static arrays became locals; qsort
+  comparators that read globals sort by precomputed keys instead.
+- cal_eds.c's libecal table is the backend's (dlopen() is refcounted and
+  RTLD_NODELETE, so each backend loads its own cheaply); its lock and load
+  state are gone.
+- `t_plugins_loaded` is stamped by the entry point, once per copy of the
+  library, instead of through a function-static flag.
 
 A. **Gather (mechanical):**
    - Add `awl_server_t` and its member structs.

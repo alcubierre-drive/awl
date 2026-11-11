@@ -21,6 +21,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "handles.h"
+
 /** a menu entry's flags */
 enum {
     AWL_TRAY_MENU_SEPARATOR = 1 << 0,
@@ -70,32 +72,37 @@ typedef struct awl_tray_menu_snap_t {
 
 void awl_tray_menu_snap_free( awl_tray_menu_snap_t* snap );
 
-/* ---- any thread, run on the tray's loop (sni.c) ---- */
+/* ---- any thread, run on the tray's loop (sni.c); s NULL: dropped ---- */
 
 /** the main thread wants a snapshot of serial's menu for request gen */
-void awl_tray_menu_request( uint64_t serial, uint32_t gen );
+void awl_tray_menu_request( awl_sni_t* s, uint64_t serial, uint32_t gen );
 /** sends Event( id, event ) ("opened", "closed", "clicked") for serial's menu;
  * "opened" and "closed" of id 0 also tell the tray whether it is open */
-void awl_tray_menu_event( uint64_t serial, int32_t id, const char* event );
+void awl_tray_menu_event( awl_sni_t* s, uint64_t serial, int32_t id, const char* event );
 
-/* ---- awl's main thread (tray_menu_window.c) ---- */
+/* ---- awl's main thread (tray_menu_window.c); NULL: closed, a no-op ---- */
+
+/** the menus' window, made on first use; p is the root, whose tray
+ * (:c:member:`awl_plugin_data_t.sni`) it asks and whose tooltip it hides;
+ * NULL if out of memory */
+awl_tray_menu_window_t* awl_tray_menu_window_new( awl_plugin_data_t* p );
 
 /** A click on the item: opens serial's menu on the monitor of the output
  * named monitor, centered on center_x (logical pixels from its left edge),
  * or closes it if it is open there. The pointer counts as on the item until
  * :c:func:`awl_tray_menu_window_pointer` says otherwise. */
-void awl_tray_menu_window_toggle( uint64_t serial, const char* monitor, int center_x );
+void awl_tray_menu_window_toggle( awl_tray_menu_window_t* mw, uint64_t serial, const char* monitor, int center_x );
 /** The pointer came onto the item (inside) or left it: the menu open
  * closes once the pointer is off both it and the item for a moment. */
-void awl_tray_menu_window_pointer( uint64_t serial, int inside );
+void awl_tray_menu_window_pointer( awl_tray_menu_window_t* mw, uint64_t serial, int inside );
 /** a snapshot for the main thread, which takes it */
-void awl_tray_menu_window_snap( awl_tray_menu_snap_t* snap );
+void awl_tray_menu_window_snap( awl_tray_menu_window_t* mw, awl_tray_menu_snap_t* snap );
 /** serial's menu is gone: closes it, without events */
-void awl_tray_menu_window_gone( uint64_t serial );
+void awl_tray_menu_window_gone( awl_tray_menu_window_t* mw, uint64_t serial );
 /** whether a menu is open, or being opened */
-int awl_tray_menu_window_is_open( void );
+int awl_tray_menu_window_is_open( awl_tray_menu_window_t* mw );
 /** whether serial's menu is open, or being opened */
-int awl_tray_menu_window_shows( uint64_t serial );
-/** closes it and gives back its windows and timers (the plugin library's
- * copy, before it is unloaded) */
-void awl_tray_menu_window_fini( void );
+int awl_tray_menu_window_shows( awl_tray_menu_window_t* mw, uint64_t serial );
+/** closes it, gives back its windows and timers and frees mw (the plugin
+ * library's fini) */
+void awl_tray_menu_window_fini( awl_tray_menu_window_t* mw );

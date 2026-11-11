@@ -43,20 +43,6 @@ typedef struct {
     char more[2][32];
 } PanelLayout;
 
-/** Main thread state. The main thread never touches the file system: on a
- * hung (e.g. remote) mount any file system call can block indefinitely,
- * which must not freeze the compositor. */
-static struct PanelState {
-    /* main thread's copy of the scanner's last list, what the panels show */
-    Filename files[NFILES];
-    int n_files;
-    uint64_t version; /* see desktop_version() */
-    int scanned;      /* the scanner reported at least once */
-    int show, hidden;
-
-    PanelLayout lay;
-} desk;
-
 /** Shared with a scanner thread, which does all the file system access
  * (inotify_add_watch() resolves the path too). One per scanner: a scanner
  * stuck in the kernel is abandoned rather than waited for, together with its
@@ -71,36 +57,53 @@ typedef struct {
     awl_thread_t thread;  /* waking it (main -> scanner) means rescan */
 } Scanner;
 
-/** the running scanner, NULL if none */
-static Scanner* sc;
+/** Main thread state. The main thread never touches the file system: on a
+ * hung (e.g. remote) mount any file system call can block indefinitely,
+ * which must not freeze the compositor. */
+struct awl_desktop_panel {
+    /** the root */
+    awl_plugin_data_t* p;
+    /* main thread's copy of the scanner's last list, what the panels show */
+    Filename files[NFILES];
+    int n_files;
+    uint64_t version; /* see desktop_version() */
+    int scanned;      /* the scanner reported at least once */
+    int show, hidden;
 
-/** desk.show and desk.hidden as a string in awl's config dictionary, so they
+    PanelLayout lay;
+    /** the running scanner, NULL if none */
+    Scanner* sc;
+};
+
+
+
+/** dp->show and dp->hidden as a string in awl's config dictionary, so they
  * survive reloads: "off", "on" or "all" (hidden files too). awl gives it a
  * default, the scanner loads and saves it in persistent.h's file. Off
  * doesn't keep hidden files' setting. */
 static const char file_mode_key[] = "desktop_file_mode";
 
-/** desk.show and desk.hidden from the dictionary; unchanged if it has no
+/** dp->show and dp->hidden from the dictionary; unchanged if it has no
  * mode; main thread */
-static void readmode( void ) {
+static void readmode( awl_desktop_panel_t* dp ) {
     awl_dict_val_t v;
     /* the string is the dictionary's until it's unlocked */
     AWL_HOST_CFG_LOCK( awl_host );
     if (AWL_HOST_CFG_GET( awl_host, file_mode_key, &v ) == AWL_DICT_OK
             && v.kind == AWL_DICT_KIND_STR) {
         if (!strcmp( v.str, "off" )) {
-            desk.show = 0;
+            dp->show = 0;
         } else if (!strcmp( v.str, "on" ) || !strcmp( v.str, "all" )) {
-            desk.show = 1;
-            desk.hidden = v.str[0] == 'a';
+            dp->show = 1;
+            dp->hidden = v.str[0] == 'a';
         }
     }
     AWL_HOST_CFG_UNLOCK( awl_host );
 }
 
-/** the dictionary's mode from desk.show and desk.hidden; main thread */
-static void writemode( void ) {
-    const char* mode = !desk.show ? "off" : desk.hidden ? "all" : "on";
+/** the dictionary's mode from dp->show and dp->hidden; main thread */
+static void writemode( awl_desktop_panel_t* dp ) {
+    const char* mode = !dp->show ? "off" : dp->hidden ? "all" : "on";
     AWL_HOST_CFG_SET( awl_host, file_mode_key, AWL_DICT_STR( mode ) );
 }
 
@@ -166,18 +169,20 @@ static void* scanner( void* data ) {
 }
 
 /** asks the scanner to look again, e.g. for a directory that appeared */
-static void rescan( void ) {
-    if (sc) awl_thread_wake( &sc->thread );
+static void rescan( awl_desktop_panel_t* dp ) {
+    if (dp->sc) awl_thread_wake( &dp->sc->thread );
 }
 
-void awl_desktop_start( void ) {
-    memset( &desk, 0, sizeof(desk) );
-    desk.show = 1;
-    desk.version = 1;
-    readmode();
+awl_desktop_panel_t* awl_desktop_start( awl_plugin_data_t* p ) {
+    awl_desktop_panel_t* dp = calloc( 1, sizeof *dp );
+    if (!dp) return NULL;
+    dp->p = p;
+    dp->show = 1;
+    dp->version = 1;
+    readmode( dp );
 
     Scanner* n = calloc( 1, sizeof(*n) );
-    if (!n) return;
+    if (!n) return dp;
     /* the string is the dictionary's until it's unlocked */
     awl_dict_val_t dir;
     AWL_HOST_CFG_LOCK( awl_host );
@@ -188,20 +193,22 @@ void awl_desktop_start( void ) {
     if (!n->path[0]) {
         awl_wrn_printf( "desktop: no desktop_dir in the config dictionary\n" );
         free( n );
-        return;
+        return dp;
     }
     atomic_init( &n->pending, NULL );
     if (awl_thread_start( &n->thread, "desktop", scanner, n )) {
         free( n );
-        return;
+        return dp;
     }
-    sc = n;
+    dp->sc = n;
+    return dp;
 }
 
-int awl_desktop_stop( void ) {
-    if (!sc) return 0;
-    Scanner* old = sc;
-    sc = NULL;
+int awl_desktop_stop( awl_desktop_panel_t* dp ) {
+    if (!dp) return 0;
+    Scanner* old = dp->sc;
+    free( dp );
+    if (!old) return 0;
 
     /* a scanner blocked on a dead mount can't be woken or cancelled; leave
      * it behind instead of hanging awl */
@@ -215,26 +222,27 @@ int awl_desktop_stop( void ) {
     return 0;
 }
 
-uint64_t awl_desktop_version( void ) {
-    DesktopFiles* f = sc ? atomic_exchange( &sc->pending, NULL ) : NULL;
+uint64_t awl_desktop_version( awl_desktop_panel_t* dp ) {
+    if (!dp) return 0;
+    DesktopFiles* f = dp->sc ? atomic_exchange( &dp->sc->pending, NULL ) : NULL;
     if (f) {
-        int changed = desk.n_files != f->n_files
-                   || memcmp( desk.files, f->files, sizeof(desk.files) );
+        int changed = dp->n_files != f->n_files
+                   || memcmp( dp->files, f->files, sizeof(dp->files) );
         if (changed) {
-            memcpy( desk.files, f->files, sizeof(desk.files) );
-            desk.n_files = f->n_files;
+            memcpy( dp->files, f->files, sizeof(dp->files) );
+            dp->n_files = f->n_files;
         }
         free( f );
-        if (changed || !desk.scanned) desk.version++;
-        if (!desk.scanned) readmode(); /* the scanner may have loaded one */
-        desk.scanned = 1;
+        if (changed || !dp->scanned) dp->version++;
+        if (!dp->scanned) readmode( dp ); /* the scanner may have loaded one */
+        dp->scanned = 1;
     }
     /* nothing until the first scan, rather than a wrong "(empty)" */
-    return desk.scanned && desk.show ? desk.version : 0;
+    return dp->scanned && dp->show ? dp->version : 0;
 }
 
-static int visible( const Filename* f ) {
-    return desk.hidden || !f->ishidden;
+static int visible( awl_desktop_panel_t* dp, const Filename* f ) {
+    return dp->hidden || !f->ishidden;
 }
 
 static void label( const Filename* f, char* out, size_t n ) {
@@ -259,9 +267,9 @@ static const char* more_of( const PanelLayout* l, int i ) {
     return i == l->more_at[0] ? l->more[0] : i == l->more_at[1] ? l->more[1] : NULL;
 }
 
-void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int radius, float s,
+void awl_desktop_measure( awl_desktop_panel_t* dp, struct fcft_font* font, int avail_w, int avail_h, int radius, float s,
                           int* x, int* y, int* w, int* h ) {
-    PanelLayout* l = &desk.lay;
+    PanelLayout* l = &dp->lay;
     const int fh = font->height,
               margin = (int)lroundf( DESK->margin * s ),
               cols = MAX( 1, MIN( DESK->columns, (int)NFILES ) );
@@ -276,10 +284,10 @@ void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int 
     /* the visible ones: the files, then the folders (findfiles()' order) */
     int vis[NFILES], k[2] = { 0, 0 };
     l->n = 0;
-    for (int i = 0; i < desk.n_files; i++)
-        if (visible( &desk.files[i] )) {
+    for (int i = 0; i < dp->n_files; i++)
+        if (visible( dp, &dp->files[i] )) {
             vis[l->n++] = i;
-            k[desk.files[i].isdir]++;
+            k[dp->files[i].isdir]++;
         }
 
     /* each section's rows; if both don't fit, the folders keep at least
@@ -308,7 +316,7 @@ void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int 
         row0 += base + (longer > 0);
     }
 
-    char buf[sizeof(desk.files[0].name) + 2];
+    char buf[sizeof(dp->files[0].name) + 2];
     int nrows = 1;
     if (l->n == 0) {
         l->ncols = 1;
@@ -317,7 +325,7 @@ void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int 
         for (int c = 0; c < l->ncols; c++) l->col_w[c] = 0;
         for (int i = 0; i < l->shown; i++) {
             const char* t = more_of( l, i );
-            label( &desk.files[l->idx[i]], buf, sizeof(buf) );
+            label( &dp->files[l->idx[i]], buf, sizeof(buf) );
             if (!t) t = buf;
             l->col_w[l->col[i]] = MAX( l->col_w[l->col[i]], MIN( (int)awl_host->text_width( font, t ), max_col_w ) );
             nrows = MAX( nrows, l->row[i] + 1 );
@@ -372,15 +380,15 @@ static void text( pixman_image_t* pix, struct fcft_font* font, int x, int y, int
     awl_host->text( pix, font, x, y, w, h, 0, s, color_8bit_to_16bit( fg ), color_8bit_to_16bit( 0 ) );
 }
 
-void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride,
+void awl_desktop_draw( awl_desktop_panel_t* dp, pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride,
                        int w, int h, int radius, float s ) {
-    const PanelLayout* l = &desk.lay;
-    char buf[sizeof(desk.files[0].name) + 2];
+    const PanelLayout* l = &dp->lay;
+    char buf[sizeof(dp->files[0].name) + 2];
 
     if (l->n == 0)
         text( pix, font, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( COLORS->desktop_file, DESK->hidden_alpha ) );
     for (int i = 0; i < l->shown; i++) {
-        const Filename* f = &desk.files[l->idx[i]];
+        const Filename* f = &dp->files[l->idx[i]];
         const char* more = more_of( l, i );
         label( f, buf, sizeof(buf) );
         text( pix, font, l->col_x[l->col[i]], l->pad + l->row[i] * l->row_h, l->col_w[l->col[i]], l->row_h,
@@ -392,14 +400,15 @@ void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* da
 /* plain clicks change the wallpaper, Shift+clicks the panel and the timer */
 /* what a toggle changed, from show/hidden before it to now (a click
  * changes one of them) */
-static void notify_toggle( int show, int hidden ) {
-    if (show != desk.show)
-        awl_osd_desktop( desk.show ? "Desktop files shown" : "Desktop files hidden" );
-    else if (hidden != desk.hidden)
-        awl_osd_desktop( desk.hidden ? "Hidden files shown" : "Hidden files not shown" );
+static void notify_toggle( awl_desktop_panel_t* dp, int show, int hidden ) {
+    if (show != dp->show)
+        awl_osd_desktop( dp->p->osd, dp->show ? "Desktop files shown" : "Desktop files hidden" );
+    else if (hidden != dp->hidden)
+        awl_osd_desktop( dp->p->osd, dp->hidden ? "Hidden files shown" : "Hidden files not shown" );
 }
 
-int awl_desktop_click( int button, uint32_t mods ) {
+int awl_desktop_click( awl_desktop_panel_t* dp, int button, uint32_t mods ) {
+    if (!dp) return 0;
     if (!mods) {
         WallpaperMode mode;
         switch (button) {
@@ -408,24 +417,24 @@ int awl_desktop_click( int button, uint32_t mods ) {
         case BTN_MIDDLE: mode = WallpaperRand; break;
         default: return 0;
         }
-        awl_osd_wallpaper_ask();
-        if (mode == WallpaperRand) awl_wallpaper_random();
-        else awl_wallpaper_step( mode == WallpaperNext ? +1 : -1 );
+        awl_osd_wallpaper_ask( dp->p->osd );
+        if (mode == WallpaperRand) awl_wallpaper_random( dp->p->wallpaper );
+        else awl_wallpaper_step( dp->p->wallpaper, mode == WallpaperNext ? +1 : -1 );
         return 1;
     } else if (mods == WLR_MODIFIER_CTRL) {
         // the button is ignored here, could be taken in the future.
-        awl_osd_wallpaper();
+        awl_osd_wallpaper( dp->p->osd );
         return 1;
     } else if (mods == WLR_MODIFIER_SHIFT) {
-        int show = desk.show, hidden = desk.hidden;
+        int show = dp->show, hidden = dp->hidden;
         switch (button) {
         case BTN_LEFT:
-            desk.show = !desk.show;
+            dp->show = !dp->show;
             break;
         case BTN_MIDDLE:
             /* also shows a hidden list */
-            if (desk.show) desk.hidden = !desk.hidden;
-            desk.show = 1;
+            if (dp->show) dp->hidden = !dp->hidden;
+            dp->show = 1;
             break;
         case BTN_RIGHT:
             awl_host->actions->wallpapermode( awl_host->srv, &(Arg){ .i = +1 } );
@@ -433,10 +442,10 @@ int awl_desktop_click( int button, uint32_t mods ) {
         default:
             return 0;
         }
-        desk.version++;
-        writemode();
-        rescan();
-        notify_toggle( show, hidden );
+        dp->version++;
+        writemode( dp );
+        rescan( dp );
+        notify_toggle( dp, show, hidden );
         return 1;
     } else {
         return 0;

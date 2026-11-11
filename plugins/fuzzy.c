@@ -46,9 +46,7 @@ enum {
  * so far; O an error, which only a match right after it closes (no gap, no
  * second error). Errors only follow D: an error has a run on both sides. G:
  * q[0..i] done before j, j a gap. One layer per number of errors. */
-#define CELLS ((AWL_FUZZY_MAX_ERRORS + 1) * AWL_FUZZY_MAX_QUERY * AWL_FUZZY_MAX_TEXT)
-static int D[CELLS], L[CELLS], O[CELLS], G[CELLS];
-static uint8_t BD[CELLS], BL[CELLS], BO[CELLS], BG[CELLS];
+/* (awl_fuzzy_tables_t; the functions name its tables by these letters) */
 #define AT( e, i, j ) (((e) * AWL_FUZZY_MAX_QUERY + (i)) * AWL_FUZZY_MAX_TEXT + (j))
 
 /** which table a cell is in, for the trace */
@@ -64,7 +62,8 @@ enum { IN_D, IN_L, IN_O, IN_G };
  * byte offset each query character matched at into pos (off: the text's
  * characters' offsets), -1 an error. Returns whether every segment with an
  * error in it has enough exact characters (SEGMENT_MIN). */
-static int trace( const int* off, int e, int n, int j, int in, int* pos ) {
+static int trace( const awl_fuzzy_tables_t* tb, const int* off, int e, int n, int j, int in, int* pos ) {
+    const uint8_t *const BD = tb->BD, *const BL = tb->BL, *const BO = tb->BO, *const BG = tb->BG;
     /* per query character: an error (wrong or extra, or in a swapped
      * pair), and whether a gap comes before it */
     char err[AWL_FUZZY_MAX_QUERY], gap[AWL_FUZZY_MAX_QUERY];
@@ -241,7 +240,10 @@ static int max( int a, int b ) {
     return a > b ? a : b;
 }
 
-int awl_fuzzy_match( const awl_fuzzy_query_t* q, const char* text, int* score, int* errors, int* pos ) {
+int awl_fuzzy_match( awl_fuzzy_tables_t* tb, const awl_fuzzy_query_t* q, const char* text, int* score, int* errors,
+                     int* pos ) {
+    int *const D = tb->D, *const L = tb->L, *const O = tb->O, *const G = tb->G;
+    uint8_t *const BD = tb->BD, *const BL = tb->BL, *const BO = tb->BO, *const BG = tb->BG;
     uint32_t c[AWL_FUZZY_MAX_TEXT], raw_prev = 0;
     int off[AWL_FUZZY_MAX_TEXT], b[AWL_FUZZY_MAX_TEXT];
     const int n = q->n;
@@ -347,7 +349,7 @@ int awl_fuzzy_match( const awl_fuzzy_query_t* q, const char* text, int* score, i
             if (!(tried & 1 << k) && best[k] > NEG && (e < 0 || best[k] > best[e])) e = k;
         if (e < 0) return 0;
         tried |= 1 << e;
-        if (!trace( off, e, n, bj[e], bin[e], pos ? pos : p )) continue;
+        if (!trace( tb, off, e, n, bj[e], bin[e], pos ? pos : p )) continue;
         if (score) *score = best[e];
         if (errors) *errors = e;
         break;

@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -36,7 +37,9 @@ typedef struct {
     int switches;
 } watch_t;
 
-static struct {
+struct awl_osd {
+    /** the root, for the daemons' state */
+    awl_plugin_data_t* p;
     awl_timer_t* timer;
     watch_t w[OSD_N];
     /** what the brightness asks under way should come to, per mille, as
@@ -45,7 +48,7 @@ static struct {
     /** a wallpaper change is under way that shows once it's done
      * (:c:func:`awl_osd_wallpaper_ask`) */
     int wallpaper_due;
-} O;
+};
 
 static long long now_ms( void ) {
     struct timespec t;
@@ -54,8 +57,8 @@ static long long now_ms( void ) {
 }
 
 /** k's value and what goes with it in one number; -1 not known */
-static long long state( kind_t k ) {
-    awl_plugin_data_t* P = awl_plugin_get();
+static long long state( awl_osd_t* o, kind_t k ) {
+    awl_plugin_data_t* P = o->p;
     if (!P) return -1;
     if (k == OSD_VOLUME) {
         if (!P->pulse) return -1;
@@ -141,12 +144,12 @@ static int watching( const watch_t* w, long long now ) {
 
 /** the brightness asks under way are all answered: the daemon's word
  * replaces the guess, shown only if it looks different */
-static void settle( void ) {
-    awl_plugin_data_t* P = awl_plugin_get();
+static void settle( awl_osd_t* o ) {
+    awl_plugin_data_t* P = o->p;
     if (!P || !P->backlight || atomic_load( &P->backlight->unanswered ) > 0) return;
-    watch_t* w = &O.w[OSD_BRIGHTNESS];
-    const long long s = state( OSD_BRIGHTNESS );
-    O.guess = -1;
+    watch_t* w = &o->w[OSD_BRIGHTNESS];
+    const long long s = state( o, OSD_BRIGHTNESS );
+    o->guess = -1;
     if (s < 0) return;
     if (brightness_looks( s ) != brightness_looks( w->shown )) send( OSD_BRIGHTNESS, s, w->label );
     w->shown = s;
@@ -154,8 +157,8 @@ static void settle( void ) {
 
 /** k's switches of device (pulsetest.h), news even with the same state; 0
  * for the brightness */
-static int switches( kind_t k ) {
-    awl_plugin_data_t* P = awl_plugin_get();
+static int switches( awl_osd_t* o, kind_t k ) {
+    awl_plugin_data_t* P = o->p;
     return k == OSD_VOLUME && P && P->pulse ? atomic_load( &P->pulse->switches ) : 0;
 }
 
@@ -163,8 +166,8 @@ static int switches( kind_t k ) {
  * (:c:member:`awl_plugin_config_t.osd`'s brightness_unasked and
  * volume_unasked); switched: whether the device switched since the last
  * redraw, which it was then even if a change of the other kind came after */
-static const char* label( kind_t k, int switched ) {
-    awl_plugin_data_t* P = awl_plugin_get();
+static const char* label( awl_osd_t* o, kind_t k, int switched ) {
+    awl_plugin_data_t* P = o->p;
     if (!P) return NULL;
     if (k == OSD_BRIGHTNESS) {
         if (!P->backlight) return NULL;
@@ -193,16 +196,16 @@ static const char* label( kind_t k, int switched ) {
  * reload), the brightness only if it looks different, and only if its
  * cause has a label (:c:func:`label`). Its watch begins: what follows within WATCH_MS (a
  * new sink's volume after its port, say) goes out the same way. */
-static void unasked( kind_t k, long long now ) {
-    watch_t* w = &O.w[k];
-    const long long s = state( k ), seen = w->seen;
-    const int sw = switches( k ), switched = sw != w->switches;
+static void unasked( awl_osd_t* o, kind_t k, long long now ) {
+    watch_t* w = &o->w[k];
+    const long long s = state( o, k ), seen = w->seen;
+    const int sw = switches( o, k ), switched = sw != w->switches;
     w->seen = s;
     w->switches = sw;
     if (watching( w, now ) || s < 0 || seen < 0) return;
-    if (k == OSD_BRIGHTNESS && (O.guess >= 0 || brightness_looks( s ) == brightness_looks( seen ))) return;
+    if (k == OSD_BRIGHTNESS && (o->guess >= 0 || brightness_looks( s ) == brightness_looks( seen ))) return;
     if (s == seen && !switched) return;
-    const char* l = label( k, switched );
+    const char* l = label( o, k, switched );
     if (!l) return;
     send( k, s, l );
     w->shown = s;
@@ -211,30 +214,31 @@ static void unasked( kind_t k, long long now ) {
     w->due = 0;
 }
 
-void awl_osd_redraw( void ) {
+void awl_osd_redraw( awl_osd_t* o ) {
+    if (!o) return;
     const long long now = now_ms();
-    if (O.guess >= 0) settle();
+    if (o->guess >= 0) settle( o );
     for (int k = 0; k < OSD_N; k++) {
-        watch_t* w = &O.w[k];
+        watch_t* w = &o->w[k];
         /* a guess stands until it's settled */
-        if (k == OSD_BRIGHTNESS && O.guess >= 0) continue;
+        if (k == OSD_BRIGHTNESS && o->guess >= 0) continue;
         if (!watching( w, now )) continue;
-        const long long s = state( (kind_t)k );
+        const long long s = state( o, (kind_t)k );
         if (s < 0 || s == w->shown) continue;
         send( (kind_t)k, s, w->label );
         w->shown = s;
         w->due = 0;
     }
-    for (int k = 0; k < OSD_N; k++) unasked( (kind_t)k, now );
+    for (int k = 0; k < OSD_N; k++) unasked( o, (kind_t)k, now );
 }
 
 /** no change came in QUIET_MS: what is asked for goes out as it is (at its
  * limit, say); not known yet, it waits for :c:func:`awl_osd_redraw` */
 static void quiet( void* data ) {
-    (void)data;
+    awl_osd_t* o = data;
     for (int k = 0; k < OSD_N; k++) {
-        watch_t* w = &O.w[k];
-        const long long s = state( (kind_t)k );
+        watch_t* w = &o->w[k];
+        const long long s = state( o, (kind_t)k );
         if (!w->due || s < 0) continue;
         send( (kind_t)k, s, w->label );
         w->shown = s;
@@ -242,30 +246,32 @@ static void quiet( void* data ) {
     }
 }
 
-static void ask( kind_t k ) {
-    watch_t* w = &O.w[k];
+static void ask( awl_osd_t* o, kind_t k ) {
+    watch_t* w = &o->w[k];
     const long long now = now_ms();
-    if (!O.timer) return;
+    if (!o->timer) return;
     /* what it is now isn't news; what it changes to is */
-    if (!watching( w, now )) w->shown = state( k );
+    if (!watching( w, now )) w->shown = state( o, k );
     w->asked = now;
     w->label = NULL;
     w->due = 1;
-    awl_host->timer_set( O.timer, QUIET_MS );
+    awl_host->timer_set( o->timer, QUIET_MS );
 }
 
-void awl_osd_volume( void ) {
-    ask( OSD_VOLUME );
+void awl_osd_volume( awl_osd_t* o ) {
+    if (!o) return;
+    ask( o, OSD_VOLUME );
 }
 
-void awl_osd_brightness( float delta ) {
-    awl_plugin_data_t* P = awl_plugin_get();
-    watch_t* w = &O.w[OSD_BRIGHTNESS];
+void awl_osd_brightness( awl_osd_t* o, float delta ) {
+    if (!o) return;
+    awl_plugin_data_t* P = o->p;
+    watch_t* w = &o->w[OSD_BRIGHTNESS];
     /* on top of the asks under way, if any, else of what it is */
-    const long long base = O.guess >= 0 ? O.guess : state( OSD_BRIGHTNESS );
-    if (!O.timer || !P || !P->backlight || base < 0) {
+    const long long base = o->guess >= 0 ? o->guess : state( o, OSD_BRIGHTNESS );
+    if (!o->timer || !P || !P->backlight || base < 0) {
         /* nothing to guess from: wait for the daemon */
-        ask( OSD_BRIGHTNESS );
+        ask( o, OSD_BRIGHTNESS );
         return;
     }
     /* clamped as the daemon does */
@@ -274,34 +280,36 @@ void awl_osd_brightness( float delta ) {
     if (g < min) g = min;
     if (g > 1000) g = 1000;
     send( OSD_BRIGHTNESS, g, NULL );
-    O.guess = g;
+    o->guess = g;
     w->asked = now_ms();
     w->label = NULL;
     w->shown = g;
     w->due = 0;
 }
 
-int awl_osd_start( void ) {
-    memset( &O, 0, sizeof O );
-    O.guess = -1;
-    for (int k = 0; k < OSD_N; k++) O.w[k].seen = -1;
-    O.timer = awl_host->timer_add( awl_host->srv, quiet, NULL );
-    return 0;
+awl_osd_t* awl_osd_start( awl_plugin_data_t* p ) {
+    awl_osd_t* o = calloc( 1, sizeof *o );
+    if (!o) return NULL;
+    o->p = p;
+    o->guess = -1;
+    for (int k = 0; k < OSD_N; k++) o->w[k].seen = -1;
+    o->timer = awl_host->timer_add( awl_host->srv, quiet, o );
+    return o;
 }
 
-void awl_osd_stop( void ) {
-    awl_host->timer_remove( O.timer );
-    memset( &O, 0, sizeof O );
-    O.guess = -1;
-    for (int k = 0; k < OSD_N; k++) O.w[k].seen = -1;
+void awl_osd_stop( awl_osd_t* o ) {
+    if (!o) return;
+    awl_host->timer_remove( o->timer );
+    free( o );
 }
 
 /* ---- the wallpaper and the desktop files ---- */
 
-void awl_osd_wallpaper( void ) {
+void awl_osd_wallpaper( awl_osd_t* o ) {
+    if (!o) return;
     awl_notif_send_t n = base();
     int cur, count;
-    const int settled = awl_wallpaper_settled( &cur, &count ) && count > 0;
+    const int settled = awl_wallpaper_settled( o->p->wallpaper, &cur, &count ) && count > 0;
     /* the timer's mode, as awl keeps it in the config dictionary */
     char mode[16] = "";
     awl_dict_val_t v;
@@ -323,15 +331,17 @@ void awl_osd_wallpaper( void ) {
     awl_notify_send( &n );
 }
 
-void awl_osd_wallpaper_ask( void ) {
-    O.wallpaper_due = 1;
+void awl_osd_wallpaper_ask( awl_osd_t* o ) {
+    if (!o) return;
+    o->wallpaper_due = 1;
 }
 
-void awl_osd_wallpaper_taken( void ) {
+void awl_osd_wallpaper_taken( awl_osd_t* o ) {
     int cur, count;
-    if (!O.wallpaper_due || !awl_wallpaper_settled( &cur, &count )) return;
-    O.wallpaper_due = 0;
-    awl_osd_wallpaper();
+    if (!o) return;
+    if (!o->wallpaper_due || !awl_wallpaper_settled( o->p->wallpaper, &cur, &count )) return;
+    o->wallpaper_due = 0;
+    awl_osd_wallpaper( o );
 }
 
 /** text alone, centered, icon beside it (NULL, "": none), as the
@@ -344,11 +354,13 @@ static void text_osd( const char* tag, const char* text, const char* icon ) {
     awl_notify_send( &n );
 }
 
-void awl_osd_desktop( const char* text ) {
+void awl_osd_desktop( awl_osd_t* o, const char* text ) {
+    if (!o) return;
     text_osd( "osd-desktop", text, CFG->desktop_icon );
 }
 
-void awl_osd_dnd( int on ) {
+void awl_osd_dnd( awl_osd_t* o, int on ) {
+    if (!o) return;
     const awl_plugin_config_t* pc = awl_plugin_config();
     text_osd( "osd-dnd", on ? "Do not disturb" : "Notifications enabled",
               on ? pc->notify.bell_icon_dnd : pc->notify.bell_icon );

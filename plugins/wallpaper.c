@@ -39,8 +39,9 @@ static const size_t feed = 1 << 20;
 /** how many wallpapers back :c:func:`awl_wallpaper_back` can go */
 #define HISTORY 32
 
-/** One per thread; a stuck one is left behind with its thread, never freed. */
-typedef struct {
+/** One per thread, the handle; a stuck one is left behind with its thread,
+ * never freed. */
+struct awl_wallpaper_thread {
     char dir[PATH_MAX];        /* set before the thread starts, then read-only */
     DesktopFiles files;        /* thread only */
     atomic_int steps, random, back; /* main -> thread: what to do once woken */
@@ -57,9 +58,9 @@ typedef struct {
     /* thread -> main: where the list stands (see pack()), 0 until known */
     _Atomic(uint64_t) where;
     awl_thread_t thread;
-} Changer;
-
-static Changer* ch;
+};
+/** the handle, by its name here */
+typedef awl_wallpaper_thread_t Changer;
 
 /** the current index, the list's length and the index random goes to next,
  * in one word so the main thread never sees half an update */
@@ -276,9 +277,9 @@ static void* changer( void* data ) {
     return NULL;
 }
 
-void awl_wallpaper_start( void ) {
+awl_wallpaper_thread_t* awl_wallpaper_start( void ) {
     Changer* n = calloc( 1, sizeof(*n) );
-    if (!n) return;
+    if (!n) return NULL;
     /* the string is the dictionary's until it's unlocked */
     awl_dict_val_t dir;
     AWL_HOST_CFG_LOCK( awl_host );
@@ -288,7 +289,7 @@ void awl_wallpaper_start( void ) {
     AWL_HOST_CFG_UNLOCK( awl_host );
     if (!n->dir[0]) { /* the config's dir is NULL: no wallpaper */
         free( n );
-        return;
+        return NULL;
     }
     atomic_init( &n->steps, 0 );
     atomic_init( &n->random, 0 );
@@ -300,15 +301,13 @@ void awl_wallpaper_start( void ) {
     n->saved = -1;
     if (awl_thread_start( &n->thread, "wallpaper", changer, n )) {
         free( n );
-        return;
+        return NULL;
     }
-    ch = n;
+    return n;
 }
 
-int awl_wallpaper_stop( void ) {
-    if (!ch) return 0;
-    Changer* old = ch;
-    ch = NULL;
+int awl_wallpaper_stop( awl_wallpaper_thread_t* old ) {
+    if (!old) return 0;
     if (awl_thread_stop( &old->thread, 500 )) {
         awl_wrn_printf( "wallpaper: thread stuck (in %s?), not waiting for it\n", old->dir );
         return -1; /* old stays allocated, the thread may still use it */
@@ -318,28 +317,28 @@ int awl_wallpaper_stop( void ) {
     return 0;
 }
 
-void awl_wallpaper_step( int steps ) {
+void awl_wallpaper_step( awl_wallpaper_thread_t* ch, int steps ) {
     if (!ch) return;
     atomic_fetch_add( &ch->steps, steps );
     atomic_fetch_add( &ch->asked, 1 );
     awl_thread_wake( &ch->thread );
 }
 
-void awl_wallpaper_random( void ) {
+void awl_wallpaper_random( awl_wallpaper_thread_t* ch ) {
     if (!ch) return;
     atomic_store( &ch->random, 1 );
     atomic_fetch_add( &ch->asked, 1 );
     awl_thread_wake( &ch->thread );
 }
 
-void awl_wallpaper_back( void ) {
+void awl_wallpaper_back( awl_wallpaper_thread_t* ch ) {
     if (!ch) return;
     atomic_fetch_add( &ch->back, 1 );
     atomic_fetch_add( &ch->asked, 1 );
     awl_thread_wake( &ch->thread );
 }
 
-int awl_wallpaper_position( int* cur, int* n, int* rand_next ) {
+int awl_wallpaper_position( awl_wallpaper_thread_t* ch, int* cur, int* n, int* rand_next ) {
     uint64_t w = ch ? atomic_load( &ch->where ) : 0;
     if (!w) return 0;
     *n = (int)(w >> 32);
@@ -348,12 +347,12 @@ int awl_wallpaper_position( int* cur, int* n, int* rand_next ) {
     return 1;
 }
 
-int awl_wallpaper_settled( int* cur, int* n ) {
+int awl_wallpaper_settled( awl_wallpaper_thread_t* ch, int* cur, int* n ) {
     if (!ch || atomic_load( &ch->done ) != atomic_load( &ch->asked )) return 0;
     int rand_next;
-    return awl_wallpaper_position( cur, n, &rand_next );
+    return awl_wallpaper_position( ch, cur, n, &rand_next );
 }
 
-awl_image_t* awl_wallpaper_take( void ) {
+awl_image_t* awl_wallpaper_take( awl_wallpaper_thread_t* ch ) {
     return ch ? atomic_exchange( &ch->pending, NULL ) : NULL;
 }

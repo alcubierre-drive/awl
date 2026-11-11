@@ -73,7 +73,10 @@ typedef struct {
     uint64_t uses;
 } worker_t;
 
-static worker_t* W;
+/** the handle: the thread is started on the first wish */
+struct awl_notify_images {
+    worker_t* w;
+};
 
 static void wish_free( wish_t* w ) {
     for (int i = 0; i < 3; i++) free( w->src[i] );
@@ -356,8 +359,9 @@ static void* worker( void* data ) {
 
 /* ---- the main thread ---- */
 
-static worker_t* worker_get( void ) {
-    if (W) return W;
+static worker_t* worker_get( awl_notify_images_t* h ) {
+    if (!h) return NULL;
+    if (h->w) return h->w;
     worker_t* x = calloc( 1, sizeof(*x) );
     if (!x) return NULL;
     const char* theme = awl_config()->tray.icon_theme;
@@ -369,21 +373,21 @@ static worker_t* worker_get( void ) {
         free( x );
         return NULL;
     }
-    return W = x;
+    return h->w = x;
 }
 
 static char* copy_src( const char* s ) {
     return s && *s ? strdup( s ) : NULL;
 }
 
-int awl_notify_image_want( uint32_t id, uint64_t serial, int px, const char* image_path, const char* app_icon,
+int awl_notify_image_want( awl_notify_images_t* h, uint32_t id, uint64_t serial, int px, const char* image_path, const char* app_icon,
                            const char* desktop_entry ) {
     const char* src[3] = { image_path, app_icon, desktop_entry };
     int any = 0;
     for (int i = 0; i < 3; i++) any |= src[i] && *src[i];
     if (!any || px < 1) return 0;
     if (px > AWL_ICON_MAX_DIM) px = AWL_ICON_MAX_DIM;
-    worker_t* x = worker_get();
+    worker_t* x = worker_get( h );
     wish_t* w = x ? calloc( 1, sizeof(*w) ) : NULL;
     if (!w) return 0;
     w->r = (awl_notify_image_t){ .id = id, .serial = serial, .px = px };
@@ -400,10 +404,10 @@ int awl_notify_image_want( uint32_t id, uint64_t serial, int px, const char* ima
     return 1;
 }
 
-int awl_notify_image_icon_want( uint64_t key, int px, const char* names ) {
+int awl_notify_image_icon_want( awl_notify_images_t* h, uint64_t key, int px, const char* names ) {
     if (!names || !*names || px < 1) return 0;
     if (px > AWL_ICON_MAX_DIM) px = AWL_ICON_MAX_DIM;
-    worker_t* x = worker_get();
+    worker_t* x = worker_get( h );
     wish_t* w = x ? calloc( 1, sizeof(*w) ) : NULL;
     if (!w) return 0;
     w->r = (awl_notify_image_t){ .serial = key, .px = px };
@@ -422,11 +426,11 @@ int awl_notify_image_icon_want( uint64_t key, int px, const char* names ) {
 
 /** list's whole, with the sources freed: they aren't the caller's
  * business */
-static awl_notify_image_t* take( wish_t** list ) {
-    pthread_mutex_lock( &W->lock );
+static awl_notify_image_t* take( worker_t* x, wish_t** list ) {
+    pthread_mutex_lock( &x->lock );
     wish_t* done = *list;
     *list = NULL;
-    pthread_mutex_unlock( &W->lock );
+    pthread_mutex_unlock( &x->lock );
     for (wish_t* w = done; w; w = (wish_t*)w->r.next)
         for (int i = 0; i < 3; i++) {
             free( w->src[i] );
@@ -435,12 +439,12 @@ static awl_notify_image_t* take( wish_t** list ) {
     return done ? &done->r : NULL;
 }
 
-awl_notify_image_t* awl_notify_image_take( void ) {
-    return W ? take( &W->done ) : NULL;
+awl_notify_image_t* awl_notify_image_take( awl_notify_images_t* h ) {
+    return h && h->w ? take( h->w, &h->w->done ) : NULL;
 }
 
-awl_notify_image_t* awl_notify_image_icon_take( void ) {
-    return W ? take( &W->bar_done ) : NULL;
+awl_notify_image_t* awl_notify_image_icon_take( awl_notify_images_t* h ) {
+    return h && h->w ? take( h->w, &h->w->bar_done ) : NULL;
 }
 
 void awl_notify_image_free( awl_notify_image_t* list ) {
@@ -448,11 +452,16 @@ void awl_notify_image_free( awl_notify_image_t* list ) {
     wishes_free( (wish_t*)list );
 }
 
-int awl_notify_image_stop( void ) {
-    worker_t* x = W;
-    W = NULL;
+awl_notify_images_t* awl_notify_image_new( void ) {
+    return calloc( 1, sizeof(awl_notify_images_t) );
+}
+
+int awl_notify_image_stop( awl_notify_images_t* h ) {
+    if (!h) return 0;
+    worker_t* x = h->w;
+    free( h );
     if (!x) return 0;
-    /* reads files: may hang on a dead mount */
+    /* reads files: may hang on a dead mount; then x stays, the thread's */
     if (awl_thread_stop( &x->thread, 500 )) return 1;
     wishes_free( x->wanted );
     wishes_free( x->done );

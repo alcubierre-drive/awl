@@ -128,6 +128,14 @@ the poller, which may hang in a sysfs read, and the tray's loop, which
 reads icon files, 2 s each. What a stuck one runs or polls is leaked, not
 freed.
 
+All of this state hangs off one root, :c:type:`awl_plugin_data_t`, which
+init allocates and fini frees: each module's own struct (plugins/handles.h),
+the configs among them. A thread only ever gets its module's struct (or a
+part of it it owns), never the root, and copies what it needs of the config
+before it starts, so freeing the root is safe with a thread stuck. The
+library's only other writable globals are ``awl_host`` (the ABI, set by the
+entry point), the root's pointer and persistent.h's file lock.
+
 .. mermaid::
 
    flowchart LR

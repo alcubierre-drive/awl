@@ -15,13 +15,17 @@
  */
 
 #include "awl_bar_type.h"
+#include "handles.h"
 
+/** the popup's state, its window made on first use; NULL if out of
+ * memory. The functions below take NULL as a no-op. */
+awl_batpopup_t* awl_batpopup_start( awl_plugin_data_t* p );
+/** gives back the window and the state (the plugin library's fini) */
+void awl_batpopup_stop( awl_batpopup_t* bp );
 /** Shows the popup for w on its monitor, centered on center_x (logical
  * pixels from the monitor's left edge). Sets w->popup_window. */
-void awl_batpopup_show( widget_t* w, int center_x );
-void awl_batpopup_hide( void );
+void awl_batpopup_show( awl_batpopup_t* bp, widget_t* w, int center_x );
+void awl_batpopup_hide( awl_batpopup_t* bp );
 /** Re-reads what the popup shows while it is shown, redrawing it if that
  * changed; call on every bar redraw (the widgets' measure()). */
-void awl_batpopup_poll( void );
-/** gives back the window (the plugin library's fini) */
-void awl_batpopup_stop( void );
+void awl_batpopup_poll( awl_batpopup_t* bp );

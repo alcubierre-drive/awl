@@ -21,22 +21,26 @@
  * the bar widget's counts.
  */
 
-/** the timer for a value that doesn't change; returns 0 */
-int awl_osd_start( void );
+#include "handles.h"
+
+/** the OSD's state, with the timer for a value that doesn't change; p is
+ * the root, whose daemons it reads; NULL if out of memory. Every function
+ * below takes NULL as a no-op. */
+awl_osd_t* awl_osd_start( awl_plugin_data_t* p );
 /** gives it back (the plugin library's fini) */
-void awl_osd_stop( void );
+void awl_osd_stop( awl_osd_t* o );
 /** the volume, or a mute, was just asked to change */
-void awl_osd_volume( void );
+void awl_osd_volume( awl_osd_t* o );
 /** the brightness was just asked to change by delta (1 is all of it,
  * :c:func:`backlight_adjust`): shows what that should come to right away,
  * and once the daemon has answered all such asks, what it came to if that
  * looks different. Without a value to start from, it waits for the daemon
  * as the volume does. */
-void awl_osd_brightness( float delta );
+void awl_osd_brightness( awl_osd_t* o, float delta );
 /** :c:member:`awl_plugin_api_t.redraw`: sends what changed in answer to the asks,
  * corrects the brightness's guess, and sends a change nobody here asked for
  * by its cause */
-void awl_osd_redraw( void );
+void awl_osd_redraw( awl_osd_t* o );
 
 /* The wallpaper, the desktop files and do-not-disturb: no watch, their changes are events.
  * Each has one notification (by tag), replaced in place. */
@@ -44,16 +48,16 @@ void awl_osd_redraw( void );
 /** the wallpaper's now: "i/N · mode" (the timer's mode, "(off)" without a
  * timer) above its position in the folder as a bar, osd.wallpaper_icon
  * beside it; the mode alone while a change is under way */
-void awl_osd_wallpaper( void );
+void awl_osd_wallpaper( awl_osd_t* o );
 /** a wallpaper change was just asked for: :c:func:`awl_osd_wallpaper` follows once
  * the image it ends on is taken */
-void awl_osd_wallpaper_ask( void );
+void awl_osd_wallpaper_ask( awl_osd_t* o );
 /** awl took a wallpaper (:c:member:`awl_plugin_api_t.wallpaper_take`): shows it if a
  * change was asked for and all asked for are done */
-void awl_osd_wallpaper_taken( void );
+void awl_osd_wallpaper_taken( awl_osd_t* o );
 /** the desktop files' text alone, centered, osd.desktop_icon beside it */
-void awl_osd_desktop( const char* text );
+void awl_osd_desktop( awl_osd_t* o, const char* text );
 /** do-not-disturb was turned on or off (:c:func:`awl_notify_set_dnd`): "Do not
  * disturb" or "Notifications enabled" alone, centered, notify's bell_icon_dnd
  * or bell_icon beside it. It shows through do-not-disturb, as every OSD. */
-void awl_osd_dnd( int on );
+void awl_osd_dnd( awl_osd_t* o, int on );

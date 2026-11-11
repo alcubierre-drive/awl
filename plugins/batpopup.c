@@ -5,6 +5,7 @@
 #include <linux/input-event-codes.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* the parts: each threshold's buttons, then its row (only scrolls; after
@@ -25,7 +26,9 @@ typedef struct {
 } batsnap_t;
 
 /** the popup; layout in physical pixels, from the content's top left */
-static struct {
+struct awl_batpopup {
+    /** the root */
+    awl_plugin_data_t* p;
     awl_window_t* win;
     batsnap_t s;
     /** the last write's errno, 0 none; shown until one works or it reopens */
@@ -38,15 +41,15 @@ static struct {
     int w, fh, bh, row1_y, row2_y, err_y, label_w;
     box_t part[P_COUNT], value[2];
     int has[P_COUNT];
-} B;
+};
 
-static int px( float v ) {
-    return (int)lroundf( v * B.scale );
+static int px( awl_batpopup_t* bp, float v ) {
+    return (int)lroundf( v * bp->scale );
 }
 
 /** whether s changed */
-static int snap( void ) {
-    awl_plugin_data_t* P = awl_plugin_get();
+static int snap( awl_batpopup_t* bp ) {
+    awl_plugin_data_t* P = bp->p;
     batsnap_t s = { .charge = -1, .charging = -1, .ac = -1, .docked = -1, .start = -1, .end = -1 };
     if (P && P->bat) {
         s.charging = atomic_load( &P->bat->charging );
@@ -56,53 +59,54 @@ static int snap( void ) {
         bat_status( P->bat, s.status, sizeof s.status );
         bat_thresholds( P->bat, &s.start, &s.end );
     }
-    if (!memcmp( &s, &B.s, sizeof s )) return 0;
-    B.s = s;
+    if (!memcmp( &s, &bp->s, sizeof s )) return 0;
+    bp->s = s;
     return 1;
 }
 
 /** the first row: "85%  Charging" */
-static void line1( char* buf, size_t n ) {
-    if (B.s.charge < 0) snprintf( buf, n, "%s", *B.s.status ? B.s.status : "no battery" );
-    else snprintf( buf, n, "%d%%%s%s", B.s.charge, *B.s.status ? "  " : "", B.s.status );
+static void line1( awl_batpopup_t* bp, char* buf, size_t n ) {
+    if (bp->s.charge < 0) snprintf( buf, n, "%s", *bp->s.status ? bp->s.status : "no battery" );
+    else snprintf( buf, n, "%d%%%s%s", bp->s.charge, *bp->s.status ? "  " : "", bp->s.status );
 }
 
 /** the second: "on AC · docked" */
-static void line2( char* buf, size_t n ) {
-    const char* power = B.s.ac > 0 ? "on AC" : B.s.ac == 0 ? "on battery" : "";
-    const char* dock = B.s.docked > 0 ? "docked" : B.s.docked == 0 ? "undocked" : "";
+static void line2( awl_batpopup_t* bp, char* buf, size_t n ) {
+    const char* power = bp->s.ac > 0 ? "on AC" : bp->s.ac == 0 ? "on battery" : "";
+    const char* dock = bp->s.docked > 0 ? "docked" : bp->s.docked == 0 ? "undocked" : "";
     snprintf( buf, n, "%s%s%s", power, *power && *dock ? " · " : "", dock );
 }
 
 static const char* const labels[2] = { "Start charging below", "Stop charging at" };
 
-static void set_part( int p, int x, int y, int w, int h ) {
-    B.part[p] = (box_t){ x, y, w, h };
-    B.has[p] = 1;
+static void set_part( awl_batpopup_t* bp, int p, int x, int y, int w, int h ) {
+    bp->part[p] = (box_t){ x, y, w, h };
+    bp->has[p] = 1;
 }
 
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
-    (void)data; (void)max_h;
+    awl_batpopup_t* bp = data;
+    (void)max_h;
     if (!font) return 0;
-    B.scale = scale;
-    memset( B.has, 0, sizeof B.has );
+    bp->scale = scale;
+    memset( bp->has, 0, sizeof bp->has );
     char buf[128];
-    const int fh = B.fh = font->height, pad = px( 5 ), gap = px( 6 );
-    const int bh = B.bh = fh + px( 6 );
+    const int fh = bp->fh = font->height, pad = px( bp, 5 ), gap = px( bp, 6 );
+    const int bh = bp->bh = fh + px( bp, 6 );
     const int arrow_w = MAX( (int)awl_host->text_width( font, "‹" ), (int)awl_host->text_width( font, "›" ) ) + 2 * pad;
     const int value_w = (int)awl_host->text_width( font, "100%" ) + 2 * pad;
 
     int W = 0;
-    line1( buf, sizeof buf );
+    line1( bp, buf, sizeof buf );
     W = MAX( W, (int)awl_host->text_width( font, buf ) );
-    line2( buf, sizeof buf );
+    line2( bp, buf, sizeof buf );
     W = MAX( W, (int)awl_host->text_width( font, buf ) );
-    B.label_w = 0;
-    for (int i = 0; i < 2; i++) B.label_w = MAX( B.label_w, (int)awl_host->text_width( font, labels[i] ) );
-    const int has_start = B.s.start >= 0, has_end = B.s.end >= 0;
-    if (has_start || has_end) W = MAX( W, B.label_w + gap + 2 * arrow_w + value_w );
-    if (B.err) {
-        snprintf( buf, sizeof buf, "can't set: %s", strerror( B.err ) );
+    bp->label_w = 0;
+    for (int i = 0; i < 2; i++) bp->label_w = MAX( bp->label_w, (int)awl_host->text_width( font, labels[i] ) );
+    const int has_start = bp->s.start >= 0, has_end = bp->s.end >= 0;
+    if (has_start || has_end) W = MAX( W, bp->label_w + gap + 2 * arrow_w + value_w );
+    if (bp->err) {
+        snprintf( buf, sizeof buf, "can't set: %s", strerror( bp->err ) );
         W = MAX( W, (int)awl_host->text_width( font, buf ) );
     }
     if (W > max_w) W = max_w;
@@ -113,17 +117,17 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     const int bx = W - 2 * arrow_w - value_w;
     for (int i = 0; i < 2; i++) {
         if (!(i ? has_end : has_start)) continue;
-        if (i) B.row2_y = y; else B.row1_y = y;
-        set_part( i ? P_EDOWN : P_SDOWN, bx, y, arrow_w, bh );
-        B.value[i] = (box_t){ bx + arrow_w, y, value_w, bh };
-        set_part( i ? P_EUP : P_SUP, bx + arrow_w + value_w, y, arrow_w, bh );
-        set_part( i ? P_EROW : P_SROW, 0, y, W, bh );
+        if (i) bp->row2_y = y; else bp->row1_y = y;
+        set_part( bp, i ? P_EDOWN : P_SDOWN, bx, y, arrow_w, bh );
+        bp->value[i] = (box_t){ bx + arrow_w, y, value_w, bh };
+        set_part( bp, i ? P_EUP : P_SUP, bx + arrow_w + value_w, y, arrow_w, bh );
+        set_part( bp, i ? P_EROW : P_SROW, 0, y, W, bh );
         y += bh;
     }
-    B.err_y = y;
-    if (B.err) y += bh;
+    bp->err_y = y;
+    if (bp->err) y += bh;
 
-    B.w = W;
+    bp->w = W;
     *w = W;
     *h = y;
     return W > 0;
@@ -139,74 +143,75 @@ static void text_in( pixman_image_t* pix, struct fcft_font* font, int x0, int y0
 }
 
 /** whether threshold i (0 start, 1 end) can go by dir (±1) */
-static int can_step( int i, int dir ) {
-    int v = i ? B.s.end : B.s.start;
+static int can_step( awl_batpopup_t* bp, int i, int dir ) {
+    int v = i ? bp->s.end : bp->s.start;
     if (v < 0) return 0;
-    if (dir < 0) return i ? v > MAX( B.s.start + 1, 1 ) : v > 0;
-    return i ? v < 100 : v < (B.s.end >= 0 ? B.s.end - 1 : 99);
+    if (dir < 0) return i ? v > MAX( bp->s.start + 1, 1 ) : v > 0;
+    return i ? v < 100 : v < (bp->s.end >= 0 ? bp->s.end - 1 : 99);
 }
 
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
                    int hover ) {
-    (void)data; (void)scale;
+    awl_batpopup_t* bp = data;
+    (void)scale;
     const awl_colors_t* c = &awl_config()->colors;
     const awl_plugin_config_t* pc = awl_plugin_config();
     char buf[128];
-    if (hover >= 0 && hover < P_SROW && B.has[hover]) {
-        box_t b = B.part[hover];
-        awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, (float)px( 4 ), 0,
+    if (hover >= 0 && hover < P_SROW && bp->has[hover]) {
+        box_t b = bp->part[hover];
+        awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, (float)px( bp, 4 ), 0,
                         c->popup_hover );
     }
 
     /* the charge in the bar's color for it, then the status */
     int x = 0;
-    if (B.s.charge >= 0) {
-        snprintf( buf, sizeof buf, "%d%%", B.s.charge );
-        uint32_t fg = colormap_color( B.s.charging > 0 ? &pc->colors.battery_charging : &pc->colors.battery,
-                                      (float)B.s.charge / 100.0f );
-        text_in( pix, font, x0, y0, (box_t){ 0, 0, B.w, B.bh }, buf, fg, 0 );
+    if (bp->s.charge >= 0) {
+        snprintf( buf, sizeof buf, "%d%%", bp->s.charge );
+        uint32_t fg = colormap_color( bp->s.charging > 0 ? &pc->colors.battery_charging : &pc->colors.battery,
+                                      (float)bp->s.charge / 100.0f );
+        text_in( pix, font, x0, y0, (box_t){ 0, 0, bp->w, bp->bh }, buf, fg, 0 );
         x = (int)awl_host->text_width( font, buf ) + (int)awl_host->text_width( font, "  " );
     }
-    if (x < B.w) {
-        const char* status = B.s.charge >= 0 ? B.s.status : (*B.s.status ? B.s.status : "no battery");
-        text_in( pix, font, x0, y0, (box_t){ x, 0, B.w - x, B.bh }, status, c->popup_fg, 0 );
+    if (x < bp->w) {
+        const char* status = bp->s.charge >= 0 ? bp->s.status : (*bp->s.status ? bp->s.status : "no battery");
+        text_in( pix, font, x0, y0, (box_t){ x, 0, bp->w - x, bp->bh }, status, c->popup_fg, 0 );
     }
-    line2( buf, sizeof buf );
-    text_in( pix, font, x0, y0, (box_t){ 0, B.bh, B.w, B.bh }, buf, c->popup_dim, 0 );
+    line2( bp, buf, sizeof buf );
+    text_in( pix, font, x0, y0, (box_t){ 0, bp->bh, bp->w, bp->bh }, buf, c->popup_dim, 0 );
 
     /* the thresholds */
     for (int i = 0; i < 2; i++) {
-        if (!B.has[i ? P_EROW : P_SROW]) continue;
-        const int y = i ? B.row2_y : B.row1_y;
-        const int bx = B.part[i ? P_EDOWN : P_SDOWN].x;
-        text_in( pix, font, x0, y0, (box_t){ 0, y, bx > 0 ? bx : 0, B.bh }, labels[i], c->popup_fg, 0 );
-        text_in( pix, font, x0, y0, B.part[i ? P_EDOWN : P_SDOWN], "‹", can_step( i, -1 ) ? c->popup_fg : c->popup_dim, 1 );
-        snprintf( buf, sizeof buf, "%d%%", i ? B.s.end : B.s.start );
-        text_in( pix, font, x0, y0, B.value[i], buf, c->popup_fg, 1 );
-        text_in( pix, font, x0, y0, B.part[i ? P_EUP : P_SUP], "›", can_step( i, 1 ) ? c->popup_fg : c->popup_dim, 1 );
+        if (!bp->has[i ? P_EROW : P_SROW]) continue;
+        const int y = i ? bp->row2_y : bp->row1_y;
+        const int bx = bp->part[i ? P_EDOWN : P_SDOWN].x;
+        text_in( pix, font, x0, y0, (box_t){ 0, y, bx > 0 ? bx : 0, bp->bh }, labels[i], c->popup_fg, 0 );
+        text_in( pix, font, x0, y0, bp->part[i ? P_EDOWN : P_SDOWN], "‹", can_step( bp, i, -1 ) ? c->popup_fg : c->popup_dim, 1 );
+        snprintf( buf, sizeof buf, "%d%%", i ? bp->s.end : bp->s.start );
+        text_in( pix, font, x0, y0, bp->value[i], buf, c->popup_fg, 1 );
+        text_in( pix, font, x0, y0, bp->part[i ? P_EUP : P_SUP], "›", can_step( bp, i, 1 ) ? c->popup_fg : c->popup_dim, 1 );
     }
-    if (B.err) {
-        snprintf( buf, sizeof buf, "can't set: %s", strerror( B.err ) );
-        text_in( pix, font, x0, y0, (box_t){ 0, B.err_y, B.w, B.bh }, buf, pc->colors.bad, 0 );
+    if (bp->err) {
+        snprintf( buf, sizeof buf, "can't set: %s", strerror( bp->err ) );
+        text_in( pix, font, x0, y0, (box_t){ 0, bp->err_y, bp->w, bp->bh }, buf, pc->colors.bad, 0 );
     }
 }
 
 static int hit( void* data, int x, int y ) {
-    (void)data;
+    awl_batpopup_t* bp = data;
     for (int p = 0; p < P_COUNT; p++) {
-        box_t b = B.part[p];
-        if (B.has[p] && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return p;
+        box_t b = bp->part[p];
+        if (bp->has[p] && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return p;
     }
     return -1;
 }
 
 static int box( void* data, int p, int* x, int* y, int* w, int* h ) {
-    (void)data;
-    if (p < 0 || p >= P_COUNT || !B.has[p]) return 0;
-    *x = B.part[p].x;
-    *y = B.part[p].y;
-    *w = B.part[p].w;
-    *h = B.part[p].h;
+    awl_batpopup_t* bp = data;
+    if (p < 0 || p >= P_COUNT || !bp->has[p]) return 0;
+    *x = bp->part[p].x;
+    *y = bp->part[p].y;
+    *w = bp->part[p].w;
+    *h = bp->part[p].h;
     return 1;
 }
 
@@ -214,30 +219,30 @@ static const awl_window_painter_t painter = { measure, paint, hit, box };
 
 /* ---- what it does ---- */
 
-static void redraw( void ) {
-    if (B.win) awl_host->window_redraw( awl_host->srv, B.win );
+static void redraw( awl_batpopup_t* bp ) {
+    if (bp->win) awl_host->window_redraw( awl_host->srv, bp->win );
 }
 
 /** steps threshold i (0 start, 1 end) by n steps, kept in its range: the
  * start below the end */
-static void step( int i, int n ) {
-    awl_plugin_data_t* P = awl_plugin_get();
+static void step( awl_batpopup_t* bp, int i, int n ) {
+    awl_plugin_data_t* P = bp->p;
     if (!P || !P->bat || !n) return;
-    snap();
-    int v = i ? B.s.end : B.s.start;
+    snap( bp );
+    int v = i ? bp->s.end : bp->s.start;
     if (v < 0) return;
-    int lo = i ? MAX( B.s.start + 1, 1 ) : 0, hi = i ? 100 : (B.s.end >= 0 ? B.s.end - 1 : 99);
+    int lo = i ? MAX( bp->s.start + 1, 1 ) : 0, hi = i ? 100 : (bp->s.end >= 0 ? bp->s.end - 1 : 99);
     int step = awl_plugin_config()->battery.threshold_step;
     int to = v + n * (step > 0 ? step : 1);
     to = to < lo ? lo : to > hi ? hi : to;
     if (to != v) {
-        B.err = bat_threshold_set( P->bat, i, to );
-        if (B.err)
+        bp->err = bat_threshold_set( P->bat, i, to );
+        if (bp->err)
             awl_wrn_printf( "battery: can't set the charge %s threshold to %d%%: %s\n", i ? "end" : "start", to,
-                            strerror( B.err ) );
+                            strerror( bp->err ) );
     }
-    snap();
-    redraw();
+    snap( bp );
+    redraw( bp );
 }
 
 /** the threshold a part belongs to, -1 none */
@@ -250,13 +255,14 @@ static int threshold_of( int part ) {
 }
 
 static void click( awl_window_t* win, int part, int col, uint32_t button, void* data ) {
-    (void)win; (void)col; (void)data;
+    awl_batpopup_t* bp = data;
+    (void)win; (void)col;
     if (button != BTN_LEFT) return;
     switch (part) {
-    case P_SDOWN: step( 0, -1 ); break;
-    case P_SUP: step( 0, 1 ); break;
-    case P_EDOWN: step( 1, -1 ); break;
-    case P_EUP: step( 1, 1 ); break;
+    case P_SDOWN: step( bp, 0, -1 ); break;
+    case P_SUP: step( bp, 0, 1 ); break;
+    case P_EDOWN: step( bp, 1, -1 ); break;
+    case P_EUP: step( bp, 1, 1 ); break;
     default: break;
     }
 }
@@ -265,51 +271,62 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
  * a step, a touchpad's 10 units as on the bar (awl_bar.c's SCROLL_LIMIT) */
 static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta,
                     int32_t value120, void* data ) {
-    (void)win; (void)col; (void)data;
+    awl_batpopup_t* bp = data;
+    (void)win; (void)col;
     int i = threshold_of( part );
     if (orientation != 0 || i < 0) {
-        B.acc = 0;
+        bp->acc = 0;
         return;
     }
-    B.acc += value120 ? value120 / 120.0 : delta / 10.0;
-    int n = (int)B.acc;
+    bp->acc += value120 ? value120 / 120.0 : delta / 10.0;
+    int n = (int)bp->acc;
     if (!n) return;
-    B.acc -= n;
-    step( i, -n );
+    bp->acc -= n;
+    step( bp, i, -n );
 }
 
 /** the window, made on first use; NULL before awl is set up */
-static awl_window_t* window( void ) {
-    if (B.win) return B.win;
-    if (!(B.win = awl_host->window_create( awl_host->srv ))) return NULL;
-    awl_host->window_set_painter( awl_host->srv, B.win, &painter, NULL );
-    awl_host->window_set_click( awl_host->srv, B.win, click, NULL );
-    awl_host->window_set_scroll( awl_host->srv, B.win, scroll, NULL );
-    return B.win;
+static awl_window_t* window( awl_batpopup_t* bp ) {
+    if (bp->win) return bp->win;
+    if (!(bp->win = awl_host->window_create( awl_host->srv ))) return NULL;
+    awl_host->window_set_painter( awl_host->srv, bp->win, &painter, bp );
+    awl_host->window_set_click( awl_host->srv, bp->win, click, bp );
+    awl_host->window_set_scroll( awl_host->srv, bp->win, scroll, bp );
+    return bp->win;
 }
 
-void awl_batpopup_show( widget_t* w, int center_x ) {
-    awl_window_t* win = window();
+void awl_batpopup_show( awl_batpopup_t* bp, widget_t* w, int center_x ) {
+    if (!bp) return;
+    awl_window_t* win = window( bp );
     if (!win) return;
     w->popup_window = win;
     if (!awl_host->window_monitor( win )) {
-        B.err = 0;
-        B.acc = 0;
+        bp->err = 0;
+        bp->acc = 0;
     }
-    snap();
+    snap( bp );
     awl_host->window_redraw( awl_host->srv, win );
     awl_host->window_show( awl_host->srv, win, w->bar->m, center_x );
 }
 
-void awl_batpopup_hide( void ) {
-    if (B.win) awl_host->window_hide( awl_host->srv, B.win );
+void awl_batpopup_hide( awl_batpopup_t* bp ) {
+    if (!bp) return;
+    if (bp->win) awl_host->window_hide( awl_host->srv, bp->win );
 }
 
-void awl_batpopup_poll( void ) {
-    if (B.win && awl_host->window_monitor( B.win ) && snap()) redraw();
+void awl_batpopup_poll( awl_batpopup_t* bp ) {
+    if (!bp) return;
+    if (bp->win && awl_host->window_monitor( bp->win ) && snap( bp )) redraw( bp );
 }
 
-void awl_batpopup_stop( void ) {
-    if (B.win) awl_host->window_destroy( awl_host->srv, B.win );
-    memset( &B, 0, sizeof B );
+awl_batpopup_t* awl_batpopup_start( awl_plugin_data_t* p ) {
+    awl_batpopup_t* bp = calloc( 1, sizeof *bp );
+    if (bp) bp->p = p;
+    return bp;
+}
+
+void awl_batpopup_stop( awl_batpopup_t* bp ) {
+    if (!bp) return;
+    if (bp->win) awl_host->window_destroy( awl_host->srv, bp->win );
+    free( bp );
 }

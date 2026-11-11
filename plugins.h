@@ -3,6 +3,7 @@
 /** Internal to ``libawlplugins.so``; awl itself only sees awl_plugin_abi.h. */
 
 #include "awl_plugin_abi.h"
+#include "plugins/handles.h"
 
 #include "plugins/ipaddr.h"
 #include "plugins/stats.h"
@@ -316,10 +317,30 @@ typedef struct awl_plugin_data_t {
     pulse_test_t* pulse;
     awl_backlight_t* backlight;
     awl_poller_t* poller;
-    /** the tray's host, and the loop it runs on (plugins/loop.h) */
+    /** the tray's host, and the loop it runs on (plugins/loop.h); its
+     * menus' window and its tooltips (the main thread's) */
     awl_sni_t* sni;
     awl_loop_t* tray_loop;
+    awl_tray_menu_window_t* tray_menu;
+    awl_tray_tooltip_t* tray_tip;
     int paused;
+
+    /** the modules' own state (plugins/handles.h); NULL where a start
+     * failed, which their functions take as a no-op */
+    awl_osd_t* osd;
+    awl_calpopup_t* calpopup;
+    awl_batpopup_t* batpopup;
+    awl_sysmon_t* sysmon;
+    awl_notify_t* notify;
+    awl_wallpaper_thread_t* wallpaper;
+    awl_desktop_panel_t* desktop;
+    awl_logind_t* logind;
+    awl_launcher_t* launcher;
+    awl_widgets_t* widgets;
+
+    /** the configs (:c:func:`awl_config`, :c:func:`awl_plugin_config`) */
+    awl_config_t config;
+    awl_plugin_config_t plugin_config;
 
     /** :c:type:`awl_plugin_colors_t`'s bar colors (:c:macro:`AWL_BAR_COLORS`) as pixman's */
     struct { AWL_BAR_COLORS( AWL_BAR_COLOR_PIXMAN ) } colors;
@@ -327,6 +348,10 @@ typedef struct awl_plugin_data_t {
 
 /** The running plugins' state; NULL while the plugins aren't running. */
 awl_plugin_data_t* awl_plugin_get( void );
+/** the running plugins' module m (an :c:type:`awl_plugin_data_t` member),
+ * NULL while they aren't running; for the entry points, which have no
+ * other way to it */
+#define AWL_PLUGIN_MODULE( m ) (awl_plugin_get() ? awl_plugin_get()->m : NULL)
 
 /** plugins.c: awl's own notification (:c:func:`awl_notify_send`) of title and
  * body (with markup) as AWL_NOTIF_SEND_INIT has it; main thread */
@@ -363,46 +388,57 @@ void awl_brightness_adjust( float delta );
 
 /** plugins_widgets.c: :c:member:`awl_plugin_api_t.bar_widgets` */
 void awl_widgets_create( awl_bar_t* bar );
+/** plugins_widgets.c: what the widgets share across bars; NULL if out of
+ * memory (the widgets that need it then show nothing) */
+awl_widgets_t* awl_widgets_start( void );
+/** plugins_widgets.c: frees it, once the bars' widgets are gone */
+void awl_widgets_stop( awl_widgets_t* wd );
 
-/** plugins_desktop_panel.c: starts the scanner thread */
-void awl_desktop_start( void );
-/** plugins_desktop_panel.c: stops the scanner thread; returns nonzero if it
- * had to be left running */
-int awl_desktop_stop( void );
+/** plugins_desktop_panel.c: the panel's state, and its scanner thread on
+ * the config dictionary's desktop_dir (none without one); NULL if out of
+ * memory. The functions below take NULL: nothing shows then. */
+awl_desktop_panel_t* awl_desktop_start( awl_plugin_data_t* p );
+/** plugins_desktop_panel.c: stops the scanner thread, frees dp; returns
+ * nonzero if the thread had to be left running */
+int awl_desktop_stop( awl_desktop_panel_t* dp );
 /** plugins_desktop_panel.c: :c:member:`awl_plugin_api_t.desktop_version` */
-uint64_t awl_desktop_version( void );
+uint64_t awl_desktop_version( awl_desktop_panel_t* dp );
 /** plugins_desktop_panel.c: :c:member:`awl_plugin_api_t.desktop_measure` */
-void awl_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int r, float scale,
-                          int* x, int* y, int* w, int* h );
+void awl_desktop_measure( awl_desktop_panel_t* dp, struct fcft_font* font, int avail_w, int avail_h, int r,
+                          float scale, int* x, int* y, int* w, int* h );
 /** plugins_desktop_panel.c: :c:member:`awl_plugin_api_t.desktop_draw` */
-void awl_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride,
-                       int w, int h, int r, float scale );
+void awl_desktop_draw( awl_desktop_panel_t* dp, pixman_image_t* pix, struct fcft_font* font, uint32_t* data,
+                       int stride, int w, int h, int r, float scale );
 /** plugins_desktop_panel.c: :c:member:`awl_plugin_api_t.desktop_click` */
-int awl_desktop_click( int button, uint32_t mods );
+int awl_desktop_click( awl_desktop_panel_t* dp, int button, uint32_t mods );
 
-/** plugins/launcher.c: starts the launcher's index thread */
-void awl_launcher_start( void );
-/** plugins/launcher.c: closes the launcher, stops its thread; returns
- * nonzero if it had to be left running */
-int awl_launcher_stop( void );
+/** plugins/launcher.c: the launcher's state, and its index thread; NULL
+ * if out of memory, which :c:func:`awl_launcher_toggle` takes as a no-op */
+awl_launcher_t* awl_launcher_start( awl_plugin_data_t* p );
+/** plugins/launcher.c: closes the launcher, stops its thread, frees la;
+ * returns nonzero if the thread had to be left running */
+int awl_launcher_stop( awl_launcher_t* la );
 /** plugins/launcher.c: opens the launcher on the selected monitor in mode
  * (AWL_LAUNCHER_APPS or AWL_LAUNCHER_RUN), switches it to mode if it is
  * open in the other, or closes it (the launcher action, its .i the mode) */
-void awl_launcher_toggle( int mode );
+void awl_launcher_toggle( awl_launcher_t* la, int mode );
 
-/** plugins_config.c: makes both configs, awl's defaults
+/** plugins_config.c: makes both of p's configs, awl's defaults
  * (:c:member:`awl_host_t.config_defaults`) and the plugins' with configure() (the
- * CUSTOM part of plugins_config.c) applied; first thing in :c:member:`awl_plugin_api_t.init`, so before
- * anything reads them */
-void awl_config_init( void );
-/** plugins_config.c: the config :c:func:`awl_config_init` made; valid until the
- * library is unloaded */
+ * CUSTOM part of plugins_config.c) applied; first thing in :c:member:`awl_plugin_api_t.init`
+ * once p is made, so before anything reads them */
+void awl_config_init( awl_plugin_data_t* p );
+/** plugins_config.c: the config :c:func:`awl_config_init` made, the running
+ * plugins' (:c:member:`awl_plugin_data_t.config`); read-only, main thread
+ * (a thread gets copies of what it needs before it starts: one left stuck
+ * past fini would read freed memory). Only while the plugins run. */
 const awl_config_t* awl_config( void );
-/** plugins_config.c: the plugins' config :c:func:`awl_config_init` made */
+/** plugins_config.c: the plugins' config :c:func:`awl_config_init` made, alike */
 const awl_plugin_config_t* awl_plugin_config( void );
 /** plugins_config.c: fills in what p leaves unset (:c:type:`awl_opt_color_t`,
  * :c:type:`awl_opt_int_t`) with what it defaults to, from p and c, c filled in
  * already (:c:func:`awl_config_fill_defaults`); once, in :c:func:`awl_config_init` */
 void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t* c );
-/** plugins_config.c: :c:member:`awl_plugin_api_t.config`, a copy of :c:func:`awl_config` */
+/** plugins_config.c: :c:member:`awl_plugin_api_t.config`, a copy of :c:func:`awl_config`
+ * (awl's defaults while the plugins don't run) */
 void awl_config_fill( awl_config_t* c );

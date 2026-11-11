@@ -1,5 +1,7 @@
 #pragma once
 
+#include "handles.h"
+
 #include <pixman-1/pixman.h>
 #include <stdint.h>
 
@@ -41,37 +43,41 @@
  * looks for it (it redraws when done), if none of the names was found, or
  * none is configured: the glyph then. The image is kept here, valid until
  * the next call: take a reference to keep it. */
-pixman_image_t* awl_notify_bell( int px, int dnd, int* symbolic );
+pixman_image_t* awl_notify_bell( awl_notify_t* ns, int px, int dnd, int* symbolic );
 /** :c:func:`awl_notify_bell` for any of the config's icons: names (icon names or
  * paths, ";" between them, the first found wins) at px pixels, alike */
-pixman_image_t* awl_notify_bar_icon( const char* names, int px, int* symbolic );
+pixman_image_t* awl_notify_bar_icon( awl_notify_t* ns, const char* names, int px, int* symbolic );
 
-/** makes the windows for what is open already (a reload) */
-void awl_notify_start( void );
-/** destroys the windows, releasing a hold, and stops the image thread
- * (notify_image.h); returns nonzero if that is stuck */
-int awl_notify_stop( void );
+/** the notifications' state, with the menu's (notify_menu.h); makes the
+ * windows for what is open already (a reload). NULL if out of memory; the
+ * functions here take NULL: nothing shows then, and they count none. */
+awl_notify_t* awl_notify_start( awl_plugin_data_t* p );
+/** destroys the windows, releasing a hold, and the menu, stops the image
+ * thread (notify_image.h) and frees ns; returns nonzero if that is stuck */
+int awl_notify_stop( awl_notify_t* ns );
+/** ns's menu (notify_menu.h); NULL with ns NULL */
+awl_notify_menu_t* awl_notify_menu( awl_notify_t* ns );
 /** :c:member:`awl_plugin_api_t.notifications_changed` */
-void awl_notify_changed( void );
-/** whether do-not-disturb is on */
+void awl_notify_changed( awl_notify_t* ns );
+/** whether do-not-disturb is on (the config dictionary's, awl's) */
 int awl_notify_dnd( void );
 /** turns do-not-disturb on or off: the windows and the menu follow, an OSD
  * tells (:c:func:`awl_osd_dnd`) */
-void awl_notify_set_dnd( int on );
+void awl_notify_set_dnd( awl_notify_t* ns, int on );
 /** closes every open notification, as the user's dismissal */
-void awl_notify_dismiss_all( void );
+void awl_notify_dismiss_all( awl_notify_t* ns );
 /** how many notifications are open, how many of them critical into
  * ``*critical`` (unless NULL), :c:enumerator:`AWL_NOTIF_OSD` ones not counted; 0 while the
- * windows aren't started */
-int awl_notify_count( int* critical );
+ * windows aren't started (ns NULL) */
+int awl_notify_count( awl_notify_t* ns, int* critical );
 /** how many open notifications are unread: those not asked for (shown
  * again from the history, :c:enumerator:`AWL_NOTIF_SHOWN`, or revealed) nor
  * :c:enumerator:`AWL_NOTIF_OSD`; 0 while the
- * windows aren't started */
-int awl_notify_unread( void );
+ * windows aren't started (ns NULL) */
+int awl_notify_unread( awl_notify_t* ns );
 /** whether do-not-disturb hides open notification id (not critical, not
  * asked for); its image not come yet doesn't count */
-int awl_notify_hidden( uint32_t id );
+int awl_notify_hidden( awl_notify_t* ns, uint32_t id );
 /** shows open notification id though do-not-disturb, its timeout started
  * over; a reload forgets that */
-void awl_notify_reveal( uint32_t id );
+void awl_notify_reveal( awl_notify_t* ns, uint32_t id );

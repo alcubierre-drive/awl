@@ -28,18 +28,23 @@
  */
 
 #include "../awl_plugin_abi.h"
+#include "handles.h"
 
+/** the menu of ns (plugins/notify.h, which makes it), its window made on
+ * first use; NULL if out of memory, which the functions below take as a
+ * no-op (closed) */
+awl_notify_menu_t* awl_notify_menu_new( awl_notify_t* ns );
+/** destroys the menu and frees mn */
+void awl_notify_menu_stop( awl_notify_menu_t* mn );
 /** opens the menu on m for a bar widget centered on center_x (logical
  * pixels from m's left edge), or closes it if it is open */
-void awl_notify_menu_toggle( Monitor* m, int center_x );
+void awl_notify_menu_toggle( awl_notify_menu_t* mn, Monitor* m, int center_x );
 /** opens the menu on m at a spot, an AWL_WINDOW_AT_* moved by dx, dy (the
  * notifications' corner), or closes it if it is open */
-void awl_notify_menu_at( Monitor* m, int at, int dx, int dy );
+void awl_notify_menu_at( awl_notify_menu_t* mn, Monitor* m, int at, int dx, int dy );
 /** the pointer is on the bar's widget (inside), or left it */
-void awl_notify_menu_pointer( int inside );
+void awl_notify_menu_pointer( awl_notify_menu_t* mn, int inside );
 /** whether it is open */
-int awl_notify_menu_is_open( void );
+int awl_notify_menu_is_open( awl_notify_menu_t* mn );
 /** the notifications or do-not-disturb changed: an open menu follows */
-void awl_notify_menu_changed( void );
-/** destroys the menu */
-void awl_notify_menu_stop( void );
+void awl_notify_menu_changed( awl_notify_menu_t* mn );

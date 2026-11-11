@@ -85,65 +85,17 @@ typedef gboolean (*ECalRecurInstanceCb)(ICalComponent *icomp, ICalTime *instance
     X(void, g_main_context_unref, (GMainContext *))
 
 #define CAL_MEMBER(ret, name, args) ret(*name) args;
-static struct syms {
+/* libecal's functions, a backend's (cal_backend_t.S) */
+struct syms {
     CAL_SYMS(CAL_MEMBER)
-} S;
+};
 
 #ifdef CAL_ECAL_CHECK
 #define CAL_CHECK(ret, name, args) \
-    _Static_assert(__builtin_types_compatible_p(__typeof__(&name), __typeof__(S.name)), \
+    _Static_assert(__builtin_types_compatible_p(__typeof__(&name), __typeof__(((struct syms *)0)->name)), \
                    #name " doesn't match its header");
 CAL_SYMS(CAL_CHECK)
 #endif
-
-/* Loaded once per process and kept: the outcome stays, as does the handle
- * (RTLD_NODELETE, never dlclose()d). */
-static pthread_mutex_t load_lock = PTHREAD_MUTEX_INITIALIZER;
-static int loaded;
-static cal_status_t load_status;
-static char load_error[256];
-
-static cal_status_t load(void) {
-    static const char *const sonames[] = {
-        "libecal-2.0.so.3", "libecal-2.0.so.2", "libecal-2.0.so.1", "libecal-2.0.so",
-    };
-    pthread_mutex_lock(&load_lock);
-    if (loaded) goto out;
-    loaded = 1;
-    const char *env = getenv("AWL_ECAL_LIBRARY");
-    void *h = NULL;
-    if (env && *env) {
-        if (strcmp(env, "none") && !(h = dlopen(env, RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE)))
-            snprintf(load_error, sizeof(load_error), "no calendar events: %s", dlerror());
-        else if (!h)
-            snprintf(load_error, sizeof(load_error), "no calendar events: AWL_ECAL_LIBRARY is none");
-    } else {
-        for (size_t i = 0; !h && i < sizeof(sonames) / sizeof(*sonames); i++)
-            if (!(h = dlopen(sonames[i], RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE)) && !i)
-                snprintf(load_error, sizeof(load_error), "no calendar events: %s", dlerror());
-    }
-    if (!h) {
-        load_status = CAL_ERR_NOLIB;
-        goto out;
-    }
-    /* ISO C has no cast from object to function pointer */
-#define CAL_RESOLVE(ret, name, args) \
-    if (load_status == CAL_OK) { \
-        void *sym = dlsym(h, #name); \
-        if (sym) memcpy(&S.name, &sym, sizeof(S.name)); \
-        else { \
-            load_status = CAL_ERR_NOSYM; \
-            snprintf(load_error, sizeof(load_error), "no calendar events: %s", dlerror()); \
-        } \
-    }
-    load_status = CAL_OK;
-    CAL_SYMS(CAL_RESOLVE)
-    if (load_status != CAL_OK) memset(&S, 0, sizeof(S));
-out:;
-    cal_status_t s = load_status;
-    pthread_mutex_unlock(&load_lock);
-    return s;
-}
 
 /* a selected calendar, by its source's uid */
 struct client {
@@ -154,6 +106,13 @@ struct client {
 
 struct cal_backend {
     cal_log_cb log;
+    /* libecal's functions, load()ed on the first query (the querying
+     * thread's; cal_backend_cancel() only reads them under lock once
+     * cancel is made); the outcome stays */
+    struct syms S;
+    int loaded;
+    cal_status_t load_status;
+    char load_error[256];
     /* guards cancelled and the creation of cancel */
     pthread_mutex_t lock;
     int cancelled;
@@ -170,6 +129,45 @@ struct cal_backend {
     /* the last failure logged, CAL_OK since the last success */
     cal_status_t reported;
 };
+
+/* b's functions, once: the handle stays (RTLD_NODELETE, never dlclose()d),
+ * so another backend's dlopen() finds it loaded */
+static cal_status_t load(cal_backend_t *b) {
+    static const char *const sonames[] = {
+        "libecal-2.0.so.3", "libecal-2.0.so.2", "libecal-2.0.so.1", "libecal-2.0.so",
+    };
+    if (b->loaded) return b->load_status;
+    b->loaded = 1;
+    char *const load_error = b->load_error;
+    struct syms *const S = &b->S;
+    const char *env = getenv("AWL_ECAL_LIBRARY");
+    void *h = NULL;
+    if (env && *env) {
+        if (strcmp(env, "none") && !(h = dlopen(env, RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE)))
+            snprintf(load_error, sizeof(b->load_error), "no calendar events: %s", dlerror());
+        else if (!h)
+            snprintf(load_error, sizeof(b->load_error), "no calendar events: AWL_ECAL_LIBRARY is none");
+    } else {
+        for (size_t i = 0; !h && i < sizeof(sonames) / sizeof(*sonames); i++)
+            if (!(h = dlopen(sonames[i], RTLD_NOW | RTLD_LOCAL | RTLD_NODELETE)) && !i)
+                snprintf(load_error, sizeof(b->load_error), "no calendar events: %s", dlerror());
+    }
+    if (!h) return b->load_status = CAL_ERR_NOLIB;
+    /* ISO C has no cast from object to function pointer */
+#define CAL_RESOLVE(ret, name, args) \
+    if (b->load_status == CAL_OK) { \
+        void *sym = dlsym(h, #name); \
+        if (sym) memcpy(&S->name, &sym, sizeof(S->name)); \
+        else { \
+            b->load_status = CAL_ERR_NOSYM; \
+            snprintf(load_error, sizeof(b->load_error), "no calendar events: %s", dlerror()); \
+        } \
+    }
+    b->load_status = CAL_OK;
+    CAL_SYMS(CAL_RESOLVE)
+    if (b->load_status != CAL_OK) memset(S, 0, sizeof(*S));
+    return b->load_status;
+}
 
 static void logmsg(cal_backend_t *b, int warn, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
 static void logmsg(cal_backend_t *b, int warn, const char *fmt, ...) {
@@ -198,8 +196,8 @@ static int is_cancelled(cal_backend_t *b) {
     return c;
 }
 
-static void drop_client(struct client *c) {
-    if (c->client) S.g_object_unref(c->client);
+static void drop_client(cal_backend_t *b, struct client *c) {
+    if (c->client) b->S.g_object_unref(c->client);
     free(c->uid);
     free(c->color);
 }
@@ -208,12 +206,12 @@ static void drop_client(struct client *c) {
  * evolution ("selected"), and drops the clients whose source went away. */
 static void sync_clients(cal_backend_t *b) {
     for (size_t i = 0; i < b->nclients; i++) b->clients[i].seen = 0;
-    GList *sources = S.e_source_registry_list_enabled(b->registry, E_SOURCE_EXTENSION_CALENDAR);
+    GList *sources = b->S.e_source_registry_list_enabled(b->registry, E_SOURCE_EXTENSION_CALENDAR);
     for (GList *l = sources; l; l = l->next) {
         ESource *src = l->data;
-        ESourceSelectable *ext = S.e_source_get_extension(src, E_SOURCE_EXTENSION_CALENDAR);
-        if (!S.e_source_selectable_get_selected(ext)) continue;
-        const char *uid = S.e_source_get_uid(src);
+        ESourceSelectable *ext = b->S.e_source_get_extension(src, E_SOURCE_EXTENSION_CALENDAR);
+        if (!b->S.e_source_selectable_get_selected(ext)) continue;
+        const char *uid = b->S.e_source_get_uid(src);
         struct client *c = NULL;
         for (size_t i = 0; i < b->nclients && !c; i++)
             if (!strcmp(b->clients[i].uid, uid)) c = &b->clients[i];
@@ -230,34 +228,34 @@ static void sync_clients(cal_backend_t *b) {
             *c = (struct client){.uid = u};
         }
         c->seen = 1;
-        char *color = S.e_source_selectable_dup_color(ext);
+        char *color = b->S.e_source_selectable_dup_color(ext);
         free(c->color);
         c->color = strdup(color ? color : "");
-        (S.g_free)(color);  /* GLib has a g_free() macro */
+        (b->S.g_free)(color);  /* GLib has a g_free() macro */
         if (c->client) continue;
         GError *err = NULL;
         /* Don't wait for the backend to go online: cached events are what we
          * want to show right away; the factory refreshes them on its own.
          * Not 0, which waits too: for a signal on our main context, which
          * nobody iterates while this blocks. */
-        EClient *client = S.e_cal_client_connect_sync(src, E_CAL_CLIENT_SOURCE_TYPE_EVENTS,
+        EClient *client = b->S.e_cal_client_connect_sync(src, E_CAL_CLIENT_SOURCE_TYPE_EVENTS,
                                                       (uint32_t)-1, b->cancel, &err);
         if (!client) {
             if (!is_cancelled(b))
-                logmsg(b, 1, "cannot open %s: %s", S.e_source_get_display_name(src),
+                logmsg(b, 1, "cannot open %s: %s", b->S.e_source_get_display_name(src),
                       err ? err->message : "?");
-            if (err) S.g_error_free(err);
+            if (err) b->S.g_error_free(err);
             continue;
         }
         c->client = (ECalClient *)client;
-        ICalTimezone *tz = S.e_cal_util_get_system_timezone();
-        if (tz) S.e_cal_client_set_default_timezone(c->client, tz);
+        ICalTimezone *tz = b->S.e_cal_util_get_system_timezone();
+        if (tz) b->S.e_cal_client_set_default_timezone(c->client, tz);
     }
-    S.g_list_free_full(sources, S.g_object_unref);
+    b->S.g_list_free_full(sources, b->S.g_object_unref);
     size_t n = 0;
     for (size_t i = 0; i < b->nclients; i++) {
         if (b->clients[i].seen && b->clients[i].client) b->clients[n++] = b->clients[i];
-        else drop_client(&b->clients[i]);
+        else drop_client(b, &b->clients[i]);
     }
     b->nclients = n;
 }
@@ -265,24 +263,25 @@ static void sync_clients(cal_backend_t *b) {
 /* Instance time -> local time_t. Timed instances carry their own zone, so
  * convert to the system zone and let mktime() do the rest (floating times
  * are local already); all-day instances only have a date. */
-static time_t local_time(ICalTime *t) {
+static time_t local_time(const cal_backend_t *b, ICalTime *t) {
     struct tm tm = {0};
     ICalTime *lt = NULL;
-    if (!S.i_cal_time_is_date(t)) {
-        ICalTimezone *tz = S.e_cal_util_get_system_timezone();
-        if (tz) t = lt = S.i_cal_time_convert_to_zone(t, tz);
-        tm.tm_hour = S.i_cal_time_get_hour(t);
-        tm.tm_min = S.i_cal_time_get_minute(t);
+    if (!b->S.i_cal_time_is_date(t)) {
+        ICalTimezone *tz = b->S.e_cal_util_get_system_timezone();
+        if (tz) t = lt = b->S.i_cal_time_convert_to_zone(t, tz);
+        tm.tm_hour = b->S.i_cal_time_get_hour(t);
+        tm.tm_min = b->S.i_cal_time_get_minute(t);
     }
-    tm.tm_year = S.i_cal_time_get_year(t) - 1900;
-    tm.tm_mon = S.i_cal_time_get_month(t) - 1;
-    tm.tm_mday = S.i_cal_time_get_day(t);
+    tm.tm_year = b->S.i_cal_time_get_year(t) - 1900;
+    tm.tm_mon = b->S.i_cal_time_get_month(t) - 1;
+    tm.tm_mday = b->S.i_cal_time_get_day(t);
     tm.tm_isdst = -1;
-    if (lt) S.g_object_unref(lt);
+    if (lt) b->S.g_object_unref(lt);
     return mktime(&tm);
 }
 
 struct instance_ctx {
+    const cal_backend_t *b;
     const char *color;
     cal_event_cb cb;
     void *data;
@@ -292,16 +291,17 @@ static gboolean on_instance(ICalComponent *comp, ICalTime *start, ICalTime *end,
                             GCancellable *cancellable, GError **error) {
     (void)cancellable, (void)error;
     struct instance_ctx *ctx = data;
-    const char *summary = S.i_cal_component_get_summary(comp);
-    const char *location = S.i_cal_component_get_location(comp);
+    const cal_backend_t *b = ctx->b;
+    const char *summary = b->S.i_cal_component_get_summary(comp);
+    const char *location = b->S.i_cal_component_get_location(comp);
     cal_event_t e = {
         .summary = summary ? summary : "",
         .location = location ? location : "",
         .color = ctx->color,
-        .all_day = !!S.i_cal_time_is_date(start),
-        .start = local_time(start),
+        .all_day = !!b->S.i_cal_time_is_date(start),
+        .start = local_time(b, start),
     };
-    e.end = end ? local_time(end) : e.start;
+    e.end = end ? local_time(b, end) : e.start;
     if (e.end < e.start) e.end = e.start;
     ctx->cb(&e, ctx->data);
     return 1;
@@ -318,22 +318,22 @@ cal_backend_t *cal_backend_open(cal_log_cb log) {
 static cal_status_t query(cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data);
 
 cal_status_t cal_backend_query(cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data) {
-    cal_status_t s = load();
-    if (s != CAL_OK) return fail(b, s, load_error);
-    if (!b->ctx) b->ctx = S.g_main_context_new();
-    S.g_main_context_push_thread_default(b->ctx);
+    cal_status_t s = load(b);
+    if (s != CAL_OK) return fail(b, s, b->load_error);
+    if (!b->ctx) b->ctx = b->S.g_main_context_new();
+    b->S.g_main_context_push_thread_default(b->ctx);
     /* what came in since the last query: changed sources, ... */
-    while (S.g_main_context_iteration(b->ctx, 0)) {}
+    while (b->S.g_main_context_iteration(b->ctx, 0)) {}
     s = query(b, start, end, cb, data);
-    S.g_main_context_pop_thread_default(b->ctx);
+    b->S.g_main_context_pop_thread_default(b->ctx);
     return s;
 }
 
 static cal_status_t query(cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data) {
     pthread_mutex_lock(&b->lock);
     if (!b->cancel) {
-        b->cancel = S.g_cancellable_new();
-        if (b->cancelled) S.g_cancellable_cancel(b->cancel);
+        b->cancel = b->S.g_cancellable_new();
+        if (b->cancelled) b->S.g_cancellable_cancel(b->cancel);
     }
     int cancelled = b->cancelled;
     pthread_mutex_unlock(&b->lock);
@@ -346,19 +346,19 @@ static cal_status_t query(cal_backend_t *b, time_t start, time_t end, cal_event_
             return CAL_ERR_NOREGISTRY;
         b->registry_tried = now;
         GError *err = NULL;
-        b->registry = S.e_source_registry_new_sync(b->cancel, &err);
+        b->registry = b->S.e_source_registry_new_sync(b->cancel, &err);
         if (!b->registry) {
             char msg[256];
             snprintf(msg, sizeof(msg), "no calendar events, no source registry: %s",
                      err ? err->message : "?");
-            if (err) S.g_error_free(err);
+            if (err) b->S.g_error_free(err);
             return fail(b, is_cancelled(b) ? CAL_ERR_CANCELLED : CAL_ERR_NOREGISTRY, msg);
         }
     }
     sync_clients(b);
     for (size_t i = 0; i < b->nclients && !is_cancelled(b); i++) {
-        struct instance_ctx ctx = {b->clients[i].color, cb, data};
-        S.e_cal_client_generate_instances_sync(b->clients[i].client, start, end, b->cancel,
+        struct instance_ctx ctx = {b, b->clients[i].color, cb, data};
+        b->S.e_cal_client_generate_instances_sync(b->clients[i].client, start, end, b->cancel,
                                                on_instance, &ctx);
     }
     if (is_cancelled(b)) return CAL_ERR_CANCELLED;
@@ -369,7 +369,7 @@ static cal_status_t query(cal_backend_t *b, time_t start, time_t end, cal_event_
 void cal_backend_cancel(cal_backend_t *b) {
     pthread_mutex_lock(&b->lock);
     b->cancelled = 1;
-    if (b->cancel) S.g_cancellable_cancel(b->cancel);
+    if (b->cancel) b->S.g_cancellable_cancel(b->cancel);
     pthread_mutex_unlock(&b->lock);
 }
 
@@ -377,15 +377,15 @@ void cal_backend_close(cal_backend_t *b) {
     if (!b) return;
     /* anything here means the library is loaded; what the objects leave
      * behind in their context goes with it */
-    if (b->ctx) S.g_main_context_push_thread_default(b->ctx);
-    for (size_t i = 0; i < b->nclients; i++) drop_client(&b->clients[i]);
+    if (b->ctx) b->S.g_main_context_push_thread_default(b->ctx);
+    for (size_t i = 0; i < b->nclients; i++) drop_client(b, &b->clients[i]);
     free(b->clients);
-    if (b->registry) S.g_object_unref(b->registry);
-    if (b->cancel) S.g_object_unref(b->cancel);
+    if (b->registry) b->S.g_object_unref(b->registry);
+    if (b->cancel) b->S.g_object_unref(b->cancel);
     if (b->ctx) {
-        while (S.g_main_context_iteration(b->ctx, 0)) {}
-        S.g_main_context_pop_thread_default(b->ctx);
-        S.g_main_context_unref(b->ctx);
+        while (b->S.g_main_context_iteration(b->ctx, 0)) {}
+        b->S.g_main_context_pop_thread_default(b->ctx);
+        b->S.g_main_context_unref(b->ctx);
     }
     pthread_mutex_destroy(&b->lock);
     free(b);

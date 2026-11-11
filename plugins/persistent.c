@@ -15,7 +15,10 @@
 /** a larger file isn't ours: it's left alone rather than read */
 #define MAX_SIZE (64 * 1024)
 
-/** one read-modify-write at a time */
+/** One read-modify-write at a time. Global, as the file is: its users are
+ * threads of different modules (the wallpaper's, the desktop scanner's)
+ * that share nothing else, and a thread left stuck past the library's fini
+ * may still come here. */
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 int awl_persistent_path( char* out, size_t n ) {
@@ -68,12 +71,13 @@ static const char* value( const char* line, const char* key ) {
 
 int awl_persistent_get_str( const char* key, char* out, size_t n ) {
     char path[PATH_MAX];
-    static char buf[MAX_SIZE + 1];
     int r = -1;
     if (awl_persistent_path( path, sizeof(path) )) return -1;
+    char* buf = malloc( MAX_SIZE + 1 );
+    if (!buf) return -1;
 
     pthread_mutex_lock( &lock );
-    if (readall( path, buf, sizeof(buf) ) >= 0) {
+    if (readall( path, buf, MAX_SIZE + 1 ) >= 0) {
         for (char* line = buf; line && *line; ) {
             char* next = strchr( line, '\n' );
             if (next) *next++ = 0;
@@ -87,6 +91,7 @@ int awl_persistent_get_str( const char* key, char* out, size_t n ) {
         }
     }
     pthread_mutex_unlock( &lock );
+    free( buf );
     return r;
 }
 
@@ -111,7 +116,6 @@ static void mkparents( char* path ) {
 
 int awl_persistent_set_str( const char* key, const char* v ) {
     char path[PATH_MAX], tmp[PATH_MAX + 8];
-    static char buf[MAX_SIZE + 1];
     if (strchr( v, '\n' )) {
         awl_wrn_printf( "persistent: %s's value has a newline, not writing it\n", key );
         return -1;
@@ -121,13 +125,19 @@ int awl_persistent_set_str( const char* key, const char* v ) {
         return -1;
     }
     snprintf( tmp, sizeof(tmp), "%s.tmp", path );
+    char* buf = malloc( MAX_SIZE + 1 );
+    if (!buf) {
+        awl_err_printf( "persistent: out of memory, not writing %s\n", path );
+        return -1;
+    }
 
     pthread_mutex_lock( &lock );
-    ssize_t len = readall( path, buf, sizeof(buf) );
+    ssize_t len = readall( path, buf, MAX_SIZE + 1 );
     if (len < 0 && errno != ENOENT) {
         /* unreadable or too large: rather keep it than lose its other lines */
         awl_err_printf( "persistent: can't read %s, not writing it\n", path );
         pthread_mutex_unlock( &lock );
+        free( buf );
         return -1;
     }
     if (len < 0) {
@@ -155,12 +165,14 @@ int awl_persistent_set_str( const char* key, const char* v ) {
     }
     if (fclose( f ) || rename( tmp, path )) goto fail;
     pthread_mutex_unlock( &lock );
+    free( buf );
     return 0;
 
 fail:
     awl_err_printf( "persistent: can't write %s: %s\n", path, strerror( errno ) );
     unlink( tmp );
     pthread_mutex_unlock( &lock );
+    free( buf );
     return -1;
 }
 

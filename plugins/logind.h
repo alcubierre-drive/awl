@@ -22,12 +22,16 @@
  * logind is reconnected to after a few seconds.
  */
 
-/** Starts the thread. Returns 0, or -1 (logged): awl's alert then goes up. */
-int awl_logind_start( void );
-/** Stops it; returns nonzero if it had to be left running. */
-int awl_logind_stop( void );
+#include "handles.h"
+
+/** Starts the thread. Returns its handle, or NULL (logged): awl's alert
+ * then goes up; the functions below take NULL. */
+awl_logind_t* awl_logind_start( void );
+/** Stops it and frees lg; returns nonzero if it had to be left running (lg
+ * then stays). */
+int awl_logind_stop( awl_logind_t* lg );
 /** :c:member:`awl_plugin_api_t.session_covered`; any thread */
-void awl_logind_covered( int covered );
+void awl_logind_covered( awl_logind_t* lg, int covered );
 /** Asks logind to suspend (the suspend action); returns at once, a refusal
  * is logged. Any thread. */
-void awl_logind_suspend( void );
+void awl_logind_suspend( awl_logind_t* lg );

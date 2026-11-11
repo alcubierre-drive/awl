@@ -11,6 +11,7 @@
  */
 
 #include "cal_eds.h"
+#include "handles.h"
 
 #include <time.h>
 
@@ -31,17 +32,18 @@ typedef struct awl_cal_month_t {
     struct awl_cal_month_t* next;
 } awl_cal_month_t;
 
-/** Starts the thread; it loads libecal on the first request. Returns 0, or
- * -1 (logged) without a thread: requests are then dropped. Main thread. */
-int awl_calendar_start( void );
-/** Cancels the running query and stops the thread. Returns nonzero if it is
- * stuck and had to be left running (its memory stays). Main thread. */
-int awl_calendar_stop( void );
+/** Starts the thread; it loads libecal on the first request. Returns its
+ * handle, or NULL (logged) without a thread: the functions below take NULL,
+ * requests are then dropped. Main thread. */
+awl_calendar_t* awl_calendar_start( void );
+/** Cancels the running query, stops the thread and frees w. Returns nonzero
+ * if it is stuck and had to be left running (w then stays). Main thread. */
+int awl_calendar_stop( awl_calendar_t* w );
 /** Queues month key, unless it is queued already. Main thread. */
-void awl_calendar_request( int key );
+void awl_calendar_request( awl_calendar_t* w, int key );
 /** The results since the last call, oldest first, NULL if none; free each
  * with :c:func:`awl_calendar_month_free`. Main thread. */
-awl_cal_month_t* awl_calendar_take( void );
+awl_cal_month_t* awl_calendar_take( awl_calendar_t* w );
 /** frees m (not the ones after it); NULL is fine */
 void awl_calendar_month_free( awl_cal_month_t* m );
 

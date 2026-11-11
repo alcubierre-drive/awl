@@ -28,6 +28,7 @@
 #include <stdatomic.h>
 #include <systemd/sd-event.h>
 #include "../icons/icon.h"
+#include "handles.h"
 
 /** an item's Status */
 enum { AWL_SNI_PASSIVE, AWL_SNI_ACTIVE, AWL_SNI_ATTENTION };
@@ -71,12 +72,11 @@ typedef struct awl_sni_snap_t {
     awl_sni_item_t items[];
 } awl_sni_snap_t;
 
-/** the tray's host: its bus, its loop and the items; opaque */
-typedef struct awl_sni_t awl_sni_t;
 
-/** On event's loop, which isn't running yet; it connects from the loop. NULL
- * on failure. One at a time. */
-awl_sni_t* sni_new( sd_event* event );
+/** On event's loop, which isn't running yet; it connects from the loop.
+ * What the loop hands the main thread for the menus goes to menu_window
+ * (tray_menu.h). NULL on failure. */
+awl_sni_t* sni_new( sd_event* event, awl_tray_menu_window_t* menu_window );
 /** After the loop has stopped, and after :c:func:`awl_tray_menu_window_fini` (whose
  * "closed" it still sends); main thread. */
 void sni_free( awl_sni_t* s );

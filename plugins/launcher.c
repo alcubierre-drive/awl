@@ -126,7 +126,6 @@ typedef struct {
     msg_t *icons_wanted, *launched, *ran, *icons_found;
 } indexer_t;
 
-static indexer_t* ix;
 
 /* ---- the thread: launch counts ---- */
 
@@ -135,6 +134,8 @@ typedef struct {
     char* id;
     long count;
     long long last;
+    /** counts_add()'s sort key: the frecency at its now */
+    double key;
 } count_t;
 
 /** the launch counts, as kept in the state file */
@@ -161,7 +162,7 @@ static count_t* count_add( counts_t* c, const char* id ) {
     }
     char* s = strdup( id );
     if (!s) return NULL;
-    c->v[c->n] = (count_t){ s, 0, 0 };
+    c->v[c->n] = (count_t){ .id = s };
     return &c->v[c->n++];
 }
 
@@ -538,10 +539,9 @@ static unsigned present_now( void ) {
     return present;
 }
 
-static long long trim_now;
-
-static int count_by_frecency( const void* a, const void* b ) {
-    const double fa = frecency( a, trim_now ), fb = frecency( b, trim_now );
+/** by key, highest first */
+static int count_by_key( const void* a, const void* b ) {
+    const double fa = ((const count_t*)a)->key, fb = ((const count_t*)b)->key;
     return fa != fb ? (fa < fb ? 1 : -1) : 0;
 }
 
@@ -557,8 +557,8 @@ static void counts_add( const indexer_t* x, const char* name, counts_t* c, msg_t
     }
     msgs_free( msgs );
     if (max && c->n > max) {
-        trim_now = now;
-        qsort( c->v, (size_t)c->n, sizeof(*c->v), count_by_frecency );
+        for (int i = 0; i < c->n; i++) c->v[i].key = frecency( &c->v[i], now );
+        qsort( c->v, (size_t)c->n, sizeof(*c->v), count_by_key );
         while (c->n > max) free( c->v[--c->n].id );
     }
     counts_save( x, name, c );
@@ -639,6 +639,11 @@ static void* indexer( void* data ) {
 /** a result: an entry of the index, its score */
 typedef struct {
     int entry, score;
+    /** the rest of the order (result_cmp()): the entry's frecency, its name,
+     * and the name's length for a query (0 without one) */
+    double frecency;
+    const char* name;
+    size_t len;
 } result_t;
 
 /** an icon by name at px: img NULL while it is wanted, or if there is none */
@@ -648,7 +653,18 @@ typedef struct {
     pixman_image_t* img;
 } icon_t;
 
-static struct {
+/** the prompt's markup, parsed while it is the same text, and the styles'
+ * fonts for the font it was last drawn in */
+typedef struct {
+    char* src;
+    awl_markup_t m;
+    struct fcft_font* font;
+    struct fcft_font* fonts[4];
+} prompt_t;
+
+struct awl_launcher {
+    /** the root */
+    awl_plugin_data_t* p;
     awl_window_t* win;
     awl_timer_t* timer;
     index_t* idx;
@@ -669,75 +685,74 @@ static struct {
      * (from top on) and where each is */
     int h, input_w, nshown;
     int bx[MAX_SHOWN], bw[MAX_SHOWN];
-} L;
+    prompt_t pm;
+    /** scrolling not yet turned into steps */
+    double acc;
+    /** the index thread, NULL if none */
+    indexer_t* ix;
+    /** the matcher's tables (plugins/fuzzy.h) */
+    awl_fuzzy_tables_t* fz;
+};
 
 static int bar( void ) {
     return CFG->layout == AWL_LAUNCHER_BAR;
 }
 
-static int run_mode( void ) {
-    return L.mode == AWL_LAUNCHER_RUN;
+static int run_mode( awl_launcher_t* la ) {
+    return la->mode == AWL_LAUNCHER_RUN;
 }
 
 /** what entry (of the index's list in this mode) is called, matched and
  * shown by: the application's Name, or the command line */
-static const char* entry_name( int entry ) {
-    return run_mode() ? L.idx->run[entry].line : L.idx->v[entry].e.name;
+static const char* entry_name( awl_launcher_t* la, int entry ) {
+    return run_mode( la ) ? la->idx->run[entry].line : la->idx->v[entry].e.name;
 }
 
-static double entry_frecency( int entry ) {
-    return run_mode() ? L.idx->run[entry].frecency : L.idx->v[entry].frecency;
+static double entry_frecency( awl_launcher_t* la, int entry ) {
+    return run_mode( la ) ? la->idx->run[entry].frecency : la->idx->v[entry].frecency;
 }
 
 /** result r's name; its icon's, NULL if none */
-static const char* name_of( int r ) {
-    return entry_name( L.res[r].entry );
+static const char* name_of( awl_launcher_t* la, int r ) {
+    return entry_name( la, la->res[r].entry );
 }
 
-static const char* icon_of( int r ) {
-    return run_mode() ? NULL : L.idx->v[L.res[r].entry].e.icon;
+static const char* icon_of( awl_launcher_t* la, int r ) {
+    return run_mode( la ) ? NULL : la->idx->v[la->res[r].entry].e.icon;
 }
 
-static const char* prompt( void ) {
-    const char* p = run_mode() ? CFG->run_prompt : CFG->prompt;
+static const char* prompt( awl_launcher_t* la ) {
+    const char* p = run_mode( la ) ? CFG->run_prompt : CFG->prompt;
     return p ? p : "";
 }
 
-/** the prompt's markup, parsed while it is the same text, and the styles'
- * fonts for the font it was last drawn in */
-static struct {
-    char* src;
-    awl_markup_t m;
-    struct fcft_font* font;
-    struct fcft_font* fonts[4];
-} P;
 
-static void prompt_free( void ) {
+static void prompt_free( awl_launcher_t* la ) {
     for (int i = 1; i < 4; i++)
-        if (P.fonts[i]) awl_host->font_release( P.fonts[i] );
-    free( P.src );
-    awl_markup_free( &P.m );
-    memset( &P, 0, sizeof P );
+        if (la->pm.fonts[i]) awl_host->font_release( la->pm.fonts[i] );
+    free( la->pm.src );
+    awl_markup_free( &la->pm.m );
+    memset( &la->pm, 0, sizeof la->pm );
 }
 
 /** the prompt's markup for font, ready; 0 if it couldn't be (out of memory) */
-static int prompt_ready( struct fcft_font* font ) {
-    const char* p = prompt();
-    if (!P.src || strcmp( P.src, p )) {
-        free( P.src );
-        awl_markup_free( &P.m );
-        if (!(P.src = strdup( p )) || !awl_markup_parse( &P.m, p, 1 )) {
-            free( P.src );
-            P.src = NULL;
+static int prompt_ready( awl_launcher_t* la, struct fcft_font* font ) {
+    const char* p = prompt( la );
+    if (!la->pm.src || strcmp( la->pm.src, p )) {
+        free( la->pm.src );
+        awl_markup_free( &la->pm.m );
+        if (!(la->pm.src = strdup( p )) || !awl_markup_parse( &la->pm.m, p, 1 )) {
+            free( la->pm.src );
+            la->pm.src = NULL;
             return 0;
         }
     }
-    if (font != P.font) {
+    if (font != la->pm.font) {
         for (int i = 1; i < 4; i++) {
-            if (P.fonts[i]) awl_host->font_release( P.fonts[i] );
-            P.fonts[i] = awl_host->font_style( font, i );
+            if (la->pm.fonts[i]) awl_host->font_release( la->pm.fonts[i] );
+            la->pm.fonts[i] = awl_host->font_style( font, i );
         }
-        P.font = P.fonts[0] = font;
+        la->pm.font = la->pm.fonts[0] = font;
     }
     return 1;
 }
@@ -745,15 +760,15 @@ static int prompt_ready( struct fcft_font* font ) {
 /** draws the prompt (into pix; NULL: only measures) at x in a line h high at
  * y, cut at right, its runs on font's baseline in their styles; returns its
  * width */
-static int prompt_draw( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg ) {
-    if (!prompt_ready( font )) return 0;
+static int prompt_draw( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg ) {
+    if (!prompt_ready( la, font )) return 0;
     const int x0 = x, base = y + (h - font->height) / 2 + font->ascent;
-    for (unsigned i = 0; i < P.m.nruns; i++) {
-        const awl_markup_run_t* r = &P.m.runs[i];
-        struct fcft_font* f = awl_markup_font( P.fonts, r->style );
+    for (unsigned i = 0; i < la->pm.m.nruns; i++) {
+        const awl_markup_run_t* r = &la->pm.m.runs[i];
+        struct fcft_font* f = awl_markup_font( la->pm.fonts, r->style );
         const uint32_t c = r->style & AWL_MARKUP_COLOR ? r->color : fg;
         /* the run alone: the text is ours, cut it there for a moment */
-        char* s = P.m.text + r->off;
+        char* s = la->pm.m.text + r->off;
         const char end = s[r->len];
         s[r->len] = 0;
         const int w = (int)awl_host->text_width( f, s );
@@ -771,33 +786,33 @@ static int prompt_draw( pixman_image_t* pix, struct fcft_font* font, int x, int 
 }
 
 /** what shows without results */
-static const char* empty_text( void ) {
-    if (!L.idx) return run_mode() ? "reading $PATH…" : "reading the applications…";
-    return run_mode() ? "no match, Return runs it as typed" : "no match";
+static const char* empty_text( awl_launcher_t* la ) {
+    if (!la->idx) return run_mode( la ) ? "reading $PATH…" : "reading the applications…";
+    return run_mode( la ) ? "no match, Return runs it as typed" : "no match";
 }
 
-static void icons_clear( void ) {
-    for (int i = 0; i < L.nicons; i++) {
-        free( L.icons[i].name );
-        if (L.icons[i].img) pixman_image_unref( L.icons[i].img );
+static void icons_clear( awl_launcher_t* la ) {
+    for (int i = 0; i < la->nicons; i++) {
+        free( la->icons[i].name );
+        if (la->icons[i].img) pixman_image_unref( la->icons[i].img );
     }
-    L.nicons = 0;
-    L.waiting = 0;
+    la->nicons = 0;
+    la->waiting = 0;
 }
 
 /** the icon name at px: decoded, or NULL while the thread looks for it (or
  * if there is none); asks the thread the first time */
-static pixman_image_t* icon( const char* name, int px ) {
-    for (int i = 0; i < L.nicons; i++)
-        if (L.icons[i].px == px && !strcmp( L.icons[i].name, name )) return L.icons[i].img;
-    if (!ix) return NULL;
-    if (L.nicons == MAX_ICONS) {
+static pixman_image_t* icon( awl_launcher_t* la, const char* name, int px ) {
+    for (int i = 0; i < la->nicons; i++)
+        if (la->icons[i].px == px && !strcmp( la->icons[i].name, name )) return la->icons[i].img;
+    if (!la->ix) return NULL;
+    if (la->nicons == MAX_ICONS) {
         /* the oldest goes, unless it is still wanted */
-        if (!L.icons[0].done) return NULL;
-        free( L.icons[0].name );
-        if (L.icons[0].img) pixman_image_unref( L.icons[0].img );
-        memmove( L.icons, L.icons + 1, (MAX_ICONS - 1) * sizeof(*L.icons) );
-        L.nicons--;
+        if (!la->icons[0].done) return NULL;
+        free( la->icons[0].name );
+        if (la->icons[0].img) pixman_image_unref( la->icons[0].img );
+        memmove( la->icons, la->icons + 1, (MAX_ICONS - 1) * sizeof(*la->icons) );
+        la->nicons--;
     }
     msg_t* m = calloc( 1, sizeof(*m) );
     char* copy = strdup( name );
@@ -807,61 +822,62 @@ static pixman_image_t* icon( const char* name, int px ) {
         return NULL;
     }
     m->px = px;
-    L.icons[L.nicons++] = (icon_t){ copy, px, 0, NULL };
-    pthread_mutex_lock( &ix->lock );
-    m->next = ix->icons_wanted;
-    ix->icons_wanted = m;
-    pthread_mutex_unlock( &ix->lock );
-    awl_thread_wake( &ix->thread );
-    L.waiting++;
-    awl_host->timer_set( L.timer, ICON_POLL_MS );
+    la->icons[la->nicons++] = (icon_t){ copy, px, 0, NULL };
+    pthread_mutex_lock( &la->ix->lock );
+    m->next = la->ix->icons_wanted;
+    la->ix->icons_wanted = m;
+    pthread_mutex_unlock( &la->ix->lock );
+    awl_thread_wake( &la->ix->thread );
+    la->waiting++;
+    awl_host->timer_set( la->timer, ICON_POLL_MS );
     return NULL;
 }
 
 /** what the thread found: into the cache; redraws if any is shown */
-static void icons_take( void ) {
-    if (!ix) return;
-    pthread_mutex_lock( &ix->lock );
-    msg_t* found = ix->icons_found;
-    ix->icons_found = NULL;
-    pthread_mutex_unlock( &ix->lock );
+static void icons_take( awl_launcher_t* la ) {
+    if (!la->ix) return;
+    pthread_mutex_lock( &la->ix->lock );
+    msg_t* found = la->ix->icons_found;
+    la->ix->icons_found = NULL;
+    pthread_mutex_unlock( &la->ix->lock );
     int any = 0;
     for (msg_t* m = found; m; m = m->next)
-        for (int i = 0; i < L.nicons; i++)
-            if (!L.icons[i].done && L.icons[i].px == m->px && !strcmp( L.icons[i].name, m->name )) {
-                L.icons[i].done = 1;
-                L.icons[i].img = m->img;
+        for (int i = 0; i < la->nicons; i++)
+            if (!la->icons[i].done && la->icons[i].px == m->px && !strcmp( la->icons[i].name, m->name )) {
+                la->icons[i].done = 1;
+                la->icons[i].img = m->img;
                 m->img = NULL;
-                L.waiting--;
+                la->waiting--;
                 any = 1;
                 break;
             }
     msgs_free( found );
-    if (any) awl_host->window_redraw( awl_host->srv, L.win );
+    if (any) awl_host->window_redraw( awl_host->srv, la->win );
 }
 
-static void index_take( void );
+static void index_take( awl_launcher_t* la );
 /** while it is open and waits: for icons, or for the first index */
 static void timer_fire( void* data ) {
-    if (!awl_host->window_monitor( L.win )) return;
-    if (ix && atomic_load( &ix->pending )) {
-        index_take();
-        awl_host->window_redraw( awl_host->srv, L.win );
+    awl_launcher_t* la = data;
+    if (!awl_host->window_monitor( la->win )) return;
+    if (la->ix && atomic_load( &la->ix->pending )) {
+        index_take( la );
+        awl_host->window_redraw( awl_host->srv, la->win );
     }
-    icons_take();
-    if (L.waiting > 0 || !L.idx) awl_host->timer_set( L.timer, ICON_POLL_MS );
+    icons_take( la );
+    if (la->waiting > 0 || !la->idx) awl_host->timer_set( la->timer, ICON_POLL_MS );
 }
 
 /** the score of en for q, the best of its fields (Name's counts most);
  * returns 0 if none matches */
-static int score_of( const awl_fuzzy_query_t* q, const entry_t* en, int* score ) {
+static int score_of( awl_fuzzy_tables_t* tb, const awl_fuzzy_query_t* q, const entry_t* en, int* score ) {
     /* what the other fields lose against Name */
     enum { OTHER = 10 };
     const char* fields[] = { en->e.name, en->e.generic, en->e.keywords, en->command };
     int best = 0, found = 0;
     for (size_t i = 0; i < sizeof fields / sizeof *fields; i++) {
         int s;
-        if (!fields[i] || !awl_fuzzy_match( q, fields[i], &s, NULL, NULL )) continue;
+        if (!fields[i] || !awl_fuzzy_match( tb, q, fields[i], &s, NULL, NULL )) continue;
         if (i) s -= OTHER;
         if (!found || s > best) best = s;
         found = 1;
@@ -880,153 +896,154 @@ static int frecency_bonus( double f ) {
 static int result_cmp( const void* a, const void* b ) {
     const result_t *x = a, *y = b;
     if (x->score != y->score) return y->score - x->score;
-    const double fx = entry_frecency( x->entry ), fy = entry_frecency( y->entry );
-    if (fx != fy) return fx < fy ? 1 : -1;
+    if (x->frecency != y->frecency) return x->frecency < y->frecency ? 1 : -1;
     /* for a query the shorter name (more of it matched), else by name */
-    const char *nx = entry_name( x->entry ), *ny = entry_name( y->entry );
-    const size_t lx = strlen( nx ), ly = strlen( ny );
-    if (L.query[0] && lx != ly) return lx < ly ? -1 : 1;
-    return strcasecmp( nx, ny );
+    if (x->len != y->len) return x->len < y->len ? -1 : 1;
+    return strcasecmp( x->name, y->name );
 }
 
 /** matches the query against the index (the applications, or the run
  * mode's lines), the best first */
-static void filter( void ) {
+static void filter( awl_launcher_t* la ) {
     awl_fuzzy_query_t q;
-    awl_fuzzy_query( &q, L.query );
-    L.nres = 0;
-    L.sel = L.top = 0;
-    if (!L.idx) return;
-    const int n = run_mode() ? L.idx->nrun : L.idx->n;
-    result_t* res = realloc( L.res, (size_t)(n ? n : 1) * sizeof(*res) );
+    awl_fuzzy_query( &q, la->query );
+    la->nres = 0;
+    la->sel = la->top = 0;
+    if (!la->idx) return;
+    const int n = run_mode( la ) ? la->idx->nrun : la->idx->n;
+    result_t* res = realloc( la->res, (size_t)(n ? n : 1) * sizeof(*res) );
     if (!res) return;
-    L.res = res;
+    la->res = res;
     for (int i = 0; i < n; i++) {
         int s;
-        if (run_mode() ? !awl_fuzzy_match( &q, L.idx->run[i].line, &s, NULL, NULL )
-                       : !score_of( &q, &L.idx->v[i], &s ))
+        if (run_mode( la ) ? !awl_fuzzy_match( la->fz, &q, la->idx->run[i].line, &s, NULL, NULL )
+                       : !score_of( la->fz, &q, &la->idx->v[i], &s ))
             continue;
         /* an empty query: the frecency alone, then the names */
-        L.res[L.nres++] = (result_t){ i, q.n ? s + frecency_bonus( entry_frecency( i ) ) : 0 };
+        const double f = entry_frecency( la, i );
+        const char* name = entry_name( la, i );
+        la->res[la->nres++] = (result_t){ .entry = i, .score = q.n ? s + frecency_bonus( f ) : 0, .frecency = f,
+                                          .name = name, .len = la->query[0] ? strlen( name ) : 0 };
     }
-    qsort( L.res, (size_t)L.nres, sizeof(*L.res), result_cmp );
+    qsort( la->res, (size_t)la->nres, sizeof(*la->res), result_cmp );
 }
 
 /** a new index from the thread, if there is one */
-static void index_take( void ) {
-    index_t* idx = ix ? atomic_exchange( &ix->pending, NULL ) : NULL;
+static void index_take( awl_launcher_t* la ) {
+    index_t* idx = la->ix ? atomic_exchange( &la->ix->pending, NULL ) : NULL;
     if (!idx) return;
-    index_free( L.idx );
-    L.idx = idx;
-    const int sel = L.sel;
-    filter();
-    L.sel = sel < L.nres ? sel : 0;
+    index_free( la->idx );
+    la->idx = idx;
+    const int sel = la->sel;
+    filter( la );
+    la->sel = sel < la->nres ? sel : 0;
 }
 
 /* ---- the painter ---- */
 
-static int px( float v ) {
-    return (int)lroundf( v * L.scale );
+static int px( awl_launcher_t* la, float v ) {
+    return (int)lroundf( v * la->scale );
 }
 
 /** the icons' size, physical pixels; the cache is for the size shown */
-static void icon_size( int ipx ) {
-    if (ipx == L.icon_px) return;
-    icons_clear();
-    L.icon_px = ipx;
+static void icon_size( awl_launcher_t* la, int ipx ) {
+    if (ipx == la->icon_px) return;
+    icons_clear( la );
+    la->icon_px = ipx;
 }
 
 /** whether result r gets room for an icon in the bar layout: it names one
  * that isn't known to be missing at the size shown (one still on its way
  * keeps its room, so the row only moves if it turns out to be missing) */
-static int icon_slot( int r ) {
-    const char* name = icon_of( r );
+static int icon_slot( awl_launcher_t* la, int r ) {
+    const char* name = icon_of( la, r );
     if (!name) return 0;
-    for (int i = 0; i < L.nicons; i++)
-        if (L.icons[i].px == L.icon_px && !strcmp( L.icons[i].name, name ))
-            return !L.icons[i].done || L.icons[i].img;
+    for (int i = 0; i < la->nicons; i++)
+        if (la->icons[i].px == la->icon_px && !strcmp( la->icons[i].name, name ))
+            return !la->icons[i].done || la->icons[i].img;
     return 1;
 }
 
 /** result r's width in the bar layout: its icon and name, padded; its name
  * at most name_w */
-static int item_w( struct fcft_font* font, int r, int name_w ) {
-    int nw = (int)awl_host->text_width( font, name_of( r ) );
+static int item_w( awl_launcher_t* la, struct fcft_font* font, int r, int name_w ) {
+    int nw = (int)awl_host->text_width( font, name_of( la, r ) );
     if (nw > name_w) nw = name_w;
-    return 2 * L.pad + (icon_slot( r ) ? L.icon_px + L.gap : 0) + nw;
+    return 2 * la->pad + (icon_slot( la, r ) ? la->icon_px + la->gap : 0) + nw;
 }
 
 /** lays out the results from top on beside the query, as many as fit;
  * returns whether the chosen one is among them */
-static int lay_out_bar( struct fcft_font* font, int name_w, int spacing ) {
-    int x = L.input_w;
-    L.nshown = 0;
-    for (int r = L.top; r < L.nres && L.nshown < MAX_SHOWN; r++) {
-        int w = item_w( font, r, name_w );
-        if (x + w > L.w) {
-            if (L.nshown) break;
-            w = L.w - x; /* one alone, cut */
+static int lay_out_bar( awl_launcher_t* la, struct fcft_font* font, int name_w, int spacing ) {
+    int x = la->input_w;
+    la->nshown = 0;
+    for (int r = la->top; r < la->nres && la->nshown < MAX_SHOWN; r++) {
+        int w = item_w( la, font, r, name_w );
+        if (x + w > la->w) {
+            if (la->nshown) break;
+            w = la->w - x; /* one alone, cut */
         }
-        L.bx[L.nshown] = x;
-        L.bw[L.nshown++] = w;
+        la->bx[la->nshown] = x;
+        la->bw[la->nshown++] = w;
         x += w + spacing;
     }
-    return L.sel >= L.top && L.sel < L.top + L.nshown;
+    return la->sel >= la->top && la->sel < la->top + la->nshown;
 }
 
 /* the bar layout: the bar's spot (AWL_WINDOW_AT_BAR); the query, then the
  * results in a row, a page of them: one that starts at the chosen one going
  * right, one that ends with it going left */
-static int measure_bar( struct fcft_font* font, int max_w, int max_h, int* w, int* h ) {
-    L.w = max_w;
-    L.h = max_h;
-    L.pad = px( 6 );
-    L.gap = px( 6 );
-    const int ipx = px( (float)CFG->icon_size ), room = L.h - 2 * px( 2 );
-    icon_size( ipx < room ? ipx : room );
+static int measure_bar( awl_launcher_t* la, struct fcft_font* font, int max_w, int max_h, int* w, int* h ) {
+    la->w = max_w;
+    la->h = max_h;
+    la->pad = px( la, 6 );
+    la->gap = px( la, 6 );
+    const int ipx = px( la, (float)CFG->icon_size ), room = la->h - 2 * px( la, 2 );
+    icon_size( la, ipx < room ? ipx : room );
     /* the query's width at least, more as it grows, the results right after */
-    const int typed = 2 * L.pad + px( 3 ) + prompt_draw( NULL, font, 0, 0, 0, 0, 0 ) +
-                      (int)awl_host->text_width( font, L.query );
-    L.input_w = px( (float)CFG->input_width );
-    if (L.input_w < typed) L.input_w = typed;
-    if (L.input_w > L.w / 3) L.input_w = L.w / 3;
-    if (L.w <= L.input_w || L.h < 1) return 0;
-    const int name_w = (L.w - L.input_w) / 3, spacing = px( 4 );
-    L.nshown = 0;
-    if (L.nres) {
-        if (L.sel < L.top) {
+    const int typed = 2 * la->pad + px( la, 3 ) + prompt_draw( la, NULL, font, 0, 0, 0, 0, 0 ) +
+                      (int)awl_host->text_width( font, la->query );
+    la->input_w = px( la, (float)CFG->input_width );
+    if (la->input_w < typed) la->input_w = typed;
+    if (la->input_w > la->w / 3) la->input_w = la->w / 3;
+    if (la->w <= la->input_w || la->h < 1) return 0;
+    const int name_w = (la->w - la->input_w) / 3, spacing = px( la, 4 );
+    la->nshown = 0;
+    if (la->nres) {
+        if (la->sel < la->top) {
             /* the page before: as much as fits that ends with the chosen one */
-            int x = L.input_w + item_w( font, L.sel, name_w );
-            L.top = L.sel;
-            while (L.top > 0 && (x += spacing + item_w( font, L.top - 1, name_w )) <= L.w) L.top--;
+            int x = la->input_w + item_w( la, font, la->sel, name_w );
+            la->top = la->sel;
+            while (la->top > 0 && (x += spacing + item_w( la, font, la->top - 1, name_w )) <= la->w) la->top--;
         }
-        if (!lay_out_bar( font, name_w, spacing )) {
-            L.top = L.sel;
-            lay_out_bar( font, name_w, spacing );
+        if (!lay_out_bar( la, font, name_w, spacing )) {
+            la->top = la->sel;
+            lay_out_bar( la, font, name_w, spacing );
         }
     }
-    *w = L.w;
-    *h = L.h;
+    *w = la->w;
+    *h = la->h;
     return 1;
 }
 
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
-    L.scale = scale;
-    if (bar()) return measure_bar( font, max_w, max_h, w, h );
+    awl_launcher_t* la = data;
+    la->scale = scale;
+    if (bar()) return measure_bar( la, font, max_w, max_h, w, h );
     const int fh = font->height;
-    L.pad = px( 6 );
-    L.gap = px( 10 );
-    icon_size( px( (float)CFG->icon_size ) );
-    L.input_h = fh + 2 * L.pad;
-    L.sep_h = px( 7 );
-    L.row_h = (fh > L.icon_px ? fh : L.icon_px) + 2 * px( 3 );
-    L.w = px( (float)CFG->width );
-    if (L.w > max_w) L.w = max_w;
-    L.rows = CFG->rows;
-    if (L.input_h + L.sep_h + L.rows * L.row_h > max_h) L.rows = (max_h - L.input_h - L.sep_h) / L.row_h;
-    if (L.rows < 1) return 0;
-    *w = L.w;
-    *h = L.input_h + L.sep_h + L.rows * L.row_h;
+    la->pad = px( la, 6 );
+    la->gap = px( la, 10 );
+    icon_size( la, px( la, (float)CFG->icon_size ) );
+    la->input_h = fh + 2 * la->pad;
+    la->sep_h = px( la, 7 );
+    la->row_h = (fh > la->icon_px ? fh : la->icon_px) + 2 * px( la, 3 );
+    la->w = px( la, (float)CFG->width );
+    if (la->w > max_w) la->w = max_w;
+    la->rows = CFG->rows;
+    if (la->input_h + la->sep_h + la->rows * la->row_h > max_h) la->rows = (max_h - la->input_h - la->sep_h) / la->row_h;
+    if (la->rows < 1) return 0;
+    *w = la->w;
+    *h = la->input_h + la->sep_h + la->rows * la->row_h;
     return 1;
 }
 
@@ -1059,108 +1076,109 @@ static int text_marked( pixman_image_t* pix, struct fcft_font* font, const char*
 /** the prompt and the query from x to right in a line h high at y, the
  * query's tail if it is too long, and the cursor after it (in the query's
  * color) */
-static void paint_query( pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h ) {
+static void paint_query( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h ) {
     const uint32_t fg = COLORS->launcher_query.v;
-    x += prompt_draw( pix, font, x, right, y, h, COLORS->launcher_prompt.v );
-    const int cursor_w = px( 1.5f ) > 1 ? px( 1.5f ) : 1;
-    const char* q = L.query;
+    x += prompt_draw( la, pix, font, x, right, y, h, COLORS->launcher_prompt.v );
+    const int cursor_w = px( la, 1.5f ) > 1 ? px( la, 1.5f ) : 1;
+    const char* q = la->query;
     while (*q && x + (int)awl_host->text_width( font, q ) + cursor_w > right) {
         q++;
         while (((unsigned char)*q & 0xc0) == 0x80) q++;
     }
     if (*q) awl_host->text_over( pix, font, x, y, (unsigned)(right - x), (unsigned)h, q, fg );
     x += (int)awl_host->text_width( font, q );
-    awl_fill_shape( pix, (float)x + px( 1 ), (float)(y + (h - font->height) / 2), (float)cursor_w,
+    awl_fill_shape( pix, (float)x + px( la, 1 ), (float)(y + (h - font->height) / 2), (float)cursor_w,
                     (float)font->height, 0, 0, fg );
 }
 
 /** result r's icon, if it has one, centered in an icon's width at x and h
  * at y */
-static void paint_icon( pixman_image_t* pix, int r, int x, int y, int h ) {
-    const char* name = icon_of( r );
-    pixman_image_t* img = name ? icon( name, L.icon_px ) : NULL;
+static void paint_icon( awl_launcher_t* la, pixman_image_t* pix, int r, int x, int y, int h ) {
+    const char* name = icon_of( la, r );
+    pixman_image_t* img = name ? icon( la, name, la->icon_px ) : NULL;
     if (!img) return;
     const int iw = pixman_image_get_width( img ), ih = pixman_image_get_height( img );
-    pixman_image_composite32( PIXMAN_OP_OVER, img, NULL, pix, 0, 0, 0, 0, x + (L.icon_px - iw) / 2, y + (h - ih) / 2,
+    pixman_image_composite32( PIXMAN_OP_OVER, img, NULL, pix, 0, 0, 0, 0, x + (la->icon_px - iw) / 2, y + (h - ih) / 2,
                               iw, ih );
 }
 
 /** what the query matched in text, into pos; returns how many */
-static int marks( const awl_fuzzy_query_t* fq, const char* text, int* pos ) {
-    return fq->n && awl_fuzzy_match( fq, text, NULL, NULL, pos ) ? fq->n : 0;
+static int marks( awl_fuzzy_tables_t* tb, const awl_fuzzy_query_t* fq, const char* text, int* pos ) {
+    return fq->n && awl_fuzzy_match( tb, fq, text, NULL, NULL, pos ) ? fq->n : 0;
 }
 
-static void paint_bar( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, uint32_t fg, uint32_t dim,
+static void paint_bar( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x0, int y0, uint32_t fg, uint32_t dim,
                        uint32_t match ) {
     const awl_popup_config_t* pc = &awl_config()->popup;
-    paint_query( pix, font, x0 + L.pad, x0 + L.input_w - L.pad, y0, L.h );
-    if (!L.nres) {
-        awl_host->text_over( pix, font, x0 + L.input_w + L.pad, y0, (unsigned)(L.w - L.input_w - L.pad),
-                             (unsigned)L.h, empty_text(), dim );
+    paint_query( la, pix, font, x0 + la->pad, x0 + la->input_w - la->pad, y0, la->h );
+    if (!la->nres) {
+        awl_host->text_over( pix, font, x0 + la->input_w + la->pad, y0, (unsigned)(la->w - la->input_w - la->pad),
+                             (unsigned)la->h, empty_text( la ), dim );
         return;
     }
     awl_fuzzy_query_t fq;
-    awl_fuzzy_query( &fq, L.query );
-    const int inset = px( 2 );
-    for (int i = 0; i < L.nshown; i++) {
-        const int r = L.top + i, x = x0 + L.bx[i];
-        if (r == L.sel)
-            awl_fill_shape( pix, (float)x, (float)(y0 + inset), (float)L.bw[i], (float)(L.h - 2 * inset),
-                            (float)px( pc->radius < 6 ? (float)pc->radius : 6 ), 0, awl_config()->colors.popup_hover );
-        int tx = x + L.pad;
-        if (icon_slot( r )) {
-            paint_icon( pix, r, tx, y0, L.h );
-            tx += L.icon_px + L.gap;
+    awl_fuzzy_query( &fq, la->query );
+    const int inset = px( la, 2 );
+    for (int i = 0; i < la->nshown; i++) {
+        const int r = la->top + i, x = x0 + la->bx[i];
+        if (r == la->sel)
+            awl_fill_shape( pix, (float)x, (float)(y0 + inset), (float)la->bw[i], (float)(la->h - 2 * inset),
+                            (float)px( la, pc->radius < 6 ? (float)pc->radius : 6 ), 0, awl_config()->colors.popup_hover );
+        int tx = x + la->pad;
+        if (icon_slot( la, r )) {
+            paint_icon( la, pix, r, tx, y0, la->h );
+            tx += la->icon_px + la->gap;
         }
         int pos[AWL_FUZZY_MAX_QUERY];
-        const int n = marks( &fq, name_of( r ), pos );
-        text_marked( pix, font, name_of( r ), pos, n, tx, y0, x + L.bw[i] - L.pad, L.h, fg, match );
+        const int n = marks( la->fz, &fq, name_of( la, r ), pos );
+        text_marked( pix, font, name_of( la, r ), pos, n, tx, y0, x + la->bw[i] - la->pad, la->h, fg, match );
     }
 }
 
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
+    awl_launcher_t* la = data;
     const awl_popup_config_t* pc = &awl_config()->popup;
     const awl_colors_t* ak = &awl_config()->colors;
     const awl_plugin_colors_t* k = COLORS;
     const uint32_t fg = ak->popup_fg, dim = k->launcher_dim.v, match = k->launcher_match.v;
     if (bar()) {
-        paint_bar( pix, font, x0, y0, fg, dim, match );
+        paint_bar( la, pix, font, x0, y0, fg, dim, match );
         return;
     }
 
     int x, right;
-    paint_query( pix, font, x0 + L.pad, x0 + L.w - L.pad, y0, L.input_h );
+    paint_query( la, pix, font, x0 + la->pad, x0 + la->w - la->pad, y0, la->input_h );
 
-    const float t = fmaxf( 1, (float)px( 1 ) );
-    awl_fill_shape( pix, (float)x0, (float)(y0 + L.input_h) + ((float)L.sep_h - t) / 2, (float)L.w, t, 0, 0, dim );
+    const float t = fmaxf( 1, (float)px( la, 1 ) );
+    awl_fill_shape( pix, (float)x0, (float)(y0 + la->input_h) + ((float)la->sep_h - t) / 2, (float)la->w, t, 0, 0, dim );
 
-    const int ry0 = y0 + L.input_h + L.sep_h;
-    if (!L.nres) {
-        awl_host->text_over( pix, font, x0 + L.pad, ry0, (unsigned)(L.w - 2 * L.pad), (unsigned)L.row_h,
-                             empty_text(), dim );
+    const int ry0 = y0 + la->input_h + la->sep_h;
+    if (!la->nres) {
+        awl_host->text_over( pix, font, x0 + la->pad, ry0, (unsigned)(la->w - 2 * la->pad), (unsigned)la->row_h,
+                             empty_text( la ), dim );
         return;
     }
     awl_fuzzy_query_t fq;
-    awl_fuzzy_query( &fq, L.query );
-    for (int i = 0; i < L.rows && L.top + i < L.nres; i++) {
-        const int r = L.top + i, y = ry0 + i * L.row_h;
-        if (r == L.sel)
-            awl_fill_shape( pix, (float)x0, (float)y, (float)L.w, (float)L.row_h,
-                            (float)px( pc->radius < 6 ? (float)pc->radius : 6 ), 0, awl_config()->colors.popup_hover );
-        x = x0 + L.pad;
+    awl_fuzzy_query( &fq, la->query );
+    for (int i = 0; i < la->rows && la->top + i < la->nres; i++) {
+        const int r = la->top + i, y = ry0 + i * la->row_h;
+        if (r == la->sel)
+            awl_fill_shape( pix, (float)x0, (float)y, (float)la->w, (float)la->row_h,
+                            (float)px( la, pc->radius < 6 ? (float)pc->radius : 6 ), 0, awl_config()->colors.popup_hover );
+        x = x0 + la->pad;
         /* the run mode has no icons, nor their column */
-        if (!run_mode()) {
-            paint_icon( pix, r, x, y, L.row_h );
-            x += L.icon_px + L.gap;
+        if (!run_mode( la )) {
+            paint_icon( la, pix, r, x, y, la->row_h );
+            x += la->icon_px + la->gap;
         }
-        right = x0 + L.w - L.pad;
+        right = x0 + la->w - la->pad;
         /* the name, what the query matched in it marked */
         int pos[AWL_FUZZY_MAX_QUERY];
-        const int n = marks( &fq, name_of( r ), pos );
-        x = text_marked( pix, font, name_of( r ), pos, n, x, y, right, L.row_h, fg, match );
-        const char* generic = run_mode() ? NULL : L.idx->v[L.res[r].entry].e.generic;
-        if (generic && x + L.gap < right)
-            awl_host->text_over( pix, font, x + L.gap, y, (unsigned)(right - x - L.gap), (unsigned)L.row_h,
+        const int n = marks( la->fz, &fq, name_of( la, r ), pos );
+        x = text_marked( pix, font, name_of( la, r ), pos, n, x, y, right, la->row_h, fg, match );
+        const char* generic = run_mode( la ) ? NULL : la->idx->v[la->res[r].entry].e.generic;
+        if (generic && x + la->gap < right)
+            awl_host->text_over( pix, font, x + la->gap, y, (unsigned)(right - x - la->gap), (unsigned)la->row_h,
                                  generic, dim );
     }
 }
@@ -1168,31 +1186,33 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
 /** the result row (the bar layout's: the result shown) at px, py; -1 the
  * query, or none */
 static int hit( void* data, int x, int y ) {
+    awl_launcher_t* la = data;
     if (bar()) {
-        for (int i = 0; i < L.nshown; i++)
-            if (x >= L.bx[i] && x < L.bx[i] + L.bw[i] && y >= 0 && y < L.h) return i;
+        for (int i = 0; i < la->nshown; i++)
+            if (x >= la->bx[i] && x < la->bx[i] + la->bw[i] && y >= 0 && y < la->h) return i;
         return -1;
     }
-    const int ry0 = L.input_h + L.sep_h;
-    if (x < 0 || x >= L.w || y < ry0) return -1;
-    const int i = (y - ry0) / L.row_h;
-    return i < L.rows && L.top + i < L.nres ? i : -1;
+    const int ry0 = la->input_h + la->sep_h;
+    if (x < 0 || x >= la->w || y < ry0) return -1;
+    const int i = (y - ry0) / la->row_h;
+    return i < la->rows && la->top + i < la->nres ? i : -1;
 }
 
 static int box( void* data, int part, int* x, int* y, int* w, int* h ) {
+    awl_launcher_t* la = data;
     if (bar()) {
-        if (part < 0 || part >= L.nshown) return 0;
-        *x = L.bx[part];
+        if (part < 0 || part >= la->nshown) return 0;
+        *x = la->bx[part];
         *y = 0;
-        *w = L.bw[part];
-        *h = L.h;
+        *w = la->bw[part];
+        *h = la->h;
         return 1;
     }
-    if (part < 0 || part >= L.rows) return 0;
+    if (part < 0 || part >= la->rows) return 0;
     *x = 0;
-    *y = L.input_h + L.sep_h + part * L.row_h;
-    *w = L.w;
-    *h = L.row_h;
+    *y = la->input_h + la->sep_h + part * la->row_h;
+    *w = la->w;
+    *h = la->row_h;
     return 1;
 }
 
@@ -1202,45 +1222,45 @@ static const awl_window_painter_t painter = { measure, paint, hit, box };
 
 /** moves the choice to row r, scrolled into view (the bar layout's paged
  * by measure_bar()) */
-static void choose( int r ) {
-    if (!L.nres) return;
+static void choose( awl_launcher_t* la, int r ) {
+    if (!la->nres) return;
     if (r < 0) r = 0;
-    if (r >= L.nres) r = L.nres - 1;
-    L.sel = r;
+    if (r >= la->nres) r = la->nres - 1;
+    la->sel = r;
     if (bar()) {
-        awl_host->window_redraw( awl_host->srv, L.win );
+        awl_host->window_redraw( awl_host->srv, la->win );
         return;
     }
-    if (L.sel < L.top) L.top = L.sel;
-    if (L.rows > 0 && L.sel >= L.top + L.rows) L.top = L.sel - L.rows + 1;
-    awl_host->window_redraw( awl_host->srv, L.win );
+    if (la->sel < la->top) la->top = la->sel;
+    if (la->rows > 0 && la->sel >= la->top + la->rows) la->top = la->sel - la->rows + 1;
+    awl_host->window_redraw( awl_host->srv, la->win );
 }
 
-static void close_launcher( void ) {
-    awl_host->window_hide( awl_host->srv, L.win );
+static void close_launcher( awl_launcher_t* la ) {
+    awl_host->window_hide( awl_host->srv, la->win );
 }
 
 /** counts a launch of name on the thread: an application's id (run 0), or
  * a command line (run 1) */
-static void count_launch( const char* name, int run ) {
+static void count_launch( awl_launcher_t* la, const char* name, int run ) {
     msg_t* m = calloc( 1, sizeof(*m) );
-    if (!ix || !m || !(m->name = strdup( name ))) {
+    if (!la->ix || !m || !(m->name = strdup( name ))) {
         free( m );
         return;
     }
-    pthread_mutex_lock( &ix->lock );
-    msg_t** list = run ? &ix->ran : &ix->launched;
+    pthread_mutex_lock( &la->ix->lock );
+    msg_t** list = run ? &la->ix->ran : &la->ix->launched;
     m->next = *list;
     *list = m;
-    pthread_mutex_unlock( &ix->lock );
-    awl_thread_wake( &ix->thread );
+    pthread_mutex_unlock( &la->ix->lock );
+    awl_thread_wake( &la->ix->thread );
 }
 
 /** starts result r: its argv, in the terminal if it wants one, in its
  * working directory if it has one (through sh: spawn has none) */
-static void launch( int r ) {
-    if (r < 0 || r >= L.nres) return;
-    entry_t* en = &L.idx->v[L.res[r].entry];
+static void launch( awl_launcher_t* la, int r ) {
+    if (r < 0 || r >= la->nres) return;
+    entry_t* en = &la->idx->v[la->res[r].entry];
     char** argv = awl_desktop_exec_argv( en->e.exec, en->e.name, en->e.icon, en->file );
     if (!argv) {
         awl_err_printf( "launcher: %s: can't make sense of Exec=%s\n", en->id, en->e.exec );
@@ -1267,13 +1287,13 @@ static void launch( int r ) {
     }
     awl_desktop_argv_free( argv );
     en->frecency += 4;
-    count_launch( en->id, 0 );
-    close_launcher();
+    count_launch( la, en->id, 0 );
+    close_launcher( la );
 }
 
 /** runs line with sh -c, in the terminal if term, and remembers it */
-static void run_line( const char* line, int term ) {
-    char buf[sizeof L.query];
+static void run_line( awl_launcher_t* la, const char* line, int term ) {
+    char buf[sizeof la->query];
     while (*line == ' ') line++;
     size_t n = strlen( line );
     while (n && line[n - 1] == ' ') n--;
@@ -1293,157 +1313,169 @@ static void run_line( const char* line, int term ) {
     awl_log_printf( "launcher: runs %s\n", buf );
     awl_host->actions->spawn( awl_host->srv, &(Arg){ .v = full } );
     free( full );
-    count_launch( buf, 1 );
-    close_launcher();
+    count_launch( la, buf, 1 );
+    close_launcher( la );
 }
 
 /** Return: launches result r; the run mode runs its line, or the query as
  * typed if literal (or if nothing matched), in the terminal if term */
-static void activate( int r, int literal, int term ) {
-    if (!run_mode()) launch( r );
-    else run_line( literal || r < 0 || r >= L.nres ? L.query : name_of( r ), term );
+static void activate( awl_launcher_t* la, int r, int literal, int term ) {
+    if (!run_mode( la )) launch( la, r );
+    else run_line( la, literal || r < 0 || r >= la->nres ? la->query : name_of( la, r ), term );
 }
 
 /** the run mode's Tab: the chosen line into the query, to go on from */
-static void complete( void ) {
-    if (L.sel < 0 || L.sel >= L.nres) return;
-    snprintf( L.query, sizeof L.query, "%s", name_of( L.sel ) );
-    filter();
-    awl_host->window_redraw( awl_host->srv, L.win );
+static void complete( awl_launcher_t* la ) {
+    if (la->sel < 0 || la->sel >= la->nres) return;
+    snprintf( la->query, sizeof la->query, "%s", name_of( la, la->sel ) );
+    filter( la );
+    awl_host->window_redraw( awl_host->srv, la->win );
 }
 
 /** the query lost its last character (word: its last word, and the
  * blanks after it) */
-static void query_back( int word ) {
-    size_t n = strlen( L.query );
+static void query_back( awl_launcher_t* la, int word ) {
+    size_t n = strlen( la->query );
     if (word)
-        while (n && L.query[n - 1] == ' ') n--;
+        while (n && la->query[n - 1] == ' ') n--;
     do {
-        while (n && ((unsigned char)L.query[n - 1] & 0xc0) == 0x80) n--;
+        while (n && ((unsigned char)la->query[n - 1] & 0xc0) == 0x80) n--;
         if (n) n--;
-    } while (word && n && L.query[n - 1] != ' ');
-    L.query[n] = '\0';
+    } while (word && n && la->query[n - 1] != ' ');
+    la->query[n] = '\0';
 }
 
 /** results a page up or down moves */
-static int page( void ) {
-    const int n = bar() ? L.nshown : L.rows;
+static int page( awl_launcher_t* la ) {
+    const int n = bar() ? la->nshown : la->rows;
     return n > 0 ? n : 1;
 }
 
 static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods, void* data ) {
+    awl_launcher_t* la = data;
     const int ctrl = mods & WLR_MODIFIER_CTRL, other = mods & (WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO);
     if (other) return 0;
     if (bar() && (sym == XKB_KEY_Left || sym == XKB_KEY_Right)) {
-        choose( L.sel + (sym == XKB_KEY_Left ? -1 : 1) );
+        choose( la, la->sel + (sym == XKB_KEY_Left ? -1 : 1) );
         return 1;
     }
     switch (sym) {
-    case XKB_KEY_Escape: close_launcher(); return 1;
+    case XKB_KEY_Escape: close_launcher( la ); return 1;
     case XKB_KEY_Return:
-    case XKB_KEY_KP_Enter: activate( L.sel, mods & WLR_MODIFIER_SHIFT, ctrl ); return 1;
+    case XKB_KEY_KP_Enter: activate( la, la->sel, mods & WLR_MODIFIER_SHIFT, ctrl ); return 1;
     case XKB_KEY_Up:
-    case XKB_KEY_ISO_Left_Tab: choose( L.sel - 1 ); return 1;
+    case XKB_KEY_ISO_Left_Tab: choose( la, la->sel - 1 ); return 1;
     case XKB_KEY_Tab:
-        if (run_mode()) complete();
-        else choose( L.sel + 1 );
+        if (run_mode( la )) complete( la );
+        else choose( la, la->sel + 1 );
         return 1;
-    case XKB_KEY_Down: choose( L.sel + 1 ); return 1;
-    case XKB_KEY_Page_Up: choose( L.sel - page() ); return 1;
-    case XKB_KEY_Page_Down: choose( L.sel + page() ); return 1;
+    case XKB_KEY_Down: choose( la, la->sel + 1 ); return 1;
+    case XKB_KEY_Page_Up: choose( la, la->sel - page( la ) ); return 1;
+    case XKB_KEY_Page_Down: choose( la, la->sel + page( la ) ); return 1;
     case XKB_KEY_BackSpace:
-        query_back( ctrl );
-        filter();
+        query_back( la, ctrl );
+        filter( la );
         awl_host->window_redraw( awl_host->srv, win );
         return 1;
     }
     if (ctrl) {
         switch (sym) {
-        case XKB_KEY_p: choose( L.sel - 1 ); return 1;
-        case XKB_KEY_n: choose( L.sel + 1 ); return 1;
-        case XKB_KEY_w: query_back( 1 ); break;
-        case XKB_KEY_u: L.query[0] = '\0'; break;
+        case XKB_KEY_p: choose( la, la->sel - 1 ); return 1;
+        case XKB_KEY_n: choose( la, la->sel + 1 ); return 1;
+        case XKB_KEY_w: query_back( la, 1 ); break;
+        case XKB_KEY_u: la->query[0] = '\0'; break;
         default: return 0;
         }
-        filter();
+        filter( la );
         awl_host->window_redraw( awl_host->srv, win );
         return 1;
     }
     if (!*utf8) return 0;
-    const size_t n = strlen( L.query ), add = strlen( utf8 );
-    if (n + add < sizeof L.query) {
-        memcpy( L.query + n, utf8, add + 1 );
-        filter();
+    const size_t n = strlen( la->query ), add = strlen( utf8 );
+    if (n + add < sizeof la->query) {
+        memcpy( la->query + n, utf8, add + 1 );
+        filter( la );
         awl_host->window_redraw( awl_host->srv, win );
     }
     return 1;
 }
 
 static void click( awl_window_t* win, int row, int col, uint32_t button, void* data ) {
-    if (row >= 0 && button == BTN_LEFT) activate( L.top + row, 0, 0 );
+    awl_launcher_t* la = data;
+    if (row >= 0 && button == BTN_LEFT) activate( la, la->top + row, 0, 0 );
 }
 
 static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, double delta, int32_t value120,
                     void* data ) {
-    static double acc;
+    awl_launcher_t* la = data;
     /* the bar layout's row goes sideways too */
     if (orientation != 0 && !bar()) return;
-    acc += value120 ? value120 / 120.0 : delta / 10.0;
-    const int steps = (int)acc;
+    la->acc += value120 ? value120 / 120.0 : delta / 10.0;
+    const int steps = (int)la->acc;
     if (!steps) return;
-    acc -= steps;
-    choose( L.sel + steps );
+    la->acc -= steps;
+    choose( la, la->sel + steps );
 }
 
 static void hover( awl_window_t* win, int row, int inside, void* data ) {
-    if (row >= 0 && L.top + row != L.sel) choose( L.top + row );
+    awl_launcher_t* la = data;
+    if (row >= 0 && la->top + row != la->sel) choose( la, la->top + row );
 }
 
 static void hidden( awl_window_t* win, void* data ) {
-    L.query[0] = '\0';
-    L.nres = L.sel = L.top = L.nshown = 0;
+    awl_launcher_t* la = data;
+    la->query[0] = '\0';
+    la->nres = la->sel = la->top = la->nshown = 0;
 }
 
-void awl_launcher_toggle( int mode ) {
-    if (awl_host->window_monitor( L.win )) {
-        if (mode == L.mode) {
-            close_launcher();
+void awl_launcher_toggle( awl_launcher_t* la, int mode ) {
+    if (!la) return;
+    if (awl_host->window_monitor( la->win )) {
+        if (mode == la->mode) {
+            close_launcher( la );
             return;
         }
         /* the other mode's: the same query */
-        L.mode = mode;
-        filter();
-        awl_host->window_redraw( awl_host->srv, L.win );
+        la->mode = mode;
+        filter( la );
+        awl_host->window_redraw( awl_host->srv, la->win );
         return;
     }
     Monitor* m = awl_host->monitor_selected( awl_host->srv );
     if (!m) return;
-    L.mode = mode;
-    if (!L.win) {
-        if (!(L.win = awl_host->window_create( awl_host->srv ))) return;
-        awl_host->window_set_painter( awl_host->srv, L.win, &painter, NULL );
-        awl_host->window_set_click( awl_host->srv, L.win, click, NULL );
-        awl_host->window_set_scroll( awl_host->srv, L.win, scroll, NULL );
-        awl_host->window_set_hover( L.win, hover, NULL );
-        awl_host->window_set_hidden( L.win, hidden, NULL );
-        awl_host->window_set_key( awl_host->srv, L.win, key, NULL );
+    la->mode = mode;
+    if (!la->win) {
+        if (!(la->win = awl_host->window_create( awl_host->srv ))) return;
+        awl_host->window_set_painter( awl_host->srv, la->win, &painter, la );
+        awl_host->window_set_click( awl_host->srv, la->win, click, la );
+        awl_host->window_set_scroll( awl_host->srv, la->win, scroll, la );
+        awl_host->window_set_hover( la->win, hover, la );
+        awl_host->window_set_hidden( la->win, hidden, la );
+        awl_host->window_set_key( awl_host->srv, la->win, key, la );
     }
-    if (!L.timer) L.timer = awl_host->timer_add( awl_host->srv, timer_fire, NULL );
-    index_take();
-    L.query[0] = '\0';
-    filter();
+    if (!la->timer) la->timer = awl_host->timer_add( awl_host->srv, timer_fire, la );
+    index_take( la );
+    la->query[0] = '\0';
+    filter( la );
     if (bar())
-        awl_host->window_show_at( awl_host->srv, L.win, m, CFG->strip_at, 0, 0 );
+        awl_host->window_show_at( awl_host->srv, la->win, m, CFG->strip_at, 0, 0 );
     else
-        awl_host->window_show_at( awl_host->srv, L.win, m, CFG->at, 0, CFG->dy );
+        awl_host->window_show_at( awl_host->srv, la->win, m, CFG->at, 0, CFG->dy );
     /* no index yet: it comes while it is open */
-    if (!L.idx) awl_host->timer_set( L.timer, ICON_POLL_MS );
+    if (!la->idx) awl_host->timer_set( la->timer, ICON_POLL_MS );
 }
 
-void awl_launcher_start( void ) {
+awl_launcher_t* awl_launcher_start( awl_plugin_data_t* p ) {
+    awl_launcher_t* la = calloc( 1, sizeof *la );
+    if (!la) return NULL;
+    la->p = p;
+    if (!(la->fz = malloc( sizeof *la->fz ))) {
+        free( la );
+        return NULL;
+    }
     indexer_t* x = calloc( 1, sizeof(*x) );
     awl_dict_val_t v;
-    if (!x) return;
+    if (!x) return la;
     pthread_mutex_init( &x->lock, NULL );
     const char* theme = awl_config()->tray.icon_theme;
     x->icon_theme = theme ? strdup( theme ) : NULL;
@@ -1455,25 +1487,23 @@ void awl_launcher_start( void ) {
         free( x->icon_theme );
         free( x->state_home );
         free( x );
-        return;
+        return la;
     }
-    ix = x;
+    la->ix = x;
+    return la;
 }
 
-int awl_launcher_stop( void ) {
-    awl_host->window_destroy( awl_host->srv, L.win );
-    awl_host->timer_remove( L.timer );
-    L.win = NULL;
-    L.timer = NULL;
-    icons_clear();
-    index_free( L.idx );
-    L.idx = NULL;
-    free( L.res );
-    L.res = NULL;
-    L.nres = 0;
-    prompt_free();
-    indexer_t* x = ix;
-    ix = NULL;
+int awl_launcher_stop( awl_launcher_t* la ) {
+    if (!la) return 0;
+    awl_host->window_destroy( awl_host->srv, la->win );
+    awl_host->timer_remove( la->timer );
+    icons_clear( la );
+    index_free( la->idx );
+    free( la->res );
+    prompt_free( la );
+    free( la->fz );
+    indexer_t* x = la->ix;
+    free( la );
     if (!x) return 0;
     /* reads files: may hang on a dead mount */
     if (awl_thread_stop( &x->thread, 500 )) return 1;

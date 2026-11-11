@@ -7,6 +7,8 @@
 #include <string.h>
 
 static int fails;
+/* the matcher's scratch: a test's own, too large for the stack */
+static awl_fuzzy_tables_t tables;
 
 #define CHECK( cond ) do { \
         if (cond) printf( "ok    %s\n", #cond ); \
@@ -18,7 +20,7 @@ static int sc( const char* q, const char* text, int* e ) {
     awl_fuzzy_query_t fq;
     int s, err;
     awl_fuzzy_query( &fq, q );
-    if (!awl_fuzzy_match( &fq, text, &s, &err, NULL )) return -1000;
+    if (!awl_fuzzy_match( &tables, &fq, text, &s, &err, NULL )) return -1000;
     if (e) *e = err;
     return s;
 }
@@ -39,7 +41,7 @@ static const char* marks( const char* q, const char* text ) {
     awl_fuzzy_query_t fq;
     int pos[AWL_FUZZY_MAX_QUERY], k = 0;
     awl_fuzzy_query( &fq, q );
-    if (!awl_fuzzy_match( &fq, text, NULL, NULL, pos )) return "(none)";
+    if (!awl_fuzzy_match( &tables, &fq, text, NULL, NULL, pos )) return "(none)";
     for (int i = 0; text[i]; i++) {
         int hit = 0;
         for (int j = 0; j < fq.n; j++) hit |= pos[j] == i;
