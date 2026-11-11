@@ -7,6 +7,8 @@
 #include "awl_popup.h"
 #include <fcntl.h>
 #include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <wlr/backend/headless.h>
 #include <wlr/backend/multi.h>
 #include <wlr/backend/wayland.h>
@@ -41,11 +43,24 @@ testslot(struct awl_test *T, awl_window_t *win)
     return -1;
 }
 
+/** the headless outputs' size: AWL_TEST_SIZE's (WxH), else wlroots' 1280x720 */
+static void
+testsize(unsigned int *w, unsigned int *h)
+{
+    const char *s = getenv("AWL_TEST_SIZE");
+    *w = 1280, *h = 720;
+    if (s && sscanf(s, "%ux%u", w, h) == 2 && *w > 0 && *h > 0)
+        return;
+    *w = 1280, *h = 720;
+}
+
 static void
 testoutputadd_backend(struct wlr_backend *b, void *data)
 {
+    unsigned int w, h;
+    testsize(&w, &h);
     if (wlr_backend_is_headless(b))
-        wlr_headless_add_output(b, 1280, 720);
+        wlr_headless_add_output(b, w, h);
     else if (wlr_backend_is_wl(b))
         wlr_wl_output_create(b);
 }
@@ -428,6 +443,12 @@ testinit(awl_server_t *srv)
     if (getenv("AWL_TEST_OUTPUTS")) {
         wl_event_loop_add_signal(srv->event_loop, SIGUSR1, testoutputadd, srv);
         wl_event_loop_add_signal(srv->event_loop, SIGUSR2, testoutputremove, srv);
+        /* AWL_TEST_OUTPUTS=N: N headless outputs of AWL_TEST_SIZE to
+         * start with (WLR_HEADLESS_OUTPUTS' are always 1280x720); the
+         * backend announces them when it starts */
+        int n = atoi(getenv("AWL_TEST_OUTPUTS"));
+        for (int i = 0; i < n && i < 16; i++)
+            wlr_multi_for_each_backend(srv->backend, testoutputadd_backend, NULL);
     }
     /* for testing (test/live.sh's win, test/windows.sh): a FIFO of commands
      * for the text popups, see testwincmd(); O_RDWR, so it never reads EOF

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdatomic.h>
+#include <stddef.h>
 
 /** The battery's charge and state. */
 typedef struct awl_battery_t {
@@ -32,3 +33,16 @@ int bat_dock_update( awl_battery_t* b );
  * thunderbolt device did; returns nonzero if either changed. */
 int bat_dispatch( awl_battery_t* b );
 void bat_free( awl_battery_t* b );
+
+/** The charge thresholds (charge_control_start_threshold and
+ * charge_control_end_threshold in its directory), percent, into ``*start``
+ * and ``*end``; -1 for one the battery doesn't have. Reads sysfs: main
+ * thread, when needed. */
+void bat_thresholds( const awl_battery_t* b, int* start, int* end );
+/** Writes a threshold, end if end else start; returns 0 or an errno
+ * (EACCES: the files are root's, see the udev rule in README.md's
+ * Configuration). */
+int bat_threshold_set( const awl_battery_t* b, int end, int percent );
+/** the battery's status ("Charging", "Not charging", "Full"...) into buf,
+ * "" if unknown */
+void bat_status( const awl_battery_t* b, char* buf, size_t n );

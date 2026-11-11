@@ -12,6 +12,8 @@
 #include "plugins/logind.h"
 #include "plugins/osd.h"
 #include "plugins/calpopup.h"
+#include "plugins/batpopup.h"
+#include "plugins/sysmon.h"
 #include "plugins/tray_menu.h"
 #include "plugins/tray_tooltip.h"
 #include "plugins/notify.h"
@@ -179,6 +181,8 @@ static int api_fini( void ) {
     awl_osd_stop();
     int stuck = awl_notify_stop();
     stuck |= awl_calpopup_stop();
+    awl_batpopup_stop();
+    awl_sysmon_stop();
     stuck |= awl_desktop_stop();
     stuck |= awl_launcher_stop();
     stuck |= awl_wallpaper_stop();

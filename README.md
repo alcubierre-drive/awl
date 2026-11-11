@@ -8,6 +8,10 @@ its own:
   memory and swap graphs, temperature, battery, volume, IP address, clock)
 - a system tray (StatusNotifierItem)
 - a calendar popup on the clock that shows evolution-data-server events
+- a system monitor popup on the graphs and the temperature: five minutes or
+  more of CPU, memory, swap and temperature history, with the numbers
+- a battery popup on the battery and dock widgets that sets the charge
+  thresholds
 - a wallpaper with timed changes and fades
 - a panel listing the files in `~/Desktop`
 - blur and rounded corners for layer surfaces (scenefx)
@@ -69,6 +73,26 @@ client to run, `at_start`, and `on_suspend`, which makes suspend wait until
 the locker covers every output (through a logind delay inhibitor). With
 that, no separate lock handler (`xss-lock`, a `sleep.target` unit calling
 `loginctl lock-session`) is needed; `loginctl lock-session` still works.
+
+The battery popup (hover the battery or dock widget) sets the battery's
+charge thresholds: its ‹ › buttons, or the wheel over a threshold's row,
+change one by the config's `battery.threshold_step`. The kernel's files for
+them (`charge_control_start_threshold` and `charge_control_end_threshold` in
+`battery.dir`, `/sys/class/power_supply/BAT0/` by default) are root's, so
+without a udev rule like this one, which gives them to the `video` group,
+the popup only shows "can't set: Permission denied":
+
+    # /etc/udev/rules.d/90-charge-thresholds.rules
+    ACTION=="add|change", SUBSYSTEM=="power_supply", KERNEL=="BAT0", \
+      RUN+="/bin/chgrp video /sys%p/charge_control_start_threshold /sys%p/charge_control_end_threshold", \
+      RUN+="/bin/chmod g+w /sys%p/charge_control_start_threshold /sys%p/charge_control_end_threshold"
+
+Be in that group (`groups`; `sudo usermod -aG video $USER`, then log in
+again), and apply the rule without a reboot with
+`sudo udevadm trigger -s power_supply`. Change `BAT0` if your battery is
+named differently. If the files are root's again after a reboot, the driver
+(thinkpad_acpi, for one) made them after the battery's "add" event: the
+trigger fixes that until the next boot.
 
 Its `CUSTOM` part covers keys, buttons, rules, layouts, tags, colors, font,
 borders, blur, input devices, the keymap, the bar's place, the screen lock,

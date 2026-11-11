@@ -114,7 +114,8 @@ newest() { awk '$1 == "mon" { print $2; exit }' <<<"$state"; }
 randr() { "$live" randr "$@" >/dev/null || die "wlr-randr $*"; sleep 0.3; }
 
 "$live" alive && die "a test instance already runs in $LIVE_DIR"
-LIVE_OUTPUTS=1 "$live" start >/dev/null || die "no start"
+# its positions are 1280x720's
+LIVE_OUTPUTS=1 LIVE_SIZE=1280x720 "$live" start >/dev/null || die "no start"
 M1=HEADLESS-1
 table='cpu\t42 °C\t1.2 GHz\ngpu\t51 °C\t0.8 GHz\nnvme\t38 °C'
 

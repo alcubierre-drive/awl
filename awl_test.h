@@ -10,7 +10,8 @@
 
 /** With AWL_TEST_OUTPUTS, SIGUSR1 adds an output, SIGUSR2 removes the
  * newest one (headless and nested backends only; setup() blocks them for
- * the event loop). With AWL_TEST_WINDOWS, a FIFO of commands for the text
+ * the event loop), and AWL_TEST_OUTPUTS=N adds N outputs to start with.
+ * Headless ones are AWL_TEST_SIZE (WxH) large, else 1280x720. With AWL_TEST_WINDOWS, a FIFO of commands for the text
  * popups, see testwincmd(). After the backend is made. */
 void testinit(awl_server_t *srv);
 /** win, a popup, is gone */

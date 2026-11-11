@@ -18,11 +18,11 @@
 #                           click left|middle|right, or scroll wheel:N (N
 #                           notches down, negative up), hwheel:N (right),
 #                           finger:D (a touchpad's D down), see vptr.c
-#                           Without a BUTTON it only moves. NB: in the headless
-#                           instance the bar's widgets take clicks about 30 px
-#                           right of where they're drawn (they don't fit, see
-#                           the log): the tray icon drawn at x 1157 reacts at
-#                           ~1190. Known and left alone; aim right of it.
+#                           Without a BUTTON it only moves. NB: on an output
+#                           too narrow for the bar's widgets (see the log),
+#                           they take clicks right of where they're drawn, by
+#                           as much as they don't fit; LIVE_SIZE's default
+#                           has room.
 #   live.sh win [CMD]       a command for awl's text popups (AWL_TEST_WINDOWS,
 #                           see testwincmd() in awl_test.c), e.g. win show 0
 #                           HEADLESS-1 640 'a\tb\nc'; then prints their state
@@ -30,7 +30,8 @@
 #                           the test session's bus
 #   live.sh log             the log so far
 #
-# LIVE_OUTPUTS=N starts with N outputs (1). LIVE_NESTED=1 makes them windows
+# LIVE_OUTPUTS=N starts with N outputs (1), headless ones LIVE_SIZE=WxH
+# large (1920x1080, where the bar's widgets fit). LIVE_NESTED=1 makes them windows
 # in the session at $WAYLAND_DISPLAY instead of headless ones; that session's
 # keyboard and pointer then work in them too.
 #
@@ -130,14 +131,17 @@ start)
 			*) outer=$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY ;;
 			esac
 			export WLR_BACKENDS=wayland WAYLAND_DISPLAY=$outer WLR_WL_OUTPUTS=${LIVE_OUTPUTS:-1}
+			export AWL_TEST_OUTPUTS=0
 		else
+			# awl makes them (awl_test.c), wlroots' are always 1280x720
 			unset WAYLAND_DISPLAY
-			export WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=${LIVE_OUTPUTS:-1}
+			export WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=0
+			export AWL_TEST_OUTPUTS=${LIVE_OUTPUTS:-1} AWL_TEST_SIZE=${LIVE_SIZE:-1920x1080}
 		fi
 		export XDG_RUNTIME_DIR=$run HOME=$dir/home
 		export DBUS_SYSTEM_BUS_ADDRESS=${LIVE_SYSTEM_BUS:-unix:path=$dir/system_bus}
 		unset DISPLAY WAYLAND_SOCKET
-		export WLR_RENDERER=${WLR_RENDERER:-gles2} WLR_LIBINPUT_NO_DEVICES=1 AWL_TEST_OUTPUTS=1
+		export WLR_RENDERER=${WLR_RENDERER:-gles2} WLR_LIBINPUT_NO_DEVICES=1
 		export AWL_TEST_WINDOWS=$dir/ctl
 		cd "$dir"
 		exec setsid timeout -s TERM "${LIVE_TIMEOUT:-600}" dbus-run-session -- \

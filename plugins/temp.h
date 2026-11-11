@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "stats.h" /* AWL_STATS_HIST */
+
 /** a reading below absolute zero: the sensor can't be read (not NaN, which
  * ``-Ofast`` assumes never happens) */
 #define AWL_TEMP_NONE -1000.0f
@@ -12,6 +14,13 @@
 typedef struct awl_temperature_t {
     /** output: reading of sensor i in °C, :c:macro:`AWL_TEMP_NONE` if it can't be read */
     _Atomic float temps[16];
+    /** output: the readings' history, a ring buffer of
+     * :c:macro:`AWL_STATS_HIST` per sensor like :c:type:`awl_stats_t`'s, one
+     * reading per update, read with :c:func:`stats_sample` at head
+     * :c:member:`~awl_temperature_t.samples` */
+    _Atomic float hist[16][AWL_STATS_HIST];
+    /** number of updates so far */
+    atomic_uint samples;
     /** input, read-only once :c:func:`temp_init` was called: the range of the
      * bar's colors, °C */
     float f_t_max[16];

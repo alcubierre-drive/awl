@@ -8,21 +8,31 @@
 #include <string.h>
 #include <fcntl.h>
 
-static float cpu_idle( uint64_t* sizes_table, float* io );
-static int getmem( float* mem, float* swp );
+static float cpu_idle( uint64_t* sizes_table, float* io, float* sys );
+static int getmem( float* mem, float* swp, uint64_t* mem_total, uint64_t* swp_total );
+static void getload( awl_stats_t* st, float* load1 );
 
 awl_stats_t* stats_init( int nval_cpu, int nval_mem, int nval_swp ) {
     /*P_awl_log_printf( "starting system monitor" );*/
     awl_stats_t* st = calloc(1,sizeof(awl_stats_t));
-    st->ncpu = nval_cpu < AWL_STATS_MAX ? nval_cpu : AWL_STATS_MAX;
-    st->nmem = nval_mem < AWL_STATS_MAX ? nval_mem : AWL_STATS_MAX;
-    st->nswp = nval_swp < AWL_STATS_MAX ? nval_swp : AWL_STATS_MAX;
-    for (int i=0; i<AWL_STATS_MAX; ++i) {
+    if (!st) return NULL;
+    st->ncpu = nval_cpu < AWL_STATS_HIST ? nval_cpu : AWL_STATS_HIST;
+    st->nmem = nval_mem < AWL_STATS_HIST ? nval_mem : AWL_STATS_HIST;
+    st->nswp = nval_swp < AWL_STATS_HIST ? nval_swp : AWL_STATS_HIST;
+    for (int i=0; i<AWL_STATS_HIST; ++i) {
         atomic_init( &st->cpu[i], 0 );
         atomic_init( &st->mem[i], 0 );
         atomic_init( &st->swp[i], 0 );
         atomic_init( &st->io[i], 0 );
+        atomic_init( &st->sys[i], 0 );
+        atomic_init( &st->load[i], 0 );
     }
+    atomic_init( &st->mem_total, 0 );
+    atomic_init( &st->swp_total, 0 );
+    atomic_init( &st->load5, 0 );
+    atomic_init( &st->load15, 0 );
+    atomic_init( &st->running, 0 );
+    atomic_init( &st->tasks, 0 );
     atomic_init( &st->samples, 0 );
     atomic_init( &st->has_swap, 1 );
     st->sizes_table = calloc(20, sizeof(uint64_t));
@@ -36,22 +46,49 @@ void stats_free( awl_stats_t* st ) {
 
 void stats_update( awl_stats_t* st ) {
     float mem = 0, swp = 0;
-    int has_swap = getmem( &mem, &swp );
-    float io = 0;
-    float cpu = 1. - cpu_idle(st->sizes_table, &io);
+    uint64_t mem_total = 0, swp_total = 0;
+    int has_swap = getmem( &mem, &swp, &mem_total, &swp_total );
+    float io = 0, sys = 0, load1 = stats_sample( st->load, atomic_load( &st->samples ), 0 );
+    float cpu = 1. - cpu_idle(st->sizes_table, &io, &sys);
+    getload( st, &load1 );
+    atomic_store( &st->mem_total, mem_total );
+    atomic_store( &st->swp_total, swp_total );
     // the slot after the head is the oldest sample; it becomes the newest
-    unsigned next = atomic_load( &st->samples ) + 1;
-    if (st->ncpu) atomic_store( &st->cpu[next % st->ncpu], cpu );
-    if (st->ncpu) atomic_store( &st->io[next % st->ncpu], io );
-    if (st->nmem) atomic_store( &st->mem[next % st->nmem], mem );
-    if (st->nswp) atomic_store( &st->swp[next % st->nswp], swp );
+    unsigned next = atomic_load( &st->samples ) + 1, at = next % AWL_STATS_HIST;
+    atomic_store( &st->cpu[at], cpu );
+    atomic_store( &st->io[at], io );
+    atomic_store( &st->sys[at], sys );
+    atomic_store( &st->load[at], load1 );
+    atomic_store( &st->mem[at], mem );
+    atomic_store( &st->swp[at], swp );
     atomic_store( &st->samples, next );
     atomic_store( &st->has_swap, has_swap );
 }
 
+/* /proc/loadavg: "0.52 0.61 0.70 3/1234 5678"; left as they were if it
+ * can't be read */
+static void getload( awl_stats_t* st, float* load1 ) {
+    char buf[128];
+    int fd = open( "/proc/loadavg", O_RDONLY | O_CLOEXEC );
+    if (fd < 0) return;
+    ssize_t nread = read( fd, buf, sizeof(buf)-1 );
+    close( fd );
+    if (nread <= 0) return;
+    buf[nread] = '\0';
+    float l1, l5, l15;
+    int running, tasks;
+    if (sscanf( buf, "%f %f %f %d/%d", &l1, &l5, &l15, &running, &tasks ) != 5) return;
+    *load1 = l1;
+    atomic_store( &st->load5, l5 );
+    atomic_store( &st->load15, l15 );
+    atomic_store( &st->running, running );
+    atomic_store( &st->tasks, tasks );
+}
+
 /* the idle fraction since the last call; *io: the part of it spent waiting
- * for I/O (left 0 if unknown) */
-static float cpu_idle( uint64_t* sizes_table, float* io ) {
+ * for I/O, *sys: the busy part spent in the kernel (both left 0 if
+ * unknown) */
+static float cpu_idle( uint64_t* sizes_table, float* io, float* sys ) {
     // copy old values
     memcpy( sizes_table+10, sizes_table, sizeof(uint64_t)*10 );
     // read only the aggregate "cpu " line (first line of /proc/stat)
@@ -75,6 +112,7 @@ static float cpu_idle( uint64_t* sizes_table, float* io ) {
     // no tick since the last read: nothing to tell, call it idle
     if (total == 0) return 1.0;
     *io = (float)(s[4] - (s+10)[4])/(float)total;
+    *sys = (float)((s[2] - (s+10)[2]) + (s[5] - (s+10)[5]) + (s[6] - (s+10)[6]))/(float)total;
 
     // return idle percentage
     float result = (float)idle/(float)total;
@@ -82,7 +120,7 @@ static float cpu_idle( uint64_t* sizes_table, float* io ) {
 }
 
 /* returns whether the system has swap */
-static int getmem( float* mem, float* swp ) {
+static int getmem( float* mem, float* swp, uint64_t* mem_total_kib, uint64_t* swp_total_kib ) {
     FILE* f = fopen("/proc/meminfo", "r");
     if (!f) { *mem = *swp = 0.0; return 1; }
     long unsigned mem_total = 0,
@@ -107,6 +145,8 @@ static int getmem( float* mem, float* swp ) {
     }
     free(line);
     fclose(f);
+    *mem_total_kib = mem_total;
+    *swp_total_kib = swp_total;
     if (mem_total == 0)
         *mem = 1.0;
     else

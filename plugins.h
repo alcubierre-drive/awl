@@ -146,6 +146,9 @@ typedef struct awl_plugin_config_t {
          * (Adwaita's battery-level-N icons). NULL, "" or none found: the
          * glyph (💻, 🖥️, ⚡, 🔋, 🪫). */
         struct { const char* laptop, * docked, * ac, * battery, * battery_low; } icons;
+        /** what the popup's buttons and a wheel notch over its rows change
+         * a charge threshold by, percent (plugins/batpopup.h) */
+        int threshold_step;
     } battery;
     /** the volume (PulseAudio's default sink) */
     struct {

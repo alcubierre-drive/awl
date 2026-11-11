@@ -34,12 +34,17 @@ int temp_find_hwmon( const char* name, const char* label, char* out, size_t n ) 
 }
 
 void temp_init( awl_temperature_t* temp ) {
-    for (int i=0; i<16; ++i)
+    for (int i=0; i<16; ++i) {
         atomic_init( &temp->temps[i], AWL_TEMP_NONE );
+        for (int j=0; j<AWL_STATS_HIST; ++j)
+            atomic_init( &temp->hist[i][j], AWL_TEMP_NONE );
+    }
+    atomic_init( &temp->samples, 0 );
 }
 
 int temp_update( awl_temperature_t* temp ) {
     int changed = 0;
+    unsigned next = atomic_load( &temp->samples ) + 1;
     for (int i=0; i<temp->f_ntemps; ++i) {
         float t = AWL_TEMP_NONE;
         FILE* f = fopen(temp->f_files[i], "r");
@@ -49,6 +54,8 @@ int temp_update( awl_temperature_t* temp ) {
             fclose(f);
         }
         changed |= atomic_exchange( &temp->temps[i], t ) != t;
+        atomic_store( &temp->hist[i][next % AWL_STATS_HIST], t );
     }
+    atomic_store( &temp->samples, next );
     return changed;
 }

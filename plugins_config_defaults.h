@@ -77,6 +77,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .dir = "/sys/class/power_supply/BAT0/",
         .ac_dir = "/sys/class/power_supply/AC/",
         .low = 15,
+        .threshold_step = 1,
         /* NULL or none found: the glyphs */
         .icons = {
             /* Papirus: laptop, Breeze: computer-laptop, Adwaita has neither */

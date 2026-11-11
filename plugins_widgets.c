@@ -5,6 +5,8 @@
 #include "plugins.h"
 #include "plugins/date.h"
 #include "plugins/calpopup.h"
+#include "plugins/sysmon.h"
+#include "plugins/batpopup.h"
 #include "plugins/notify.h"
 #include "plugins/notify_menu.h"
 #include "plugins/colors.h"
@@ -54,6 +56,11 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
 static uint32_t tempwidget_measure( widget_t* w );
 static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t batwidget_measure( widget_t* w );
+static uint32_t batwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
+static void batgroup_hover( widget_t* w );
+static void batgroup_leave( widget_t* w );
+static void sysgroup_hover( widget_t* w );
+static void sysgroup_leave( widget_t* w );
 static uint32_t pulsewidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t dockwidget_measure( widget_t* w );
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
@@ -76,6 +83,17 @@ static void notifywidget_view( widget_t* w, int32_t x );
 static void notifywidget_hover( widget_t* w );
 static void notifywidget_leave( widget_t* w );
 static void notifywidget_free( void* userdata );
+
+/** the dock and the battery widget share a popup (plugins/batpopup.h): the
+ * leave outlasts the hover, so going from one to the other moves it in one
+ * go instead of closing and reopening it */
+#define BATGROUP_HOVER .callback_hover = &batgroup_hover, .hover_delay_ms = 100, \
+                       .callback_leave = &batgroup_leave, .leave_delay_ms = 150
+
+/** the graphs and the temperature share the system monitor
+ * (plugins/sysmon.h), the same way */
+#define SYSGROUP_HOVER .callback_hover = &sysgroup_hover, .hover_delay_ms = 100, \
+                       .callback_leave = &sysgroup_leave, .leave_delay_ms = 150
 
 /** the usual padding, :c:member:`awl_plugin_config_t.widgets_padding` either side */
 #define PAD_DEFAULT .pad_left = AWL_PADDING_DEFAULT, .pad_right = AWL_PADDING_DEFAULT
@@ -114,12 +132,14 @@ static const widget_t right_widgets[] = {
         .pad_left = 0, .pad_right = 0,
         .measure = &statuswidget_measure,
         .draw = &statuswidget_draw,
+        SYSGROUP_HOVER,
         .free = free,
     },
     [AwlWidgetTemperature] = {
         PAD_DEFAULT,
         .measure = &tempwidget_measure,
         .draw = &tempwidget_draw,
+        SYSGROUP_HOVER,
         .free = free,
     },
     [AwlWidgetDock] = {
@@ -127,12 +147,14 @@ static const widget_t right_widgets[] = {
         .pad_left = -2, .pad_right = AWL_PADDING_DEFAULT,
         .measure = &dockwidget_measure,
         .draw = &dockwidget_draw,
+        BATGROUP_HOVER,
         .free = &dockwidget_free,
     },
     [AwlWidgetBattery] = {
         PAD_DEFAULT,
         .measure = &batwidget_measure,
-        .draw = &textsnap_draw,
+        .draw = &batwidget_draw,
+        BATGROUP_HOVER,
         .free = free,
     },
     [AwlWidgetNetwork] = {
@@ -387,11 +409,6 @@ typedef struct {
     char text[128];
     pixman_color_t fg, bg;
 } textsnap_t;
-
-static textsnap_t* textsnap( widget_t* w ) {
-    if (!w->userdata) w->userdata = calloc(1, sizeof(textsnap_t));
-    return w->userdata;
-}
 
 static uint32_t textsnap_width( widget_t* w ) {
     textsnap_t* s = w->userdata;
@@ -756,25 +773,33 @@ static uint32_t pulsewidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
 }
 
 typedef struct {
-    pixman_box32_t fg[AWL_STATS_MAX], bg[AWL_STATS_MAX], io[AWL_STATS_MAX]; // one graph at a time
+    uint32_t x; // first: where draw() put it, in bar pixels (widget_x())
+    pixman_box32_t fg[AWL_STATS_HIST], bg[AWL_STATS_HIST], io[AWL_STATS_HIST]; // one graph at a time
     int nswp; // the swap samples measure() made room for: 0 without swap
 } statuswidget_userdata_t;
+
+/** a sample's column, in bar pixels: the scale, but whole, so that all
+ * are as wide (at 1.5, the scale's pixels would alternate 1 and 2) */
+static int statuswidget_column( const widget_t* w ) {
+    const int c = (int)lroundf( w->bar->scale );
+    return c > 1 ? c : 1;
+}
 
 static uint32_t statuswidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->stats) return 0;
 
+    awl_sysmon_poll();
     if (!w->userdata)
         w->userdata = calloc(1, sizeof(statuswidget_userdata_t));
+    if (!w->userdata) return 0;
     awl_stats_t* st = P->stats;
     statuswidget_userdata_t* u = w->userdata;
     u->nswp = atomic_load( &st->has_swap ) ? st->nswp : 0;
 
-    // one column per sample, accumulated the same way draw() places them
-    float xx = 0;
+    // one column per sample, statuswidget_column() wide
     int n = st->ncpu + st->nmem + u->nswp;
-    for (int i=0; i<n; ++i) xx += w->bar->scale;
-    return cell_width( w, xx );
+    return cell_width( w, (uint32_t)(n * statuswidget_column( w )) );
 }
 
 static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
@@ -782,6 +807,7 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     if (!P || !P->stats) return 0;
     statuswidget_userdata_t* u = w->userdata;
     awl_stats_t* st = P->stats;
+    u->x = x;
 
     const int n[3] = { st->ncpu, st->nmem, u->nswp };
     _Atomic float* graph[3] = { st->cpu, st->mem, st->swp };
@@ -796,19 +822,19 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     int l, r, x0, pix_w = pixman_image_get_width( pix );
     widget_padding( w, &l, &r );
     x0 = (int)x + l;
-    float xx = 0;
+    const int cw = statuswidget_column( w );
+    int xx = 0;
     for (int g=0; g<3; ++g) {
         int m = 0;
         // newest sample first
         for (int i=0; i<n[g]; ++i) {
-            float val = stats_sample( graph[g], n[g], samples, i );
+            float val = stats_sample( graph[g], samples, i );
             int ydiv = bar_height - val * bar_height;
             // the CPU graph stacks the time spent waiting for I/O on top
-            float io = g == 0 ? stats_sample( st->io, n[g], samples, i ) : 0;
+            float io = g == 0 ? stats_sample( st->io, samples, i ) : 0;
             int yio = bar_height - (val + io < 1 ? val + io : 1) * bar_height;
-            float next_x = xx + w->bar->scale;
-            int x1 = x0 + (int32_t)xx, x2 = x0 + (int32_t)next_x;
-            xx = next_x;
+            int x1 = x0 + xx, x2 = x1 + cw;
+            xx += cw;
             if (x1 < 0 || x2 > pix_w) continue;
             u->bg[m] = (pixman_box32_t){.x1=x1,.x2=x2,.y1=0, .y2=yio};
             u->io[m] = (pixman_box32_t){.x1=x1,.x2=x2,.y1=yio,.y2=ydiv};
@@ -827,6 +853,7 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
 /** the readings measure() saw and their texts' widths, so draw() renders
  * text of the same width */
 typedef struct {
+    uint32_t x; // first: where draw() put it, in bar pixels (widget_x())
     float temps[16];
     uint32_t widths[16];
 } tempwidget_userdata_t;
@@ -843,7 +870,9 @@ static uint32_t tempwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->temp) return 0;
 
+    awl_sysmon_poll();
     if (!w->userdata) w->userdata = calloc(1,sizeof(tempwidget_userdata_t));
+    if (!w->userdata) return 0;
     tempwidget_userdata_t* u = w->userdata;
 
     uint32_t width = 0;
@@ -863,6 +892,7 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
     if (!P || !P->temp) return 0;
     const awl_temperature_t* T = P->temp;
     tempwidget_userdata_t* u = w->userdata;
+    u->x = x;
 
     for (int i=0; i<T->f_ntemps; ++i) {
         if (u->temps[i] == AWL_TEMP_NONE) continue;
@@ -885,15 +915,24 @@ static pixman_color_t batwidget_color( float charge, int charging ) {
     return color_8bit_to_16bit( colormap_color( charging ? &k->battery_charging : &k->battery, charge ) );
 }
 
+/** the battery widget: its text, and where draw() put it, in bar pixels */
+typedef struct {
+    textsnap_t snap; // first: textsnap_draw() reads it
+    uint32_t x;
+} batwidget_userdata_t;
+
 static uint32_t batwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->bat) return 0;
+    awl_batpopup_poll();
 
     int charging = atomic_load( &P->bat->charging );
     float charge = atomic_load( &P->bat->charge );
     if (charging < 0) return 0;
 
-    textsnap_t* s = textsnap( w );
+    if (!w->userdata) w->userdata = calloc(1, sizeof(batwidget_userdata_t));
+    if (!w->userdata) return 0;
+    textsnap_t* s = w->userdata;
     snprintf( s->text, sizeof(s->text), "%3.0f%%", charge * 100.0 );
     s->fg = batwidget_color( charge, charging );
     s->bg = P->colors.bar_bg;
@@ -951,6 +990,8 @@ typedef struct {
     int lead;
     struct fcft_font* font;
     pixman_color_t fg, bg;
+    /** where draw() put the widget, in bar pixels */
+    uint32_t x;
 } docksnap_t;
 
 /** part as the config's icon names at px, else glyph (in the emoji font),
@@ -997,6 +1038,7 @@ static const char* dock_level_names( const char* names, float percent, char* buf
 static uint32_t dockwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = awl_plugin_get();
     if (!P || !P->bat) return 0;
+    awl_batpopup_poll();
     int docked = atomic_load( &P->bat->docked );
     int ac = atomic_load( &P->bat->ac );
     if (ac < 0) ac = atomic_load( &P->bat->charging );
@@ -1037,6 +1079,7 @@ static uint32_t dockwidget_measure( widget_t* w ) {
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     docksnap_t* s = w->userdata;
     if (!s) return 0;
+    s->x = x;
     int l, r, h = (int)w->bar->height;
     widget_padding( w, &l, &r );
     awl_host->text( pix, s->font, x, -2, w->width, h, 0, "", s->fg, s->bg );
@@ -1058,6 +1101,71 @@ static void dockwidget_free( void* userdata ) {
     for (int i = 0; i < 2; i++)
         if (s->part[i].icon) pixman_image_unref( s->part[i].icon );
     free( s );
+}
+
+static uint32_t batwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
+    batwidget_userdata_t* u = w->userdata;
+    if (u) u->x = x;
+    return textsnap_draw( w, x, pix );
+}
+
+/** where w was drawn, in bar pixels: x0 to x1; 0 if it wasn't (yet) or
+ * it isn't one of the widgets that keep that (dock, battery, graphs,
+ * temperature) */
+static int widget_span( const widget_t* w, uint32_t* x0, uint32_t* x1 ) {
+    if (!w->userdata || !w->width) return 0;
+    uint32_t x;
+    if (w->measure == &dockwidget_measure) x = ((const docksnap_t*)w->userdata)->x;
+    else if (w->measure == &batwidget_measure) x = ((const batwidget_userdata_t*)w->userdata)->x;
+    else if (w->measure == &statuswidget_measure) x = ((const statuswidget_userdata_t*)w->userdata)->x;
+    else if (w->measure == &tempwidget_measure) x = ((const tempwidget_userdata_t*)w->userdata)->x;
+    else return 0;
+    *x0 = x;
+    *x1 = x + w->width;
+    return 1;
+}
+
+/** Where a popup shared by a group of widgets goes: centered under w and
+ * the members of its group (a and b's measure) next to it together, so one
+ * popup for the group wherever the pointer is on it; in logical pixels
+ * from the monitor's left edge, -1 if w wasn't drawn. */
+static int group_center( widget_t* w, uint32_t (*a)( widget_t* ), uint32_t (*b)( widget_t* ) ) {
+    uint32_t x0, x1;
+    if (!widget_span( w, &x0, &x1 )) return -1;
+    awl_bar_t* bar = w->bar;
+    int at = (int)(w - bar->widgets_right);
+    for (int dir = -1; dir <= 1; dir += 2)
+        for (int i = at + dir; i >= 0 && i < bar->n_widgets_right; i += dir) {
+            const widget_t* o = &bar->widgets_right[i];
+            uint32_t lo, hi;
+            if ((o->measure != a && o->measure != b) || !widget_span( o, &lo, &hi )) break;
+            if (lo < x0) x0 = lo;
+            if (hi > x1) x1 = hi;
+        }
+    float center = ((float)x0 + (float)x1) / 2.0f;
+    return (int)(center / bar->scale + 0.5f);
+}
+
+/* the battery popup, under the dock and battery widgets */
+static void batgroup_hover( widget_t* w ) {
+    int x = group_center( w, &dockwidget_measure, &batwidget_measure );
+    if (x >= 0) awl_batpopup_show( w, x );
+}
+
+static void batgroup_leave( widget_t* w ) {
+    (void)w;
+    awl_batpopup_hide();
+}
+
+/* the system monitor, under the graphs and the temperature */
+static void sysgroup_hover( widget_t* w ) {
+    int x = group_center( w, &statuswidget_measure, &tempwidget_measure );
+    if (x >= 0) awl_sysmon_show( w, x );
+}
+
+static void sysgroup_leave( widget_t* w ) {
+    (void)w;
+    awl_sysmon_hide();
 }
 
 /** the IP widget: the bar shows the primary address (:c:member:`awl_ipaddr_t.best`:

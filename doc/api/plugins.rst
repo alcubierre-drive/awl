@@ -55,10 +55,25 @@ plugins/temp.h
 
 .. c:autodoc:: plugins/temp.h
 
+plugins/sysmon.h
+^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/sysmon.h
+
+plugins/spline.h
+^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/spline.h
+
 plugins/bat.h
 ^^^^^^^^^^^^^
 
 .. c:autodoc:: plugins/bat.h
+
+plugins/batpopup.h
+^^^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/batpopup.h
 
 plugins/ipaddr.h
 ^^^^^^^^^^^^^^^^

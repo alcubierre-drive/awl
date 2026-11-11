@@ -144,3 +144,49 @@ int bat_update( awl_battery_t* b ) {
     changed |= atomic_exchange( &b->ac, ac ) != ac;
     return changed;
 }
+
+/** reads the battery's attribute file name into buf (up to n-1 bytes, the
+ * trailing newline cut off); returns 0, else -1 with buf "" */
+static int bat_attr( const awl_battery_t* b, const char* name, char* buf, size_t n ) {
+    char path[sizeof(b->dir) + 64];
+    snprintf( path, sizeof(path), "%s%s", b->dir, name );
+    *buf = '\0';
+    FILE* f = *b->dir ? fopen( path, "r" ) : NULL;
+    if (!f) return -1;
+    size_t r = fread( buf, 1, n-1, f );
+    buf[r] = '\0';
+    fclose( f );
+    buf[strcspn( buf, "\n" )] = '\0';
+    return 0;
+}
+
+static const char* const threshold_files[2] = {
+    "charge_control_start_threshold", "charge_control_end_threshold",
+};
+
+void bat_thresholds( const awl_battery_t* b, int* start, int* end ) {
+    int* v[2] = { start, end };
+    for (int i = 0; i < 2; i++) {
+        char buf[16];
+        char* e;
+        *v[i] = -1;
+        if (bat_attr( b, threshold_files[i], buf, sizeof buf )) continue;
+        long l = strtol( buf, &e, 10 );
+        if (e != buf && l >= 0 && l <= 100) *v[i] = (int)l;
+    }
+}
+
+int bat_threshold_set( const awl_battery_t* b, int end, int percent ) {
+    char path[sizeof(b->dir) + 64];
+    snprintf( path, sizeof(path), "%s%s", b->dir, threshold_files[!!end] );
+    FILE* f = fopen( path, "w" );
+    if (!f) return errno;
+    /* sysfs takes it at the write, which fclose() does */
+    int err = fprintf( f, "%d\n", percent ) < 0 ? errno : 0;
+    if (fclose( f ) && !err) err = errno;
+    return err;
+}
+
+void bat_status( const awl_battery_t* b, char* buf, size_t n ) {
+    bat_attr( b, "status", buf, n );
+}
