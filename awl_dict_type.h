@@ -7,7 +7,7 @@
 typedef struct awl_dict_t awl_dict_t;
 
 /** what the functions return */
-enum {
+enum awl_dict_result {
     /** done, found */
     AWL_DICT_OK = 0,
     /** no such key, or the iteration is over */
@@ -19,7 +19,7 @@ enum {
 };
 
 /** what an :c:type:`awl_dict_val_t` holds */
-enum {
+enum awl_dict_kind {
     /** ptr: a plain pointer, never touched by the dict */
     AWL_DICT_KIND_PTR = 0,
     /** str: a string; set copies it, the dict owns the copy */

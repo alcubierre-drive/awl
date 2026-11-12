@@ -18,7 +18,7 @@
 void arrange(awl_server_t *srv, Monitor *m);
 /** m's selected layout */
 const Layout *sellayout(Monitor *m);
-/** l's index in cfg->layouts, -1 if it isn't one of them */
+/** l's index in :c:member:`cfg->layouts <awl_config_t.layouts>`, -1 if it isn't one of them */
 int layoutindex(awl_server_t *srv, const Layout *l);
 /** After cfg changed: the monitors' layouts point into the old table (which
  * may be about to be unloaded); same index in the new one, or its first */

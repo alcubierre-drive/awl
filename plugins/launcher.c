@@ -28,11 +28,11 @@
 #include <unistd.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
-#define CFG (&awl_plugin_config()->launcher)
-#define COLORS (&awl_plugin_config()->colors)
+#define CFG (&la->p->plugin_config.launcher)
+#define COLORS (&la->p->plugin_config.colors)
 
 /** the launcher's limits and times */
-enum {
+enum launcher_limits {
     /** after an inotify event, wait this long for more before scanning */
     SETTLE_MS = 200,
     /** checks this often whether a directory that was missing is there */
@@ -116,8 +116,7 @@ static void msgs_free( msg_t* m ) {
 typedef struct {
     awl_thread_t thread;
     /** set before the thread starts, then read-only */
-    char* icon_theme;
-    char* state_home;
+    char* icon_theme, * state_home;
     /** thread -> main: a new index, NULL if none; handed over whole */
     _Atomic(index_t*) pending;
     pthread_mutex_t lock;
@@ -134,7 +133,7 @@ typedef struct {
     char* id;
     long count;
     long long last;
-    /** counts_add()'s sort key: the frecency at its now */
+    /** :c:func:`counts_add`'s sort key: the frecency at its now */
     double key;
 } count_t;
 
@@ -639,10 +638,12 @@ static void* indexer( void* data ) {
 /** a result: an entry of the index, its score */
 typedef struct {
     int entry, score;
-    /** the rest of the order (result_cmp()): the entry's frecency, its name,
-     * and the name's length for a query (0 without one) */
+    /** the rest of the order (result_cmp()), from here on: the entry's
+     * frecency */
     double frecency;
+    /** its name */
     const char* name;
+    /** the name's length for a query, 0 without one */
     size_t len;
 } result_t;
 
@@ -694,7 +695,7 @@ struct awl_launcher {
     awl_fuzzy_tables_t* fz;
 };
 
-static int bar( void ) {
+static int bar( const awl_launcher_t* la ) {
     return CFG->layout == AWL_LAUNCHER_BAR;
 }
 
@@ -1029,7 +1030,7 @@ static int measure_bar( awl_launcher_t* la, struct fcft_font* font, int max_w, i
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
     awl_launcher_t* la = data;
     la->scale = scale;
-    if (bar()) return measure_bar( la, font, max_w, max_h, w, h );
+    if (bar( la )) return measure_bar( la, font, max_w, max_h, w, h );
     const int fh = font->height;
     la->pad = px( la, 6 );
     la->gap = px( la, 10 );
@@ -1109,7 +1110,7 @@ static int marks( awl_fuzzy_tables_t* tb, const awl_fuzzy_query_t* fq, const cha
 
 static void paint_bar( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x0, int y0, uint32_t fg, uint32_t dim,
                        uint32_t match ) {
-    const awl_popup_config_t* pc = &awl_config()->popup;
+    const awl_popup_config_t* pc = &la->p->config.popup;
     paint_query( la, pix, font, x0 + la->pad, x0 + la->input_w - la->pad, y0, la->h );
     if (!la->nres) {
         awl_host->text_over( pix, font, x0 + la->input_w + la->pad, y0, (unsigned)(la->w - la->input_w - la->pad),
@@ -1123,7 +1124,7 @@ static void paint_bar( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font
         const int r = la->top + i, x = x0 + la->bx[i];
         if (r == la->sel)
             awl_fill_shape( pix, (float)x, (float)(y0 + inset), (float)la->bw[i], (float)(la->h - 2 * inset),
-                            (float)px( la, pc->radius < 6 ? (float)pc->radius : 6 ), 0, awl_config()->colors.popup_hover );
+                            (float)px( la, pc->radius < 6 ? (float)pc->radius : 6 ), 0, la->p->config.colors.popup_hover );
         int tx = x + la->pad;
         if (icon_slot( la, r )) {
             paint_icon( la, pix, r, tx, y0, la->h );
@@ -1137,11 +1138,11 @@ static void paint_bar( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font
 
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     awl_launcher_t* la = data;
-    const awl_popup_config_t* pc = &awl_config()->popup;
-    const awl_colors_t* ak = &awl_config()->colors;
+    const awl_popup_config_t* pc = &la->p->config.popup;
+    const awl_colors_t* ak = &la->p->config.colors;
     const awl_plugin_colors_t* k = COLORS;
     const uint32_t fg = ak->popup_fg, dim = k->launcher_dim.v, match = k->launcher_match.v;
-    if (bar()) {
+    if (bar( la )) {
         paint_bar( la, pix, font, x0, y0, fg, dim, match );
         return;
     }
@@ -1164,7 +1165,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         const int r = la->top + i, y = ry0 + i * la->row_h;
         if (r == la->sel)
             awl_fill_shape( pix, (float)x0, (float)y, (float)la->w, (float)la->row_h,
-                            (float)px( la, pc->radius < 6 ? (float)pc->radius : 6 ), 0, awl_config()->colors.popup_hover );
+                            (float)px( la, pc->radius < 6 ? (float)pc->radius : 6 ), 0, la->p->config.colors.popup_hover );
         x = x0 + la->pad;
         /* the run mode has no icons, nor their column */
         if (!run_mode( la )) {
@@ -1187,7 +1188,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
  * query, or none */
 static int hit( void* data, int x, int y ) {
     awl_launcher_t* la = data;
-    if (bar()) {
+    if (bar( la )) {
         for (int i = 0; i < la->nshown; i++)
             if (x >= la->bx[i] && x < la->bx[i] + la->bw[i] && y >= 0 && y < la->h) return i;
         return -1;
@@ -1200,7 +1201,7 @@ static int hit( void* data, int x, int y ) {
 
 static int box( void* data, int part, int* x, int* y, int* w, int* h ) {
     awl_launcher_t* la = data;
-    if (bar()) {
+    if (bar( la )) {
         if (part < 0 || part >= la->nshown) return 0;
         *x = la->bx[part];
         *y = 0;
@@ -1227,7 +1228,7 @@ static void choose( awl_launcher_t* la, int r ) {
     if (r < 0) r = 0;
     if (r >= la->nres) r = la->nres - 1;
     la->sel = r;
-    if (bar()) {
+    if (bar( la )) {
         awl_host->window_redraw( awl_host->srv, la->win );
         return;
     }
@@ -1347,7 +1348,7 @@ static void query_back( awl_launcher_t* la, int word ) {
 
 /** results a page up or down moves */
 static int page( awl_launcher_t* la ) {
-    const int n = bar() ? la->nshown : la->rows;
+    const int n = bar( la ) ? la->nshown : la->rows;
     return n > 0 ? n : 1;
 }
 
@@ -1355,7 +1356,7 @@ static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods
     awl_launcher_t* la = data;
     const int ctrl = mods & WLR_MODIFIER_CTRL, other = mods & (WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO);
     if (other) return 0;
-    if (bar() && (sym == XKB_KEY_Left || sym == XKB_KEY_Right)) {
+    if (bar( la ) && (sym == XKB_KEY_Left || sym == XKB_KEY_Right)) {
         choose( la, la->sel + (sym == XKB_KEY_Left ? -1 : 1) );
         return 1;
     }
@@ -1409,7 +1410,7 @@ static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, d
                     void* data ) {
     awl_launcher_t* la = data;
     /* the bar layout's row goes sideways too */
-    if (orientation != 0 && !bar()) return;
+    if (orientation != 0 && !bar( la )) return;
     la->acc += value120 ? value120 / 120.0 : delta / 10.0;
     const int steps = (int)la->acc;
     if (!steps) return;
@@ -1457,7 +1458,7 @@ void awl_launcher_toggle( awl_launcher_t* la, int mode ) {
     index_take( la );
     la->query[0] = '\0';
     filter( la );
-    if (bar())
+    if (bar( la ))
         awl_host->window_show_at( awl_host->srv, la->win, m, CFG->strip_at, 0, 0 );
     else
         awl_host->window_show_at( awl_host->srv, la->win, m, CFG->at, 0, CFG->dy );
@@ -1477,7 +1478,7 @@ awl_launcher_t* awl_launcher_start( awl_plugin_data_t* p ) {
     awl_dict_val_t v;
     if (!x) return la;
     pthread_mutex_init( &x->lock, NULL );
-    const char* theme = awl_config()->tray.icon_theme;
+    const char* theme = la->p->config.tray.icon_theme;
     x->icon_theme = theme ? strdup( theme ) : NULL;
     AWL_HOST_CFG_LOCK( awl_host );
     if (AWL_HOST_CFG_GET( awl_host, "state_home", &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR)

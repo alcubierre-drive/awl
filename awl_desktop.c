@@ -25,8 +25,8 @@ typedef struct DesktopView {
     int drawn;
 } DesktopView;
 
-/** The panels (:c:member:`awl_server_t.desktop`), from desktop_init() to
- * desktop_fini() */
+/** The panels (:c:member:`awl_server_t.desktop`), from :c:func:`desktop_init` to
+ * :c:func:`desktop_fini` */
 struct awl_desktop {
     struct wlr_scene_tree* tree;
     desktop_style_t cfg;

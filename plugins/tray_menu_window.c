@@ -15,7 +15,7 @@
 #include "tray_menu.h"
 #include "tray_tooltip.h"
 #include "../awl_log.h"
-#include "../plugins.h" /* awl_config() */
+#include "../plugins.h"
 #include "../icons/icon.h"
 
 #include <linux/input-event-codes.h>
@@ -238,9 +238,9 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
                    int hover ) {
     level_t* L = data;
     awl_tray_menu_window_t* mw = L->mw;
-    const awl_colors_t* k = &awl_config()->colors;
+    const awl_colors_t* k = &mw->p->config.colors;
     const uint32_t dim = k->menu_dim.v, highlight_fg = k->menu_highlight_fg.v;
-    const int radius = MIN( awl_config()->popup.menu.radius.v, 4 );
+    const int radius = MIN( mw->p->config.popup.menu.radius.v, 4 );
     const level_t* sub = child_of( mw, L );
     L->x0 = x0;
     for (int i = L->top; i < L->top + L->shown; i++) {

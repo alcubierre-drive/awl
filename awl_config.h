@@ -29,7 +29,7 @@ void configuse(awl_server_t *srv);
  * are set at the start; after that, every reload that changes one of them
  * does it again. Blocks for up to a few seconds. */
 void environmentimport(void);
-/** wlroots' log level: cfg->wlr_log_level, WLR_DEBUG with awl -d; at
+/** wlroots' log level: :c:member:`cfg->wlr_log_level <awl_config_t.wlr_log_level>`, WLR_DEBUG with awl -d; at
  * startup and after every config change */
 void wlrloginit(awl_server_t *srv);
 /** No bar is visible while locked or with every output off (unplugged or

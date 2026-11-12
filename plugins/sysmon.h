@@ -29,7 +29,7 @@ awl_sysmon_t* awl_sysmon_start( awl_plugin_data_t* p );
 /** gives back the window and the state (the plugin library's fini) */
 void awl_sysmon_stop( awl_sysmon_t* sm );
 /** Shows the popup for w on its monitor, centered on center_x (logical
- * pixels from the monitor's left edge). Sets w->popup_window. */
+ * pixels from the monitor's left edge). Sets :c:member:`w->popup_window <widget_t.popup_window>`. */
 void awl_sysmon_show( awl_sysmon_t* sm, widget_t* w, int center_x );
 void awl_sysmon_hide( awl_sysmon_t* sm );
 /** Redraws the popup if it is shown and there are new samples; call on

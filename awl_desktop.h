@@ -40,14 +40,14 @@ void desktop_fini( awl_desktop_t* desk );
 void desktop_configure( awl_desktop_t* desk, const desktop_style_t* cfg );
 
 /** m's bar must have its font loaded (m->bar.font); the panel draws in
- * m->desktopfont, else in that */
+ * :c:member:`m->desktopfont <Monitor.desktopfont>`, else in that */
 void desktop_addmon( awl_desktop_t* desk, Monitor* m );
 /** drops m's panel */
 void desktop_removemon( awl_desktop_t* desk, Monitor* m );
 /** redraws m's panel if anything it shows changed (the library's content,
  * usable area, scale), hides it if m is disabled; cheap otherwise */
 void desktop_update( awl_desktop_t* desk, Monitor* m );
-/** m's bar font (m->bar.font) or m->desktopfont was reloaded (scale or
+/** m's bar font (m->bar.font) or :c:member:`m->desktopfont <Monitor.desktopfont>` was reloaded (scale or
  * config change). Not part of
  * :c:func:`desktop_update`'s check: a new font can land at the old one's address,
  * and on a scale change the layout is arranged before :c:func:`updatebar`

@@ -71,12 +71,12 @@ void awl_bar_setup(awl_bar_t *bar, Monitor *m);
  * its font) if none loads. */
 struct fcft_font *awl_bar_set_font(awl_bar_t *bar, const char *name, float size, float scale,
         int fallback);
-/** makes bar->pix an image of bits, see :c:func:`awl_draw_image` */
+/** makes :c:member:`bar->pix <awl_bar_t.pix>` an image of bits, see :c:func:`awl_draw_image` */
 void awl_bar_prepare_drawing(awl_bar_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride);
 /** lets go of what :c:func:`awl_bar_prepare_drawing` pointed at */
 void awl_bar_finish_drawing(awl_bar_t *bar);
 /** gives back bar's font and image, frees its widgets and empties it: its
- * monitor has no bar anymore (bar->m is NULL) */
+ * monitor has no bar anymore (:c:member:`bar->m <awl_bar_t.m>` is NULL) */
 void awl_bar_teardown(awl_bar_t *bar);
 /** Frees every widget's userdata and empties the widget lists, so nothing in
  * the bar points into ``libawlplugins.so`` anymore. */

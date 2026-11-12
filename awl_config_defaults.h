@@ -5,7 +5,7 @@
  * changes (:c:member:`awl_host_t.config_defaults`). Only awl_config.c includes it:
  * every file that did would get its own copy. Every setting is here with its
  * default; one left zero is a comment saying what zero means. Copy from here
- * what to change into plugins_config.c's configure(). The plugins' own
+ * what to change into plugins_config.c's :c:func:`configure`. The plugins' own
  * defaults are in plugins_config_defaults.h.
  */
 #include "awl_config.h"

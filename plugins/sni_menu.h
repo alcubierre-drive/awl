@@ -19,7 +19,7 @@
 /** an item's com.canonical.dbusmenu: its layout and the requests for it; opaque */
 typedef struct sni_menu sni_menu_t;
 
-/** the menus of a tray (awl_sni_t), kept in it */
+/** the menus of a tray (:c:type:`awl_sni_t`), kept in it */
 typedef struct sni_menus_t {
     sni_menu_t* head;
     /** the next menu's serial */
@@ -47,9 +47,9 @@ void sni_menu_event( sni_menu_t* menu, int32_t id, const char* event );
 sni_menus_t* sni_menus( awl_sni_t* s );
 /** s's icon themes, current */
 awl_icons_t* sni_themes( awl_sni_t* s );
-/** hand snap, or that serial's menu is gone, to the main thread
- * (tray_menu_window.c) */
+/** hand snap to the main thread (tray_menu_window.c) */
 void sni_to_main_snap( awl_sni_t* s, awl_tray_menu_snap_t* snap );
+/** tell the main thread (tray_menu_window.c) that serial's menu is gone */
 void sni_to_main_gone( awl_sni_t* s, uint64_t serial );
 
 /** what an asynchronous call's callback gets as its userdata: the tray,

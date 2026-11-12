@@ -1,3 +1,23 @@
+/**
+ * Tracks the backlight-tooler daemon (``backlight-tooler -D``) through its
+ * D-Bus interface: whether it owns ``org.BacklightTooler`` on the user bus,
+ * whether its automatic updates are on (``Interval`` > 0), and the last
+ * screen and webcam brightness it saw. All of it is followed by signals,
+ * the bus's ``NameOwnerChanged`` (the daemon starting or stopping) and the
+ * daemon's ``PropertiesChanged``, so nothing is polled. Runs on the
+ * plugins' shared loop (poller.h): the bus
+ * fd and its timeout are event sources there, and every call is
+ * asynchronous, so a slow bus never holds up the other plugins. The bar's
+ * requests (:c:func:`backlight_toggle`, :c:func:`backlight_update`, :c:func:`backlight_adjust`) go out on the same
+ * connection; they are the only thing that starts the daemon, through its
+ * systemd user unit, never D-Bus auto-start. Everything but the atomics and
+ * the wake fd (:c:member:`awl_backlight_t.wake_fd`) is only touched on the loop thread, or before it starts and
+ * after it has stopped; the first connection is made from the loop too. If
+ * the bus is unavailable or the connection drops, the last known state is
+ * kept, requests are dropped, and a reconnect is attempted every
+ * :c:macro:`RETRY_USEC`.
+ */
+
 #include "backlight.h"
 #include "../awl_host.h"
 #include <stdarg.h>
@@ -12,27 +32,15 @@
 #include <sys/time.h>
 #include <systemd/sd-bus.h>
 
-/** Tracks the backlight-tooler daemon (``backlight-tooler -D``) through its
- * D-Bus interface: whether it owns ``org.BacklightTooler`` on the user bus,
- * whether its automatic updates are on (``Interval`` > 0), and the last
- * screen and webcam brightness it saw. All of it is followed by signals,
- * NameOwnerChanged and the daemon's PropertiesChanged, so nothing is
- * polled. Runs on the plugins' shared loop (poller.h): the bus
- * fd and its timeout are event sources there, and every call is
- * asynchronous, so a slow bus never holds up the other plugins. The bar's
- * requests (:c:func:`backlight_toggle`, :c:func:`backlight_update`, :c:func:`backlight_adjust`) go out on the same
- * connection; they are the only thing that starts the daemon, through its
- * systemd user unit, never D-Bus auto-start. Everything but the atomics and
- * the wake fd is only touched on the loop thread, or before it starts and
- * after it has stopped; the first connection is made from the loop too. If
- * the bus is unavailable or the connection drops, the last known state is
- * kept, requests are dropped, and a reconnect is attempted every
- * RETRY_USEC. */
-
+/** the daemon's name on the user bus */
 #define BUS_NAME  "org.BacklightTooler"
+/** the daemon's object */
 #define BUS_PATH  "/org/BacklightTooler"
+/** the daemon's interface, its methods and properties */
 #define BUS_IFACE "org.BacklightTooler"
+/** the daemon's systemd user unit, :c:func:`start_unit` starts it */
 #define UNIT      "backlight-tooler.service"
+/** how long to wait before connecting again, after the bus failed */
 #define RETRY_USEC (30 * 1000000ull)
 /** how long a call may go unanswered before it counts as failed */
 #define CALL_TIMEOUT_USEC (2 * 1000000ull)
@@ -124,9 +132,10 @@ static int source_of( const char* v ) {
          : BACKLIGHT_SOURCE_UNKNOWN;
 }
 
-/** Reads an a{sv} of the daemon's properties, keeps those we track and
- * requests a redraw if any of them changed. ``running``: 1 if the daemon is
- * known to run now (a GetAll reply), 0 to leave it as is. */
+/** Reads the daemon's properties from m (a list of names and values),
+ * keeps those we track and requests a redraw if any of them changed.
+ * ``running``: 1 if the daemon is known to run now (m answers
+ * :c:func:`query_properties`), 0 to leave it as is. */
 static void read_properties( awl_backlight_bus_t* s, sd_bus_message* m, int running ) {
     awl_backlight_t* b = s->b;
     int changed = running ? set_int( &b->running, 1 ) : 0;
@@ -167,9 +176,11 @@ out:
     if (changed) awl_host->redraw_request();
 }
 
-/** Properties.GetAll(BUS_IFACE) -> a{sv}. An error means the daemon went
- * away or hangs; the former is told by NameOwnerChanged, which follows, and
- * the latter is no reason to drop the connection. */
+/** The answer to :c:func:`query_properties`: all of the daemon's
+ * properties, read with :c:func:`read_properties`. An error means the
+ * daemon went away or hangs; the former is told by
+ * :c:func:`on_owner_changed`, which follows, and the latter is no reason to
+ * drop the connection. */
 static int on_properties( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
     awl_backlight_bus_t* s = userdata;
@@ -197,12 +208,16 @@ static void call_daemon( awl_backlight_bus_t* s, const char* iface, const char* 
     sd_bus_message_unref( m );
 }
 
+/** Asks the daemon for all its properties (:c:macro:`BUS_IFACE`'s); the
+ * answer goes to :c:func:`on_properties`. */
 static void query_properties( awl_backlight_bus_t* s ) {
     call_daemon( s, "org.freedesktop.DBus.Properties", "GetAll", on_properties, "s", BUS_IFACE );
 }
 
-/** PropertiesChanged(s interface, a{sv} changed, as invalidated), only the
- * daemon's interface (arg0 in the match) */
+/** The daemon says some of its properties changed (the bus is told to send
+ * only those of :c:macro:`BUS_IFACE`): the new values, read with
+ * :c:func:`read_properties`, and the names of those changed without their
+ * value, which :c:func:`query_properties` asks for. */
 static int on_properties_changed( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
     awl_backlight_bus_t* s = userdata;
@@ -222,8 +237,10 @@ static int on_properties_changed( sd_bus_message* m, void* userdata, sd_bus_erro
     return 0;
 }
 
-/** NameOwnerChanged(s name, s old_owner, s new_owner), only for :c:macro:`BUS_NAME`
- * (arg0 in the match) */
+/** The bus says who owns :c:macro:`BUS_NAME` now (the bus is told to send
+ * only this name's changes): someone, the daemon started, so ask it for its
+ * properties (:c:func:`query_properties`); no one, it stopped
+ * (:c:func:`set_gone`). */
 static int on_owner_changed( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
     awl_backlight_bus_t* s = userdata;
@@ -236,7 +253,10 @@ static int on_owner_changed( sd_bus_message* m, void* userdata, sd_bus_error* re
     return 0;
 }
 
-/** GetNameOwner(s) -> s; NameHasNoOwner if the daemon isn't running */
+/** The bus's answer to who owns :c:macro:`BUS_NAME` now, asked once
+ * connected: an error that no one does, the daemon isn't running
+ * (:c:func:`set_gone`); else it is, so ask it for its properties
+ * (:c:func:`query_properties`). */
 static int on_owner( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
     awl_backlight_bus_t* s = userdata;
@@ -356,9 +376,10 @@ static void bus_update( awl_backlight_bus_t* s ) {
         s->timeout = s->api->time_new( s->api, &tv, bus_timeout, s );
 }
 
-/** Properties.Set(Interval): refused (a daemon without a writable Interval,
- * an interval it won't take) or not answered, so the toggle's guess is
- * wrong; back to what the daemon says. */
+/** The answer to a toggle's setting the daemon's ``Interval``: an error
+ * (a daemon whose ``Interval`` can't be set, an interval it won't take, no
+ * answer in time) means the toggle's guess is wrong, so back to what the
+ * daemon says (:c:func:`query_properties`). */
 static int on_set( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
     awl_backlight_bus_t* s = userdata;
@@ -366,7 +387,8 @@ static int on_set( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) 
     return 0;
 }
 
-/** the daemon's user unit; it updates once when it starts */
+/** Starts the daemon's user unit (:c:macro:`UNIT`) through systemd; the
+ * daemon updates once when it starts. */
 static void start_unit( awl_backlight_bus_t* s ) {
     if (sd_bus_call_method_async( s->bus, NULL, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
                 "org.freedesktop.systemd1.Manager", "StartUnit", NULL, NULL, "ss", UNIT, "replace" ) < 0)
@@ -397,7 +419,8 @@ static void do_update( awl_backlight_bus_t* s ) {
         start_unit( s );
 }
 
-/** Adjust() is done, or failed: the daemon said what it had to */
+/** The daemon's answer to an ``Adjust()``, done or failed: one ask fewer in
+ * :c:member:`awl_backlight_t.unanswered` (:c:func:`answered`) */
 static int on_adjusted( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)m; (void)ret_error;
     awl_backlight_bus_t* s = userdata;

@@ -19,13 +19,13 @@ typedef struct {
 
 /** The machine's IPv4 addresses. */
 struct awl_ipaddr_t {
-    /** output, under :c:member:`~awl_ipaddr_t.lock`: the first n_addr IPv4 addresses of the
+    /** output, under :c:member:`~awl_ipaddr_t.lock`: the first :c:member:`~awl_ipaddr_t.n_addr` IPv4 addresses of the
      * interfaces not excluded below, in the kernel's order; none means
      * disconnected. */
     awl_ipaddr_entry_t entry[AWL_IP_MAX];
-    /** output, under :c:member:`~awl_ipaddr_t.lock`: n_addr how many entries there are; best the
+    /** output, under :c:member:`~awl_ipaddr_t.lock`: :c:member:`~awl_ipaddr_t.n_addr` how many entries there are; best the
      * index of NetworkManager's primary
-     * connection's address if NetworkManager runs and has one (then by_nm),
+     * connection's address if NetworkManager runs and has one (then :c:member:`~awl_ipaddr_t.by_nm`),
      * else of the one the kernel would send from to the internet (the source
      * of ``ip route get 1.1.1.1``) if routed, else the first one; -1 without
      * any. routed: whether the kernel has a route to the internet.
@@ -36,6 +36,7 @@ struct awl_ipaddr_t {
 
     /** input, read-only after :c:func:`ip_init`: interface names to skip */
     char exclude_list[4][16];
+    /** how many names :c:member:`~awl_ipaddr_t.exclude_list` has */
     int n_exclude_list;
 
     /** rtnetlink IPv4 address and route events, -1 if unavailable */

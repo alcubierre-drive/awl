@@ -228,7 +228,7 @@ togglepertag(awl_server_t *srv, const Arg *arg)
     barsdirty(srv);
 }
 
-/** the next (arg->i > 0) or previous (< 0) of cfg->layouts on selmon */
+/** the next (:c:member:`arg->i <Arg.i>` > 0) or previous (< 0) of :c:member:`cfg->layouts <awl_config_t.layouts>` on selmon */
 void
 cycle_layout(awl_server_t *srv, const Arg* arg)
 {
@@ -239,7 +239,7 @@ cycle_layout(awl_server_t *srv, const Arg* arg)
     setlayout(srv, &(Arg){.i = (i % n + n) % n});
 }
 
-/** like dwm: cfg->layouts.v[arg->i] for selmon; with a negative arg->i (or
+/** like dwm: cfg->layouts.v[:c:member:`arg->i <Arg.i>`] for selmon; with a negative :c:member:`arg->i <Arg.i>` (or
  * the one it has), back to its previous layout */
 void
 setlayout(awl_server_t *srv, const Arg *arg)

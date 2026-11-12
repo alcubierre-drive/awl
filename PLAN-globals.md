@@ -180,9 +180,11 @@ structs and states the rule:
   menu window and tooltip, the widgets' shared state). Its functions take it,
   its callbacks get it as data, it keeps the root as `->p` where it reaches
   other modules. NULL (out of memory) is a no-op everywhere.
-- The entry points (api, actions, bar widgets) start from
-  `awl_plugin_get()` / `AWL_PLUGIN_MODULE( m )`; no module calls them.
-- The configs moved into the root (`awl_config()` reads it). No thread reads
+- The entry points (api, actions, bar widgets' callbacks) start from
+  `awl_plugin_get()`; nothing else does. Everything below them gets the
+  root, or the part it needs, as an argument.
+- The configs moved into the root (`p->config`, `p->plugin_config`; no
+  getters). No thread reads
   them: sni copies its icon theme before its loop starts, as the launcher
   and notify_image already did.
 - Threads own their structs (a stuck one's is leaked), never the root.

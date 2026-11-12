@@ -19,8 +19,8 @@ typedef enum {
      * :c:func:`logindupdate`): no lock on ``loginctl lock-session``, or none
      * before suspend */
     AwlAlertLogind,
-    /** the locker lockscreen() started exited before it ever locked: a
-     * wrong cfg->lock.locker, or it crashed */
+    /** the locker :c:func:`lockscreen` started exited before it ever locked: a
+     * wrong :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`, or it crashed */
     AwlAlertLocker,
     /** how many there are */
     AwlAlertLast,

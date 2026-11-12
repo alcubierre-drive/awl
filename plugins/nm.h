@@ -4,7 +4,7 @@
 #include <pulse/mainloop-api.h>
 
 /** NetworkManager's connectivity check (its ``Connectivity`` property) */
-enum {
+enum awl_nm_connectivity {
     AWL_NM_CONNECTIVITY_UNKNOWN = 0,
     AWL_NM_CONNECTIVITY_NONE = 1,
     AWL_NM_CONNECTIVITY_PORTAL = 2,
@@ -19,10 +19,11 @@ typedef struct {
     int present;
     /** AWL_NM_CONNECTIVITY_* */
     int connectivity;
-    /** the primary connection's first IPv4 address (network byte order) and
-     * the interface it is on ("" if unknown); has_addr 0 without either */
+    /** whether addr and ifname are set: 0 without either */
     int has_addr;
+    /** the primary connection's first IPv4 address, network byte order */
     uint32_t addr;
+    /** the interface it is on, "" if unknown */
     char ifname[16];
 } awl_nm_state_t;
 

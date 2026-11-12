@@ -4,7 +4,7 @@
  * The battery's popup, shared by the dock and the battery widget (either's
  * hover opens it), an awl_window (awl_window.h) that draws itself: the
  * charge and the battery's status, what the machine runs and sits on, and
- * the charge thresholds (plugins/bat.h's bat_thresholds()), each with ‹ ›
+ * the charge thresholds (plugins/bat.h's :c:func:`bat_thresholds`), each with ‹ ›
  * buttons that step it by :c:member:`awl_plugin_config_t.battery`'s
  * threshold_step; the wheel over a threshold's row steps it too. The start
  * stays below the end. A threshold the battery doesn't have isn't shown.
@@ -23,7 +23,7 @@ awl_batpopup_t* awl_batpopup_start( awl_plugin_data_t* p );
 /** gives back the window and the state (the plugin library's fini) */
 void awl_batpopup_stop( awl_batpopup_t* bp );
 /** Shows the popup for w on its monitor, centered on center_x (logical
- * pixels from the monitor's left edge). Sets w->popup_window. */
+ * pixels from the monitor's left edge). Sets :c:member:`w->popup_window <widget_t.popup_window>`. */
 void awl_batpopup_show( awl_batpopup_t* bp, widget_t* w, int center_x );
 void awl_batpopup_hide( awl_batpopup_t* bp );
 /** Re-reads what the popup shows while it is shown, redrawing it if that

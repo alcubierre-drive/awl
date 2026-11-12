@@ -41,7 +41,7 @@ typedef enum awl_logind_flags {
     /** our session's ``Lock`` signal (``loginctl lock-session``) */
     AWL_LOGIND_LOCK = 1,
     /** ``PrepareForSleep``, with a delay inhibitor held, so suspend waits
-     * for the lock; only with the config's lock.on_suspend */
+     * for the lock; only with the config's :c:member:`lock.on_suspend <awl_config_t.lock.on_suspend>` */
     AWL_LOGIND_SLEEP = 2,
 } awl_logind_flags_t;
 
@@ -53,7 +53,7 @@ typedef enum awl_notif_urgency {
 } awl_notif_urgency_t;
 
 /** :c:member:`awl_notif_t.flags`, from its hints */
-enum {
+enum awl_notif_flags {
     /** ``transient``: not for a history */
     AWL_NOTIF_TRANSIENT = 1,
     /** ``resident``: an action doesn't close it */
@@ -84,8 +84,8 @@ typedef enum {
 
 /**
  * How a notification looks beyond :c:member:`awl_plugin_config_t.notify`, for awl's
- * own (:c:type:`awl_notif_send_t`); D-Bus has no say in it, a D-Bus one's is all
- * the config's. What is unset (:c:type:`awl_opt_int_t`, all of it zeroed) is
+ * own (:c:type:`awl_notif_send_t`); a D-Bus client can't set it, a D-Bus
+ * notification looks all as the config says. What is unset (:c:type:`awl_opt_int_t`, all of it zeroed) is
  * the config's, filled in when it is shown.
  */
 typedef struct awl_notif_look_t {
@@ -94,11 +94,12 @@ typedef struct awl_notif_look_t {
     /** logical pixels: the window's content width, the image's side */
     awl_opt_int_t width, image_size;
     /** text, background, frame (unset: its urgency's colors.notify_*), the
-     * progress bar's fill (unset: colors.notify_progress, else the frame's) */
+     * progress bar's fill (unset: :c:member:`colors.notify_progress <awl_plugin_colors_t.notify_progress>`, else the frame's) */
     awl_opt_color_t fg, bg, frame, progress;
     /** 0 to 100: a second fill from the left, over the first, in
-     * over_color (unset: the library's colors.bad); 0 none */
+     * :c:member:`~awl_notif_look_t.over_color` (unset: the library's colors.bad); 0 none */
     int over;
+    /** :c:member:`~awl_notif_look_t.over`'s color */
     awl_opt_color_t over_color;
     /** logical pixels: the frame's width (0: none; unset: the popups',
      * :c:member:`awl_config_t.popup`) */
@@ -122,9 +123,11 @@ typedef struct awl_notif_t {
      * image_data if its data isn't NULL, image_path, app_icon (each an
      * absolute path, a file:// URL or an icon name), desktop_entry's Icon */
     struct {
-        /** checked: 8 bits, channels 4 if has_alpha else 3, 1 to 1024
+        /** checked: 8 bits, channels 4 if :c:member:`~awl_notif_t.image_data.has_alpha` else 3, 1 to 1024
          * pixels on each side, rows packed (stride w * channels) */
         const uint8_t* data;
+        /** see data: its width and height, the bytes from a row to the
+         * next, whether it has alpha, bytes per pixel */
         int w, h, stride, has_alpha, channels;
     } image_data;
     const char *image_path, *app_icon, *desktop_entry;
@@ -132,6 +135,7 @@ typedef struct awl_notif_t {
     /** actions[2 * i] the key, actions[2 * i + 1] the label, i < nactions;
      * the key "default" is the click on the notification */
     const char* const* actions;
+    /** how many actions (key and label) there are */
     int nactions;
     awl_notif_urgency_t urgency;
     /** the ``value`` hint, 0 to 100 (a progress bar); -1 none */
@@ -187,6 +191,7 @@ typedef struct awl_notif_send_t {
     /** replaces the open one of awl's own with the same tag in place (its
      * id, place and timer's hold stay); NULL none */
     const char* tag;
+    /** how it looks beyond the config, which a D-Bus client can't set */
     awl_notif_look_t look;
 } awl_notif_send_t;
 
@@ -200,7 +205,7 @@ typedef struct awl_notif_send_t {
 typedef struct awl_host_t {
     /** :c:macro:`AWL_PLUGIN_ABI` as awl was built */
     uint32_t abi;
-    /** sizeof_host, sizeof_draw, sizeof_widget and sizeof_config: the
+    /** :c:member:`~awl_host_t.sizeof_host`, :c:member:`~awl_host_t.sizeof_draw`, :c:member:`~awl_host_t.sizeof_widget` and sizeof_config: the
      * layouts the library compiles against. :c:type:`Monitor` and :c:type:`Client` aren't
      * among them: the library only passes them back to awl, it never reads
      * them (what a bar's widgets need of its monitor is in :c:type:`awl_bar_t`). */
@@ -208,13 +213,13 @@ typedef struct awl_host_t {
 
     /* ---- any thread ---- */
 
-    /** :c:func:`awl_redraw_request`, called as ``awl_host->redraw_request()`` */
+    /** :c:func:`awl_redraw_request`, called as :c:member:`awl_host->redraw_request() <awl_host_t.redraw_request>` */
     void (*redraw_request)( void );
     /** :c:func:`awl_dbg_printf`: the libraries' :c:macro:`awl_err_printf() <awl_err_printf>` & co. (awl_log.h)
      * expand to it */
     void (*log)( awl_loglevel_t loglevel, const char* fmt, ... )
         __attribute__(( format( printf, 2, 3 ) ));
-    /** :c:func:`awl_lock_request`: lock the screen (the config's lock.locker),
+    /** :c:func:`awl_lock_request`: lock the screen (the config's :c:member:`lock.locker <awl_config_t.lock.locker>`),
      * unless it is or is about to be */
     void (*lock_request)( void );
     /** :c:func:`awl_lock_logind_state`: what the logind thread listens for now,
@@ -246,7 +251,7 @@ typedef struct awl_host_t {
 
     /* ---- drawing ---- */
 
-    /** :c:func:`awl_draw_text`, text in font into pix, e.g. a bar widget's draw()
+    /** :c:func:`awl_draw_text`, text in font into pix, e.g. a bar widget's :c:member:`draw() <widget_t.draw>`
      * with its pix and its bar's font */
     int (*text)( pixman_image_t* pix, struct fcft_font* font, int x, int y, unsigned int w,
                  unsigned int h, unsigned int lpad, const char* text, pixman_color_t fg,
@@ -319,7 +324,7 @@ typedef struct awl_host_t {
      * pixels (0: none), < 0 for the popups' (:c:member:`awl_config_t.popup`) */
     void (*window_set_border_width)( awl_server_t* srv, awl_window_t* win, int width );
     /** :c:func:`popuproom`: the room the window has on m at a spot
-     * (window_show_at): m's window area less the window's margins, layout
+     * (:c:member:`~awl_host_t.window_show_at`): m's window area less the window's margins, layout
      * coordinates */
     void (*window_room)( awl_server_t* srv, awl_window_t* win, Monitor* m, int* x, int* y, int* w, int* h );
     /** :c:func:`popupbox`: where the window was last placed, layout coordinates
@@ -362,21 +367,21 @@ typedef struct awl_host_t {
     void (*window_set_click)( awl_server_t* srv, awl_window_t* win,
             void (*click)( awl_window_t* win, int row, int col, uint32_t button, void* data ), void* data );
     /** :c:func:`awl_window_set_scroll`: the window takes the pointer, scrolling
-     * goes to scroll (row, col as for window_set_click; orientation a
+     * goes to scroll (row, col as for :c:member:`~awl_host_t.window_set_click`; orientation a
      * WL_POINTER_AXIS_*, 0 vertical; delta positive down or right;
      * value120 a wheel's in 120ths of a notch, 0 for a touchpad's). Like
-     * window_set_click, a window with either callback takes all of the
+     * :c:member:`~awl_host_t.window_set_click`, a window with either callback takes all of the
      * pointer: presses and scrolling its callbacks don't take are dropped. */
     void (*window_set_scroll)( awl_server_t* srv, awl_window_t* win,
             void (*scroll)( awl_window_t* win, int row, int col, uint32_t orientation,
                             double delta, int32_t value120, void* data ), void* data );
     /** :c:func:`awl_window_set_hover`: hover( win, row, inside, data ) whenever
      * the row under the pointer changes (-1: none) or it comes onto the
-     * window or leaves it (inside); needs window_set_click's callback */
+     * window or leaves it (inside); needs :c:member:`~awl_host_t.window_set_click`'s callback */
     void (*window_set_hover)( awl_window_t* win,
             void (*hover)( awl_window_t* win, int row, int inside, void* data ), void* data );
     /** :c:func:`awl_window_set_hidden`: hidden( win, data ) whenever the window
-     * is hidden, by window_hide or by awl (a press elsewhere, its monitor
+     * is hidden, by :c:member:`~awl_host_t.window_hide` or by awl (a press elsewhere, its monitor
      * going away; not a persistent one out of sight while the screen is
      * locked); NULL: no more */
     void (*window_set_hidden)( awl_window_t* win, void (*hidden)( awl_window_t* win, void* data ), void* data );
@@ -395,10 +400,10 @@ typedef struct awl_host_t {
 
     /** the open notifications into out, newest first, at most max; returns
      * how many there are. They stay valid until the library returns to
-     * awl's loop or calls notif_close or notif_invoke. */
+     * awl's loop or calls :c:member:`~awl_host_t.notif_close` or :c:member:`~awl_host_t.notif_invoke`. */
     int (*notif_list)( awl_server_t* srv, const awl_notif_t** out, int max );
     /** closes notification id, if it is open, for reason (the user's
-     * dismissal: AWL_NOTIF_DISMISSED) */
+     * dismissal: :c:enumerator:`AWL_NOTIF_DISMISSED`) */
     void (*notif_close)( awl_server_t* srv, uint32_t id, awl_notif_reason_t reason );
     /** the user chose action key of notification id: ActionInvoked, after
      * ActivationToken with a new xdg-activation token of awl's, which the
@@ -414,7 +419,7 @@ typedef struct awl_host_t {
      * it couldn't (out of memory, the server not started) */
     uint32_t (*notif_send)( awl_server_t* srv, const awl_notif_send_t* n );
     /** the history into out, newest first, at most max; returns how many
-     * there are. Valid as notif_list's, and until notif_forget. A change
+     * there are. Valid as :c:member:`~awl_host_t.notif_list`'s, and until :c:member:`~awl_host_t.notif_forget`. A change
      * fires :c:member:`awl_plugin_api_t.notifications_changed` too. */
     int (*notif_history)( awl_server_t* srv, const awl_notif_past_t** out, int max );
     /** drops entry seq from the history, 0: all of it */
@@ -450,7 +455,7 @@ typedef struct awl_host_t {
 /** :c:func:`awl_dict_lock` on :c:member:`awl_host_t.cfg`, e.g. around getting a string and
  * using it::
  *
- *     awl_dict_val_t v;
+ *     :c:type:`awl_dict_val_t` v;
  *     AWL_HOST_CFG_LOCK( awl_host );
  *     if (AWL_HOST_CFG_GET( awl_host, "name", &v ) == AWL_DICT_OK &&
  *         v.kind == AWL_DICT_KIND_STR)

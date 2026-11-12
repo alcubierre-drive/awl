@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 43
+#define AWL_PLUGIN_ABI 44
 /** The name of the library's only exported symbol, an :c:type:`awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -83,7 +83,7 @@ typedef struct awl_arranges_t {
 typedef struct awl_plugin_api_t {
     /** :c:macro:`AWL_PLUGIN_ABI` as the library was built */
     uint32_t abi;
-    /** makes the config (plugins_config.c's configure()), then starts the
+    /** makes the config (plugins_config.c's :c:func:`configure`), then starts the
      * plugin threads; before any other call but the entry point */
     void (*init)( int paused );
     /** stops and joins every plugin thread; afterwards no code of the library

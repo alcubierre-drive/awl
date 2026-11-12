@@ -14,7 +14,7 @@
  * its daemon can be slow, so the value an ask should come to goes out at
  * once, and is corrected when all asks are answered. A change that wasn't
  * asked for goes out by its cause, with it as the summary and the bar in
- * colors.osd_unasked: the daemon's automatic brightness, an ``Update()``
+ * :c:member:`colors.osd_unasked <awl_plugin_colors_t.osd_unasked>`: the daemon's automatic brightness, an ``Update()``
  * or another client's ``Adjust()`` (the daemon's ``LastSource``), another
  * output or port; not a mixer's change, nor a (re)connection's.
  * :c:enumerator:`AWL_NOTIF_OSD`: through do-not-disturb, not in the history, the menu or
@@ -46,7 +46,7 @@ void awl_osd_redraw( awl_osd_t* o );
  * Each has one notification (by tag), replaced in place. */
 
 /** the wallpaper's now: "i/N · mode" (the timer's mode, "(off)" without a
- * timer) above its position in the folder as a bar, osd.wallpaper_icon
+ * timer) above its position in the folder as a bar, :c:member:`osd.wallpaper_icon <awl_plugin_config_t.osd.wallpaper_icon>`
  * beside it; the mode alone while a change is under way */
 void awl_osd_wallpaper( awl_osd_t* o );
 /** a wallpaper change was just asked for: :c:func:`awl_osd_wallpaper` follows once
@@ -55,7 +55,7 @@ void awl_osd_wallpaper_ask( awl_osd_t* o );
 /** awl took a wallpaper (:c:member:`awl_plugin_api_t.wallpaper_take`): shows it if a
  * change was asked for and all asked for are done */
 void awl_osd_wallpaper_taken( awl_osd_t* o );
-/** the desktop files' text alone, centered, osd.desktop_icon beside it */
+/** the desktop files' text alone, centered, :c:member:`osd.desktop_icon <awl_plugin_config_t.osd.desktop_icon>` beside it */
 void awl_osd_desktop( awl_osd_t* o, const char* text );
 /** do-not-disturb was turned on or off (:c:func:`awl_notify_set_dnd`): "Do not
  * disturb" or "Notifications enabled" alone, centered, notify's bell_icon_dnd

@@ -55,7 +55,7 @@ uint64_t awl_dict_len(const awl_dict_t *d);
 
 /** Iterate. Start with ``*cursor = 0`` and call until it returns :c:enumerator:`AWL_DICT_NOT_FOUND`::
  *
- *   uint64_t c = 0; const char *k; awl_dict_val_t v;
+ *   uint64_t c = 0; const char *k; :c:type:`awl_dict_val_t` v;
  *   while (awl_dict_next(d, &c, &k, &v) == AWL_DICT_OK) { ... }
  *
  * The returned key pointer is owned by the :c:type:`awl_dict_t` and is valid until the

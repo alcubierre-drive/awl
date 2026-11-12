@@ -14,19 +14,22 @@
 /** at most this many columns; the rest of a row goes into the last one */
 #define AWL_WINDOW_MAX_COLUMNS 16
 
-/** How a window looks; awl fills it from cfg->popup. Colors are
+/** How a window looks; awl fills it from :c:member:`cfg->popup <awl_config_t.popup>`. Colors are
  * 0xRRGGBBAA, sizes logical pixels. */
 typedef struct awl_window_style_t {
-    /** highlight: over the row under the pointer, if the window takes it */
+    /** background, text, border; highlight: over the row under the
+     * pointer, if the window takes it */
     uint32_t bg, fg, border, highlight;
+    /** the border's width, the corner radius, the padding inside the border */
     int border_width, radius, padding;
     /** the gap to the bar (the window area's edge) and to the monitor's
      * sides, see :c:func:`awl_window_margin` */
     int margin;
     /** between columns and rows */
     int column_spacing, row_spacing;
-    /** blur what is behind it, with blur_strength and blur_alpha */
+    /** blur what is behind it */
     int blur;
+    /** the blur's strength and opacity */
     float blur_strength, blur_alpha;
 } awl_window_style_t;
 
@@ -37,6 +40,7 @@ typedef struct awl_window_layout_t {
     /** each column's width, the last one cut if the image would be wider
      * than allowed */
     int widths[AWL_WINDOW_MAX_COLUMNS];
+    /** how many columns there are */
     int ncols;
     /** rows in the image, the ellipsis row included */
     int nrows;
@@ -44,10 +48,12 @@ typedef struct awl_window_layout_t {
     int maxrows;
     /** the text has more rows than fit: the last row is an ellipsis */
     int cut;
-    /** the border's width and corner radius, the first cell's top left,
-     * the spacing between columns and between rows */
+    /** the border's width */
     int border_width;
+    /** the corner radius */
     float radius;
+    /** the first cell's top left, the spacing between columns and between
+     * rows */
     int x0, y0, colsp, rowsp;
     /** the font's height, a row's */
     int fh;
@@ -62,12 +68,12 @@ int awl_window_layout( awl_window_layout_t* L, const char* text, const awl_windo
 
 /** Paints text as laid out in L into data (L->width x L->height, ARGB8888,
  * premultiplied): the frame, row highlight_row (-1: none) in
- * style->highlight, then the text in font, in style->fg. */
+ * :c:member:`style->highlight <awl_window_style_t.highlight>`, then the text in font, in style->fg. */
 void awl_window_paint( const awl_window_layout_t* L, const char* text, const awl_window_style_t* style,
                        struct fcft_font* font, int highlight_row, uint32_t* data, int32_t stride );
 
 /** Lays out a painted window (:c:type:`awl_window_painter_t`): its frame around
- * content_w x content_h pixels at scale, the content at L->x0, L->y0; no
+ * content_w x content_h pixels at scale, the content at :c:member:`L->x0 <awl_window_layout_t.x0>`, :c:member:`L->y0 <awl_window_layout_t.y0>`; no
  * cells. Returns whether there is anything to show. */
 int awl_window_layout_frame( awl_window_layout_t* L, const awl_window_style_t* style, float scale,
                              int content_w, int content_h );
@@ -83,7 +89,7 @@ void awl_window_paint_frame( const awl_window_layout_t* L, const awl_window_styl
 
 /** The cell at px, py (pixels from the image's top left) into ``*row`` and ``*col``:
  * the gap after a row or column counts to it, the ellipsis row is row
- * L->maxrows. Outside the text (the frame, the padding) both are -1, and it
+ * :c:member:`L->maxrows <awl_window_layout_t.maxrows>`. Outside the text (the frame, the padding) both are -1, and it
  * returns 0. */
 int awl_window_cell_at( const awl_window_layout_t* L, int px, int py, int* row, int* col );
 

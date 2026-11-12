@@ -38,11 +38,11 @@ typedef struct {
     struct wlr_output_layout *layout;
     struct wlr_output_manager_v1 *mgr;
     /** set while a monitor is destroyed (cleanupmon()): no bar is drawn then.
-     * The dying monitor's own bar is safe without it (barremovemon() clears
-     * m->bar.m first, and m is off mons before closemon()); what it still holds
+     * The dying monitor's own bar is safe without it (:c:func:`barremovemon` clears
+     * :c:member:`m->bar.m <awl_bar_t.m>` first, and m is off mons before closemon()); what it still holds
      * back is the other monitors' redraws while closemon() moves the clients
-     * over (arrange() and focus changes draw the bars), so they draw once,
-     * afterwards. Dates from a crash fix before barremovemon() existed; to drop
+     * over (:c:func:`arrange` and focus changes draw the bars), so they draw once,
+     * afterwards. Dates from a crash fix before :c:func:`barremovemon` existed; to drop
      * it, test unplugging and replugging a monitor. */
     int in_cleanupmon;
 } awl_outputs_t;
@@ -122,15 +122,15 @@ typedef struct awl_server_t {
 
     struct wlr_scene *scene;
     /** the scene's layers, bottom to top, :c:enum:`SceneLayer`; the wallpaper and the
-     * desktop panels are under LyrBg (awl_background.h, awl_desktop.h), awl's
+     * desktop panels are under :c:enumerator:`LyrBg` (awl_background.h, awl_desktop.h), awl's
      * popups right above LyrTop (awl_popup.h), the alerts above everything
      * (awl_alert.h) */
     struct wlr_scene_tree *layers[NUM_LAYERS];
     /** the root color behind everything, the size of all outputs */
     struct wlr_scene_rect *root_bg;
-    /** the wallpaper's, below LyrBg (awl_background.h) */
+    /** the wallpaper's, below :c:enumerator:`LyrBg` (awl_background.h) */
     struct wlr_scene_tree *background_tree;
-    /** the desktop panels', right above LyrBg (awl_desktop.h) */
+    /** the desktop panels', right above :c:enumerator:`LyrBg` (awl_desktop.h) */
     struct wlr_scene_tree *desktop_tree;
 
     struct wlr_seat *seat;
@@ -172,32 +172,32 @@ typedef struct awl_server_t {
     /* The modules' own state: each struct is defined only in its module's
      * .c, which makes it in its init; other modules go through its
      * functions. */
-    /** awl_lockscreen.c's, from lockinit() to awl_lock_fini() */
+    /** awl_lockscreen.c's, from :c:func:`lockinit` to :c:func:`awl_lock_fini` */
     struct awl_lock *lock;
-    /** awl_bar.c's: the hover, the redraw, the fonts in use; from barinit() to barfree() */
+    /** awl_bar.c's: the hover, the redraw, the fonts in use; from :c:func:`barinit` to :c:func:`barfree` */
     struct awl_bars *bars;
-    /** awl_wallpaper.c's: the timer and its mode; from wallpaperinit() to wallpaperfini() */
+    /** awl_wallpaper.c's: the timer and its mode; from :c:func:`wallpaperinit` to wallpaperfini() */
     struct awl_wallpaper *wallpaper;
-    /** awl_alert.c's: the alerts' texts and tree; from awl_alert_init() to awl_alert_fini() */
+    /** awl_alert.c's: the alerts' texts and tree; from :c:func:`awl_alert_init` to :c:func:`awl_alert_fini` */
     struct awl_alerts *alerts;
-    /** awl_input.c's: the keyboard group and the devices; from inputinit() to inputfree() */
+    /** awl_input.c's: the keyboard group and the devices; from :c:func:`inputinit` to :c:func:`inputfree` */
     struct awl_input *input;
     /** awl_config.c's: the library's config, which cfg points to while it's
-     * loaded, and a pending plugin_restart(); from configinit() to configfini() */
+     * loaded, and a pending :c:func:`plugin_restart`; from :c:func:`configinit` to configfini() */
     struct awl_conf *conf;
     /** awl_background.c's: the wallpaper's images and fade; from
-     * background_init() to background_fini() */
+     * :c:func:`background_init` to :c:func:`background_fini` */
     struct awl_background *background;
-    /** awl_desktop.c's: the desktop panels; from desktop_init() to desktop_fini() */
+    /** awl_desktop.c's: the desktop panels; from :c:func:`desktop_init` to :c:func:`desktop_fini` */
     struct awl_desktop *desktop;
     /** awl_sni.c's: the StatusNotifierWatcher, NULL if it couldn't start */
     struct awl_sni_watcher *sni;
     /** awl_notifications.c's: the notification server and its history;
-     * from awl_notifications_start() to awl_notifications_stop() */
+     * from :c:func:`awl_notifications_start` to :c:func:`awl_notifications_stop` */
     struct awl_notifs *notifs;
     /** awl_test.c's: AWL_TEST_WINDOWS' popups; NULL without it */
     struct awl_test *test;
-    /** awl_redraw.h's fd's event handler (redraw_fire()) */
+    /** awl_redraw.h's fd's event handler (:c:func:`redraw_fire`) */
     struct wl_event_source *redraw_source;
     /** setup()'s listeners to the globals above, cleanuplisteners() removes them */
     struct {

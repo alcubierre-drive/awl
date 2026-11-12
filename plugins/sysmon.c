@@ -366,8 +366,8 @@ static void text_at( awl_sysmon_t* sm, pixman_image_t* pix, struct fcft_font* fo
 
 /** the secondary text's color and the graphs' boxes': halfway from the
  * popups' dim color to their text's */
-static uint32_t secondary( void ) {
-    const awl_colors_t* k = &awl_config()->colors;
+static uint32_t secondary( const awl_sysmon_t* sm ) {
+    const awl_colors_t* k = &sm->p->config.colors;
     return color_mix_8( k->popup_dim, k->popup_fg, 0.5f );
 }
 
@@ -466,8 +466,8 @@ static void column( awl_sysmon_t* sm, pixman_image_t* pix, int x, int gy, int nn
 }
 
 static void graph( awl_sysmon_t* sm, pixman_image_t* pix, int x0, int y0, const panel_t* p, int hover ) {
-    const awl_colors_t* k = &awl_config()->colors;
-    const awl_plugin_config_t* pc = awl_plugin_config();
+    const awl_colors_t* k = &sm->p->config.colors;
+    const awl_plugin_config_t* pc = &sm->p->plugin_config;
     const int gy = y0 + p->gy;
     /* on the popup's own background (no box of the bar's stats_bg); the
      * kernel's part the CPU's color darkened toward it, opaque */
@@ -535,7 +535,7 @@ static void graph( awl_sysmon_t* sm, pixman_image_t* pix, int x0, int y0, const 
     for (int q = 1; q < 4; q++)
         awl_fill_shape( pix, (float)x0, (float)(gy + sm->gh * q / 4), (float)sm->gw, (float)line, 0, 0, grid );
     /* the box around it */
-    awl_fill_shape( pix, (float)x0, (float)gy, (float)sm->gw, (float)sm->gh, 0, (float)line, secondary() );
+    awl_fill_shape( pix, (float)x0, (float)gy, (float)sm->gw, (float)sm->gh, 0, (float)line, secondary( sm ) );
     if (hover >= 0 && hover < sm->gw) {
         const int cx = hover + line > sm->gw ? sm->gw - line : hover;
         awl_fill_shape( pix, (float)(x0 + cx), (float)gy, (float)line, (float)sm->gh, 0, 0, k->popup_fg );
@@ -543,14 +543,14 @@ static void graph( awl_sysmon_t* sm, pixman_image_t* pix, int x0, int y0, const 
 }
 
 static uint32_t title_color( awl_sysmon_t* sm, const panel_t* p, int c ) {
-    const awl_plugin_config_t* pc = awl_plugin_config();
+    const awl_plugin_config_t* pc = &sm->p->plugin_config;
     float v;
     switch (p->kind) {
     case K_CPU: return pc->colors.cpu;
     case K_MEM: return pc->colors.mem;
     case K_SWP: return pc->colors.swap;
     default:
-        if (!mean( sm, sm->temp[p->sensor], sm->tfilled, c, &v )) return awl_config()->colors.popup_fg;
+        if (!mean( sm, sm->temp[p->sensor], sm->tfilled, c, &v )) return sm->p->config.colors.popup_fg;
         return colormap_color( &pc->colors.temperature, sm->tmax[p->sensor] > sm->tmin[p->sensor]
                                    ? (v - sm->tmin[p->sensor]) / (sm->tmax[p->sensor] - sm->tmin[p->sensor]) : 0.5f );
     }
@@ -560,9 +560,9 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
                    int hover ) {
     awl_sysmon_t* sm = data;
     (void)scale;
-    const awl_colors_t* k = &awl_config()->colors;
+    const awl_colors_t* k = &sm->p->config.colors;
     char left[128], right[128];
-    const uint32_t dim = secondary();
+    const uint32_t dim = secondary( sm );
     if (hover >= sm->gw) hover = -1;
     const int c = hover >= 0 ? hover : -2;
     for (int p = 0; p < sm->npanels; p++) {

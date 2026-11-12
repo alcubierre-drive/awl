@@ -24,7 +24,7 @@ All of them build an `awl_notif_send_t`; the look is `awl_notif_look_t`
 - One `awl_notif_look_t` per kind, configured in one place:
   `awl_config_t.notifications.looks.{alert,output,info,config,osd}`. It has to be
   the core config, because the core senders can't read `awl_plugin_config_t`;
-  the library reads it through `awl_config()`. Defaults in
+  the library reads it from its root (`p->config`). Defaults in
   awl_config_defaults.h (config: `max_lines = -1`; the rest 0).
 - Each sender copies its look in place of `AWL_NOTIF_SEND_INIT`'s zero look.
   `awl_notify()` takes the kind (or `awl_notify_info()`/`_config()` wrappers).

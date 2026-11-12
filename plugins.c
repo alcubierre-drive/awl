@@ -31,7 +31,7 @@
 #define TRAY_STOP_TIMEOUT_MS 2000
 
 static void awl_plugin_start( awl_plugin_data_t* p ) {
-    const awl_plugin_config_t* pc = awl_plugin_config();
+    const awl_plugin_config_t* pc = &p->plugin_config;
 #define AWL_BAR_COLOR_SET( name ) p->colors.name = color_8bit_to_16bit( pc->colors.name );
     AWL_BAR_COLORS( AWL_BAR_COLOR_SET )
 #undef AWL_BAR_COLOR_SET
@@ -63,7 +63,7 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     p->tray_menu = awl_tray_menu_window_new( p );
     p->tray_tip = awl_tray_tooltip_new( p );
     if ((p->tray_loop = awl_loop_new())) {
-        p->sni = sni_new( awl_loop_event( p->tray_loop ), p->tray_menu );
+        p->sni = sni_new( awl_loop_event( p->tray_loop ), p->tray_menu, p->config.tray.icon_theme );
         if (p->sni && awl_loop_start( p->tray_loop, "tray" )) {
             sni_free( p->sni );
             p->sni = NULL;
@@ -141,7 +141,7 @@ awl_plugin_data_t* awl_plugin_get( void ) {
 
 /** sets the config dictionary's "t_plugins_loaded" to the local time now, as
  * "YY/MM/DD HH:MM:SS" (24h): when this library was loaded, at awl's start or
- * by a plugin_restart that brought it. From the entry point, once per copy
+ * by a :c:func:`plugin_restart` that brought it. From the entry point, once per copy
  * of the library: a restart in place (a broken new library) calls
  * api_init() again on this copy, and keeps the time. */
 static void loaded_stamp( void ) {
@@ -166,7 +166,7 @@ static void api_init( int paused ) {
     AWL_HOST_CFG_SET( awl_host, AWL_PERSISTENT_KEY, AWL_DICT_STR( "awl/persistent" ) );
     /* what the logind thread reads on connecting; awl's own is its
      * defaults' until it takes this library's config */
-    AWL_HOST_CFG_SET( awl_host, "lock_on_suspend", AWL_DICT_NUM( awl_config()->lock.on_suspend ) );
+    AWL_HOST_CFG_SET( awl_host, "lock_on_suspend", AWL_DICT_NUM( plugin_data->config.lock.on_suspend ) );
     /* first: the lock before suspend matters more than anything below */
     plugin_data->logind = awl_logind_start();
     awl_plugin_start( plugin_data );
@@ -208,7 +208,7 @@ static void api_set_paused( int paused ) {
 static void api_wallpaper( WallpaperMode mode, int by_timer ) {
     if (!plugin_data) return;
     awl_wallpaper_thread_t* ch = plugin_data->wallpaper;
-    if (!by_timer || awl_plugin_config()->osd.wallpaper_timer) awl_osd_wallpaper_ask( plugin_data->osd );
+    if (!by_timer || plugin_data->plugin_config.osd.wallpaper_timer) awl_osd_wallpaper_ask( plugin_data->osd );
     switch (mode) {
     case WallpaperNext: awl_wallpaper_step( ch, +1 ); break;
     case WallpaperPrev: awl_wallpaper_step( ch, -1 ); break;
@@ -250,7 +250,7 @@ static void escape( FILE* f, const char* s ) {
     }
 }
 
-/** one entry's line; under the dictionary's lock (awl_dict_iter()), so its
+/** one entry's line; under the dictionary's lock (:c:func:`awl_dict_iter`), so its
  * strings stay valid */
 static int32_t configline( const char* key, const awl_dict_val_t* v, void* ctx ) {
     ConfigLines* cl = ctx;
@@ -293,34 +293,29 @@ static int cmpline( const void* a, const void* b ) {
     return strcmp( *(char* const*)a, *(char* const*)b );
 }
 
-void awl_volume_adjust( float delta ) {
-    awl_plugin_data_t* p = awl_plugin_get();
+void awl_volume_adjust( awl_plugin_data_t* p, float delta ) {
     if (!p || !p->pulse) return;
     pulse_volume_adjust( p->pulse, delta );
     awl_osd_volume( p->osd );
 }
 
-void awl_volume_mute_toggle( void ) {
-    awl_plugin_data_t* p = awl_plugin_get();
+void awl_volume_mute_toggle( awl_plugin_data_t* p ) {
     if (!p || !p->pulse) return;
     pulse_mute_toggle( p->pulse );
     awl_osd_volume( p->osd );
 }
 
-void awl_mic_mute_toggle( void ) {
-    awl_plugin_data_t* p = awl_plugin_get();
+void awl_mic_mute_toggle( awl_plugin_data_t* p ) {
     if (p) pulse_mic_mute_toggle( p->pulse );
 }
 
-void awl_speaker_mute_toggle( void ) {
-    awl_plugin_data_t* p = awl_plugin_get();
+void awl_speaker_mute_toggle( awl_plugin_data_t* p ) {
     if (!p || !p->pulse) return;
     pulse_speaker_mute_toggle( p->pulse );
     awl_osd_volume( p->osd );
 }
 
-void awl_brightness_adjust( float delta ) {
-    awl_plugin_data_t* p = awl_plugin_get();
+void awl_brightness_adjust( awl_plugin_data_t* p, float delta ) {
     if (!p || !p->backlight) return;
     backlight_adjust( p->backlight, delta );
     awl_osd_brightness( p->osd, delta );
@@ -373,8 +368,12 @@ static void api_wallpaper_mode( WallpaperMode mode ) {
 }
 
 /** none while the plugins don't run (their init ran out of memory) */
+static void api_config( awl_config_t* c ) {
+    awl_config_fill( plugin_data, c );
+}
+
 static void api_bar_widgets( awl_bar_t* bar ) {
-    if (plugin_data) awl_widgets_create( bar );
+    if (plugin_data) awl_widgets_create( plugin_data, bar );
 }
 
 static uint64_t api_desktop_version( void ) {
@@ -424,7 +423,7 @@ static const awl_plugin_api_t api = {
     .wallpaper_take = api_wallpaper_take,
     .wallpaper_mode = api_wallpaper_mode,
     .session_covered = api_session_covered,
-    .config = awl_config_fill,
+    .config = api_config,
     .notifications_changed = api_notifications_changed,
     .redraw = api_redraw,
 };

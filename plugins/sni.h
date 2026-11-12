@@ -31,7 +31,7 @@
 #include "handles.h"
 
 /** an item's Status */
-enum { AWL_SNI_PASSIVE, AWL_SNI_ACTIVE, AWL_SNI_ATTENTION };
+enum awl_sni_status { AWL_SNI_PASSIVE, AWL_SNI_ACTIVE, AWL_SNI_ATTENTION };
 
 /** bytes shared by snapshots, freed with the last reference */
 typedef struct awl_sni_blob_t {
@@ -55,13 +55,16 @@ typedef struct awl_sni_item_t {
     /** changes whenever the icon does */
     uint32_t icon_gen;
     /** the icon's file (a PNG, or an SVG or XPM with :c:enumerator:`AWL_ICON_SVG` or
-     * :c:enumerator:`AWL_ICON_XPM` in file_flags,
+     * :c:enumerator:`AWL_ICON_XPM` in :c:member:`~awl_sni_item_t.file_flags`,
      * :c:enumerator:`AWL_ICON_SYMBOLIC` too if it is one), else its pixmaps: the blob starts
      * with npixmaps :c:type:`awl_icon_pixmap_t`, whose data points behind them; both
      * NULL: none */
     awl_sni_blob_t* file;
+    /** file's AWL_ICON_* flags */
     unsigned file_flags;
+    /** its pixmaps, see file */
     awl_sni_blob_t* pixmaps;
+    /** how many pixmaps there are */
     int npixmaps;
 } awl_sni_item_t;
 
@@ -75,8 +78,9 @@ typedef struct awl_sni_snap_t {
 
 /** On event's loop, which isn't running yet; it connects from the loop.
  * What the loop hands the main thread for the menus goes to menu_window
- * (tray_menu.h). NULL on failure. */
-awl_sni_t* sni_new( sd_event* event, awl_tray_menu_window_t* menu_window );
+ * (tray_menu.h); icons come from theme (a copy; NULL: the default). NULL
+ * on failure. */
+awl_sni_t* sni_new( sd_event* event, awl_tray_menu_window_t* menu_window, const char* theme );
 /** After the loop has stopped, and after :c:func:`awl_tray_menu_window_fini` (whose
  * "closed" it still sends); main thread. */
 void sni_free( awl_sni_t* s );
@@ -93,7 +97,7 @@ void sni_snap_unref( awl_sni_snap_t* snap );
 void sni_set_icon_px( awl_sni_t* s, int px );
 
 /** what a click asks of an item */
-enum { AWL_SNI_ACTIVATE, AWL_SNI_SECONDARY, AWL_SNI_CONTEXT };
+enum awl_sni_click { AWL_SNI_ACTIVATE, AWL_SNI_SECONDARY, AWL_SNI_CONTEXT };
 /** item serial's Activate, SecondaryActivate or ContextMenu at x, y
  * (layout coordinates); an Activate that fails opens its menu instead, on
  * the monitor of the output named monitor, centered on center_x */

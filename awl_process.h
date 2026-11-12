@@ -27,10 +27,11 @@ typedef struct {
     char attrs[48];
     /** made for emoji: emoji presentation (see :c:func:`awl_font_get_emoji`) */
     int emoji;
-    /** :c:macro:`AWL_FONT_BOLD`, AWL_FONT_ITALIC (see :c:func:`awl_font_style`) */
+    /** :c:macro:`AWL_FONT_BOLD`, :c:macro:`AWL_FONT_ITALIC` (see :c:func:`awl_font_style`) */
     int style;
     /** NULL: it didn't load (failed), or :c:func:`awl_font_retry` asked to try again */
     struct fcft_font *font;
+    /** it didn't load */
     int failed;
     int refs;
 } awl_font_slot_t;
@@ -66,18 +67,19 @@ typedef struct {
     struct {
         /** the startup command (``-s``), -1: none */
         pid_t startup;
-        /** cfg->autostart's, the first ``nautostarted`` */
+        /** :c:member:`cfg->autostart <awl_config_t.autostart>`'s, the first :c:member:`~awl_process_t.spawn.nautostarted` */
         pid_t autostarted[256];
+        /** how many autostarted are set */
         int nautostarted;
     } spawn;
 
-    /** awl_redraw.c's eventfd, -1 before awl_redraw_init(); written from any
+    /** awl_redraw.c's eventfd, -1 before :c:func:`awl_redraw_init`; written from any
      * thread */
     _Atomic int redraw_fd;
 
     /** awl_lockscreen.c's lock requests and the logind thread's state: the
      * eventfd that wakes the main loop, and what it finds when it does
-     * (lockfire()); requests before then coalesce into one. Any thread */
+     * (:c:func:`lockfire`); requests before then coalesce into one. Any thread */
     struct {
         _Atomic int fd;
         atomic_int requested;
@@ -102,7 +104,7 @@ typedef struct {
         awl_host_t host;
         /** dlopen()'s, NULL: none loaded */
         void *handle;
-        /** the memfd it was loaded from, see libopen() */
+        /** the memfd it was loaded from, see :c:func:`libopen` */
         int handle_fd;
         const awl_plugin_api_t *api;
         int paused, covered;
@@ -119,13 +121,14 @@ typedef struct {
          * it; kept for awl's life */
         struct { char *name, *orig; } *envsaved;
         size_t nenvsaved;
-        /** environmentimport() ran: from then on changes to its variables
+        /** :c:func:`environmentimport` ran: from then on changes to its variables
          * go to systemd's and the bus' environment too */
         int envimportstarted;
         /** one of them changed since */
         int envimportdirty;
-        /** builtinconfig()'s, filled on its first call */
+        /** :c:func:`builtinconfig`'s, filled on its first call */
         awl_config_t builtin;
+        /** builtin is filled */
         int builtin_filled;
     } config;
 
@@ -133,9 +136,9 @@ typedef struct {
     struct {
         /** the config's icon_theme, NULL: none */
         char *theme;
-        /** what :c:func:`awl_tray_app_env` made, for theme made_for (NULL:
-         * nothing yet); env.env NULL: nothing to give */
+        /** the theme env was made for, NULL: nothing yet */
         char *made_for;
+        /** what :c:func:`awl_tray_app_env` made; :c:member:`env.env <awl_tray_app_env_t.env>` NULL: nothing to give */
         awl_tray_app_env_t env;
         char *vars[5];
     } tray;

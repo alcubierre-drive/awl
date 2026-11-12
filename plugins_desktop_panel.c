@@ -24,8 +24,8 @@
 /** the look, :c:member:`awl_config_t.desktop` and :c:type:`awl_plugin_colors_t`'s desktop_*;
  * hidden entries, "(empty)" and "… N more" keep their color at its
  * hidden_alpha */
-#define DESK (&awl_config()->desktop)
-#define COLORS (&awl_plugin_config()->colors)
+#define DESK (&dp->p->config.desktop)
+#define COLORS (&dp->p->plugin_config.colors)
 
 #define NFILES (sizeof(((DesktopFiles*)0)->files) / sizeof(Filename))
 
@@ -257,7 +257,7 @@ static uint32_t fade( uint32_t c, uint32_t a ) {
     return out;
 }
 
-static uint32_t color( const Filename* f ) {
+static uint32_t color( const awl_desktop_panel_t* dp, const Filename* f ) {
     uint32_t c = f->isbroken ? COLORS->desktop_broken : f->isdir ? COLORS->desktop_dir : COLORS->desktop_file;
     return f->ishidden ? fade( c, DESK->hidden_alpha ) : c;
 }
@@ -392,7 +392,7 @@ void awl_desktop_draw( awl_desktop_panel_t* dp, pixman_image_t* pix, struct fcft
         const char* more = more_of( l, i );
         label( f, buf, sizeof(buf) );
         text( pix, font, l->col_x[l->col[i]], l->pad + l->row[i] * l->row_h, l->col_w[l->col[i]], l->row_h,
-              more ? more : buf, more ? fade( COLORS->desktop_file, DESK->hidden_alpha ) : color( f ) );
+              more ? more : buf, more ? fade( COLORS->desktop_file, DESK->hidden_alpha ) : color( dp, f ) );
     }
     panel_under( data, stride, w, h, radius, COLORS->desktop_bg );
 }

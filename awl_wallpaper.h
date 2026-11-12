@@ -10,10 +10,10 @@
 
 #include "awl_server.h"
 
-/** the timer, unarmed until configapply() */
+/** the timer, unarmed until :c:func:`configapply` */
 void wallpaperinit(awl_server_t *srv);
 void wallpaperfini(awl_server_t *srv);
-/** cfgdict's "wallpaper_mode": cfg->wallpaper.mode */
+/** cfgdict's "wallpaper_mode": :c:member:`cfg->wallpaper.mode <awl_wallpaper_config_t.mode>` */
 void wallpapermodeinit(awl_server_t *srv);
 /** after plugins_config.c changed: its interval and mode */
 void wallpaperconfigure(awl_server_t *srv);

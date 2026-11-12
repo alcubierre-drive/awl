@@ -30,10 +30,10 @@
 #include "../awl_plugin_abi.h"
 #include "handles.h"
 
-/** the menu of ns (plugins/notify.h, which makes it), its window made on
- * first use; NULL if out of memory, which the functions below take as a
+/** the menu of ns (plugins/notify.h, which makes it) under the root p,
+ * its window made on first use; NULL if out of memory, which the functions below take as a
  * no-op (closed) */
-awl_notify_menu_t* awl_notify_menu_new( awl_notify_t* ns );
+awl_notify_menu_t* awl_notify_menu_new( awl_notify_t* ns, awl_plugin_data_t* p );
 /** destroys the menu and frees mn */
 void awl_notify_menu_stop( awl_notify_menu_t* mn );
 /** opens the menu on m for a bar widget centered on center_x (logical

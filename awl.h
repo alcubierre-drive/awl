@@ -78,8 +78,9 @@ typedef struct {
     unsigned int mod;
     /** a BTN_* */
     unsigned int button;
-    /** what it does, called with arg */
+    /** what it does, called with :c:member:`~Button.arg` */
     void (*func)(awl_server_t *, const Arg *);
+    /** :c:member:`~Button.func`'s argument */
     const Arg arg;
 } Button;
 
@@ -92,9 +93,11 @@ typedef struct Client Client;
 typedef struct {
     /** WLR_MODIFIER_*, :c:macro:`MODKEY` for :c:member:`awl_config_t.modkey` */
     uint32_t mod;
+    /** the key, an XKB_KEY_* */
     xkb_keysym_t keysym;
-    /** what it does, called with arg */
+    /** what it does, called with :c:member:`~Key.arg` */
     void (*func)(awl_server_t *, const Arg *);
+    /** :c:member:`~Key.func`'s argument */
     const Arg arg;
 } Key;
 
@@ -127,12 +130,14 @@ typedef struct {
  * model, serial, as wlr-randr lists them) counts for it. */
 typedef struct {
     const char *match;
-    /** on: enabled (in its preferred mode if it was off), at x, y (layout
-     * coordinates), scaled by scale (0: as it is), turned by rr; off:
-     * disabled, the rest ignored */
+    /** on: enabled (in its preferred mode if it was off), as the rest
+     * says; off: disabled, the rest ignored */
     int on;
+    /** its position, layout coordinates */
     int x, y;
+    /** its scale, 0: as it is */
     float scale;
+    /** how it is turned */
     enum wl_output_transform rr;
 } OutputSetting;
 
@@ -215,7 +220,7 @@ typedef struct awl_window_painter_t {
 } awl_window_painter_t;
 
 /** where :c:func:`awl_window_show_at` puts a window in its monitor's window area */
-enum {
+enum awl_window_at {
     AWL_WINDOW_AT_CENTER,
     /** centered, at the top: a launcher's place */
     AWL_WINDOW_AT_TOP,
@@ -262,7 +267,7 @@ typedef struct awl_colors_t {
      * routes) */
     uint32_t popup_bg, popup_fg, popup_border, popup_hover, popup_dim;
     /** the tray's and the notifications' menus, each unset the popups'
-     * (highlight: popup_hover, highlight_fg: menu_fg): background, text,
+     * (highlight: :c:member:`~awl_colors_t.popup_hover`, highlight_fg: :c:member:`~awl_colors_t.menu_fg`): background, text,
      * border; the entry under the pointer (and the one whose submenu is
      * open) and its text; disabled entries, shortcuts and separators */
     awl_opt_color_t menu_bg, menu_fg, menu_border, menu_highlight, menu_highlight_fg, menu_dim;
@@ -279,9 +284,10 @@ typedef struct awl_popup_config_t {
     int margin;
     /** between a text popup's columns and rows */
     int column_spacing, row_spacing;
-    /** the font, as :c:member:`awl_config_t.font` and fontsize (size appended to
-     * font); NULL and unset each take the bar's */
+    /** the font, as :c:member:`awl_config_t.font` (its size appended to it:
+     * :c:member:`~awl_popup_config_t.fontsize`); NULL: the bar's */
     const char *font;
+    /** the font's size; unset: the bar's */
     awl_opt_int_t fontsize;
     /** the clock's calendar's event list, which scrolls beyond the
      * maximum (0: none) */
@@ -318,13 +324,15 @@ typedef struct awl_tray_config_t {
 /** :c:member:`awl_config_t.desktop`, the desktop file list (awl_desktop.h); it is
  * blurred like the popups (:c:member:`awl_config_t.blur`) */
 typedef struct awl_desktop_config_t {
-    /** the font, as :c:member:`awl_config_t.font` and fontsize (size appended to
-     * font); NULL and unset each take the bar's */
+    /** the font, as :c:member:`awl_config_t.font` (its size appended to it:
+     * :c:member:`~awl_desktop_config_t.fontsize`); NULL: the bar's */
     const char *font;
+    /** the font's size; unset: the bar's */
     awl_opt_int_t fontsize;
     /** the alpha of hidden files' names (the colors are :c:type:`awl_plugin_colors_t`'s
-     * desktop_*), its distance from the usable area's corner */
+     * desktop_*) */
     uint8_t hidden_alpha;
+    /** its distance from the usable area's corner */
     float margin;
     /** its corner radius, logical pixels */
     int radius;
@@ -358,7 +366,7 @@ typedef struct awl_wallpaper_config_t {
 /**
  * The configuration that can change while awl runs: awl's defaults
  * (awl_config_defaults.h, :c:member:`awl_host_t.config_defaults`) with plugins_config.c's
- * changes, built into the plugin library, so ``ninja -C build`` and plugin_restart
+ * changes, built into the plugin library, so ``ninja -C build`` and :c:func:`plugin_restart`
  * apply them; while no library is loaded, the defaults alone. What only a
  * restart applies are meson.options' compile-time switches.
  *
@@ -412,8 +420,9 @@ typedef struct awl_config_t {
     awl_colors_t colors;
     /** windows' borders' width */
     unsigned int borderpx;
-    /** the bar's font, its size appended to it */
+    /** the bar's font, its size (:c:member:`~awl_config_t.fontsize`) appended to it */
     const char *font;
+    /** the bar's font's size */
     int fontsize;
     /** the bar's emoji, at fontsize: a color font, so the widgets' emoji
      * don't come from whatever text font has them in black and white
@@ -449,8 +458,9 @@ typedef struct awl_config_t {
         /** LIBINPUT_CONFIG_SEND_EVENTS_ENABLED, _DISABLED or
          * _DISABLED_ON_EXTERNAL_MOUSE */
         uint32_t send_events_mode;
-        /** LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT or _ADAPTIVE, and the speed */
+        /** LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT or _ADAPTIVE */
         enum libinput_config_accel_profile accel_profile;
+        /** the pointer's speed, -1 to 1 */
         double accel_speed;
         /** LIBINPUT_CONFIG_TAP_MAP_LRM or _LMR: 1/2/3 finger taps as
          * left/right/middle or left/middle/right */
@@ -506,7 +516,7 @@ typedef struct awl_config_t {
         /** after that many ms without a key or the pointer, the timeouts
          * stop; the next key or motion resumes them (0: never pause) */
         int idle_pause;
-        /** the part of idle_pause given back on return, 0 to 1: the user
+        /** the part of :c:member:`~awl_config_t.notifications.idle_pause` given back on return, 0 to 1: the user
          * went away somewhere in it, the rest counts as seen */
         float idle_giveback;
         /** the part of its timeout a notification has left at least on

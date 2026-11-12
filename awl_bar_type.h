@@ -11,9 +11,9 @@
 
 #include <limits.h>
 
-/** :c:member:`widget_t.pad_left`, :c:member:`pad_right <widget_t.pad_left>`: half the bar font's height */
+/** :c:member:`widget_t.pad_left`, :c:member:`~widget_t.pad_right`: half the bar font's height */
 #define AWL_PADDING_FONT INT_MIN
-/** :c:member:`widget_t.pad_left`, :c:member:`pad_right <widget_t.pad_left>`: the configuration's padding, the same
+/** :c:member:`widget_t.pad_left`, :c:member:`~widget_t.pad_right`: the configuration's padding, the same
  * for (almost) every widget */
 #define AWL_PADDING_DEFAULT (INT_MIN + 1)
 
@@ -22,11 +22,13 @@ typedef struct awl_bar_t awl_bar_t;
 typedef struct Client Client;
 typedef struct Monitor Monitor;
 typedef struct awl_window awl_window_t;
+typedef struct awl_plugin_data_t awl_plugin_data_t;
 
 /**
  * A part of the bar: the tags, the layout symbol, the task bar, the clock,
  * the graphs... Each bar has its own, made by :c:member:`awl_plugin_api_t.bar_widgets`
- * (plugins_widgets.c); everything but :c:member:`~widget_t.bar` and :c:member:`~widget_t.width` is the library's.
+ * (plugins_widgets.c); everything but :c:member:`~widget_t.bar` and :c:member:`~widget_t.width` is the library's,
+ * :c:member:`~widget_t.plugins` its state.
  */
 struct widget_t {
     /** what the last draw used, set by awl */
@@ -50,15 +52,15 @@ struct widget_t {
     void (*callback_click)(widget_t* this, uint32_t x_rel, int button);
     /** a scroll, amount 1 or -1 (see :c:member:`~widget_t.scroll_amount`) */
     void (*callback_scroll)(widget_t* this, uint32_t x_rel, int amount);
-    /** called once the pointer has rested on the widget for hover_delay_ms;
+    /** called once the pointer has rested on the widget for :c:member:`~widget_t.hover_delay_ms`;
      * leaving it before then cancels, and it fires again only after the
      * pointer has left and come back */
     void (*callback_hover)(widget_t* this);
     /** see :c:member:`~widget_t.callback_hover` */
     uint32_t hover_delay_ms;
-    /** called leave_delay_ms after the pointer has left a widget whose
-     * callback_hover fired, unless it came back first (0: right away). While
-     * the pointer is inside popup_window (the popup the hover opened), it
+    /** called :c:member:`~widget_t.leave_delay_ms` after the pointer has left a widget whose
+     * :c:member:`~widget_t.callback_hover` fired, unless it came back first (0: right away). While
+     * the pointer is inside :c:member:`~widget_t.popup_window` (the popup the hover opened), it
      * counts as still on the widget. A press on the widget calls it at
      * once (and cancels a hover not yet fired); hovering fires again only
      * after the pointer has left and come back. */
@@ -82,6 +84,10 @@ struct widget_t {
     int pad_left, pad_right;
     /** the bar it is on */
     awl_bar_t* bar;
+    /** the library's state (plugins.h), opaque to awl; set with the widget
+     * and valid as long as it is (awl clears the widgets before the
+     * library's fini and makes them again after its init) */
+    awl_plugin_data_t* plugins;
 };
 
 /** A window as the task bar shows it, a snapshot taken by awl. */
@@ -121,12 +127,15 @@ struct awl_bar_t {
     uint32_t center_widget_start;
     int has_center_widget;
 
-    /** the current tag's windows */
+    /** the current tag's windows, the first
+     * :c:member:`~awl_bar_t.n_tagwindows` */
     awl_bar_window_t tagwindows[128];
+    /** how many :c:member:`~awl_bar_t.tagwindows` are set */
     int n_tagwindows;
     /** occ, urg and sel: tag masks of the occupied, urgent and selected
      * tags */
     uint32_t occ, urg, sel;
+    /** how many tags there are */
     int ntags;
     /** nonzero on the bar of the selected monitor, -1 if only one monitor exists */
     int selmon;
@@ -134,14 +143,15 @@ struct awl_bar_t {
     int pertag;
     /** the monitor's layout symbol (Monitor.ltsymbol) */
     char ltsymbol[16];
-    /** what the widgets need of the monitor, so they never read it: its
-     * output's name (valid while the bar is) and scale, the bar's height
-     * and text padding (left and right together; :c:func:`updatebar` sets it with
-     * the font) in buffer pixels, and where the monitor is in the layout
-     * (logical pixels) */
+    /** its output's name, valid while the bar is; this and the next ones
+     * are what the widgets need of the monitor, so they never read it */
     const char *output;
+    /** its output's scale */
     float scale;
+    /** the bar's height and text padding (left and right together;
+     * :c:func:`updatebar` sets it with the font), buffer pixels */
     int height, lrpad;
+    /** where the monitor is in the layout, logical pixels */
     int x, y;
 
     /** the bar's monitor, opaque to the library (to hand back to awl, e.g.

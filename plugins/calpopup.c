@@ -175,16 +175,16 @@ static void set_part( awl_calpopup_t* cp, int p, int x, int y, int w, int h ) {
 
 /** the app button's text, NULL while there is no button */
 static const char* app_label( awl_calpopup_t* cp ) {
-    const char* const* app = awl_plugin_config()->calendar.app;
+    const char* const* app = cp->p->plugin_config.calendar.app;
     if (cp->plain || !app || !app[0]) return NULL;
-    const char* label = awl_plugin_config()->calendar.app_label;
+    const char* label = cp->p->plugin_config.calendar.app_label;
     return label && *label ? label : app[0];
 }
 
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
     awl_calpopup_t* cp = data;
-    const awl_popup_config_t* c = &awl_config()->popup;
-    const awl_plugin_config_t* pc = awl_plugin_config();
+    const awl_popup_config_t* c = &cp->p->config.popup;
+    const awl_plugin_config_t* pc = &cp->p->plugin_config;
     if (!font) return 0;
     cp->scale = scale;
     if (cp->font != font) {
@@ -314,8 +314,8 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
                    int hover ) {
     awl_calpopup_t* cp = data;
-    const awl_colors_t* c = &awl_config()->colors;
-    const awl_plugin_colors_t* pc = &awl_plugin_config()->colors;
+    const awl_colors_t* c = &cp->p->config.colors;
+    const awl_plugin_colors_t* pc = &cp->p->plugin_config.colors;
     char buf[128];
     const float r = (float)px( cp, 4 );
     if (hover >= 0 && hover != P_LIST && cp->has[hover]) {
@@ -500,7 +500,7 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
     case P_DNEXT: step_day( cp, 1 ); break;
     case P_TODAY: go_today( cp ); break;
     case P_EVO:
-        awl_host->actions->spawn( awl_host->srv, &(Arg){ .v = awl_plugin_config()->calendar.app } );
+        awl_host->actions->spawn( awl_host->srv, &(Arg){ .v = cp->p->plugin_config.calendar.app } );
         awl_calpopup_hide( cp );
         return;
     case P_LIST: return;

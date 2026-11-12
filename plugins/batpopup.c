@@ -154,8 +154,8 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
                    int hover ) {
     awl_batpopup_t* bp = data;
     (void)scale;
-    const awl_colors_t* c = &awl_config()->colors;
-    const awl_plugin_config_t* pc = awl_plugin_config();
+    const awl_colors_t* c = &bp->p->config.colors;
+    const awl_plugin_config_t* pc = &bp->p->plugin_config;
     char buf[128];
     if (hover >= 0 && hover < P_SROW && bp->has[hover]) {
         box_t b = bp->part[hover];
@@ -232,7 +232,7 @@ static void step( awl_batpopup_t* bp, int i, int n ) {
     int v = i ? bp->s.end : bp->s.start;
     if (v < 0) return;
     int lo = i ? MAX( bp->s.start + 1, 1 ) : 0, hi = i ? 100 : (bp->s.end >= 0 ? bp->s.end - 1 : 99);
-    int step = awl_plugin_config()->battery.threshold_step;
+    int step = bp->p->plugin_config.battery.threshold_step;
     int to = v + n * (step > 0 ? step : 1);
     to = to < lo ? lo : to > hi ? hi : to;
     if (to != v) {

@@ -1,11 +1,11 @@
 /** The configuration, built into libawlplugins.so, so ``ninja -C build`` and
- * plugin_restart (MOD+Ctrl+r) apply it to the running awl -- keymap, input
+ * :c:func:`plugin_restart` (MOD+Ctrl+r) apply it to the running awl -- keymap, input
  * devices, font, colors, borders, blur, layouts and the bar's widgets
  * included (monitor rules are applied to outputs appearing afterwards).
  * While no library is loaded, awl runs with its defaults; what only a
  * restart of awl applies are meson.options' compile-time switches.
  *
- * Only the part between the CUSTOM markers is yours to change: configure()
+ * Only the part between the CUSTOM markers is yours to change: :c:func:`configure`
  * gets awl's defaults (awl_config_defaults.h,
  * :c:member:`awl_host_t.config_defaults`) in c and the plugins'
  * (plugins_config_defaults.h) in p, and changes what it wants; those two
@@ -38,9 +38,10 @@ static void AWL_ACTION( notifyconfig )( awl_server_t* srv, const Arg* arg ) {
     awl_notify_config();
 }
 
-/** opens or closes the launcher, arg->i its mode (:c:enumerator:`AWL_LAUNCHER_APPS`, :c:enumerator:`AWL_LAUNCHER_RUN`) (:c:func:`awl_launcher_toggle`) */
+/** opens or closes the launcher, :c:member:`arg->i <Arg.i>` its mode (:c:enumerator:`AWL_LAUNCHER_APPS`, :c:enumerator:`AWL_LAUNCHER_RUN`) (:c:func:`awl_launcher_toggle`) */
 static void AWL_ACTION( launcher )( awl_server_t* srv, const Arg* arg ) {
-    awl_launcher_toggle( AWL_PLUGIN_MODULE( launcher ), arg->i );
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) awl_launcher_toggle( p->launcher, arg->i );
 }
 
 /** switches the backlight daemon's automatic updates on or off (:c:func:`backlight_toggle`) */
@@ -55,37 +56,38 @@ static void AWL_ACTION( backlightupdate )( awl_server_t* srv, const Arg* arg ) {
     if (p) backlight_update( p->backlight );
 }
 
-/** changes the screen's brightness by arg->f (:c:func:`awl_brightness_adjust`) */
+/** changes the screen's brightness by :c:member:`arg->f <Arg.f>` (:c:func:`awl_brightness_adjust`) */
 static void AWL_ACTION( brightness )( awl_server_t* srv, const Arg* arg ) {
-    awl_brightness_adjust( arg->f );
+    awl_brightness_adjust( awl_plugin_get(), arg->f );
 }
 
-/** changes the volume by arg->f (:c:func:`awl_volume_adjust`) */
+/** changes the volume by :c:member:`arg->f <Arg.f>` (:c:func:`awl_volume_adjust`) */
 static void AWL_ACTION( volume )( awl_server_t* srv, const Arg* arg ) {
-    awl_volume_adjust( arg->f );
+    awl_volume_adjust( awl_plugin_get(), arg->f );
 }
 
 /** mutes or unmutes the sink (:c:func:`awl_volume_mute_toggle`) */
 static void AWL_ACTION( volumemute )( awl_server_t* srv, const Arg* arg ) {
-    awl_volume_mute_toggle();
+    awl_volume_mute_toggle( awl_plugin_get() );
 }
 
 /** mutes or unmutes the source (:c:func:`awl_mic_mute_toggle`) */
 static void AWL_ACTION( micmute )( awl_server_t* srv, const Arg* arg ) {
-    awl_mic_mute_toggle();
+    awl_mic_mute_toggle( awl_plugin_get() );
 }
 
 /** mutes or unmutes the speaker port only (:c:func:`awl_speaker_mute_toggle`) */
 static void AWL_ACTION( speakermute )( awl_server_t* srv, const Arg* arg ) {
-    awl_speaker_mute_toggle();
+    awl_speaker_mute_toggle( awl_plugin_get() );
 }
 
 /** suspends through logind (:c:func:`awl_logind_suspend`) */
 static void AWL_ACTION( suspend )( awl_server_t* srv, const Arg* arg ) {
-    awl_logind_suspend( AWL_PLUGIN_MODULE( logind ) );
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) awl_logind_suspend( p->logind );
 }
 
-/** sends the window to the monitor arg->i over and follows it there */
+/** sends the window to the monitor :c:member:`arg->i <Arg.i>` over and follows it there */
 static void AWL_ACTION( tagmonf )( awl_server_t* srv, const Arg* arg ) {
     AWL_ACTION(tagmon)(srv, arg);
     AWL_ACTION(focusmon)(srv, arg);
@@ -420,17 +422,9 @@ void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t
     AWL_FILL( p->osd.image_size, p->notify.image_size );
 }
 
-const awl_config_t* awl_config( void ) {
-    return &awl_plugin_get()->config;
-}
-
-const awl_plugin_config_t* awl_plugin_config( void ) {
-    return &awl_plugin_get()->plugin_config;
-}
-
-void awl_config_fill( awl_config_t* c ) {
-    if (awl_plugin_get()) {
-        *c = *awl_config();
+void awl_config_fill( const awl_plugin_data_t* p, awl_config_t* c ) {
+    if (p) {
+        *c = p->config;
     } else {
         awl_host->config_defaults( c );
         awl_config_fill_defaults( c );

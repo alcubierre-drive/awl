@@ -1025,7 +1025,7 @@ static void schedule_retry( awl_sni_t* s, uint64_t usec ) {
         s->retry = NULL;
 }
 
-awl_sni_t* sni_new( sd_event* event, awl_tray_menu_window_t* menu_window ) {
+awl_sni_t* sni_new( sd_event* event, awl_tray_menu_window_t* menu_window, const char* theme ) {
     awl_sni_t* s = calloc( 1, sizeof(*s) );
     if (!s) return NULL;
     s->menu_window = menu_window;
@@ -1035,7 +1035,6 @@ awl_sni_t* sni_new( sd_event* event, awl_tray_menu_window_t* menu_window ) {
     s->reqs_tail = &s->reqs;
     s->mail_tail = &s->mail;
     atomic_init( &s->want_px, 16 );
-    const char* theme = awl_config()->tray.icon_theme;
     if ((theme && !(s->icon_theme = strdup( theme ))) || s->wake_fd < 0 || !(s->snap = snap_new( 0 )) ||
         sd_event_add_io( event, &s->wake, s->wake_fd, EPOLLIN, wake_callback, s ) < 0)
         goto fail;

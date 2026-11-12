@@ -24,7 +24,7 @@ void urgent(struct wl_listener *listener, void *data);
 /** a new xdg-activation token of awl's own, for a client to activate a
  * window with because the user asked (a notification's action): such a
  * request gets the focus, switching to its tags (unless
- * cfg->notifications.activate_urgent); others only mark the window urgent. Valid for xdg-activation's timeout or until used; NULL
+ * :c:member:`cfg->notifications.activate_urgent <awl_config_t.notifications.activate_urgent>`); others only mark the window urgent. Valid for xdg-activation's timeout or until used; NULL
  * if it couldn't be made. */
 const char *activationtoken(awl_server_t *srv);
 /* a client's events, XWayland's too */

@@ -23,8 +23,7 @@ typedef struct awl_temperature_t {
     atomic_uint samples;
     /** input, read-only once :c:func:`temp_init` was called: the range of the
      * bar's colors, °C */
-    float f_t_max[16];
-    float f_t_min[16];
+    float f_t_max[16], f_t_min[16];
     char f_files[16][256];
     char f_labels[16][16];
     uint8_t f_ntemps;

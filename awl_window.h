@@ -3,7 +3,7 @@
 /**
  * Popups that awl draws itself, part of awl: a box of text, or what a
  * painter (awl_window_draw.h) draws, like the plugins' calendar, next to
- * the bar, styled by ``cfg->popup`` and ``cfg->colors``' popup_* (border,
+ * the bar, styled by :c:member:`cfg->popup <awl_config_t.popup>` and ``cfg->colors``' popup_* (border,
  * corner radius, padding; blurred behind like the launcher), in its
  * ``font`` (NULL: the bar's), its ``margin`` away from the bar and the
  * monitor's sides. Not a client: no Wayland
@@ -17,7 +17,7 @@
  *
  * A window is a scene tree in the parent awl gives it, shown on one monitor
  * at a time. What the plugins reach through :c:type:`awl_host_t` (the setters,
- * :c:func:`awl_window_redraw`, awl_window_hide(), :c:func:`awl_window_monitor`) takes NULL
+ * :c:func:`awl_window_redraw`, :c:func:`awl_window_hide`, :c:func:`awl_window_monitor`) takes NULL
  * for win and does nothing.
  */
 
@@ -37,7 +37,7 @@ typedef void (*awl_window_click_t)( awl_window_t* win, int row, int col, uint32_
  * scrolling (a touchpad), which only has delta */
 typedef void (*awl_window_scroll_t)( awl_window_t* win, int row, int col, uint32_t orientation,
                                      double delta, int32_t value120, void* data );
-/** win was hidden: by awl_window_hide(), whoever called it, its monitor
+/** win was hidden: by :c:func:`awl_window_hide`, whoever called it, its monitor
  * going away (:c:func:`awl_window_removemon`) included; not when it is destroyed,
  * nor while its output is off (it comes back with it) */
 typedef void (*awl_window_hidden_t)( awl_window_t* win, void* data );
@@ -79,7 +79,7 @@ void awl_window_redraw( awl_server_t* srv, awl_window_t* win );
 
 /** Shows the window on m, or moves it there: on the bar's side of m's window
  * area (the top if top, else the bottom), centered on center_x (logical
- * pixels from m's left edge) but kept within m. It draws in m->popupfont,
+ * pixels from m's left edge) but kept within m. It draws in :c:member:`m->popupfont <Monitor.popupfont>`,
  * else in the bar's font; with neither it stays hidden. */
 void awl_window_show( awl_server_t* srv, awl_window_t* win, Monitor* m, int center_x, int top );
 /** Shows the window on m, or moves it there, beside anchor (layout

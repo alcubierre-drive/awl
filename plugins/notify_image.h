@@ -34,9 +34,11 @@
 /** what came of a wish, :c:func:`awl_notify_image_take`'s */
 typedef struct awl_notify_image_t {
     struct awl_notify_image_t* next;
-    /** the wish's: the notification, which of its sources, the size */
+    /** the wish's notification */
     uint32_t id;
+    /** the wish's serial: which of the notification's sources */
     uint64_t serial;
+    /** the wish's size */
     int px;
     /** fitted into px x px; NULL if no source yielded one */
     pixman_image_t* img;
@@ -44,10 +46,11 @@ typedef struct awl_notify_image_t {
     int symbolic;
 } awl_notify_image_t;
 
-/** the images' handle, without a thread yet; NULL if out of memory, which
+/** the images' handle, without a thread yet, which looks icons up in
+ * icon_theme (NULL: the default); NULL if out of memory, which
  * the functions below take: nothing is ever wished for then. Main thread,
  * as all of these. */
-awl_notify_images_t* awl_notify_image_new( void );
+awl_notify_images_t* awl_notify_image_new( const char* icon_theme );
 /** Asks for the first image of the sources (NULL and "" for none) at px
  * pixels, for notification id's serial. Returns 0 if it can't (no thread,
  * no memory, no source): nothing will come of it then. */

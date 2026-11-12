@@ -37,7 +37,7 @@ struct fcft_font;
 
 /** a run's style, a mask; bold and italic are :c:func:`awl_font_style`'s
  * (awl_draw.h), so style & AWL_MARKUP_FONT indexes the layout's fonts */
-enum {
+enum awl_markup_style {
     AWL_MARKUP_BOLD = 1,
     AWL_MARKUP_ITALIC = 2,
     AWL_MARKUP_UNDERLINE = 4,
@@ -46,7 +46,8 @@ enum {
     AWL_MARKUP_FONT = AWL_MARKUP_BOLD | AWL_MARKUP_ITALIC,
 };
 
-enum {
+/** the parser's limits */
+enum awl_markup_limits {
     /** bytes of markup parsed at most; the rest is left out */
     AWL_MARKUP_MAX = 16384,
     /** tags open at once at most; a further one is dropped */
@@ -66,9 +67,11 @@ typedef struct awl_markup_run_t {
 typedef struct awl_markup_t {
     /** the text without markup, entities decoded; NUL-terminated */
     char* text;
+    /** text's length, the NUL not counted */
     unsigned int len;
     /** in order, none empty; neighbours differ in style or color */
     awl_markup_run_t* runs;
+    /** how many runs there are */
     unsigned int nruns;
 } awl_markup_t;
 
@@ -90,8 +93,9 @@ typedef struct awl_markup_piece_t {
     const char* text;
     /** from the line's left edge */
     int x, w;
-    /** the run's */
+    /** the run's style */
     int style;
+    /** the run's color */
     uint32_t color;
 } awl_markup_piece_t;
 

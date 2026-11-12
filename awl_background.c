@@ -28,7 +28,7 @@ typedef struct BackgroundView {
 } BackgroundView;
 
 /** The wallpaper's images (:c:member:`awl_server_t.background`), from
- * background_init() to background_fini() */
+ * :c:func:`background_init` to :c:func:`background_fini` */
 struct awl_background {
     struct wlr_scene_tree* tree;
     struct wl_list views;  /* BackgroundView.link */

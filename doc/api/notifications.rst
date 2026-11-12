@@ -11,8 +11,8 @@ through the ``notif_*`` host calls. The body's markup is plugins/markup.h's.
 
 awl's own notifications (the alerts, :c:func:`awl_notify` in the library) skip
 D-Bus: :c:func:`awl_notifications_send`, the host call :c:member:`~awl_host_t.notif_send`, with an
-:c:type:`awl_notif_send_t` that carries what D-Bus has no say in (its look,
-:c:type:`awl_notif_look_t`). They come without a bus, and no client can replace or
+:c:type:`awl_notif_send_t` that carries what a D-Bus client can't set (its
+look, :c:type:`awl_notif_look_t`). They come without a bus, and no client can replace or
 close them. Their image may be a list of icon names, ``;`` between them, the
 first found. One flagged :c:enumerator:`AWL_NOTIF_OSD` is feedback to what the user just
 did (plugins/osd.h): transient, shown through do-not-disturb, and left out of

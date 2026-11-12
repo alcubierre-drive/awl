@@ -28,8 +28,8 @@ typedef struct awl_server_t awl_server_t;
  *   else the oldest, reason 4), 64 MiB of image data (beyond, the image
  *   is dropped), the strings' lengths.
  * - awl's own (:c:func:`awl_notifications_send`, :c:member:`awl_host_t.notif_send`) skip
- *   D-Bus: they come even without a bus or the name, with what a client has
- *   no say in (:c:type:`awl_notif_look_t`, a timeout for critical ones), flagged
+ *   D-Bus: they come even without a bus or the name, and with what a D-Bus
+ *   client can't set (:c:type:`awl_notif_look_t`, a timeout for critical ones), flagged
  *   :c:enumerator:`AWL_NOTIF_AWL`. No client replaces (by id or tag) or closes them, no
  *   signal tells of them; they replace each other by tag.
  * - The history (:c:member:`awl_host_t.notif_history`) keeps the closed ones'

@@ -1,10 +1,10 @@
 #pragma once
 /** The plugins' defaults for :c:type:`awl_plugin_config_t` (plugins.h), which
- * plugins_config.c's configure() changes, next to awl's for :c:type:`awl_config_t`
+ * plugins_config.c's :c:func:`configure` changes, next to awl's for :c:type:`awl_config_t`
  * (awl_config_defaults.h). Only plugins_config.c includes it: every file
  * that did would get its own copy. Every setting is here with its default;
  * one left zero is a comment saying what zero means. Copy from here what to
- * change into plugins_config.c's configure(). */
+ * change into plugins_config.c's :c:func:`configure`. */
 #include "plugins.h"
 #include "plugins/colors.h"
 

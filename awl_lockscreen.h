@@ -2,11 +2,11 @@
 
 /**
  * The screen lock, part of awl (awl_lockscreen.c). awl locks with an
- * ext-session-lock client, ``cfg->lock.locker``, started on a lock
+ * ext-session-lock client, :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`, started on a lock
  * request (``loginctl lock-session`` and before suspend, through the
  * plugins' logind thread, or the lockscreen action). While the
  * session is locked only the locker's surfaces are shown (over a blur,
- * cfg->lock.blur) and get input. A lock covers the screen
+ * :c:member:`cfg->lock.blur <awl_config_t.lock.blur>`) and get input. A lock covers the screen
  * once every output has shown it; before a suspend, the logind thread waits
  * for that. While the logind thread doesn't listen for all it should, an
  * alert is up (awl_alert.h).
@@ -14,7 +14,7 @@
  * Main thread only, except the logind thread's two below
  * (plugins/logind.h): it calls :c:func:`awl_lock_request` and
  * :c:func:`awl_lock_logind_state` from its own thread, as
- * ``awl_host->lock_request()`` and ``awl_host->logind_state()``. Both wake
+ * :c:member:`awl_host->lock_request() <awl_host_t.lock_request>` and :c:member:`awl_host->logind_state() <awl_host_t.logind_state>`. Both wake
  * the main loop through an eventfd; requests made before it gets around to
  * them coalesce into one.
  */

@@ -21,16 +21,27 @@
 
 /** the widgets the bar can show right of the task bar,
  * :c:member:`awl_plugin_config_t.widgets` */
-enum {
-    AwlWidgetClock,       /* the time, a seconds meter; hover: the calendar */
-    AwlWidgetTray,        /* the status notifier items (plugins/sni.h) */
-    AwlWidgetVolume,      /* the default sink's volume (PulseAudio) */
-    AwlWidgetStats,       /* graphs of CPU, I/O, memory and swap */
+enum awl_widget_kind {
+    /** the time, a seconds meter; hover: the calendar */
+    AwlWidgetClock,
+    /** the status notifier items (plugins/sni.h) */
+    AwlWidgetTray,
+    /** the default sink's volume (plugins/pulsetest.h) */
+    AwlWidgetVolume,
+    /** graphs of CPU, I/O, memory and swap; hover: the system monitor
+     * (plugins/sysmon.h) */
+    AwlWidgetStats,
+    /** the temperatures; hover: the system monitor */
     AwlWidgetTemperature,
-    AwlWidgetDock,        /* a Thunderbolt dock, AC or battery */
+    /** a Thunderbolt dock, AC or battery; hover: the battery popup
+     * (plugins/batpopup.h) */
+    AwlWidgetDock,
+    /** the battery's charge; hover: the battery popup */
     AwlWidgetBattery,
-    AwlWidgetNetwork,     /* the address; hover: all of them */
-    AwlWidgetBacklight,   /* the backlight daemon's state */
+    /** the address; hover: all of them */
+    AwlWidgetNetwork,
+    /** the backlight daemon's state */
+    AwlWidgetBacklight,
     /** a bell, a dot while any are open; left: do-not-disturb, right: the
      * menu, middle: dismiss all; hover: how many are unread */
     AwlWidgetNotifications,
@@ -45,7 +56,7 @@ typedef struct awl_plugin_colors_t {
      * background and text */
     uint32_t bar_bg, bar_fg;
     /** the tags: tag_bg, and over it in this order (its alpha says how
-     * much) tag_occupied, tag_urgent, tag_selected */
+     * much) :c:member:`~awl_plugin_colors_t.tag_occupied`, :c:member:`~awl_plugin_colors_t.tag_urgent`, :c:member:`~awl_plugin_colors_t.tag_selected` */
     uint32_t tag_bg, tag_occupied, tag_urgent, tag_selected;
     /** the selected monitor's mark under the first tag; the frame around a
      * per-tag layout's symbol */
@@ -76,17 +87,17 @@ typedef struct awl_plugin_colors_t {
     awl_opt_color_t launcher_match, launcher_dim, launcher_prompt, launcher_query;
     /** the notifications' windows (plugins/notify.h) by urgency: text,
      * background and frame, each unset: the popups' */
-    awl_opt_color_t notify_low_fg, notify_low_bg, notify_low_frame;
-    awl_opt_color_t notify_normal_fg, notify_normal_bg, notify_normal_frame;
-    awl_opt_color_t notify_critical_fg, notify_critical_bg, notify_critical_frame;
+    awl_opt_color_t notify_low_fg, notify_low_bg, notify_low_frame,
+                    notify_normal_fg, notify_normal_bg, notify_normal_frame,
+                    notify_critical_fg, notify_critical_bg, notify_critical_frame;
     /** the bar of a notification with a value, its filled part; unset: its
      * frame's, which only the notification knows, so it stays unset here */
     awl_opt_color_t notify_progress;
-    /** the OSD's bar (plugins/osd.h); unset: notify_progress, else
-     * notify_low_fg (the OSD's urgency's text) */
+    /** the OSD's bar (plugins/osd.h); unset: :c:member:`~awl_plugin_colors_t.notify_progress`, else
+     * :c:member:`~awl_plugin_colors_t.notify_low_fg` (the OSD's urgency's text) */
     awl_opt_color_t osd_progress;
     /** the OSD's bar for a change awl didn't ask for, in place of
-     * osd_progress */
+     * :c:member:`~awl_plugin_colors_t.osd_progress` */
     uint32_t osd_unasked;
     /** the desktop file list (awl_desktop.h): its background, the names of
      * files, folders and broken links */
@@ -133,8 +144,7 @@ typedef struct awl_plugin_config_t {
     struct {
         /** the battery's and the AC adapter's sysfs directories, with a
          * trailing '/' */
-        const char* dir;
-        const char* ac_dir;
+        const char* dir, * ac_dir;
         /** the charge in percent below which the battery is low (the
          * icons' battery_low; its colors are :c:type:`awl_plugin_colors_t`'s
          * battery) */
@@ -169,11 +179,11 @@ typedef struct awl_plugin_config_t {
     } volume;
     /** the clock's calendar (plugins/calpopup.h) */
     struct {
-        /** what its button runs, an argv (NULL terminated), and the
-         * button's text (NULL: app[0]); the button shows while the
-         * calendar has events (Evolution's data server answers). NULL: no
-         * button. */
+        /** what its button runs, an argv (NULL terminated); the button
+         * shows while the calendar has events (Evolution's data server
+         * answers). NULL: no button. */
         const char* const* app;
+        /** the button's text, NULL: app[0] */
         const char* app_label;
         /** other time zones, a row each above the month: the label (id)
          * left, the zone's time right. zone is an IANA identifier
@@ -215,9 +225,8 @@ typedef struct awl_plugin_config_t {
         const char* const* terminal;
         /** before the query; the run mode's. With markup (plugins/markup.h:
          * <b>, <i>, <u>, <t color="#rrggbb">; &lt; for a '<'), drawn in
-         * colors.launcher_prompt where it sets no color */
-        const char* prompt;
-        const char* run_prompt;
+         * :c:member:`colors.launcher_prompt <awl_plugin_colors_t.launcher_prompt>` where it sets no color */
+        const char* prompt, * run_prompt;
         /** where it shows: an AWL_WINDOW_AT_* (awl.h), moved down by dy */
         int at, dy;
     } launcher;
@@ -248,16 +257,15 @@ typedef struct awl_plugin_config_t {
          * first found wins; looked up and decoded on the image thread
          * (notify_image.h), as large as the tray's icons. NULL, "" or none
          * found: the glyph (🔔, 🔕). */
-        const char* bell_icon;
-        const char* bell_icon_dnd;
+        const char* bell_icon, * bell_icon_dnd;
     } notify;
     /** the notification a volume or brightness change brings
      * (plugins/osd.h), and the wallpaper's and the desktop files'
      * (wallpaper_icon, desktop_icon) and do-not-disturb's (notify's
      * bell icons): the new value as a bar beside an icon, no text,
      * replaced in place while the changes go on; in colors.notify_low_*,
-     * the bar in colors.osd_progress, or for a change awl didn't ask for
-     * in colors.osd_unasked with its cause as the summary; above 100%
+     * the bar in :c:member:`colors.osd_progress <awl_plugin_colors_t.osd_progress>`, or for a change awl didn't ask for
+     * in :c:member:`colors.osd_unasked <awl_plugin_colors_t.osd_unasked>` with its cause as the summary; above 100%
      * the volume's bar stays full and fills again over it in colors.bad */
     struct {
         /** ms it stays after the last change */
@@ -281,8 +289,7 @@ typedef struct awl_plugin_config_t {
         /** the wallpaper's (a change, the timer's mode, a Ctrl+click on
          * the desktop) and the desktop files' (a Shift+click's toggle)
          * icons, as notify's bell_icon; none found: no icon */
-        const char* wallpaper_icon;
-        const char* desktop_icon;
+        const char* wallpaper_icon, * desktop_icon;
         /** whether the timer's wallpaper changes show too, not only the
          * user's */
         int wallpaper_timer;
@@ -290,7 +297,7 @@ typedef struct awl_plugin_config_t {
 } awl_plugin_config_t;
 
 /** :c:member:`awl_plugin_config_t.launcher`'s layout */
-enum {
+enum awl_launcher_layout {
     /** a list of results under the query */
     AWL_LAUNCHER_LIST,
     /** a strip as high as the bar, the results beside the query */
@@ -298,14 +305,17 @@ enum {
 };
 /** :c:func:`awl_launcher_toggle`'s modes: the applications, or $PATH and the
  * command lines run before (plugins/launcher.h) */
-enum {
+enum awl_launcher_mode {
     /** the applications */
     AWL_LAUNCHER_APPS,
     /** $PATH and the command lines run before */
     AWL_LAUNCHER_RUN,
 };
 
-/** The running plugins' state, see :c:func:`awl_plugin_get`. */
+/** The running plugins' state, see :c:func:`awl_plugin_get`. The modules'
+ * own state, from :c:member:`~awl_plugin_data_t.osd` to
+ * :c:member:`~awl_plugin_data_t.widgets` (plugins/handles.h), is NULL where
+ * a start failed, which their functions take as a no-op. */
 typedef struct awl_plugin_data_t {
     float refresh_sec;
 
@@ -317,47 +327,64 @@ typedef struct awl_plugin_data_t {
     pulse_test_t* pulse;
     awl_backlight_t* backlight;
     awl_poller_t* poller;
-    /** the tray's host, and the loop it runs on (plugins/loop.h); its
-     * menus' window and its tooltips (the main thread's) */
+    /** the tray's host */
     awl_sni_t* sni;
+    /** the loop the tray's host runs on (plugins/loop.h) */
     awl_loop_t* tray_loop;
+    /** the tray's menus' window, the main thread's */
     awl_tray_menu_window_t* tray_menu;
+    /** the tray's tooltips, the main thread's */
     awl_tray_tooltip_t* tray_tip;
     int paused;
 
-    /** the modules' own state (plugins/handles.h); NULL where a start
-     * failed, which their functions take as a no-op */
+    /** the volume's and brightness's notification */
     awl_osd_t* osd;
+    /** the clock's calendar popup */
     awl_calpopup_t* calpopup;
+    /** the battery popup */
     awl_batpopup_t* batpopup;
+    /** the system monitor popup */
     awl_sysmon_t* sysmon;
+    /** the notifications */
     awl_notify_t* notify;
+    /** the wallpaper's thread */
     awl_wallpaper_thread_t* wallpaper;
+    /** the desktop file list's contents */
     awl_desktop_panel_t* desktop;
+    /** the logind thread */
     awl_logind_t* logind;
+    /** the launcher */
     awl_launcher_t* launcher;
+    /** the bar widgets' shared state (plugins_widgets.c) */
     awl_widgets_t* widgets;
 
-    /** the configs (:c:func:`awl_config`, :c:func:`awl_plugin_config`) */
+    /** awl's config (:c:func:`awl_config_init`); read-only, main thread (a
+     * thread gets copies of what it needs before it starts: one left stuck
+     * past fini would read freed memory) */
     awl_config_t config;
+    /** the library's config, the same way */
     awl_plugin_config_t plugin_config;
 
     /** :c:type:`awl_plugin_colors_t`'s bar colors (:c:macro:`AWL_BAR_COLORS`) as pixman's */
     struct { AWL_BAR_COLORS( AWL_BAR_COLOR_PIXMAN ) } colors;
 } awl_plugin_data_t;
 
-/** The running plugins' state; NULL while the plugins aren't running. */
+/** The running plugins' state; NULL while the plugins aren't running.
+ * Only for the library's entry points, which awl calls without it: the
+ * api_* functions (plugins.c) and the actions (plugins_config.c); the
+ * widgets' callbacks have it as :c:member:`widget_t.plugins`. Everything they
+ * call gets it, or the part it needs, as an argument. */
 awl_plugin_data_t* awl_plugin_get( void );
-/** the running plugins' module m (an :c:type:`awl_plugin_data_t` member),
- * NULL while they aren't running; for the entry points, which have no
- * other way to it */
-#define AWL_PLUGIN_MODULE( m ) (awl_plugin_get() ? awl_plugin_get()->m : NULL)
 
 /** plugins.c: awl's own notification (:c:func:`awl_notify_send`) of title and
  * body (with markup) as AWL_NOTIF_SEND_INIT has it; main thread */
 void awl_notify( const char* title, const char* body );
-/** plugins.c: n as awl's own notification (:c:member:`awl_host_t.notif_send`), what
- * D-Bus has no say in included; logs a failure; returns its id, 0 if none.
+/** plugins.c: sends n as awl's own notification
+ * (:c:member:`awl_host_t.notif_send`). It goes straight to awl's
+ * notification server, not over D-Bus, so the fields a D-Bus client can't
+ * set count too: :c:member:`~awl_notif_send_t.tag`,
+ * :c:member:`~awl_notif_send_t.look` and flags such as
+ * :c:enumerator:`AWL_NOTIF_OSD`. Logs a failure; returns its id, 0 if none.
  * awl's notifications all go through here. Main thread. */
 uint32_t awl_notify_send( const awl_notif_send_t* n );
 /** plugins.c: a notification "AWL config" listing the config dictionary,
@@ -365,29 +392,30 @@ uint32_t awl_notify_send( const awl_notif_send_t* n );
  * dictionary frees) as ``key=pointer(free function)``; its lines aren't
  * capped (but by the screen). Main thread. */
 void awl_notify_config( void );
-/** plugins.c: the default sink's volume up (delta > 0) or down by delta (1
+/** plugins.c: p's default sink's volume up (delta > 0) or down by delta (1
  * is 100%), up no further than the config's volume.max
  * (:c:func:`pulse_volume_adjust`); for a
  * binding's action, e.g. ``.f = 0.05f``; the osd's notification follows
  * (plugins/osd.h). Main thread, returns at once. */
-void awl_volume_adjust( float delta );
+void awl_volume_adjust( awl_plugin_data_t* p, float delta );
 /** plugins.c: mutes the default sink or unmutes it (:c:func:`pulse_mute_toggle`);
  * the osd's notification follows */
-void awl_volume_mute_toggle( void );
+void awl_volume_mute_toggle( awl_plugin_data_t* p );
 /** plugins.c: mutes the default source or unmutes it
  * (:c:func:`pulse_mic_mute_toggle`) */
-void awl_mic_mute_toggle( void );
+void awl_mic_mute_toggle( awl_plugin_data_t* p );
 /** plugins.c: mutes the config's volume.speaker sink or unmutes it
  * (:c:func:`pulse_speaker_mute_toggle`); the osd's notification follows */
-void awl_speaker_mute_toggle( void );
+void awl_speaker_mute_toggle( awl_plugin_data_t* p );
 /** plugins.c: the screen brightness up or down by delta (1 is all of it),
  * through the backlight daemon (:c:func:`backlight_adjust`), which this starts if
  * it isn't running; the osd's notification shows the expected value at once
  * and corrects it if the daemon's differs. Main thread, returns at once. */
-void awl_brightness_adjust( float delta );
+void awl_brightness_adjust( awl_plugin_data_t* p, float delta );
 
-/** plugins_widgets.c: :c:member:`awl_plugin_api_t.bar_widgets` */
-void awl_widgets_create( awl_bar_t* bar );
+/** plugins_widgets.c: :c:member:`awl_plugin_api_t.bar_widgets`, the widgets
+ * on p's state (:c:member:`widget_t.plugins`) */
+void awl_widgets_create( awl_plugin_data_t* p, awl_bar_t* bar );
 /** plugins_widgets.c: what the widgets share across bars; NULL if out of
  * memory (the widgets that need it then show nothing) */
 awl_widgets_t* awl_widgets_start( void );
@@ -424,21 +452,15 @@ int awl_launcher_stop( awl_launcher_t* la );
 void awl_launcher_toggle( awl_launcher_t* la, int mode );
 
 /** plugins_config.c: makes both of p's configs, awl's defaults
- * (:c:member:`awl_host_t.config_defaults`) and the plugins' with configure() (the
+ * (:c:member:`awl_host_t.config_defaults`) and the plugins' with :c:func:`configure` (the
  * CUSTOM part of plugins_config.c) applied; first thing in :c:member:`awl_plugin_api_t.init`
  * once p is made, so before anything reads them */
 void awl_config_init( awl_plugin_data_t* p );
-/** plugins_config.c: the config :c:func:`awl_config_init` made, the running
- * plugins' (:c:member:`awl_plugin_data_t.config`); read-only, main thread
- * (a thread gets copies of what it needs before it starts: one left stuck
- * past fini would read freed memory). Only while the plugins run. */
-const awl_config_t* awl_config( void );
-/** plugins_config.c: the plugins' config :c:func:`awl_config_init` made, alike */
-const awl_plugin_config_t* awl_plugin_config( void );
 /** plugins_config.c: fills in what p leaves unset (:c:type:`awl_opt_color_t`,
  * :c:type:`awl_opt_int_t`) with what it defaults to, from p and c, c filled in
  * already (:c:func:`awl_config_fill_defaults`); once, in :c:func:`awl_config_init` */
 void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t* c );
-/** plugins_config.c: :c:member:`awl_plugin_api_t.config`, a copy of :c:func:`awl_config`
- * (awl's defaults while the plugins don't run) */
-void awl_config_fill( awl_config_t* c );
+/** plugins_config.c: :c:member:`awl_plugin_api_t.config`'s, c a copy of p's
+ * config (:c:member:`awl_plugin_data_t.config`), awl's defaults if p is NULL
+ * (the plugins don't run) */
+void awl_config_fill( const awl_plugin_data_t* p, awl_config_t* c );

@@ -7,6 +7,8 @@ import shlex
 import subprocess
 import sys
 
+from docutils.statemachine import ViewList
+import hawkmoth
 from hawkmoth import docstring as _hm_docstring
 
 project = 'awl'
@@ -65,9 +67,7 @@ nitpicky = True
 # missing reference
 nitpick_ignore_regex = [
     ('c:identifier', r'u?int(8|16|32|64)_t|size_t|pid_t|time_t|pthread_\w+|va_list|FILE|timeval|atomic_\w+'),
-    ('c:identifier', r'(wlr|wl|pixman|fcft|sd|pa|libinput|wuffs_base)_\w+'),
-    # an inline struct's type (hawkmoth_inline), shown as [anonymous]
-    ('c:identifier', r'@\w+'),
+    ('c:identifier', r'(wlr|wl|pixman|fcft|sd|pa|libinput|wuffs_base|xkb)_\w+'),
     # the modules' own state in awl_server_t, defined in .c files the docs
     # leave out
     ('c:identifier', r'awl_(bars|alerts|input|sni_watcher|notifs|test)'),
@@ -124,7 +124,68 @@ def _get_docstring_fixed(self, processor):
 _hm_docstring.Docstring.get_docstring = _get_docstring_fixed
 
 
+_DIRECTIVE = re.compile(r'^( *)\.\. c:(member|var):: ')
+
+
+def _merge_declarators(viewlist):
+    """`int x, y;` under one doc comment: hawkmoth makes a directive for each
+    declarator, each with the whole comment. Make them one directive with a
+    signature for each, under the comment once (any neighbours of the same
+    kind with the same text, which only declarators sharing a comment have)."""
+    lines = [(viewlist[i], viewlist.source(i), viewlist.offset(i)) for i in range(len(viewlist))]
+
+    # split into blocks: a member's or variable's directive with its body, or
+    # anything else line by line
+    blocks, i = [], 0
+    while i < len(lines):
+        m = _DIRECTIVE.match(lines[i][0])
+        if not m:
+            blocks.append((None, [lines[i]], []))
+            i += 1
+            continue
+        indent = len(m.group(1))
+        j = i + 1
+        while j < len(lines) and (not lines[j][0].strip()
+                                  or len(lines[j][0]) - len(lines[j][0].lstrip()) > indent):
+            j += 1
+        body = lines[i + 1:j]
+        key = (m.group(1), m.group(2), tuple(l[0].strip() for l in body if l[0].strip()))
+        blocks.append((key, [lines[i]], body))
+        i = j
+
+    out = []
+    for key, sig, body in blocks:
+        prev = out[-1] if out else None
+        if key is not None and prev is not None and prev[0] == key and key[2]:
+            text, src, off = sig[0]
+            m = _DIRECTIVE.match(text)
+            prev[1].append((' ' * m.end() + text[m.end():], src, off))
+        else:
+            out.append((key, list(sig), body))
+
+    merged = ViewList()
+    for _, sig, body in out:
+        for text, src, off in sig + body:
+            merged.append(text, src, off)
+    return merged
+
+
+_get_docstrings = hawkmoth._AutoBaseDirective._AutoBaseDirective__get_docstrings
+hawkmoth._AutoBaseDirective._AutoBaseDirective__get_docstrings = \
+    lambda self: _merge_declarators(_get_docstrings(self))
+
+
+def _inline_types(app, doctree):
+    """An inline struct's type (hawkmoth_inline's struct @name), which Sphinx
+    shows as [anonymous], shown as what it is: struct { ... } name."""
+    from sphinx import addnodes
+    for ref in list(doctree.findall(addnodes.pending_xref)):
+        if ref.get('refdomain') == 'c' and ref.get('reftarget', '').split('.')[-1].startswith('@'):
+            ref.replace_self(addnodes.desc_sig_punctuation('{ … }', '{ … }'))
+
+
 def setup(app):
+    app.connect('doctree-read', _inline_types)
     # first, before Sphinx's own filters count the warning
     for handler in logging.getLogger('sphinx').handlers:
         handler.filters.insert(0, _FileCommentFilter())

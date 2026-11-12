@@ -11,12 +11,12 @@
 
 /** the modifier mask without Caps Lock, as keys and buttons are matched */
 #define CLEANMASK(mask)         (mask & ~WLR_MODIFIER_CAPS)
-/** a binding's mod (:c:member:`Key.mod`, :c:member:`Button.mod`) with :c:macro:`MODKEY` as cfg->modkey */
+/** a binding's mod (:c:member:`Key.mod`, :c:member:`Button.mod`) with :c:macro:`MODKEY` as :c:member:`cfg->modkey <awl_config_t.modkey>` */
 uint32_t bindmods(awl_server_t *srv, uint32_t mod);
 
 
 /** the keyboard group of the real keyboards, before the first one; and the
- * list of devices configapply() reconfigures */
+ * list of devices :c:func:`configapply` reconfigures */
 void inputinit(awl_server_t *srv);
 void inputfini(awl_server_t *srv);
 /** frees :c:member:`awl_server_t.input`; once the backend, and with it

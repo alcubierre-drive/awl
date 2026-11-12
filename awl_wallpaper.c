@@ -12,7 +12,7 @@ static void wallpaperarm(awl_server_t *srv);
 static int wallpapertimeout(void *data);
 
 /** The wallpaper timer's state (:c:member:`awl_server_t.wallpaper`), from
- * wallpaperinit() to wallpaperfini() */
+ * :c:func:`wallpaperinit` to wallpaperfini() */
 struct awl_wallpaper {
     /** What cfg->wallpaper had, copied, to tell whether a
      * reload changed it; and cfgdict's "wallpaper_mode" as awl last set or saw
@@ -22,9 +22,9 @@ struct awl_wallpaper {
         WallpaperMode mode;
         int mode_dict;
     } applied;
-    /** cfg->wallpaper.interval */
+    /** :c:member:`cfg->wallpaper.interval <awl_wallpaper_config_t.interval>` */
     struct wl_event_source *timer;
-    /** what the timer switches to: cfg->wallpaper.mode or cfgdict's "wallpaper_mode",
+    /** what the timer switches to: :c:member:`cfg->wallpaper.mode <awl_wallpaper_config_t.mode>` or cfgdict's "wallpaper_mode",
      * until :c:func:`wallpapermode` */
     WallpaperMode mode;
 };
@@ -83,7 +83,7 @@ wallpapernext(WallpaperMode mode, int by_timer)
         api->wallpaper(mode, by_timer);
 }
 
-/** the wallpaper action: switches to the wallpaper arg->i says (a
+/** the wallpaper action: switches to the wallpaper :c:member:`arg->i <Arg.i>` says (a
  * :c:enum:`WallpaperMode`; the timer's next or back: as the timer's mode
  * goes) */
 void
@@ -108,7 +108,7 @@ wallpapertake(awl_server_t *srv)
         background_set(srv->background, img, srv->cfg->wallpaper.fade_ms);
 }
 
-/** cycles the timer's mode by arg->i (+1: random, next, previous, random...);
+/** cycles the timer's mode by :c:member:`arg->i <Arg.i>` (+1: random, next, previous, random...);
  * the library tells the user */
 void
 wallpapermode(awl_server_t *srv, const Arg *arg)

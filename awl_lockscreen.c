@@ -64,21 +64,21 @@ struct awl_lock {
     struct wlr_session_lock_v1 *cur;
     /** awl_proc.lock.fd's event handler */
     struct wl_event_source *source;
-    /** the logind alert's grace period, see logindupdate() */
+    /** the logind alert's grace period, see :c:func:`logindupdate` */
     struct wl_event_source *logind_timer;
     /** the most a lock waits for its first frame on every output */
     struct wl_event_source *covered_timer;
-    /** the locker lockscreen() started, until it exits; 0 if none; and its
-     * argv[0], as cfg->lock.locker was then */
+    /** the locker :c:func:`lockscreen` started, until it exits; 0 if none */
     pid_t locker_pid;
+    /** its argv[0], as :c:member:`cfg->lock.locker <awl_config_t.lock.locker>` was then */
     char locker_name[64];
     /** it has locked the session at least once */
     int locker_locked;
-    /** what the logind thread last said it listens for, awl_logind_flags */
+    /** what the logind thread last said it listens for, :c:enum:`awl_logind_flags` */
     unsigned logind_flags;
     /** it doesn't listen for all it should; the grace period runs since then */
     int logind_missing;
-    /** a lock waits for each output to show it, see lockcovered() */
+    /** a lock waits for each output to show it, see :c:func:`lockcovered` */
     int covered_pending;
 };
 
@@ -195,7 +195,7 @@ destroysessionlock(struct wl_listener *listener, void *data)
 }
 
 /** A lock covers the screen once every enabled output has shown a frame
- * with the locker's surface on it, or after LOCK_COVER_MS anyway (a locker
+ * with the locker's surface on it, or after :c:macro:`LOCK_COVER_MS` anyway (a locker
  * that never draws, an output that doesn't render). The logind thread waits
  * for that before it lets a suspend go ahead, so the last image before
  * sleep, and the first after it, is the locker's. */
@@ -245,7 +245,7 @@ lockfire(int fd, uint32_t mask, void *data)
     return 0;
 }
 
-/** Starts cfg->lock.locker, unless a lock is in place (a locker holds
+/** Starts :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`, unless a lock is in place (a locker holds
  * it) or the one started last is still running and yet to lock. While
  * locked without a lock (the locker crashed), a new locker takes over. */
 void
@@ -274,7 +274,7 @@ lockscreen(awl_server_t *srv, const Arg *arg)
 
 /** what the logind thread has to listen for */
 static /** wakes the main loop, which then looks at awl_proc.lock's requested
- * and logind_flags (lockfire()); any thread */
+ * and logind_flags (:c:func:`lockfire`); any thread */
 void
 lockwake(void)
 {
@@ -292,7 +292,7 @@ logindneeded(awl_server_t *srv)
 }
 
 /** The logind alert: up once the logind thread hasn't listened for all of
- * logindneeded() for LOGIND_GRACE_MS (it starts and reconnects within that,
+ * logindneeded() for :c:macro:`LOGIND_GRACE_MS` (it starts and reconnects within that,
  * a plugin reload too), down as soon as it does. That covers a thread that
  * never reports at all, e.g. without a plugin library. */
 void

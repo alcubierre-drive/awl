@@ -30,7 +30,7 @@
 #include <stdint.h>
 
 /** the matcher's limits */
-enum {
+enum awl_fuzzy_limits {
     /** characters of a query that count, the rest is left out */
     AWL_FUZZY_MAX_QUERY = 64,
     /** characters of a text that count, the rest is left out */

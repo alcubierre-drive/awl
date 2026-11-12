@@ -16,7 +16,7 @@
 #include <string.h>
 #include <time.h>
 
-#define CFG (&awl_plugin_config()->notify)
+#define CFG (&ns->p->plugin_config.notify)
 /** the config dictionary's key for do-not-disturb, a number */
 #define DND_KEY "notify_dnd"
 
@@ -148,8 +148,8 @@ static const awl_notif_t* record( uint32_t id ) {
 /** :c:type:`awl_plugin_colors_t`'s notify_* of an urgency */
 typedef struct { uint32_t fg, bg, frame; } urgency_colors_t;
 
-static urgency_colors_t urgency_colors( int urgency ) {
-    const awl_plugin_colors_t* k = &awl_plugin_config()->colors;
+static urgency_colors_t urgency_colors( const awl_notify_t* ns, int urgency ) {
+    const awl_plugin_colors_t* k = &ns->p->plugin_config.colors;
     switch (urgency) {
     case AWL_NOTIF_LOW:
         return (urgency_colors_t){ k->notify_low_fg.v, k->notify_low_bg.v, k->notify_low_frame.v };
@@ -161,9 +161,9 @@ static urgency_colors_t urgency_colors( int urgency ) {
 }
 
 /** l with what it leaves unset filled in from the config, for urgency */
-static awl_notif_look_t look_filled( awl_notif_look_t l, int urgency ) {
-    const awl_plugin_colors_t* k = &awl_plugin_config()->colors;
-    const urgency_colors_t u = urgency_colors( urgency );
+static awl_notif_look_t look_filled( const awl_notify_t* ns, awl_notif_look_t l, int urgency ) {
+    const awl_plugin_colors_t* k = &ns->p->plugin_config.colors;
+    const urgency_colors_t u = urgency_colors( ns, urgency );
     AWL_FILL( l.max_lines, CFG->max_lines );
     AWL_FILL( l.width, CFG->width );
     AWL_FILL( l.image_size, CFG->image_size );
@@ -172,7 +172,7 @@ static awl_notif_look_t look_filled( awl_notif_look_t l, int urgency ) {
     AWL_FILL( l.frame, u.frame );
     AWL_FILL( l.progress, AWL_OR( k->notify_progress, l.frame.v ) );
     AWL_FILL( l.over_color, k->bad );
-    AWL_FILL( l.frame_width, awl_config()->popup.border_width );
+    AWL_FILL( l.frame_width, ns->p->config.popup.border_width );
     return l;
 }
 
@@ -250,6 +250,7 @@ static void image_for( awl_notify_t* ns, note_t* n, int full ) {
 /** the parts' places below the summary, the body cut at lines (0 any, < 0
  * none); returns the content's height, -1 when out of memory */
 static int stack( note_t* n, struct fcft_font* font, int lines ) {
+    const awl_notify_t* ns = n->ns;
     const int osd = (n->flags & AWL_NOTIF_OSD) && !n->nactions;
     int gap = px( n, 6 );
     n->bar_h = 0;
@@ -317,7 +318,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     if (scale != n->scale) n->laid = 0;
     n->scale = scale;
     fonts_for( n, font );
-    const int pad = px( n, (float)awl_config()->popup.padding );
+    const int pad = px( n, (float)ns->p->config.popup.padding );
     if (n->max_h > 0 && n->max_h < max_h) max_h = n->max_h;
 
     n->w = px( n, (float)n->look.width.v );
@@ -462,7 +463,7 @@ static void paint_image( const note_t* n, pixman_image_t* pix, int x0, int y0, u
 
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     note_t* n = data;
-    const awl_config_t* c = awl_config();
+    const awl_config_t* c = &n->ns->p->config;
     const uint32_t fg = n->look.fg.v;
     if (n->img) paint_image( n, pix, x0, y0, fg );
     if (n->sum_h) paint_title( n, pix, x0, y0, fg );
@@ -669,7 +670,7 @@ static int fill( awl_notify_t* ns, note_t* n, const awl_notif_t* r ) {
     n->generation = r->generation;
     n->urgency = r->urgency <= AWL_NOTIF_CRITICAL ? r->urgency : AWL_NOTIF_NORMAL;
     n->value = r->value;
-    n->look = look_filled( r->look, n->urgency );
+    n->look = look_filled( ns, r->look, n->urgency );
     n->flags = r->flags;
     sources( ns, n, r );
     n->laid = 0;
@@ -700,6 +701,7 @@ static note_t* note_new( awl_notify_t* ns, const awl_notif_t* r ) {
         free( n );
         return NULL;
     }
+    n->ns = ns;
     n->id = r->id;
     n->scale = 1;
     if (!fill( ns, n, r )) {
@@ -746,6 +748,7 @@ static int more_show( awl_notify_t* ns, Monitor* m, int k, int off ) {
 /** caps n's window to h logical pixels, its frame included, shown at off;
  * returns whether anything of it fits */
 static int cap( note_t* n, Monitor* m, int h, int off ) {
+    const awl_notify_t* ns = n->ns;
     int x, y, w, wh;
     if (!awl_host->window_box( awl_host->srv, n->win, &x, &y, &w, &wh )) return 0;
     /* the frame as drawn, physical pixels, around measure()'s content */
@@ -992,8 +995,8 @@ awl_notify_t* awl_notify_start( awl_plugin_data_t* p ) {
     awl_notify_t* ns = calloc( 1, sizeof *ns );
     if (!ns) return NULL;
     ns->p = p;
-    ns->img = awl_notify_image_new();
-    ns->menu = awl_notify_menu_new( ns );
+    ns->img = awl_notify_image_new( p->config.tray.icon_theme );
+    ns->menu = awl_notify_menu_new( ns, p );
     ns->timer = awl_host->timer_add( awl_host->srv, restack_timer, ns );
     ns->img_timer = awl_host->timer_add( awl_host->srv, image_timer, ns );
     awl_notify_changed( ns );

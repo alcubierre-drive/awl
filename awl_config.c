@@ -33,12 +33,12 @@ const awl_arranges_t awl_arranges = { AWL_ARRANGES };
 #undef AWL_ACTION_REGISTER
 #undef AWL_LAYOUT_REGISTER
 
-/** The config's state (:c:member:`awl_server_t.conf`), from configinit() to
+/** The config's state (:c:member:`awl_server_t.conf`), from :c:func:`configinit` to
  * configfini() */
 struct awl_conf {
     /** the library's, cfg while it is loaded */
     awl_config_t loaded;
-    /** plugin_restart()'s, until it runs */
+    /** :c:func:`plugin_restart`'s, until it runs */
     struct wl_event_source *restart_source;
 };
 
@@ -194,7 +194,7 @@ environmentimport(void)
     awl_bus_import_environment(envimported);
 }
 
-/** cfg->environment into awl's environment */
+/** :c:member:`cfg->environment <awl_config_t.environment>` into awl's environment */
 static void
 environmentapply(awl_server_t *srv)
 {

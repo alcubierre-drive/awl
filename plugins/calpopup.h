@@ -21,11 +21,11 @@
  * out of memory; the functions below take NULL as a no-op. */
 awl_calpopup_t* awl_calpopup_start( awl_plugin_data_t* p );
 /** stops that, gives back the window and frees cp (the plugin library's
- * fini); nonzero if the thread is stuck (see awl_calendar_stop()) */
+ * fini); nonzero if the thread is stuck (see :c:func:`awl_calendar_stop`) */
 int awl_calpopup_stop( awl_calpopup_t* cp );
 /** Shows the popup for w (the clock) on its monitor, centered on center_x
  * (logical pixels from the monitor's left edge), on today; nothing if it is
- * shown there already. Sets w->popup_window. */
+ * shown there already. Sets :c:member:`w->popup_window <widget_t.popup_window>`. */
 void awl_calpopup_show( awl_calpopup_t* cp, widget_t* w, int center_x );
 void awl_calpopup_hide( awl_calpopup_t* cp );
 /** a month forward (amount > 0) or back while shown */

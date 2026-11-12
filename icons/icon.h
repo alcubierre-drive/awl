@@ -26,7 +26,7 @@ extern "C" {
 #endif
 
 /** limits against hostile icons */
-enum {
+enum awl_icon_max {
     /** files and data larger than this aren't read or decoded */
     AWL_ICON_MAX_BYTES = 2 << 20,
     /** nor PNGs, JPEGs, GIFs and pixmaps wider or higher than this, nor any icon
@@ -41,7 +41,7 @@ enum {
 };
 
 /** what :c:func:`awl_icons_lookup` found */
-enum {
+enum awl_icon_found {
     /** a symbolic icon, by GTK's rule (-symbolic.svg, .symbolic.png): only
      * its shape counts, to be drawn in the text's color */
     AWL_ICON_SYMBOLIC = 1 << 0,
@@ -102,8 +102,9 @@ typedef struct awl_icon_limits_t {
     /** the file's or data's bytes; an SVG's are AWL_ICON_MAX_BYTES at most
      * regardless (its parsing and rendering grow with them) */
     size_t bytes;
-    /** a PNG's, JPEG's or GIF's width and height each, and both multiplied */
+    /** a PNG's, JPEG's or GIF's width and height, each */
     int dim;
+    /** its width and height multiplied */
     uint64_t pixels;
     /** the decoder's memory besides the pixels (see AWL_ICON_MAX_WORK) */
     uint64_t work;
@@ -132,7 +133,8 @@ typedef struct awl_icon_pixmap_t {
  * match their size, or larger than :c:enumerator:`AWL_ICON_MAX_DIM`, don't count. NULL if
  * none does. */
 pixman_image_t* awl_icon_from_pixmaps( const awl_icon_pixmap_t* pixmaps, int n, int max_w, int max_h );
-/** A notification's image-data, (iiibiiay): w x h pixels of non-premultiplied
+/** A notification's raw image (the ``image-data`` hint, its fields passed
+ * one by one, :c:member:`awl_notif_t.image_data`): w x h pixels of non-premultiplied
  * RGB (has_alpha 0, channels 3) or RGBA (has_alpha, channels 4), a byte each
  * (bits 8), R first, rows rowstride bytes apart (at least w * channels; the
  * last row needn't be padded), fitted into max_w x max_h as

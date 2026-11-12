@@ -13,7 +13,7 @@
 #include <string.h>
 #include <time.h>
 
-#define CFG (&awl_plugin_config()->notify)
+#define CFG (&mn->p->plugin_config.notify)
 
 /** what the server keeps open at most (awl_notifications.c); how long the
  * pointer may be off the menu and what opened it before it closes, ms (as
@@ -44,6 +44,8 @@ typedef struct {
 struct awl_notify_menu {
     /** the notifications, whose menu it is */
     awl_notify_t* ns;
+    /** the root, for the configs */
+    awl_plugin_data_t* p;
     awl_window_t* win;
     row_t* rows;
     int n;
@@ -216,7 +218,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     mn->pad = px( mn, 6 );
     mn->rowh = fh + 2 * px( mn, 3 );
     mn->indent = px( mn, 16 );
-    mn->colsp = px( mn, (float)awl_config()->popup.column_spacing );
+    mn->colsp = px( mn, (float)mn->p->config.popup.column_spacing );
     mn->show_w = (int)awl_host->text_width( font, SHOW ) + 2 * px( mn, 8 );
     const int gap = px( mn, 4 );
 
@@ -304,7 +306,7 @@ static void text_at( awl_notify_menu_t* mn, pixman_image_t* pix, struct fcft_fon
 static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     awl_notify_menu_t* mn = data;
     (void)scale;
-    const awl_config_t* c = awl_config();
+    const awl_config_t* c = &mn->p->config;
     const awl_colors_t* mc = &c->colors;
     for (int i = 0; i < mn->shown; i++) {
         const row_t* r = &mn->rows[i];
@@ -537,9 +539,12 @@ void awl_notify_menu_changed( awl_notify_menu_t* mn ) {
     awl_host->window_redraw( awl_host->srv, mn->win );
 }
 
-awl_notify_menu_t* awl_notify_menu_new( awl_notify_t* ns ) {
+awl_notify_menu_t* awl_notify_menu_new( awl_notify_t* ns, awl_plugin_data_t* p ) {
     awl_notify_menu_t* mn = calloc( 1, sizeof *mn );
-    if (mn) mn->ns = ns;
+    if (mn) {
+        mn->ns = ns;
+        mn->p = p;
+    }
     return mn;
 }
 

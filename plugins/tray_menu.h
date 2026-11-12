@@ -24,7 +24,7 @@
 #include "handles.h"
 
 /** a menu entry's flags */
-enum {
+enum awl_tray_menu_flags {
     AWL_TRAY_MENU_SEPARATOR = 1 << 0,
     AWL_TRAY_MENU_DISABLED = 1 << 1,
     /** a check box or a radio button, CHECKED or MIXED if so */
@@ -52,17 +52,19 @@ typedef struct awl_tray_menu_node_t {
     /** plain text without mnemonics (never NULL); shortcut e.g. "Ctrl+Q", or
      * NULL */
     char *label, *shortcut;
-    /** the icon's PNG, or SVG or XPM if :c:enumerator:`AWL_TRAY_MENU_FILE`, icon_len bytes (at
+    /** the icon's PNG, or SVG or XPM if :c:enumerator:`AWL_TRAY_MENU_FILE`, :c:member:`~awl_tray_menu_node_t.icon_len` bytes (at
      * most AWL_ICON_MAX_BYTES, icons/icon.h), or NULL */
     uint8_t* icon;
+    /** icon's length in bytes */
     size_t icon_len;
     int parent, first, n;
 } awl_tray_menu_node_t;
 
 /** one layout of a menu, for the main thread; immutable once handed over */
 typedef struct awl_tray_menu_snap_t {
-    /** the menu's (sni_menu.h), and the request it answers */
+    /** the menu's (sni_menu.h) */
     uint64_t serial;
+    /** the request it answers */
     uint32_t gen;
     /** GetLayout's revision */
     uint32_t revision;

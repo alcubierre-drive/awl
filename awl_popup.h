@@ -3,7 +3,7 @@
 /**
  * awl's own popups (awl_window.h), part of awl: the plugins' (the bar
  * widgets' hover popups, the tray's menus, the notifications) and
- * AWL_TEST_WINDOWS' (awl_test.h), styled by cfg->popup, in a tree of
+ * AWL_TEST_WINDOWS' (awl_test.h), styled by :c:member:`cfg->popup <awl_config_t.popup>`, in a tree of
  * their own right above LyrTop; made with the first one, so until a plugin
  * asks for a popup none of this runs (awl_popup.c). A popup that takes the
  * pointer gets its motion, presses and wheel before anything below it,
@@ -13,7 +13,7 @@
  * they are hidden: a press elsewhere, another popup shown and locking the
  * screen leave them (they are only out of sight while it is locked). They
  * are in a tree of their own above the others: right above LyrOverlay if
- * cfg->popup.persistent_overlay (over fullscreen clients), else right above
+ * :c:member:`cfg->popup.persistent_overlay <awl_popup_config_t.persistent_overlay>` (over fullscreen clients), else right above
  * the others' tree; while another popup is shown (a menu, a hover popup),
  * the others' tree is right above theirs instead. Main thread only.
  */
@@ -41,7 +41,7 @@ typedef struct {
  * NULL before setup() */
 awl_window_t *popupnew(awl_server_t *srv, int plugin);
 /** a new, hidden popup for the plugins, styled by
- * cfg->popup; NULL before setup(). The library gives back what it made
+ * :c:member:`cfg->popup <awl_config_t.popup>`; NULL before setup(). The library gives back what it made
  * before it is unloaded; :c:func:`pluginsreap` destroys what it left. Several can be
  * shown at once. The host table hands the plugins the rest of
  * awl_window.h as it is. */

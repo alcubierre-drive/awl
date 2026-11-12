@@ -25,7 +25,7 @@ typedef struct {
 /** a month's events, sorted: the all-day ones first, then by start */
 typedef struct awl_cal_month_t {
     int key;
-    /** CAL_OK, or why there are no events */
+    /** :c:enumerator:`CAL_OK`, or why there are no events */
     cal_status_t status;
     awl_cal_event_t* events;
     int n;

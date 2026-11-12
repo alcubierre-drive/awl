@@ -76,6 +76,8 @@ typedef struct {
 /** the handle: the thread is started on the first wish */
 struct awl_notify_images {
     worker_t* w;
+    /** the config's tray.icon_theme, for the thread; NULL none */
+    char* icon_theme;
 };
 
 static void wish_free( wish_t* w ) {
@@ -364,8 +366,7 @@ static worker_t* worker_get( awl_notify_images_t* h ) {
     if (h->w) return h->w;
     worker_t* x = calloc( 1, sizeof(*x) );
     if (!x) return NULL;
-    const char* theme = awl_config()->tray.icon_theme;
-    x->icon_theme = theme ? strdup( theme ) : NULL;
+    x->icon_theme = h->icon_theme ? strdup( h->icon_theme ) : NULL;
     pthread_mutex_init( &x->lock, NULL );
     if (awl_thread_start( &x->thread, "notifyimg", worker, x )) {
         pthread_mutex_destroy( &x->lock );
@@ -452,13 +453,19 @@ void awl_notify_image_free( awl_notify_image_t* list ) {
     wishes_free( (wish_t*)list );
 }
 
-awl_notify_images_t* awl_notify_image_new( void ) {
-    return calloc( 1, sizeof(awl_notify_images_t) );
+awl_notify_images_t* awl_notify_image_new( const char* icon_theme ) {
+    awl_notify_images_t* h = calloc( 1, sizeof(awl_notify_images_t) );
+    if (h && icon_theme && !(h->icon_theme = strdup( icon_theme ))) {
+        free( h );
+        return NULL;
+    }
+    return h;
 }
 
 int awl_notify_image_stop( awl_notify_images_t* h ) {
     if (!h) return 0;
     worker_t* x = h->w;
+    free( h->icon_theme );
     free( h );
     if (!x) return 0;
     /* reads files: may hang on a dead mount; then x stays, the thread's */

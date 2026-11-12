@@ -12,11 +12,11 @@
 #include <string.h>
 #include <time.h>
 
-#define CFG (&awl_plugin_config()->osd)
+#define CFG (&o->p->plugin_config.osd)
 
 /** ms: how long it waits for a change before it sends the value as it
  * is; how long after the last ask a change counts as its answer */
-enum { QUIET_MS = 150, WATCH_MS = 1500 };
+enum osd_times { QUIET_MS = 150, WATCH_MS = 1500 };
 
 /** what a notification shows */
 typedef enum { OSD_VOLUME, OSD_BRIGHTNESS, OSD_N } kind_t;
@@ -32,8 +32,9 @@ typedef struct {
     /** NULL: the watch is for our asks; else it began with a change we
      * didn't ask for (:c:func:`unasked`), which its changes go out as */
     const char* label;
-    /** the state and :c:func:`switches` the last redraw found; -1 not known */
+    /** the state the last redraw found; -1 not known */
     long long seen;
+    /** :c:func:`switches` as the last redraw found it */
     int switches;
 } watch_t;
 
@@ -90,11 +91,11 @@ static long long brightness_looks( long long s ) {
 
 /** k's notification for state s (known); label: NULL for an answer to our
  * asks, else the summary of a change we didn't ask for, which also gets
- * the bar in colors.osd_unasked */
+ * the bar in :c:member:`colors.osd_unasked <awl_plugin_colors_t.osd_unasked>` */
 /** what all of them share: low, an OSD, the osd config's size, no frame;
- * the bar (if any) in colors.osd_progress */
-static awl_notif_send_t base( void ) {
-    const awl_plugin_config_t* pc = awl_plugin_config();
+ * the bar (if any) in :c:member:`colors.osd_progress <awl_plugin_colors_t.osd_progress>` */
+static awl_notif_send_t base( const awl_osd_t* o ) {
+    const awl_plugin_config_t* pc = &o->p->plugin_config;
     awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
     n.urgency = AWL_NOTIF_LOW;
     n.flags = AWL_NOTIF_OSD;
@@ -108,9 +109,9 @@ static awl_notif_send_t base( void ) {
     return n;
 }
 
-static void send( kind_t k, long long s, const char* label ) {
-    const awl_plugin_config_t* pc = awl_plugin_config();
-    awl_notif_send_t n = base();
+static void send( const awl_osd_t* o, kind_t k, long long s, const char* label ) {
+    const awl_plugin_config_t* pc = &o->p->plugin_config;
+    awl_notif_send_t n = base( o );
     if (label) AWL_SET( n.look.progress, pc->colors.osd_unasked );
     n.summary = label;
     if (k == OSD_VOLUME) {
@@ -151,7 +152,7 @@ static void settle( awl_osd_t* o ) {
     const long long s = state( o, OSD_BRIGHTNESS );
     o->guess = -1;
     if (s < 0) return;
-    if (brightness_looks( s ) != brightness_looks( w->shown )) send( OSD_BRIGHTNESS, s, w->label );
+    if (brightness_looks( s ) != brightness_looks( w->shown )) send( o, OSD_BRIGHTNESS, s, w->label );
     w->shown = s;
 }
 
@@ -207,7 +208,7 @@ static void unasked( awl_osd_t* o, kind_t k, long long now ) {
     if (s == seen && !switched) return;
     const char* l = label( o, k, switched );
     if (!l) return;
-    send( k, s, l );
+    send( o, k, s, l );
     w->shown = s;
     w->asked = now;
     w->label = l;
@@ -225,7 +226,7 @@ void awl_osd_redraw( awl_osd_t* o ) {
         if (!watching( w, now )) continue;
         const long long s = state( o, (kind_t)k );
         if (s < 0 || s == w->shown) continue;
-        send( (kind_t)k, s, w->label );
+        send( o, (kind_t)k, s, w->label );
         w->shown = s;
         w->due = 0;
     }
@@ -240,7 +241,7 @@ static void quiet( void* data ) {
         watch_t* w = &o->w[k];
         const long long s = state( o, (kind_t)k );
         if (!w->due || s < 0) continue;
-        send( (kind_t)k, s, w->label );
+        send( o, (kind_t)k, s, w->label );
         w->shown = s;
         w->due = 0;
     }
@@ -279,7 +280,7 @@ void awl_osd_brightness( awl_osd_t* o, float delta ) {
     long long g = base + lroundf( delta * 1000.0f );
     if (g < min) g = min;
     if (g > 1000) g = 1000;
-    send( OSD_BRIGHTNESS, g, NULL );
+    send( o, OSD_BRIGHTNESS, g, NULL );
     o->guess = g;
     w->asked = now_ms();
     w->label = NULL;
@@ -307,7 +308,7 @@ void awl_osd_stop( awl_osd_t* o ) {
 
 void awl_osd_wallpaper( awl_osd_t* o ) {
     if (!o) return;
-    awl_notif_send_t n = base();
+    awl_notif_send_t n = base( o );
     int cur, count;
     const int settled = awl_wallpaper_settled( o->p->wallpaper, &cur, &count ) && count > 0;
     /* the timer's mode, as awl keeps it in the config dictionary */
@@ -317,7 +318,7 @@ void awl_osd_wallpaper( awl_osd_t* o ) {
     if (AWL_HOST_CFG_GET( awl_host, "wallpaper_mode", &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR)
         snprintf( mode, sizeof mode, "%s", v.str );
     AWL_HOST_CFG_UNLOCK( awl_host );
-    const char* off = awl_config()->wallpaper.interval ? "" : " (off)";
+    const char* off = o->p->config.wallpaper.interval ? "" : " (off)";
     char title[64];
     if (settled)
         snprintf( title, sizeof title, "%d/%d%s%s%s", cur + 1, count, *mode ? " · " : "", mode, off );
@@ -346,8 +347,8 @@ void awl_osd_wallpaper_taken( awl_osd_t* o ) {
 
 /** text alone, centered, icon beside it (NULL, "": none), as the
  * notification tag */
-static void text_osd( const char* tag, const char* text, const char* icon ) {
-    awl_notif_send_t n = base();
+static void text_osd( const awl_osd_t* o, const char* tag, const char* text, const char* icon ) {
+    awl_notif_send_t n = base( o );
     n.tag = tag;
     n.summary = text;
     n.image = icon && *icon ? icon : NULL;
@@ -356,12 +357,12 @@ static void text_osd( const char* tag, const char* text, const char* icon ) {
 
 void awl_osd_desktop( awl_osd_t* o, const char* text ) {
     if (!o) return;
-    text_osd( "osd-desktop", text, CFG->desktop_icon );
+    text_osd( o, "osd-desktop", text, CFG->desktop_icon );
 }
 
 void awl_osd_dnd( awl_osd_t* o, int on ) {
     if (!o) return;
-    const awl_plugin_config_t* pc = awl_plugin_config();
-    text_osd( "osd-dnd", on ? "Do not disturb" : "Notifications enabled",
+    const awl_plugin_config_t* pc = &o->p->plugin_config;
+    text_osd( o, "osd-dnd", on ? "Do not disturb" : "Notifications enabled",
               on ? pc->notify.bell_icon_dnd : pc->notify.bell_icon );
 }

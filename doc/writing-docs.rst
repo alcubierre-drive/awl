@@ -32,6 +32,15 @@ can stay plain.
   file's overview.
 * Struct members need their comment on the line(s) before them; a comment
   after a member on the same line isn't picked up.
+* Give every documented enum a name (``enum awl_window_at { ... };``);
+  one without shows as ``enum [anonymous]``. A member declared with an
+  inline ``struct { ... } name;`` needs none: it shows as
+  ``struct { … } name`` (conf.py).
+* A doc comment documents the one declaration after it, never the ones
+  below that: give each its own. The declarators of one declaration share
+  it, ``int x, y;`` or one spread over several lines, and show as one entry
+  (conf.py merges the copies hawkmoth makes), so members of the same type
+  that one sentence describes can be declared together.
 * The text is reStructuredText. What is documented here is named with the C
   domain's roles, which link to it::
 
@@ -43,7 +52,11 @@ can stay plain.
   alike. ``~`` shows only the last part (``:c:member:`~widget_t.free```
   shows ``free``), ``title <target>`` another title: a member without a
   documentation of its own links to its struct, as in
-  ``:c:member:`awl_config_t.tray```. Use double backquotes for
+  ``:c:member:`awl_config_t.tray```; an expression links with the title
+  it is written as, ``:c:member:`cfg->lock.locker <awl_config_t.lock.locker>```
+  or ``:c:member:`draw() <widget_t.draw>```. Link everything documented
+  here that a comment names, and describe D-Bus messages in words, not by
+  their type signatures. Use double backquotes for
   code that isn't C or isn't documented here (````$HOME````,
   ````notify-send````), and for anything with a ``*`` in it, which
   reStructuredText would take for emphasis.

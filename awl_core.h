@@ -156,10 +156,11 @@ struct Client {
 struct PertagLayout {
     /** the selected layout lt[sellt] and the previous one (:c:func:`setlayout`) */
     const Layout *lt[2];
+    /** which of :c:member:`~PertagLayout.lt` is selected */
     unsigned int sellt;
-    /** master area share (setmfact()) and number of master clients
-     * (incnmaster()) */
+    /** master area share (:c:func:`setmfact`) */
     float mfact;
+    /** number of master clients (incnmaster()) */
     int nmaster;
 };
 
@@ -184,10 +185,14 @@ struct Monitor {
     struct wlr_session_lock_surface_v1 *lock_surface;
     /** a frame showing the lock went out since it began (:c:func:`lockcovered`) */
     int lock_shown;
-    /** the alert on this output (:c:func:`awl_alert_draw`), and what it was drawn for */
+    /** the alert on this output (:c:func:`awl_alert_draw`) */
     struct wlr_scene_buffer *alert;
+    /** the alerts' version :c:member:`~Monitor.alert` was drawn for, -1:
+     * draw it again */
     unsigned int alert_version;
+    /** the output's scale it was drawn at */
     float alert_scale;
+    /** the window area (w) it was drawn for */
     struct wlr_box alert_area;
     struct wlr_box m; /* monitor area, layout-relative */
     struct {
@@ -208,7 +213,7 @@ struct Monitor {
      * (:c:member:`MonitorRule.pertag`, togglepertag); if not, all share ptlt[0] */
     uint8_t pertag:1;
     char ltsymbol[16];
-    /** the layouts and their settings, read through monlt(): with pertag,
+    /** the layouts and their settings, read through :c:func:`monlt`: with pertag,
      * [1+t] for tag t viewed alone and [0] for views of several tags;
      * without, [0] for all views */
     struct PertagLayout ptlt[32];
