@@ -9,6 +9,7 @@
 
 #include "awl.h" /* awl_popup_config_t, awl_window_painter_t, AWL_WINDOW_ELLIPSIS */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /** at most this many columns; the rest of a row goes into the last one */
@@ -28,7 +29,7 @@ typedef struct awl_window_style_t {
     /** between columns and rows */
     int column_spacing, row_spacing;
     /** blur what is behind it */
-    int blur;
+    bool blur;
     /** the blur's strength and opacity */
     float blur_strength, blur_alpha;
 } awl_window_style_t;

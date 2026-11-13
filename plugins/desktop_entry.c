@@ -9,7 +9,7 @@
 typedef struct {
     char* s;
     size_t n, cap;
-    int oom;
+    bool oom;
 } buf_t;
 
 static void put( buf_t* b, char c ) {

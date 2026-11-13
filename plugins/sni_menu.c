@@ -29,11 +29,11 @@ struct sni_menu {
     char* paths[MAX_PATHS + 1];
     sd_bus_slot* match;
     /** the main thread shows it ("opened" of id 0 until "closed") */
-    int open;
+    bool open;
     /** the request the snapshots answer */
     uint32_t gen;
     /** a GetLayout is out; again: one more once it is back */
-    int fetching, again;
+    bool fetching:1, again:1;
     sni_menu_t* next;
 };
 

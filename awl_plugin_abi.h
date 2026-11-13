@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 44
+#define AWL_PLUGIN_ABI 47
 /** The name of the library's only exported symbol, an :c:type:`awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -41,7 +41,8 @@
  * :c:macro:`AWL_ACTION() <AWL_ACTION>`.
  */
 #define AWL_ACTIONS \
-    AWL_ACTION_REGISTER( changebw ) AWL_ACTION_REGISTER( chvt ) \
+    AWL_ACTION_REGISTER( borderclockmode ) AWL_ACTION_REGISTER( changebw ) \
+    AWL_ACTION_REGISTER( chvt ) \
     AWL_ACTION_REGISTER( cycle_layout ) AWL_ACTION_REGISTER( cycle_view ) \
     AWL_ACTION_REGISTER( focusmon ) AWL_ACTION_REGISTER( focusstack ) \
     AWL_ACTION_REGISTER( incnmaster ) AWL_ACTION_REGISTER( killclient ) \

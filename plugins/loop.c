@@ -1,12 +1,13 @@
 #include "loop.h"
 #include "thread.h"
+#include <stdbool.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
 
 struct awl_loop_t {
     sd_event* event;
     awl_thread_t thread;
-    int started;
+    bool started;
     /* loop thread only (once started) */
     sd_event_source* wake;
 };

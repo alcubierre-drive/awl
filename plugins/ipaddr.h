@@ -28,9 +28,12 @@ struct awl_ipaddr_t {
      * connection's address if NetworkManager runs and has one (then :c:member:`~awl_ipaddr_t.by_nm`),
      * else of the one the kernel would send from to the internet (the source
      * of ``ip route get 1.1.1.1``) if routed, else the first one; -1 without
-     * any. routed: whether the kernel has a route to the internet.
-     * connectivity: NetworkManager's AWL_NM_CONNECTIVITY_*, -1 without it. */
-    int n_addr, best, routed, by_nm, connectivity;
+     * any. connectivity: NetworkManager's AWL_NM_CONNECTIVITY_*, -1
+     * without it. */
+    int n_addr, best, connectivity;
+    /** output, as the others: routed whether the kernel has a route to the
+     * internet; by_nm whether best is NetworkManager's */
+    bool routed:1, by_nm:1;
     /** guards the output */
     pthread_mutex_t lock;
 

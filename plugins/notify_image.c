@@ -40,7 +40,7 @@ typedef struct wish {
      * names in src[0] */
     char* src[3];
     /** the bar's (:c:func:`awl_notify_image_icon_want`) */
-    int bar;
+    bool bar;
 } wish_t;
 
 /** a file decoded at px, known by what stat() says of it: a changed file

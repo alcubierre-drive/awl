@@ -37,10 +37,11 @@ enum { MAX_BAR_ICONS = 16 };
  * found */
 typedef struct {
     char* names;
-    int px, done;
+    int px;
+    bool done:1;
+    bool symbolic:1;
     uint64_t serial;
     pixman_image_t* img;
-    int symbolic;
 } bar_icon_t;
 
 typedef struct { int x, y, w, h; } box_t;
@@ -55,7 +56,20 @@ typedef struct {
     /** the record's AWL_NOTIF_* flags */
     unsigned flags;
     /** shown on request though do-not-disturb (:c:func:`awl_notify_reveal`) */
-    int revealed;
+    bool revealed:1;
+    /** actions has a "default" one */
+    bool has_default:1;
+    /** the pointer is on it: its timeout is held (notif_hold) */
+    bool held:1;
+    /** an image is shown or on its way: has_data or a source */
+    bool has_image:1;
+    /** img is a symbolic icon, drawn in the text's color */
+    bool img_symbolic:1;
+    /** the image comes from the image-data */
+    bool has_data:1;
+    /** may be shown: no image wanted, or it came, or not by ready_by
+     * (monotonic ms) */
+    bool ready:1;
     /** its look, filled in (look_filled()) */
     awl_notif_look_t look;
     char* summary;
@@ -65,23 +79,17 @@ typedef struct {
     /** the buttons' keys and labels, "default" left out (it is the click
      * on the window): actions[2 * i] the key, [2 * i + 1] the label */
     char** actions;
-    int nactions, has_default;
-    /** the pointer is on it: its timeout is held (notif_hold) */
-    int held;
+    int nactions;
     /** the image at img_px (the image-data's, or what notify_image.h
      * found), NULL if none (or not yet converted, or not come) */
     pixman_image_t* img;
-    int has_image, img_px, img_symbolic;
+    int img_px;
     /** the image-data's (has_data), else the first of these sources'
      * (image_path, app_icon, desktop_entry; NULL none), img_serial counting
      * their changes; img_want the size asked for and not come, 0 none */
-    int has_data;
     char* src[3];
     uint64_t img_serial;
     int img_want;
-    /** may be shown: no image wanted, or it came, or not by ready_by
-     * (monotonic ms) */
-    int ready;
     long long ready_by;
 
     /* measure()'s, physical pixels from the content's top left */
@@ -116,7 +124,7 @@ struct awl_notify {
     /** restacks after awl hid a window (its monitor went) */
     awl_timer_t* timer;
     /** restack() runs: its own hides don't count */
-    int restacking;
+    bool restacking;
     /** looks for what the image thread did while anything waits for it */
     awl_timer_t* img_timer;
     uint64_t img_serial;

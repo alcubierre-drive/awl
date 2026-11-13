@@ -24,6 +24,7 @@
  */
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdatomic.h>
 #include <systemd/sd-event.h>
@@ -46,10 +47,10 @@ typedef struct awl_sni_item_t {
     uint64_t serial;
     /** its menu's serial for tray_menu_window.c (tray_menu.h), 0 if it has none */
     uint64_t menu;
-    /** ItemIsMenu: a left click opens the menu instead of Activate */
-    int item_is_menu;
     /** AWL_SNI_* */
     int status;
+    /** ItemIsMenu: a left click opens the menu instead of Activate */
+    bool item_is_menu;
     /** what the tooltip says: ToolTip's title, else Title, else Id; never NULL */
     char* name;
     /** changes whenever the icon does */

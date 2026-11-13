@@ -21,7 +21,7 @@
  * cfg->desktop.radius. */
 typedef struct {
     /** blur the wallpaper behind the panel */
-    int blur;
+    bool blur;
     /** blur_strength and blur_alpha: the blur's strength and opacity */
     float blur_strength, blur_alpha;
     /** corner radius, logical pixels */

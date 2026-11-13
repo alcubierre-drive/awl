@@ -45,7 +45,7 @@ struct awl_calpopup {
     /** the selected day; month 0-based */
     int year, month, day;
     /** no events to show (the last query failed): no list, no evolution */
-    int plain;
+    bool plain;
     /** the months fetched so far */
     awl_cal_month_t* cache;
     /** the first event shown, of a list longer than fits */

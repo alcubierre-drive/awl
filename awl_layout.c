@@ -50,6 +50,7 @@ arrange(awl_server_t *srv, Monitor *m)
     checkidleinhibitor(srv, NULL);
     /* layout symbol, taskbar order and window states may have changed */
     barsdirty(srv);
+    borderclock(srv);
 }
 
 void

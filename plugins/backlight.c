@@ -59,7 +59,7 @@ struct awl_backlight_bus_t {
     pa_time_event* timeout; /* the bus's next timeout, NULL if none */
     pa_time_event* retry;   /* the next connection attempt, NULL if none */
     pa_io_event* wake;      /* awl_backlight_t.wake_fd */
-    int failed;             /* set by callbacks, which can't drop the bus */
+    bool failed;       /* set by callbacks, which can't drop the bus */
     /* the daemon's Interval and ConfigInterval as last seen; Interval as
      * last set by a toggle until the daemon tells otherwise */
     uint64_t interval, config_interval;

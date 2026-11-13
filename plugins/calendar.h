@@ -13,13 +13,14 @@
 #include "cal_eds.h"
 #include "handles.h"
 
+#include <stdbool.h>
 #include <time.h>
 
 /** one occurrence, as :c:type:`cal_event_t`, the strings owned (never NULL) */
 typedef struct {
     char *summary, *location, *color;
     time_t start, end;
-    int all_day;
+    bool all_day;
 } awl_cal_event_t;
 
 /** a month's events, sorted: the all-day ones first, then by start */

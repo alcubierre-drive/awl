@@ -72,14 +72,14 @@ struct awl_lock {
     pid_t locker_pid;
     /** its argv[0], as :c:member:`cfg->lock.locker <awl_config_t.lock.locker>` was then */
     char locker_name[64];
-    /** it has locked the session at least once */
-    int locker_locked;
     /** what the logind thread last said it listens for, :c:enum:`awl_logind_flags` */
     unsigned logind_flags;
-    /** it doesn't listen for all it should; the grace period runs since then */
-    int logind_missing;
+    /** the locker has locked the session at least once */
+    bool locker_locked:1;
+    /** the logind thread doesn't listen for all it should; the grace period runs since then */
+    bool logind_missing:1;
     /** a lock waits for each output to show it, see :c:func:`lockcovered` */
-    int covered_pending;
+    bool covered_pending:1;
 };
 
 void

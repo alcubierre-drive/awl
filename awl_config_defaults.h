@@ -142,6 +142,8 @@ static const awl_config_t awl_config_defaults = {
         .border         = 0x444444ff,
         .border_focused = 0x005577ff,
         .border_urgent  = 0x770000ff,
+        .border_clock_hour   = molokai_red,
+        .border_clock_minute = molokai_orange,
 
         .popup_bg       = 0x3c3c3c4d, /* awl blurs what is behind it */
         .popup_fg       = 0xf8f8f2ff,

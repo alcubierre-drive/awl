@@ -30,10 +30,10 @@ typedef struct {
      * and whether it has a default action; ROW_ACTION: the label and the
      * key */
     char *text, *app, *key;
-    int has_default;
+    bool has_default:1;
     /** a "Show" button: ROW_PAST's all, ROW_TITLE's while do-not-disturb
      * hides it (:c:func:`awl_notify_hidden`) */
-    int can_show;
+    bool can_show:1;
     /** ROW_PAST: its entry and when it closed */
     uint64_t seq;
     char when[16];
@@ -65,7 +65,8 @@ struct awl_notify_menu {
     /** the pointer on the menu, on what opened it (the widget; -1: the "+k
      * more" window, which doesn't say, until the pointer gets into the
      * menu); leaving: leave_timer armed */
-    int inside, on_source, leaving;
+    int on_source;
+    bool inside:1, leaving:1;
     awl_timer_t* leave_timer;
     /** the history's count, as its row shows it */
     char past_count[16];
@@ -484,7 +485,8 @@ void awl_notify_menu_pointer( awl_notify_menu_t* mn, int inside ) {
 static void hidden( awl_window_t* win, void* data ) {
     awl_notify_menu_t* mn = data;
     (void)win;
-    mn->inside = mn->on_source = 0;
+    mn->inside = 0;
+    mn->on_source = 0;
     leave_check( mn );
 }
 

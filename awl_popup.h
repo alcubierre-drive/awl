@@ -26,11 +26,11 @@ typedef struct {
     awl_window_t *win;
     struct wl_list link;
     /** looks like a menu (:c:func:`popupsetmenustyle`) */
-    int menu;
+    bool menu:1;
     /** the plugins' (:c:func:`popupcreate`), not AWL_TEST_WINDOWS' */
-    int plugin;
+    bool plugin:1;
     /** :c:func:`popupsetpersistent` */
-    int persistent;
+    bool persistent:1;
     /** :c:func:`popupsetcolors`, 0: the style's */
     uint32_t bg, fg, border;
     /** :c:func:`popupsetborderwidth`, < 0: the style's */

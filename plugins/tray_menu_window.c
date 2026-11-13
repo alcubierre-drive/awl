@@ -53,7 +53,7 @@ typedef struct {
     /** the first row shown, of more than fit; scrolling not yet in rows */
     int top;
     /** a submenu went left of its menu: its own go there too */
-    int left;
+    bool left;
     double acc;
     /** the row highlighted: the pointer's (hover()), or the keys' */
     int sel;
@@ -95,11 +95,11 @@ struct awl_tray_menu_window {
     int pend_level, pend_row;
     /** the levels the pointer is on; on_icon: on the item's tray window */
     char inside[MAX_LEVELS];
-    int on_icon;
+    bool on_icon;
     /** fires LEAVE_DELAY after the pointer got off all of them; leaving:
      * armed */
     awl_timer_t* leave_timer;
-    int leaving;
+    bool leaving;
     /** hiding a level that stays open (its row scrolled away) */
     int quiet;
     /** a layout that would close submenus open, waiting for a better one */

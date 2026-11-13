@@ -650,7 +650,8 @@ typedef struct {
 /** an icon by name at px: img NULL while it is wanted, or if there is none */
 typedef struct {
     char* name;
-    int px, done;
+    int px;
+    bool done;
     pixman_image_t* img;
 } icon_t;
 

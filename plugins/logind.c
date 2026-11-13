@@ -28,18 +28,18 @@ struct awl_logind {
     sd_bus_slot *owner_match, *lock_match, *unlock_match, *sleep_match;
     /** the session's object path, "" until GetSession answered */
     char session[256];
-    /** a reply or a call failed; the connection is dropped and retried */
-    int failed;
     /** :c:enumerator:`AWL_LOGIND_LOCK`, :c:enumerator:`AWL_LOGIND_SLEEP`: whose matches are in place */
     unsigned subscribed;
     /** the delay inhibitor, -1 while none is held */
     int inhibit_fd;
+    /** a reply or a call failed; the connection is dropped and retried */
+    bool failed:1;
     /** an Inhibit call is out */
-    int inhibiting;
+    bool inhibiting:1;
     /** PrepareForSleep(true) came, the inhibitor isn't let go of yet */
-    int sleeping;
+    bool sleeping:1;
     /** the config dictionary's "lock_on_suspend", read on connecting */
-    int lock_on_suspend;
+    bool lock_on_suspend:1;
     /** what awl was told last (``report()``) */
     unsigned reported;
     /** :c:func:`awl_logind_covered`'s, and what LockedHint was last set to (-1: not yet) */

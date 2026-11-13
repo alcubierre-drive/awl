@@ -7,6 +7,8 @@
  * (test/desktop_entry_unit.c runs them).
  */
 
+#include <stdbool.h>
+
 /** what the launcher needs of an application's .desktop file; every string
  * malloc()ed or NULL */
 typedef struct awl_desktop_entry_t {
@@ -18,10 +20,10 @@ typedef struct awl_desktop_entry_t {
     /** Exec, unescaped (:c:func:`awl_desktop_exec_argv` takes it so), TryExec,
      * Path (the working directory) */
     char *exec, *try_exec, *path;
-    int terminal;
+    bool terminal:1;
     /** Hidden, NoDisplay, or OnlyShowIn/NotShowIn ruling the desktop out:
      * not to be shown (Hidden still masks the id in later directories) */
-    int hidden;
+    bool hidden:1;
 } awl_desktop_entry_t;
 
 /** at most this many languages :c:func:`awl_desktop_langs` makes */

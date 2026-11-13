@@ -1,15 +1,14 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /** A directory entry. */
 typedef struct {
     char name[127];
-    struct { uint8_t
-        isdir:1,
-        isbroken:1,
-        ishidden:1;
-    };
+    bool isdir:1;
+    bool isbroken:1;
+    bool ishidden:1;
 } Filename;
 
 /** A directory's entries, the first 128. */

@@ -12,6 +12,7 @@
  * of the usual sonames; ``none`` loads nothing.
  */
 
+#include <stdbool.h>
 #include <time.h>
 
 #ifdef __cplusplus
@@ -41,7 +42,7 @@ typedef enum {
 typedef struct {
     const char *summary, *location, *color;
     time_t start, end;
-    int all_day;
+    bool all_day;
 } cal_event_t;
 
 /** gets each occurrence a query finds, and the query's data */

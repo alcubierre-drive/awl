@@ -51,6 +51,16 @@ void setmon(awl_server_t *srv, Client *c, Monitor *m, uint32_t newtags);
 void scenebuffersetopacity(struct wlr_scene_buffer *buffer, int sx, int sy, void *data);
 /** after plugins_config.c changed: border widths and colors, the blur */
 void clientsconfigure(awl_server_t *srv);
+/** shows the border clock (:c:member:`awl_config_t.border_clock`) at the
+ * current time where its mode puts it, on the focused window
+ * (:c:func:`focustop` of the selected monitor) or around each monitor's
+ * tiled windows, and hides it elsewhere; again on its own every minute */
+void borderclock(awl_server_t *srv);
+/** the action that sets the border clock's mode, :c:member:`arg->i <Arg.i>`
+ * an :c:enum:`awl_border_clock_mode`, or -1 the next one (off, the focused
+ * window, the screen); until a config reload, which goes back to
+ * :c:member:`awl_config_t.border_clock.mode`. */
+void borderclockmode(awl_server_t *srv, const Arg *arg);
 
 /*
  * Below, the helpers that tell xdg-shell and XWayland clients apart:

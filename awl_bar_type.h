@@ -10,6 +10,7 @@
 #include "awl_draw.h"
 
 #include <limits.h>
+#include <stdbool.h>
 
 /** :c:member:`widget_t.pad_left`, :c:member:`~widget_t.pad_right`: half the bar font's height */
 #define AWL_PADDING_FONT INT_MIN
@@ -93,15 +94,13 @@ struct widget_t {
 /** A window as the task bar shows it, a snapshot taken by awl. */
 typedef struct awl_bar_window_t {
     char name[255];
-    struct { uint8_t
-        floating:1,
-        urgent:1,
-        focused:1,
-        visible:1,
-        maximized:1,
-        fullscreen:1,
-        ontop:1;
-    };
+    bool floating:1;
+    bool urgent:1;
+    bool focused:1;
+    bool visible:1;
+    bool maximized:1;
+    bool fullscreen:1;
+    bool ontop:1;
     Client* c;
 } awl_bar_window_t;
 
@@ -125,7 +124,7 @@ struct awl_bar_t {
     widget_t center_widget;
     uint32_t center_widget_space;
     uint32_t center_widget_start;
-    int has_center_widget;
+    bool has_center_widget;
 
     /** the current tag's windows, the first
      * :c:member:`~awl_bar_t.n_tagwindows` */
@@ -139,8 +138,8 @@ struct awl_bar_t {
     int ntags;
     /** nonzero on the bar of the selected monitor, -1 if only one monitor exists */
     int selmon;
-    /** nonzero if the monitor gives each tag its own layout (:c:member:`Monitor.pertag`) */
-    int pertag;
+    /** the monitor gives each tag its own layout (:c:member:`Monitor.pertag`) */
+    bool pertag;
     /** the monitor's layout symbol (Monitor.ltsymbol) */
     char ltsymbol[16];
     /** its output's name, valid while the bar is; this and the next ones

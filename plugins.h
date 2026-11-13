@@ -250,7 +250,7 @@ typedef struct awl_plugin_config_t {
         int progress_height;
         /** the app's name after the summary, in italic and braces:
          * "summary {app}" */
-        int show_app;
+        bool show_app;
         /** the bar widget's bell from the icon theme (:c:member:`awl_config_t.tray`'s
          * icon_theme first, then the desktop's), without and with
          * do-not-disturb: icon names or paths, ";" between them, the
@@ -292,7 +292,7 @@ typedef struct awl_plugin_config_t {
         const char* wallpaper_icon, * desktop_icon;
         /** whether the timer's wallpaper changes show too, not only the
          * user's */
-        int wallpaper_timer;
+        bool wallpaper_timer;
     } osd;
 } awl_plugin_config_t;
 
@@ -335,7 +335,7 @@ typedef struct awl_plugin_data_t {
     awl_tray_menu_window_t* tray_menu;
     /** the tray's tooltips, the main thread's */
     awl_tray_tooltip_t* tray_tip;
-    int paused;
+    bool paused;
 
     /** the volume's and brightness's notification */
     awl_osd_t* osd;

@@ -44,7 +44,7 @@ typedef struct {
      * over (:c:func:`arrange` and focus changes draw the bars), so they draw once,
      * afterwards. Dates from a crash fix before :c:func:`barremovemon` existed; to drop
      * it, test unplugging and replugging a monitor. */
-    int in_cleanupmon;
+    bool in_cleanupmon;
 } awl_outputs_t;
 
 /** The clients, awl_client.c's */
@@ -60,6 +60,23 @@ typedef struct {
     /** the border width plugins_config.c had, to tell whether a reload
      * changed it */
     unsigned int applied_borderpx;
+    /** moves the border clock's marks on, every minute (:c:func:`borderclock`) */
+    struct wl_event_source *clock_timer;
+    /** the border clock's marks' images, the hour's and the minute's: a
+     * row each, the fade (:c:member:`awl_config_t.border_clock`) baked in,
+     * shared by every window's and screen's marks */
+    struct wlr_buffer *clock_buf[2];
+    /** what :c:member:`~awl_clients_t.clock_buf` was drawn for: color,
+     * length, fade */
+    uint32_t clock_buf_key[2][3];
+    /** an :c:enum:`awl_border_clock_mode` */
+    int clock_mode;
+    /** the border clock may be showing somewhere: it was on at the last
+     * :c:func:`borderclock`, which has nothing to hide while it stays off */
+    bool clock_on:1;
+    /** :c:func:`borderclockmode` set :c:member:`~awl_clients_t.clock_mode`, which then
+     * counts instead of the config's, until a config reload */
+    bool clock_mode_set:1;
 } awl_clients_t;
 
 /** The pointer, awl_cursor.c's */
@@ -79,7 +96,7 @@ typedef struct {
     /** the constraint in effect, or NULL */
     struct wlr_pointer_constraint_v1 *active_constraint;
     /** a press an awl window took swallows its release too */
-    int swallow_release;
+    bool swallow_release;
 } awl_cursor_t;
 
 /* the modules' own state, defined in their .c files (awl_server_t's
@@ -167,7 +184,7 @@ typedef struct awl_server_t {
     awl_cursor_t cursor;
     awl_popups_t popups;
     /** the session is locked: by the locker, or still, after it crashed */
-    int locked;
+    bool locked;
 
     /* The modules' own state: each struct is defined only in its module's
      * .c, which makes it in its init; other modules go through its

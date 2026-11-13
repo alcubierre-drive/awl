@@ -101,7 +101,7 @@ CAL_SYMS(CAL_CHECK)
 struct client {
     char *uid, *color;
     ECalClient *client;
-    int seen;
+    bool seen;
 };
 
 struct cal_backend {

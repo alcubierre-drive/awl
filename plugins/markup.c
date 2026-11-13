@@ -32,7 +32,8 @@ static const struct {
 /** a tag as parsed: its index in tags, the values of the attributes awl
  * reads (NULL if not there) */
 typedef struct {
-    int tag, close, selfclose;
+    int tag;
+    bool close:1, selfclose:1;
     const char *color, *alt;
     size_t colorlen, altlen;
 } tag_t;
@@ -48,7 +49,7 @@ typedef struct {
     unsigned int cap;
     frame_t stack[AWL_MARKUP_DEPTH];
     int depth;
-    int ok;
+    bool ok;
 } parser_t;
 
 static int lower( int c ) {

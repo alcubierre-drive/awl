@@ -22,7 +22,7 @@ typedef struct DesktopView {
     struct wlr_scene_blur* blur;
     struct wlr_scene_buffer* buffer;
     DesktopKey key;
-    int drawn;
+    bool drawn;
 } DesktopView;
 
 /** The panels (:c:member:`awl_server_t.desktop`), from :c:func:`desktop_init` to

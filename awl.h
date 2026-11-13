@@ -13,6 +13,7 @@
  * (awl_plugin_abi.h).
  */
 #include <errno.h>
+#include <stdbool.h>
 #include <libinput.h>
 #include <linux/input-event-codes.h>
 #include <math.h>
@@ -122,7 +123,7 @@ typedef struct {
      * trouble Xwayland clients) */
     int x, y;
     /** whether each tag gets its own layout (see togglepertag); 0 if left out */
-    int pertag;
+    bool pertag;
 } MonitorRule;
 
 /** An output's part in an :c:type:`OutputProfile`: the first one whose match is
@@ -132,7 +133,7 @@ typedef struct {
     const char *match;
     /** on: enabled (in its preferred mode if it was off), as the rest
      * says; off: disabled, the rest ignored */
-    int on;
+    bool on;
     /** its position, layout coordinates */
     int x, y;
     /** its scale, 0: as it is */
@@ -163,10 +164,10 @@ typedef struct {
     const char *id;
     const char *title;
     uint32_t tags;
-    short isfloating;
+    bool isfloating;
     short monitor;
     int w, h;
-    int blur;
+    bool blur;
     float one_minus_alpha;
 } Rule;
 
@@ -219,6 +220,20 @@ typedef struct awl_window_painter_t {
     int (*box)( void* data, int part, int* x, int* y, int* w, int* h );
 } awl_window_painter_t;
 
+/** :c:member:`awl_config_t.border_clock.mode`: where the border clock is */
+enum awl_border_clock_mode {
+    /** nowhere */
+    BorderClockOff,
+    /** on the focused window's border, as wide as it */
+    BorderClockFocused,
+    /** on each screen's window area's edge (``m->w``, the
+     * screen without the bar and the layer surfaces' exclusive zones),
+     * :c:member:`~awl_config_t.borderpx` wide, right above the tiled
+     * windows' borders; with no window shown there only if
+     * :c:member:`~awl_config_t.border_clock.screen_empty` */
+    BorderClockScreen,
+};
+
 /** where :c:func:`awl_window_show_at` puts a window in its monitor's window area */
 enum awl_window_at {
     AWL_WINDOW_AT_CENTER,
@@ -260,6 +275,9 @@ typedef struct awl_colors_t {
     uint32_t root, fullscreen;
     /** windows' borders: the others', the focused one's, an urgent one's */
     uint32_t border, border_focused, border_urgent;
+    /** the border clock's (:c:member:`awl_config_t.border_clock`) marks:
+     * the hour's, the minute's, drawn over it */
+    uint32_t border_clock_hour, border_clock_minute;
     /** awl's own popups (awl_window.h), the bar widgets' (the clock's
      * calendar, the IP addresses) and awl's: background, text, border; the
      * row under the pointer and the buttons' background; what matters less
@@ -303,7 +321,7 @@ typedef struct awl_popup_config_t {
     } menu;
     /** the persistent popups (the notifications) over fullscreen clients
      * too, in the overlay layer; 0: under them, as the other popups */
-    int persistent_overlay;
+    bool persistent_overlay;
 } awl_popup_config_t;
 
 /** :c:member:`awl_config_t.tray`, the tray widget and its programs */
@@ -409,17 +427,35 @@ typedef struct awl_config_t {
     /** the bar: whether new outputs show it (togglebar hides and shows
      * it; a reload that changes this shows or hides every bar), and
      * whether at the top or at the bottom */
-    struct { int show, top; } bar;
+    struct { bool show:1, top:1; } bar;
     /** how many tags there are, 1 to 31; the bar shows their numbers */
     int ntags;
     /** focus follows the pointer */
-    int sloppyfocus;
+    bool sloppyfocus:1;
     /** idle inhibitors inhibit even while their surface isn't visible */
-    int bypass_surface_visibility;
+    bool bypass_surface_visibility:1;
     /** the colors awl draws with: the windows', the popups', the menus' */
     awl_colors_t colors;
     /** windows' borders' width */
     unsigned int borderpx;
+    /** borders as a clock: where a clock's hands from a rectangle's middle
+     * would cross its edge, a mark of the border's width in
+     * :c:member:`awl_colors_t.border_clock_hour` and
+     * :c:member:`~awl_colors_t.border_clock_minute`, twelve o'clock at the
+     * top's middle. Which rectangle: :c:member:`~awl_config_t.border_clock.mode`. */
+    struct {
+        /** off, the focused window, or each screen */
+        enum awl_border_clock_mode mode;
+        /** :c:enumerator:`BorderClockScreen`: also on a screen without a
+         * window shown */
+        bool screen_empty;
+        /** the marks' lengths in logical pixels (0: 24 and 12) */
+        int hour_len, minute_len;
+        /** logical pixels at either end of a mark that fade out into the
+         * border, the outermost the faintest; at most half the mark's
+         * length (0: none, solid marks) */
+        int fade;
+    } border_clock;
     /** the bar's font, its size (:c:member:`~awl_config_t.fontsize`) appended to it */
     const char *font;
     /** the bar's font's size */
@@ -438,8 +474,8 @@ typedef struct awl_config_t {
      * blur, the focused one opaque */
     struct {
         float strength, alpha;
-        int popups;
-        int windowlist;
+        bool popups:1;
+        bool windowlist:1;
     } blur;
     /** the keymap (rules, model, layout, variant, options; NULL: the
      * default) and the key repeat */
@@ -449,8 +485,11 @@ typedef struct awl_config_t {
     } keyboard;
     /** libinput's settings for pointer devices (touchpads, mice) */
     struct {
-        int tap_to_click, tap_and_drag, drag_lock, natural_scrolling, disable_while_typing,
-            left_handed, middle_button_emulation;
+        bool tap_to_click:1, tap_and_drag:1, natural_scrolling:1, disable_while_typing:1,
+            left_handed:1, middle_button_emulation:1;
+        /** LIBINPUT_CONFIG_DRAG_LOCK_DISABLED, _ENABLED_TIMEOUT (1) or
+         * _ENABLED_STICKY (2) */
+        int drag_lock;
         /** LIBINPUT_CONFIG_SCROLL_NO_SCROLL, _2FG, _EDGE or _ON_BUTTON_DOWN */
         enum libinput_config_scroll_method scroll_method;
         /** LIBINPUT_CONFIG_CLICK_METHOD_NONE, _BUTTON_AREAS or _CLICKFINGER */
@@ -482,12 +521,12 @@ typedef struct awl_config_t {
          * lockscreen action */
         const char *const *locker;
         /** lock right after awl started */
-        int at_start;
+        bool at_start:1;
         /** suspend waits until the locker covers every output (a logind
          * delay inhibitor) */
-        int on_suspend;
+        bool on_suspend:1;
         /** awl blurs the screen under the locker */
-        int blur;
+        bool blur:1;
     } lock;
     /** the programs started with awl, each an argv (NULL terminated, at
      * most 7 words), terminated when it exits; only at awl's start, a reload
@@ -526,7 +565,7 @@ typedef struct awl_config_t {
          * :c:func:`activationtoken`) only makes the client's window urgent,
          * like any other client's xdg-activation, instead of showing and
          * focusing it */
-        int activate_urgent;
+        bool activate_urgent;
     } notifications;
 } awl_config_t;
 
@@ -547,6 +586,8 @@ static inline void awl_config_fill_defaults( awl_config_t* c ) {
     AWL_FILL( c->popup.menu.blur, c->blur.popups );
     if (!c->desktop.font) c->desktop.font = c->font;
     AWL_FILL( c->desktop.fontsize, c->fontsize );
+    if (c->border_clock.hour_len <= 0) c->border_clock.hour_len = 24;
+    if (c->border_clock.minute_len <= 0) c->border_clock.minute_len = 12;
 }
 
 /** an argv's first word (an autostart's, a spawn binding's) that starts

@@ -98,6 +98,12 @@ cleanup(awl_server_t *srv)
 
     if (srv->redraw_source) wl_event_source_remove(srv->redraw_source);
     srv->redraw_source = NULL;
+    if (srv->clients.clock_timer) wl_event_source_remove(srv->clients.clock_timer);
+    srv->clients.clock_timer = NULL;
+    for (int i = 0; i < 2; i++) {
+        if (srv->clients.clock_buf[i]) wlr_buffer_drop(srv->clients.clock_buf[i]);
+        srv->clients.clock_buf[i] = NULL;
+    }
     lockfini(srv);
     barfini(srv);
     wallpaperfini(srv);

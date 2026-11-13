@@ -47,7 +47,8 @@ typedef struct {
     /** x-canonical-private-synchronous or x-dunst-stack-tag, "" none */
     char* tag;
     struct wl_event_source* timer;
-    int held;
+    /** :c:func:`awl_notifications_hold`: its timeout waits */
+    bool held;
     /** when the running timer runs out (CLOCK_MONOTONIC, ms); what was
      * left of it when the user went away, 0 the whole timeout */
     int64_t deadline;
@@ -89,7 +90,7 @@ struct awl_notifs {
      * timeouts stopped for it */
     int64_t last_activity;
     struct wl_event_source* idle_timer;
-    int idle_armed, paused;
+    bool idle_armed:1, paused:1;
 };
 
 /* ---- the store ---- */

@@ -63,7 +63,7 @@ struct awl_bars {
      * for a delay of 0). The timers are there from barinit() to barfini(). */
     struct wl_event_source *hover_timer, *leave_timer;
     widget_t *hover_widget, *hover_active;
-    int leave_pending;
+    bool leave_pending;
     /** the widget with a callback_view the pointer is on (:c:member:`widget_t.callback_view`) */
     widget_t *view_widget;
     /** :c:func:`barsdirty`'s redraw, NULL while none is due */

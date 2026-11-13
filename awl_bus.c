@@ -18,7 +18,7 @@ struct awl_bus {
     void* data;
     sd_bus* bus;
     struct wl_event_source *io, *timeout, *retry;
-    int failed;
+    bool failed;
 };
 
 static void bus_update( awl_bus_t* b );

@@ -24,8 +24,6 @@ struct awl_window {
     int left;
     struct wlr_box anchor;
     int at, dx, dy;
-    /** what the buffer was drawn for; drawn = 0 forces a redraw */
-    int drawn;
     float scale;
     struct fcft_font* font;
     /** its size, logical pixels */
@@ -46,9 +44,11 @@ struct awl_window {
     awl_window_key_t key;
     void* key_data;
     int hover;
+    /** what the buffer was drawn for (scale, font); drawn = 0 forces a redraw */
+    bool drawn:1;
     /** the pointer is on it (:c:func:`awl_window_pointer_motion` since the last
      * :c:func:`awl_window_pointer_leave`) */
-    int pointer_in;
+    bool pointer_in:1;
     /** draws itself instead of the text, if painter.paint is set */
     awl_window_painter_t painter;
     void* painter_data;

@@ -41,10 +41,11 @@ typedef struct item {
     /** item_ifaces' index the item answers to */
     int iface;
     /** GetAll answered once; one is out; again: one more once it is back */
-    int ready, fetching, again;
+    bool ready:1, fetching:1, again:1;
+    bool item_is_menu:1;
+    int status;
 
     char *sni_id, *title, *tip, *icon_name, *att_name, *theme_path, *menu_path;
-    int status, item_is_menu;
     awl_sni_blob_t *icon_pix, *att_pix;
     int n_icon_pix, n_att_pix;
 
@@ -68,7 +69,8 @@ typedef struct req {
     uint32_t gen;
     int32_t id;
     char event[16];
-    int x, y, delta, horizontal;
+    int x, y, delta;
+    bool horizontal;
     char monitor[64];
     int center_x;
 } req_t;

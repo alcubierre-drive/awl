@@ -49,7 +49,8 @@ struct awl_sysmon {
     char tlabel[NSENSORS][16];
     uint64_t mem_total, swp_total;
     float load5, load15;
-    int running, tasks, has_swap;
+    int running, tasks;
+    bool has_swap;
 
     /* measure()'s layout: w is the graphs' width too, one column a pixel */
     float scale;

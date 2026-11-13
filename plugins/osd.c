@@ -26,7 +26,7 @@ typedef struct {
     /** when a change was last asked for, ms; 0: never */
     long long asked;
     /** nothing sent since */
-    int due;
+    bool due;
     /** the state last sent (:c:func:`state`), or found when the watch began */
     long long shown;
     /** NULL: the watch is for our asks; else it began with a change we
@@ -48,7 +48,7 @@ struct awl_osd {
     long long guess;
     /** a wallpaper change is under way that shows once it's done
      * (:c:func:`awl_osd_wallpaper_ask`) */
-    int wallpaper_due;
+    bool wallpaper_due;
 };
 
 static long long now_ms( void ) {

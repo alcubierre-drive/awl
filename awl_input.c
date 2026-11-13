@@ -14,7 +14,7 @@ typedef struct {
     const xkb_keysym_t *keysyms; /* invalid if nsyms == 0 */
     uint32_t mods; /* invalid if nsyms == 0 */
     /* repeating for the popup that has the keyboard, keycode's (xkb) */
-    int popupkey;
+    bool popupkey;
     uint32_t keycode;
     struct wl_event_source *key_repeat_source;
 

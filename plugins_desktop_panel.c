@@ -67,8 +67,8 @@ struct awl_desktop_panel {
     Filename files[NFILES];
     int n_files;
     uint64_t version; /* see desktop_version() */
-    int scanned;      /* the scanner reported at least once */
-    int show, hidden;
+    bool scanned:1; /* the scanner reported at least once */
+    bool show:1, hidden:1;
 
     PanelLayout lay;
     /** the running scanner, NULL if none */

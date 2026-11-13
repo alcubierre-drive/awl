@@ -12,6 +12,7 @@
  */
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <pixman-1/pixman.h>
 #include "awl_dict_type.h"
@@ -127,8 +128,10 @@ typedef struct awl_notif_t {
          * pixels on each side, rows packed (stride w * channels) */
         const uint8_t* data;
         /** see data: its width and height, the bytes from a row to the
-         * next, whether it has alpha, bytes per pixel */
-        int w, h, stride, has_alpha, channels;
+         * next, bytes per pixel */
+        int w, h, stride, channels;
+        /** whether it has alpha */
+        bool has_alpha;
     } image_data;
     const char *image_path, *app_icon, *desktop_entry;
     const char* category;

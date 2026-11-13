@@ -499,7 +499,7 @@ typedef struct sniwidget_t {
     /** the icon under the pointer, -1 none */
     int hovered;
     /** whether the pointer is on the widget */
-    int inside;
+    bool inside;
     /** its token for the tooltip (plugins/tray_tooltip.h), 0 none */
     uint32_t tip;
     /** the next in wd's list of sniwidgets, every bar's */
@@ -1584,8 +1584,8 @@ typedef struct {
     textsnap_t text;
     backlight_moons_t moons;
     const char* mode;
-    int closed;
     int gap;
+    bool closed;
 } backlightsnap_t;
 
 static uint32_t backlightwidget_measure( widget_t* w ) {
@@ -1802,7 +1802,7 @@ static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount ) {
 typedef struct {
     const char* bell;
     struct fcft_font* bell_font;
-    int open;
+    bool open;
     uint32_t bell_w, dot, x;
     /* the bell from the icon theme, a reference of our own; NULL: the
      * glyph */

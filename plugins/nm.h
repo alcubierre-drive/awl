@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <pulse/mainloop-api.h>
 
@@ -15,12 +16,12 @@ enum awl_nm_connectivity {
 /** What NetworkManager says about the network, as far as the IP widget
  * cares. */
 typedef struct {
-    /** NetworkManager runs on the system bus and has answered */
-    int present;
     /** AWL_NM_CONNECTIVITY_* */
     int connectivity;
+    /** NetworkManager runs on the system bus and has answered */
+    bool present:1;
     /** whether addr and ifname are set: 0 without either */
-    int has_addr;
+    bool has_addr:1;
     /** the primary connection's first IPv4 address, network byte order */
     uint32_t addr;
     /** the interface it is on, "" if unknown */

@@ -111,6 +111,9 @@ struct Client {
     /** for its listeners, which only get the client */
     awl_server_t *srv;
     struct wlr_scene_rect *border[4]; /* top, bottom, left, right */
+    /** the border clock's hour and minute marks (:c:func:`borderclock`),
+     * over the border; NULL for unmanaged clients */
+    struct wlr_scene_buffer *clock[2];
     struct wlr_scene_blur *blur;
     float one_minus_alpha;
     struct wlr_scene_tree *scene_surface;
@@ -141,14 +144,12 @@ struct Client {
 #endif
     unsigned int bw;
     uint32_t tags;
-    struct { uint8_t
-        isfloating:1,
-        isurgent:1,
-        isfullscreen:1,
-        isvisible:1,
-        ismaximized:1,
-        isontop:1;
-    };
+    bool isfloating:1;
+    bool isurgent:1;
+    bool isfullscreen:1;
+    bool isvisible:1;
+    bool ismaximized:1;
+    bool isontop:1;
     uint32_t resize; /* configure serial of a pending resize */
 };
 
@@ -183,8 +184,6 @@ struct Monitor {
     /** its lock surface is gone */
     struct wl_listener destroy_lock_surface;
     struct wlr_session_lock_surface_v1 *lock_surface;
-    /** a frame showing the lock went out since it began (:c:func:`lockcovered`) */
-    int lock_shown;
     /** the alert on this output (:c:func:`awl_alert_draw`) */
     struct wlr_scene_buffer *alert;
     /** the alerts' version :c:member:`~Monitor.alert` was drawn for, -1:
@@ -194,6 +193,10 @@ struct Monitor {
     float alert_scale;
     /** the window area (w) it was drawn for */
     struct wlr_box alert_area;
+    /** the border clock's hour and minute marks in
+     * :c:enumerator:`BorderClockScreen` mode (:c:func:`borderclock`), on
+     * top of the tiled windows' layer; NULL until then */
+    struct wlr_scene_buffer *clock[2];
     struct wlr_box m; /* monitor area, layout-relative */
     struct {
         int width, height;
@@ -206,18 +209,21 @@ struct Monitor {
     struct wl_list layers[4];
     unsigned int seltags;
     uint32_t tagset[2];
-    int gamma_lut_changed;
-    uint8_t showbar:1;
-    uint8_t closedbar:1;
+    bool gamma_lut_changed:1;
+    bool showbar:1;
+    bool closedbar:1;
     /** whether each view keeps its own layout and its settings in ptlt[]
      * (:c:member:`MonitorRule.pertag`, togglepertag); if not, all share ptlt[0] */
-    uint8_t pertag:1;
+    bool pertag:1;
+    /** a frame showing the lock went out since it began (:c:func:`lockcovered`) */
+    bool lock_shown:1;
+    /** a power management client (wlr-output-power-management) turned it off */
+    bool asleep:1;
     char ltsymbol[16];
     /** the layouts and their settings, read through :c:func:`monlt`: with pertag,
      * [1+t] for tag t viewed alone and [0] for views of several tags;
      * without, [0] for all views */
     struct PertagLayout ptlt[32];
-    int asleep;
     /** the bar: its font, its widgets and what they show; bar.m is NULL
      * before createmon() sets it up and after cleanupmon() */
     awl_bar_t bar;

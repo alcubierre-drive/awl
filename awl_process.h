@@ -25,15 +25,15 @@ typedef struct {
     char spec[AWL_FONT_SPEC_MAX];
     /** "dpi=...", then the style's ":weight=bold:slant=italic" */
     char attrs[48];
-    /** made for emoji: emoji presentation (see :c:func:`awl_font_get_emoji`) */
-    int emoji;
     /** :c:macro:`AWL_FONT_BOLD`, :c:macro:`AWL_FONT_ITALIC` (see :c:func:`awl_font_style`) */
     int style;
+    int refs;
+    /** made for emoji: emoji presentation (see :c:func:`awl_font_get_emoji`) */
+    bool emoji:1;
+    /** it didn't load */
+    bool failed:1;
     /** NULL: it didn't load (failed), or :c:func:`awl_font_retry` asked to try again */
     struct fcft_font *font;
-    /** it didn't load */
-    int failed;
-    int refs;
 } awl_font_slot_t;
 
 /** :c:member:`awl_process_t.warned`'s bits: what was logged once already */
@@ -55,7 +55,7 @@ typedef struct {
     struct {
         awl_loglevel_t level;
         /** stderr is a terminal */
-        int colors;
+        bool colors;
         /** the log file, -1: none */
         int fd;
         /** about how much is in it, for its size cap */
@@ -93,7 +93,7 @@ typedef struct {
         awl_font_slot_t ring[AWL_FONT_SLOTS];
         unsigned head, count;
         /** fcft_init() ran */
-        int fcft_ready;
+        bool fcft_ready;
     } fonts;
 
     /** awl_plugin_host.c's: the one library a process loads; main thread */
@@ -107,7 +107,7 @@ typedef struct {
         /** the memfd it was loaded from, see :c:func:`libopen` */
         int handle_fd;
         const awl_plugin_api_t *api;
-        int paused, covered;
+        bool paused:1, covered:1;
         /** :c:member:`awl_host_t.timer_add() <awl_host_t.timer_add>`'s
          * timers, reaped after the library stops */
         struct wl_list timers;
@@ -123,13 +123,13 @@ typedef struct {
         size_t nenvsaved;
         /** :c:func:`environmentimport` ran: from then on changes to its variables
          * go to systemd's and the bus' environment too */
-        int envimportstarted;
+        bool envimportstarted:1;
         /** one of them changed since */
-        int envimportdirty;
+        bool envimportdirty:1;
+        /** builtin is filled */
+        bool builtin_filled:1;
         /** :c:func:`builtinconfig`'s, filled on its first call */
         awl_config_t builtin;
-        /** builtin is filled */
-        int builtin_filled;
     } config;
 
     /** tray/app_env.c's icon theme for the programs awl starts; main thread */

@@ -335,6 +335,17 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
 
     /* appearance */
     c->borderpx = 2;
+    /* borders as a clock: BorderClockFocused (the focused window's),
+     * BorderClockScreen (around each screen's window area) or BorderClockOff;
+     * screen_empty: BorderClockScreen also on a screen without windows;
+     * fade: logical px at each end of a mark fading out (0: solid) */
+    c->border_clock.mode = BorderClockFocused;
+    c->border_clock.screen_empty = 1;
+    c->border_clock.fade = 10;
+    c->border_clock.hour_len = 45;
+    c->border_clock.minute_len = 30;
+    c->colors.border_clock_minute = 0x0D73CCFF;
+    c->colors.border_clock_hour   = molokai_purple;
 
     /* blur */
     c->blur.windowlist = 0;

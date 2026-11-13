@@ -32,7 +32,7 @@ struct awl_poller_t {
     awl_ipaddr_t* ip;
 
     awl_thread_t thread;
-    int started;
+    bool started;
     atomic_int paused;
 
     /* loop thread only (once started) */
@@ -40,7 +40,7 @@ struct awl_poller_t {
     pa_mainloop_api* api;
     pa_io_event *wake, *bat_io, *ip_io;
     pa_time_event* tick; /* NULL while paused */
-    int fresh;           /* the next tick re-reads everything */
+    bool fresh;     /* the next tick re-reads everything */
     int bat_settle;      /* ticks left that re-read the battery */
     unsigned long ticks;
 };

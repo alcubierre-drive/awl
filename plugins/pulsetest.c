@@ -36,11 +36,11 @@ struct PulseAudio {
     char speaker[256]; // pulse_init()'s, "" if none
     char port[256]; // the default sink's active port, as last seen
     // the default sink changed from one to another, its first reading is due
-    int switched;
+    bool switched;
     pa_volume_t max; // pulse_init()'s
     // the default sink's as last seen, or as last set
     pa_cvolume volume;
-    int volume_known, muted;
+    bool volume_known:1, muted:1;
 
     pulse_test_t* t;
 };
