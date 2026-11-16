@@ -13,8 +13,9 @@
 /* commands */
 static const char *const termcmd[] = { "foot", NULL };
 static const char *const menucmd[] = { "wmenu-run", NULL };
-/* the screen lock's locker */
-static const char *const locker[] = { "swaylock", "-c", "00000000", NULL };
+/* the screen lock's locker: awlock (lock/), next to awl's executable or in
+ * PATH */
+static const char *const locker[] = { "awlock", NULL };
 
 static void tagmonf(awl_server_t *srv, const Arg *arg) { AWL_ACTION(tagmon)(srv, arg); AWL_ACTION(focusmon)(srv, arg); }
 

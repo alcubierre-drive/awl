@@ -11,8 +11,11 @@
 #include "awl_process.h"
 #include "awl_spawn.h"
 
+#include <limits.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/eventfd.h>
 
@@ -105,6 +108,26 @@ awl_lock_request(void)
     lockwake();
 }
 
+/** :c:func:`motionnotify` without a motion: the pointer enters the surface
+ * under it */
+static void
+lockpointer(void *data)
+{
+    motionnotify(data, 0, NULL, 0, 0, 0, 0);
+}
+
+/** A lock surface was mapped. The pointer only enters a surface when it
+ * moves, so one that appeared under a still pointer wouldn't know where the
+ * pointer is; awlock would draw its logo centred until it moved. It enters
+ * once the commit is done (:c:func:`lockpointer`, idle): the map comes during
+ * the commit, before the scene shows the surface. */
+static void
+maplocksurface(struct wl_listener *listener, void *data)
+{
+    Monitor *m = wl_container_of(listener, m, map_lock_surface);
+    wl_event_loop_add_idle(m->srv->event_loop, lockpointer, m->srv);
+}
+
 void
 createlocksurface(struct wl_listener *listener, void *data)
 {
@@ -120,6 +143,7 @@ createlocksurface(struct wl_listener *listener, void *data)
     wlr_session_lock_surface_v1_configure(lock_surface, m->m.width, m->m.height);
 
     LISTEN(&lock_surface->events.destroy, &m->destroy_lock_surface, destroylocksurface);
+    LISTEN(&lock_surface->surface->events.map, &m->map_lock_surface, maplocksurface);
 
     if (m == srv->out.selmon)
         client_notify_enter(srv, lock_surface->surface, wlr_seat_get_keyboard(srv->seat));
@@ -172,6 +196,7 @@ destroylocksurface(struct wl_listener *listener, void *data)
 
     m->lock_surface = NULL;
     wl_list_remove(&m->destroy_lock_surface.link);
+    wl_list_remove(&m->map_lock_surface.link);
 
     if (lock_surface->surface != srv->seat->keyboard_state.focused_surface)
         return;
@@ -245,6 +270,23 @@ lockfire(int fd, uint32_t mask, void *data)
     return 0;
 }
 
+/** name next to awl's executable, in buf, if it is a bare name and there:
+ * awl's own locker, awlock, is built and installed beside it and needs no
+ * ``PATH``. Else name, which execvp() looks for in ``PATH``. */
+static const char *
+lockerpath(const char *name, char *buf, size_t n)
+{
+    ssize_t len = strchr(name, '/') ? -1 : readlink("/proc/self/exe", buf, n - 1);
+    if (len <= 0)
+        return name;
+    buf[len] = '\0';
+    char *dir_end = strrchr(buf, '/') + 1;
+    size_t left = n - (size_t)(dir_end - buf);
+    if ((size_t)snprintf(dir_end, left, "%s", name) >= left || access(buf, X_OK))
+        return name;
+    return buf;
+}
+
 /** Starts :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`, unless a lock is in place (a locker holds
  * it) or the one started last is still running and yet to lock. While
  * locked without a lock (the locker crashed), a new locker takes over. */
@@ -263,7 +305,21 @@ lockscreen(awl_server_t *srv, const Arg *arg)
         awl_alert_set(srv, AwlAlertLocker, "no locker configured");
         return;
     }
-    if ((pid = spawn_pid(&(Arg){.v = argv})) > 0) {
+    /* the same arguments, argv[0] perhaps beside awl (lockerpath()) */
+    size_t argc = 0;
+    while (argv[argc])
+        argc++;
+    const char **args = calloc(argc + 1, sizeof(*args));
+    if (!args) {
+        awl_alert_set(srv, AwlAlertLocker, "can't start %s", argv[0]);
+        return;
+    }
+    char path[PATH_MAX];
+    memcpy(args, argv, argc * sizeof(*args));
+    args[0] = lockerpath(argv[0], path, sizeof(path));
+    pid = spawn_pid(&(Arg){.v = args});
+    free(args);
+    if (pid > 0) {
         srv->lock->locker_pid = pid;
         srv->lock->locker_locked = 0;
         snprintf(srv->lock->locker_name, sizeof(srv->lock->locker_name), "%s", argv[0]);

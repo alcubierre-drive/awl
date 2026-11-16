@@ -21,10 +21,10 @@ static void applyrules(awl_server_t *srv, Client *c);
 static void attachblur(awl_server_t *srv, Client *c);
 static struct wlr_buffer *borderclockbuffer(awl_server_t *srv, int i, uint32_t color, int len, int fade);
 static void borderclockclient(awl_server_t *srv, Client *c);
-static void borderclockmark(struct wlr_scene_buffer *r, struct wlr_buffer *buf, struct wlr_box box, int bw,
+static void borderclockmark(struct wlr_scene_buffer *r[2], struct wlr_buffer *buf, struct wlr_box box, int bw,
         double a, int len);
 static void borderclockmon(awl_server_t *srv, Monitor *m, int show);
-static void borderclockplace(awl_server_t *srv, struct wlr_scene_buffer *clock[2], struct wlr_box box, int bw);
+static void borderclockplace(awl_server_t *srv, struct wlr_scene_buffer *clock[2][2], struct wlr_box box, int bw);
 static int borderclocktick(void *data);
 static void commitnotify(struct wl_listener *listener, void *data);
 static void commitpopup(struct wl_listener *listener, void *data);
@@ -544,10 +544,11 @@ mapnotify(struct wl_listener *listener, void *data)
             (float[])RGBA(srv->clients.borders[c->isurgent ? BorderUrg : BorderNorm]));
         c->border[i]->node.data = c;
     }
-    for (i = 0; i < 2; i++) {
-        c->clock[i] = wlr_scene_buffer_create(c->scene, NULL);
-        c->clock[i]->node.data = c;
-        wlr_scene_node_set_enabled(&c->clock[i]->node, 0);
+    for (i = 0; i < 4; i++) {
+        struct wlr_scene_buffer **r = &c->clock[i / 2][i % 2];
+        *r = wlr_scene_buffer_create(c->scene, NULL);
+        (*r)->node.data = c;
+        wlr_scene_node_set_enabled(&(*r)->node, 0);
     }
 
     /* Initialize client geometry with room for border */
@@ -676,58 +677,92 @@ borderclockbuffer(awl_server_t *srv, int i, uint32_t color, int len, int fade)
     return cl->clock_buf[i];
 }
 
-/* r where a hand at angle a (radians, clockwise from twelve o'clock) from
- * the middle of box crosses its edge, bw wide (inside box), len long along
- * it, showing buf (a row, turned for the left and right edges, stretched
- * to len if the edge is shorter); at a corner it stays on the edge the hand
- * crosses. box is in r's parent's coordinates. */
+/* r, a mark len long (logical pixels) where a hand at angle a (radians,
+ * clockwise from twelve o'clock) from the middle of box crosses its edge, bw
+ * wide (inside box), showing buf (a row, stretched to len, turned along the
+ * edge). The border goes round clockwise from the top left corner in four
+ * pieces, each owning the corner it starts at: the top, the right, the
+ * bottom, the left; a mark reaching a corner goes on round it in r[1].
+ * box is in r's parent's coordinates. */
 static void
-borderclockmark(struct wlr_scene_buffer *r, struct wlr_buffer *buf, struct wlr_box box, int bw,
+borderclockmark(struct wlr_scene_buffer *r[2], struct wlr_buffer *buf, struct wlr_box box, int bw,
         double a, int len)
 {
-    double dx = sin(a), dy = -cos(a), hw = box.width / 2.0, hh = box.height / 2.0;
+    static const enum wl_output_transform tr[4] = {WL_OUTPUT_TRANSFORM_NORMAL,
+            WL_OUTPUT_TRANSFORM_90, WL_OUTPUT_TRANSFORM_180, WL_OUTPUT_TRANSFORM_270};
+    int w = box.width, h = box.height, el[4] = {w - bw, h - bw, w - bw, h - bw};
+    int per = 2 * (el[0] + el[1]), e, u, o, l, i, x, y;
+    double dx = sin(a), dy = -cos(a), hw = w / 2.0, hh = h / 2.0;
     double tx = fabs(dx) > 1e-9 ? hw / fabs(dx) : INFINITY;
     double ty = fabs(dy) > 1e-9 ? hh / fabs(dy) : INFINITY;
-    int x, y;
+    double s, f;
 
-    if (r->buffer != buf)
-        wlr_scene_buffer_set_buffer(r, buf);
-    if (ty <= tx) { /* the top or the bottom */
-        len = MIN(len, box.width);
-        x = MAX(0, MIN((int)lround(hw + ty * dx - len / 2.0), box.width - len));
-        y = dy < 0 ? 0 : box.height - bw;
-        wlr_scene_buffer_set_transform(r, WL_OUTPUT_TRANSFORM_NORMAL);
-        wlr_scene_buffer_set_dest_size(r, len, bw);
-    } else { /* the left or the right */
-        len = MIN(len, box.height);
-        y = MAX(0, MIN((int)lround(hh + tx * dy - len / 2.0), box.height - len));
-        x = dx < 0 ? 0 : box.width - bw;
-        wlr_scene_buffer_set_transform(r, WL_OUTPUT_TRANSFORM_90);
-        wlr_scene_buffer_set_dest_size(r, bw, len);
+    len = MIN(len, MIN(el[0], el[1]));
+    if (len <= 0 || bw <= 0) {
+        for (i = 0; i < 2; i++)
+            wlr_scene_node_set_enabled(&r[i]->node, 0);
+        return;
     }
-    wlr_scene_node_set_position(&r->node, box.x + x, box.y + y);
+    /* the crossing's distance along the border, each side's own length
+     * squeezed into its piece's */
+    if (ty <= tx)
+        s = dy < 0 ? (hw + ty * dx) * el[0] / w
+                : el[0] + el[1] + (hw - ty * dx) * el[2] / w;
+    else
+        s = dx > 0 ? el[0] + (hh + tx * dy) * el[1] / h
+                : 2 * el[0] + el[1] + (hh - tx * dy) * el[3] / h;
+    o = (int)lround(s - len / 2.0);
+    o = (o % per + per) % per;
+    for (e = 0; o >= el[e]; e++)
+        o -= el[e];
+    f = buf ? buf->width / (double)len : 1;
+
+    /* u: where on side e the piece starts, o: where in the mark */
+    for (i = 0, u = o, o = 0; i < 2; i++, e = (e + 1) % 4, u = 0) {
+        l = MIN(len - o, el[e] - u);
+        wlr_scene_node_set_enabled(&r[i]->node, l > 0);
+        if (l <= 0)
+            continue;
+        if (r[i]->buffer != buf)
+            wlr_scene_buffer_set_buffer(r[i], buf);
+        wlr_scene_buffer_set_source_box(r[i], &(struct wlr_fbox){o * f, 0, l * f, 1});
+        wlr_scene_buffer_set_transform(r[i], tr[e]);
+        switch (e) {
+        case 0: x = u; y = 0; break;
+        case 1: x = w - bw; y = u; break;
+        case 2: x = w - u - l; y = h - bw; break;
+        default: x = 0; y = h - u - l; break;
+        }
+        wlr_scene_buffer_set_dest_size(r[i], e % 2 ? bw : l, e % 2 ? l : bw);
+        wlr_scene_node_set_position(&r[i]->node, box.x + x, box.y + y);
+        o += l;
+    }
 }
 
 /* the marks clock[0] (the hour) and clock[1] (the minute) on box's edge at
  * the current time, in the configured colors */
 static void
-borderclockplace(awl_server_t *srv, struct wlr_scene_buffer *clock[2], struct wlr_box box, int bw)
+borderclockplace(awl_server_t *srv, struct wlr_scene_buffer *clock[2][2], struct wlr_box box, int bw)
 {
     const awl_config_t *cfg = srv->cfg;
-    time_t now = time(NULL);
+    /* the hands' seconds per turn */
+    static const double turn[2] = {12 * 3600, 3600};
+    struct timespec ts;
     struct tm tm;
     int len[2] = {cfg->border_clock.hour_len, cfg->border_clock.minute_len};
     uint32_t color[2] = {cfg->colors.border_clock_hour, cfg->colors.border_clock_minute};
-    double a[2];
+    double sec, a;
     int i;
 
-    if (!localtime_r(&now, &tm))
+    clock_gettime(CLOCK_REALTIME, &ts);
+    if (!localtime_r(&ts.tv_sec, &tm))
         return;
-    a[0] = (tm.tm_hour % 12 + tm.tm_min / 60.0) * (BORDERCLOCK_PI / 6);
-    a[1] = tm.tm_min * (BORDERCLOCK_PI / 30);
-    for (i = 0; i < 2; i++)
+    sec = tm.tm_min * 60 + tm.tm_sec + ts.tv_nsec / 1e9;
+    for (i = 0; i < 2; i++) {
+        a = ((i ? 0 : tm.tm_hour % 12 * 3600) + sec) / turn[i] * (2 * BORDERCLOCK_PI);
         borderclockmark(clock[i], borderclockbuffer(srv, i, color[i], len[i],
-                MAX(0, MIN(cfg->border_clock.fade, len[i] / 2))), box, bw, a[i], len[i]);
+                MAX(0, MIN(cfg->border_clock.fade, len[i] / 2))), box, bw, a, len[i]);
+    }
 }
 
 /* c's own marks, at its size */
@@ -754,19 +789,19 @@ borderclockmon(awl_server_t *srv, Monitor *m, int show)
         }
     }
     show = show && any;
-    if (show && !m->clock[0])
-        for (i = 0; i < 2; i++)
-            m->clock[i] = wlr_scene_buffer_create(srv->layers[LyrTile], NULL);
-    if (!m->clock[0])
+    if (show && !m->clock[0][0])
+        for (i = 0; i < 4; i++)
+            m->clock[i / 2][i % 2] = wlr_scene_buffer_create(srv->layers[LyrTile], NULL);
+    if (!m->clock[0][0])
         return;
-    for (i = 0; i < 2; i++)
-        wlr_scene_node_set_enabled(&m->clock[i]->node, show);
+    for (i = 0; i < 4; i++)
+        wlr_scene_node_set_enabled(&m->clock[i / 2][i % 2]->node, show);
     if (!show)
         return;
     borderclockplace(srv, m->clock, m->w, (int)srv->cfg->borderpx);
     /* right above the borders, which raising a window would cover */
-    for (i = 0; i < 2; i++)
-        wlr_scene_node_raise_to_top(&m->clock[i]->node);
+    for (i = 0; i < 4; i++)
+        wlr_scene_node_raise_to_top(&m->clock[i / 2][i % 2]->node);
 }
 
 void
@@ -793,8 +828,9 @@ borderclocktick(void *data)
 void
 borderclock(awl_server_t *srv)
 {
+    const awl_config_t *cfg = srv->cfg;
     enum awl_border_clock_mode mode = srv->clients.clock_mode_set
-            ? (enum awl_border_clock_mode)srv->clients.clock_mode : srv->cfg->border_clock.mode;
+            ? (enum awl_border_clock_mode)srv->clients.clock_mode : cfg->border_clock.mode;
     Client *c, *sel = mode == BorderClockFocused ? focustop(srv, srv->out.selmon) : NULL;
     Monitor *m;
     struct timespec ts;
@@ -807,11 +843,11 @@ borderclock(awl_server_t *srv)
     srv->clients.clock_on = mode != BorderClockOff;
 
     wl_list_for_each(c, &srv->clients.list, link) {
-        if (!c->clock[0])
+        if (!c->clock[0][0])
             continue;
         on = c == sel; /* without a border, 0 wide */
-        for (i = 0; i < 2; i++)
-            wlr_scene_node_set_enabled(&c->clock[i]->node, on);
+        for (i = 0; i < 4; i++)
+            wlr_scene_node_set_enabled(&c->clock[i / 2][i % 2]->node, on);
         if (on)
             borderclockclient(srv, c);
     }
@@ -831,7 +867,8 @@ borderclock(awl_server_t *srv)
      * stands still while suspended */
     clock_gettime(CLOCK_REALTIME, &ts);
     ms = 60000 - (ts.tv_sec % 60) * 1000 - ts.tv_nsec / 1000000 + 50;
-    wl_event_source_timer_update(srv->clients.clock_timer, (int)MIN(ms, 15000));
+
+    wl_event_source_timer_update(srv->clients.clock_timer, (int)MIN(ms, cfg->border_clock.min_update_time_ms));
 }
 
 void
@@ -871,7 +908,7 @@ resize(awl_server_t *srv, Client *c, struct wlr_box geo, int interact)
     wlr_scene_node_set_position(&c->border[1]->node, 0, c->geom.height - c->bw);
     wlr_scene_node_set_position(&c->border[2]->node, 0, c->bw);
     wlr_scene_node_set_position(&c->border[3]->node, c->geom.width - c->bw, c->bw);
-    if (c->clock[0] && c->clock[0]->node.enabled)
+    if (c->clock[0][0] && c->clock[0][0]->node.enabled)
         borderclockclient(srv, c);
 
     /* this is a no-op if size hasn't changed */

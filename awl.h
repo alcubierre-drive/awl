@@ -442,7 +442,9 @@ typedef struct awl_config_t {
      * would cross its edge, a mark of the border's width in
      * :c:member:`awl_colors_t.border_clock_hour` and
      * :c:member:`~awl_colors_t.border_clock_minute`, twelve o'clock at the
-     * top's middle. Which rectangle: :c:member:`~awl_config_t.border_clock.mode`. */
+     * top's middle, a mark going on round a corner it reaches; placed by
+     * the exact time, not the minute. Which rectangle:
+     * :c:member:`~awl_config_t.border_clock.mode`. */
     struct {
         /** off, the focused window, or each screen */
         enum awl_border_clock_mode mode;
@@ -455,6 +457,8 @@ typedef struct awl_config_t {
          * border, the outermost the faintest; at most half the mark's
          * length (0: none, solid marks) */
         int fade;
+        /** minimum update time (milliseconds) */
+        int min_update_time_ms;
     } border_clock;
     /** the bar's font, its size (:c:member:`~awl_config_t.fontsize`) appended to it */
     const char *font;
@@ -588,6 +592,7 @@ static inline void awl_config_fill_defaults( awl_config_t* c ) {
     AWL_FILL( c->desktop.fontsize, c->fontsize );
     if (c->border_clock.hour_len <= 0) c->border_clock.hour_len = 24;
     if (c->border_clock.minute_len <= 0) c->border_clock.minute_len = 12;
+    if (c->border_clock.min_update_time_ms <= 0) c->border_clock.min_update_time_ms = 15000;
 }
 
 /** an argv's first word (an autostart's, a spawn binding's) that starts

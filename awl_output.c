@@ -51,9 +51,9 @@ cleanupmon(struct wl_listener *listener, void *data)
 
     closemon(srv, m);
     wlr_scene_node_destroy(&m->fullscreen_bg->node);
-    for (int i = 0; i < 2; i++)
-        if (m->clock[i])
-            wlr_scene_node_destroy(&m->clock[i]->node);
+    for (int i = 0; i < 4; i++)
+        if (m->clock[i / 2][i % 2])
+            wlr_scene_node_destroy(&m->clock[i / 2][i % 2]->node);
     wlr_scene_node_destroy(&m->bar_blur->node);
     wlr_scene_node_destroy(&m->scene_buffer->node);
     desktop_removemon(srv->desktop, m);

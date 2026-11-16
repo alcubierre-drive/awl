@@ -90,14 +90,21 @@ static int today_ymd( void ) {
     return ymd( &t );
 }
 
-/** the locale's first day of the week, 0 Sunday, as GTK's calendar has it */
+/** the locale's first day of the week, 0 Sunday, as GTK's calendar has it;
+ * Monday (ISO 8601) where the libc doesn't know it (musl: _NL_TIME_* are
+ * glibc's) */
 static int week_start( awl_calpopup_t* cp ) {
+#ifndef __GLIBC__
+    (void)cp;
+    return 1;
+#else
     int first = cp->loc ? nl_langinfo_l( _NL_TIME_FIRST_WEEKDAY, cp->loc )[0] : nl_langinfo( _NL_TIME_FIRST_WEEKDAY )[0];
     unsigned origin = (unsigned)(uintptr_t)(cp->loc ? nl_langinfo_l( _NL_TIME_WEEK_1STDAY, cp->loc )
                                                   : nl_langinfo( _NL_TIME_WEEK_1STDAY ));
     int day1 = origin == 19971201 ? 1 : 0; /* else 19971130, a Sunday */
     int s = (day1 + first - 1) % 7;
     return s < 0 ? 0 : s;
+#endif
 }
 
 static awl_cal_month_t* cached( awl_calpopup_t* cp, int key ) {

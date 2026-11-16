@@ -203,7 +203,6 @@ static const char* const autostart[][8] = {
     { "Telegram", NULL },
     { "evolution", NULL },
 };
-static const char* const locker[] = { "swaylock", "-c", "00000000", "-p", NULL };
 
 static const Key keys[] = {
     /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */
@@ -310,7 +309,6 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     c->bar.top = 0; /* the bar at the bottom */
 
     /* the screen lock */
-    c->lock.locker = locker;
     c->lock.at_start = 1;
 
     /* colors */
@@ -344,6 +342,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     c->border_clock.fade = 10;
     c->border_clock.hour_len = 45;
     c->border_clock.minute_len = 30;
+    c->border_clock.min_update_time_ms = 5000;
     c->colors.border_clock_minute = 0x0D73CCFF;
     c->colors.border_clock_hour   = molokai_purple;
 

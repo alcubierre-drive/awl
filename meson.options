@@ -25,3 +25,13 @@ option('fast_math', type: 'feature', value: 'auto',
 # against its headers, which then have to be installed.
 option('ecal_check', type: 'boolean', value: false,
        description: 'check plugins/cal_eds.c against the libecal-2.0 headers')
+
+# lock/: awlock, the lock screen client (a separate program, see
+# lock/README.md); auto: built when its dependencies are there
+option('lock', type: 'feature', value: 'auto',
+       description: 'build awlock (wayland-client, pam)')
+# CUSTOM: the PAM service awlock checks passwords with, an existing
+# /etc/pam.d file: Arch's system-auth (pam_unix, pam_faillock,
+# pam_systemd_home); Debian-like systems: common-auth
+option('lock_pam_service', type: 'string', value: 'system-auth',
+       description: 'awlock: PAM service (a file in /etc/pam.d) for the password')

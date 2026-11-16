@@ -112,8 +112,10 @@ struct Client {
     awl_server_t *srv;
     struct wlr_scene_rect *border[4]; /* top, bottom, left, right */
     /** the border clock's hour and minute marks (:c:func:`borderclock`),
-     * over the border; NULL for unmanaged clients */
-    struct wlr_scene_buffer *clock[2];
+     * over the border, each in two pieces: before a corner, after it (the
+     * second hidden unless the mark goes round one); NULL for unmanaged
+     * clients */
+    struct wlr_scene_buffer *clock[2][2];
     struct wlr_scene_blur *blur;
     float one_minus_alpha;
     struct wlr_scene_tree *scene_surface;
@@ -183,6 +185,9 @@ struct Monitor {
     struct wl_listener request_state;
     /** its lock surface is gone */
     struct wl_listener destroy_lock_surface;
+    /** its lock surface has its first buffer: the pointer enters it if it is
+     * over it (:c:func:`maplocksurface`) */
+    struct wl_listener map_lock_surface;
     struct wlr_session_lock_surface_v1 *lock_surface;
     /** the alert on this output (:c:func:`awl_alert_draw`) */
     struct wlr_scene_buffer *alert;
@@ -195,8 +200,9 @@ struct Monitor {
     struct wlr_box alert_area;
     /** the border clock's hour and minute marks in
      * :c:enumerator:`BorderClockScreen` mode (:c:func:`borderclock`), on
-     * top of the tiled windows' layer; NULL until then */
-    struct wlr_scene_buffer *clock[2];
+     * top of the tiled windows' layer, in two pieces each like
+     * :c:member:`Client.clock`; NULL until then */
+    struct wlr_scene_buffer *clock[2][2];
     struct wlr_box m; /* monitor area, layout-relative */
     struct {
         int width, height;

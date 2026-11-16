@@ -28,11 +28,17 @@ int awl_thread_start( awl_thread_t* t, const char* name, void* (*fn)( void* ), v
         return -1;
     }
 
+    /* glibc's default stack (the stack rlimit, 8 MiB) for every libc: musl's
+     * is 128 KiB, too little for decoding images and for GLib */
+    pthread_attr_t attr;
+    pthread_attr_init( &attr );
+    pthread_attr_setstacksize( &attr, 8 << 20 );
     sigset_t all, old;
     sigfillset( &all );
     pthread_sigmask( SIG_SETMASK, &all, &old );
-    int err = pthread_create( &t->thread, NULL, trampoline, t );
+    int err = pthread_create( &t->thread, &attr, trampoline, t );
     pthread_sigmask( SIG_SETMASK, &old, NULL );
+    pthread_attr_destroy( &attr );
     if (err) {
         awl_err_printf( "can't start the %s thread: %s\n", name, strerror( err ) );
         close( t->wake_fd );

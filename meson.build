@@ -66,7 +66,9 @@ xkbcommon = dependency('xkbcommon')
 libinput  = dependency('libinput')
 pixman    = dependency('pixman-1')
 fcft      = dependency('fcft')
-libsystemd = dependency('libsystemd')
+# sd-bus and sd-event: systemd's, or elogind's where there is no systemd
+# (musl distributions); elogind installs <systemd/...> headers too
+libsystemd = dependency('libsystemd', 'libelogind')
 libpulse  = dependency('libpulse')
 threads   = dependency('threads')
 # the calendar popup's time zones (g_time_zone_new_identifier())
@@ -233,4 +235,19 @@ custom_target('libawlplugins.so',
   install_dir: 'lib/',
 )
 
+lock_sources = []
+if get_option('lock').allowed()
+  subdir('lock')
+endif
+# awlock (lock/meson.build): here, so that it is next to awl in the build
+# directory as when installed; awl looks for its locker there first
+# (lockerpath(), awl_lockscreen.c)
+if lock_sources.length() > 0
+  executable('awlock', lock_sources, lock_protos,
+    c_args: lock_c_args,
+    override_options: ['warning_level=2'],
+    dependencies: lock_deps,
+    install: true,
+  )
+endif
 subdir('test')
