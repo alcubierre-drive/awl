@@ -6,7 +6,6 @@
 #include "awl_lockscreen.h"
 #include "awl_log.h"
 #include "awl_output.h"
-#include "awl_test.h"
 
 static awl_window_style_t popupstyle(awl_server_t *srv, const Popup *p);
 static Popup *popupfind(awl_server_t *srv, awl_window_t *win);
@@ -133,7 +132,6 @@ popupdestroy(awl_server_t *srv, awl_window_t *win)
     Popup *p = popupfind(srv, win);
     if (!p)
         return;
-    testpopupdestroyed(srv, win);
     if (srv->popups.hovered == win)
         srv->popups.hovered = NULL;
     wl_list_remove(&p->link);
@@ -459,10 +457,12 @@ popupsreap(awl_server_t *srv)
     Popup *p, *tmp;
     int n = 0;
 
-    /* AWL_TEST_WINDOWS' go too: a reload destroys every popup */
+    /* only the plugins': AWL_TEST_WINDOWS' callbacks are awl's own */
     wl_list_for_each_safe(p, tmp, &srv->popups.list, link) {
-        n += p->plugin;
-        popupdestroy(srv, p->win);
+        if (p->plugin) {
+            n++;
+            popupdestroy(srv, p->win);
+        }
     }
     return n;
 }

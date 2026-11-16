@@ -111,7 +111,6 @@ struct awl_background;
 struct awl_desktop;
 struct awl_sni_watcher;
 struct awl_notifs;
-struct awl_test;
 
 /** The popups, awl_popup.c's */
 typedef struct {
@@ -212,8 +211,6 @@ typedef struct awl_server_t {
     /** awl_notifications.c's: the notification server and its history;
      * from :c:func:`awl_notifications_start` to :c:func:`awl_notifications_stop` */
     struct awl_notifs *notifs;
-    /** awl_test.c's: AWL_TEST_WINDOWS' popups; NULL without it */
-    struct awl_test *test;
     /** awl_redraw.h's fd's event handler (:c:func:`redraw_fire`) */
     struct wl_event_source *redraw_source;
     /** setup()'s listeners to the globals above, cleanuplisteners() removes them */

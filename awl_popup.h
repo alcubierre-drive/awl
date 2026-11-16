@@ -119,8 +119,8 @@ void popupsremovemon(awl_server_t *srv, Monitor *m);
 /** after plugins_config.c changed: every popup's look, and where the
  * persistent ones are */
 void popupsrestyle(awl_server_t *srv);
-/** destroys every popup (a reload, see :c:func:`pluginsreap`); returns how many were
- * the plugins' */
+/** destroys the plugins' popups (a reload, see :c:func:`pluginsreap`), whose
+ * callbacks point into the library; returns how many */
 int popupsreap(awl_server_t *srv);
 /** the scene is going */
 void popupsfini(awl_server_t *srv);

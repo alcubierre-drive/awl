@@ -141,15 +141,22 @@ awl_deps = [scenefx, wlroots, wayland, xkbcommon, libinput, pixman, fcft, libsys
 if xwayland
   awl_deps += [xcb, xcb_icccm]
 endif
+# test_hooks (meson.options): awl_test.c, awl.c's AWL_TEST
+awl_test_src = []
+awl_test_args = []
+if get_option('test_hooks').disable_auto_if(not dev).allowed()
+  awl_test_src = files('awl_test.c')
+  awl_test_args = ['-DAWL_TEST']
+endif
 awl = executable('awl',
   'awl.c', 'awl_config.c', 'awl_output.c', 'awl_bar.c', 'awl_popup.c', 'awl_client.c',
   'awl_xwayland.c', 'awl_layout.c', 'awl_layer.c', 'awl_input.c', 'awl_cursor.c',
-  'awl_lockscreen.c', 'awl_spawn.c', 'awl_wallpaper.c', 'awl_test.c', 'awl_log.c',
+  'awl_lockscreen.c', 'awl_spawn.c', 'awl_wallpaper.c', 'awl_log.c',
   'awl_dict.c', 'awl_util.c', 'awl_draw.c', 'awl_plugin_host.c', 'awl_desktop.c',
   'awl_background.c', 'awl_redraw.c', 'awl_sni.c', 'awl_bus.c', 'awl_notifications.c', 'awl_alert.c', 'awl_window.c',
-  'awl_window_draw.c', 'awl_process.c', 'tray/app_env.c',
+  'awl_window_draw.c', 'awl_process.c', 'tray/app_env.c', awl_test_src,
   protocol_headers, version_h,
-  c_args: awl_c_args,
+  c_args: awl_c_args + awl_test_args,
   dependencies: awl_deps,
   install: true,
 )

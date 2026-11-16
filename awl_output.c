@@ -623,11 +623,11 @@ outputsupdate(awl_server_t *srv)
     }
     barsdirty(srv);
 
-    /* FIXME: figure out why the cursor image is at 0,0 after turning all
-     * the monitors on.
-     * Move the cursor image where it used to be. It does not generate a
-     * wl_pointer.motion event for the clients, it's only the image what it's
-     * at the wrong position after all. */
+    /* wlr_cursor keeps the cursor image's position in each output's own
+     * coordinates and only recomputes them when the cursor moves (or leaves
+     * the layout): an output that moved in the layout, or was added or
+     * turned on, would show the image where it was before, e.g. at 0,0. A
+     * move by nothing recomputes them; it sends the clients no motion. */
     wlr_cursor_move(srv->cursor.wlr, NULL, 0, 0);
 
     wlr_output_manager_v1_set_configuration(srv->out.mgr, config);

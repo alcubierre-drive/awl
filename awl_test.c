@@ -9,17 +9,21 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <wlr/backend/headless.h>
 #include <wlr/backend/multi.h>
 #include <wlr/backend/wayland.h>
 #include <wlr/interfaces/wlr_output.h>
 
-/** AWL_TEST_WINDOWS' state (:c:member:`awl_server_t.test`), from testinit()
- * on; NULL without it */
+/** AWL_TEST_WINDOWS' state, from testinit() until the display is destroyed */
 struct awl_test {
-    /** the popups by number, see testwincmd(); :c:func:`popupdestroy`
-     * clears a slot (:c:func:`testpopupdestroyed`), so a plugin reload leaves
-     * none dangling */
+    awl_server_t *srv;
+    /** the display's destroy signal: frees this */
+    struct wl_listener destroy;
+    /** the FIFO */
+    int fd;
+    /** the popups by number, see testwincmd(); only destroy N destroys
+     * one (a plugin reload leaves them, :c:func:`popupsreap`) */
     awl_window_t *wins[8];
     /** what testwincmd()'s dump reports as clicks and scrolls */
     char clicks[2048];
@@ -189,9 +193,9 @@ testunescape(char *s)
  *                            errors COUNT (lines rejected so far)
  */
 static void
-testwincmd(awl_server_t *srv, char *line)
+testwincmd(struct awl_test *T, char *line)
 {
-    struct awl_test *T = srv->test;
+    awl_server_t *srv = T->srv;
     char cmd[16] = "", mon[64] = "", tmp[PATH_MAX], onoff[4] = "";
     double cx, cy;
     int n = -1, x = 0, off = 0, args = 0, toggle;
@@ -252,6 +256,7 @@ testwincmd(awl_server_t *srv, char *line)
         awl_window_hide(T->wins[n]);
     } else if (!strcmp(cmd, "destroy")) {
         popupdestroy(srv, T->wins[n]);
+        T->wins[n] = NULL;
     } else if (!strcmp(cmd, "input")) {
         if (!T->wins[n])
             goto bad;
@@ -415,8 +420,7 @@ bad:
 static int
 testwinctl(int fd, uint32_t mask, void *data)
 {
-    awl_server_t *srv = data;
-    struct awl_test *T = srv->test;
+    struct awl_test *T = data;
     char *line, *nl;
     ssize_t r;
 
@@ -425,7 +429,7 @@ testwinctl(int fd, uint32_t mask, void *data)
         T->buf[T->len] = 0;
         for (line = T->buf; (nl = strchr(line, '\n')); line = nl + 1) {
             *nl = 0;
-            testwincmd(srv, line);
+            testwincmd(T, line);
         }
         T->len -= (size_t)(line - T->buf);
         memmove(T->buf, line, T->len);
@@ -435,9 +439,20 @@ testwinctl(int fd, uint32_t mask, void *data)
     return 0;
 }
 
+/** the display is gone, and with it the FIFO's event source */
+static void
+testdestroy(struct wl_listener *listener, void *data)
+{
+    struct awl_test *T = wl_container_of(listener, T, destroy);
+    wl_list_remove(&T->destroy.link);
+    close(T->fd);
+    free(T);
+}
+
 void
 testinit(awl_server_t *srv)
 {
+    struct awl_test *T;
     /* for testing (test/live.sh): SIGUSR1 adds an output, SIGUSR2 removes
      * the newest one; headless and nested (wayland) backends only */
     if (getenv("AWL_TEST_OUTPUTS")) {
@@ -454,25 +469,12 @@ testinit(awl_server_t *srv)
      * for the text popups, see testwincmd(); O_RDWR, so it never reads EOF
      * while no writer has it open */
     if (getenv("AWL_TEST_WINDOWS")) {
-        int fd = open(getenv("AWL_TEST_WINDOWS"), O_RDWR | O_NONBLOCK | O_CLOEXEC);
-        srv->test = ecalloc(1, sizeof *srv->test);
-        if (fd < 0)
+        T = ecalloc(1, sizeof *T);
+        T->srv = srv;
+        if ((T->fd = open(getenv("AWL_TEST_WINDOWS"), O_RDWR | O_NONBLOCK | O_CLOEXEC)) < 0)
             die("AWL_TEST_WINDOWS %s:", getenv("AWL_TEST_WINDOWS"));
-        wl_event_loop_add_fd(srv->event_loop, fd, WL_EVENT_READABLE, testwinctl, srv);
+        wl_event_loop_add_fd(srv->event_loop, T->fd, WL_EVENT_READABLE, testwinctl, T);
+        T->destroy.notify = testdestroy;
+        wl_display_add_destroy_listener(srv->dpy, &T->destroy);
     }
-}
-
-void
-testpopupdestroyed(awl_server_t *srv, awl_window_t *win)
-{
-    int i;
-    if (srv->test && (i = testslot(srv->test, win)) >= 0)
-        srv->test->wins[i] = NULL;
-}
-
-void
-testfini(awl_server_t *srv)
-{
-    free(srv->test);
-    srv->test = NULL;
 }

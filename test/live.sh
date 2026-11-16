@@ -43,17 +43,20 @@
 #
 # State goes to $LIVE_DIR (default /tmp/awl-live-$UID): log, runtime dir,
 # home. awl gets -l '' (stderr, i.e. that log, only), so it leaves the real
-# awl's log file alone; arguments after start come after it. Desktop fixture:
+# awl's log file alone, and -L, so the config's lock.at_start doesn't lock
+# it (test/lock.sh locks it itself); arguments after start come after it. Desktop fixture:
 # $LIVE_DIR/home/Desktop, created on start if missing.
 #
-# LIVE_AWL=PATH runs another binary, relative to the source dir, e.g.
-# LIVE_AWL=build-dev/awl for the unoptimized debug build (meson.build's top),
-# which picks up build-dev/libawlplugins.so. click builds vptr in its build
+# The binary is build-dev/awl, the unoptimized debug build (meson.build's
+# top), if it is there, else build/awl; LIVE_AWL=PATH runs another one,
+# relative to the source dir. It needs the AWL_TEST_* hooks (awl_test.c),
+# in debug builds by default, else -Dtest_hooks=enabled (meson.options).
+# It picks up the libawlplugins.so beside it; click builds vptr in its build
 # directory.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 src=$(cd "$here/.." && pwd)
-awl=${LIVE_AWL:-build/awl}
+if [ -z "${LIVE_AWL:-}" ] && [ -x "$src/build-dev/awl" ]; then awl=build-dev/awl; else awl=${LIVE_AWL:-build/awl}; fi
 case $awl in /*) ;; *) awl=$src/$awl ;; esac
 dir=${LIVE_DIR:-/tmp/awl-live-$UID}
 run=$dir/run
@@ -114,6 +117,7 @@ case ${1:-} in
 start)
 	pid >/dev/null && { echo "already running" >&2; exit 1; }
 	[ -x "$awl" ] || { echo "no $awl (ninja -C $(dirname "$awl"))" >&2; exit 1; }
+	grep -qa AWL_TEST_OUTPUTS "$awl" || { echo "$awl has no test hooks (meson configure $(dirname "$awl") -Dtest_hooks=enabled)" >&2; exit 1; }
 	mkdir -p "$run" && chmod 700 "$run"
 	rm -f "$run"/wayland-* "$dir/socket" "$dir/ctl" "$dir/bus"
 	mkfifo "$dir/ctl"
@@ -149,7 +153,7 @@ start)
 			gdb -q -batch \
 			-ex "handle SIGUSR1 SIGUSR2 SIGTERM SIGPIPE nostop noprint pass" \
 			-ex run -ex "bt full" -ex "thread apply all bt" \
-			--args "$awl" -l '' "${@:2}"
+			--args "$awl" -l '' -L "${@:2}"
 	) >"$log" 2>&1 </dev/null &
 	echo $! >"$dir/sid" # setsid didn't need to fork, $! is the session leader
 	for i in $(seq 100); do

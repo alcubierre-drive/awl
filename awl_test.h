@@ -2,7 +2,8 @@
 
 /**
  * The AWL_TEST_OUTPUTS and AWL_TEST_WINDOWS hooks, for test/live.sh and
- * test/windows.sh (awl_test.c). Main thread only.
+ * test/windows.sh (awl_test.c), only in builds with -Dtest_hooks
+ * (AWL_TEST; the debug builds by default). Main thread only.
  */
 
 #include "awl_server.h"
@@ -11,10 +12,8 @@
 /** With AWL_TEST_OUTPUTS, SIGUSR1 adds an output, SIGUSR2 removes the
  * newest one (headless and nested backends only; setup() blocks them for
  * the event loop), and AWL_TEST_OUTPUTS=N adds N outputs to start with.
- * Headless ones are AWL_TEST_SIZE (WxH) large, else 1280x720. With AWL_TEST_WINDOWS, a FIFO of commands for the text
- * popups, see testwincmd(). After the backend is made. */
+ * Headless ones are AWL_TEST_SIZE (WxH) large, else 1280x720.
+ * With AWL_TEST_WINDOWS, a FIFO of commands for the text
+ * popups, see testwincmd(), its state freed with the display. After the
+ * backend is made. */
 void testinit(awl_server_t *srv);
-/** win, a popup, is gone */
-void testpopupdestroyed(awl_server_t *srv, awl_window_t *win);
-/** frees :c:member:`awl_server_t.test` */
-void testfini(awl_server_t *srv);

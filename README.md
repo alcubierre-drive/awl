@@ -101,9 +101,10 @@ the tray and wallpaper settings, and the bar's widgets.
 
 ## Running
 
-    awl [-s startup command] [-l logfile] [-d] [-v]
+    awl [-s startup command] [-l logfile] [-L] [-d] [-v]
 
 `-s` runs a shell command at startup. awl sends it SIGTERM when it exits.
+`-L` doesn't lock the screen at startup, even if the config's `lock.at_start` says so.
 `-d` turns on debug logging (wlroots' and awl's verbose messages). awl logs to stderr, colored on a terminal, and uncolored to the file given with `-l`, by default `/tmp/awl.log` (`-DAWL_LOGFILE=...` changes the default); `-l ''` logs to stderr only. The file starts over on each start, and once it passes 128 KiB.
 
 Like dwl, awl runs on any wlroots backend: nested in an X11 or Wayland

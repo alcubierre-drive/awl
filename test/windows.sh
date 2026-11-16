@@ -459,7 +459,9 @@ win show 1 $M1 100 "second"
 win restart
 sleep 1
 win
-check "plugin reload destroys them" nowindows
+check "plugin reload leaves them" shown 0 $M1
+check "plugin reload leaves them, 1" shown 1 $M1
+win destroy 0
 win show 0 $M1 640 "after the reload"
 check "new window after the reload" shown 0 $M1
 check "no rejected commands" noerrors

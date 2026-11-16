@@ -60,9 +60,8 @@ axisnotify(struct wl_listener *listener, void *data)
     xytonode(srv, srv->cursor.wlr->x, srv->cursor.wlr->y, NULL, &c, NULL, NULL, NULL);
     if (!c && !srv->clients.exclusive_focus && !srv->locked && baraxis(srv, event->delta))
         return;
-    /* TODO: allow usage of scroll whell for mousebindings, it can be implemented
-     * checking the event's orientation and the delta of the event */
-    /* Notify the client with pointer focus of the axis event. */
+    /* No bindings for the wheel (as MODKEY+wheel): Button binds presses only,
+     * on purpose. Notify the client with pointer focus of the axis event. */
     wlr_seat_pointer_notify_axis(srv->seat,
             event->time_msec, event->orientation, event->delta,
             event->delta_discrete, event->source, event->relative_direction);
@@ -133,7 +132,8 @@ buttonpress(struct wl_listener *listener, void *data)
             && !pointeronbar(srv))
         popupshideall(srv);
 
-    click = ClkRoot; // TODO we don't treat these cases
+    /* the bar's are ClkBar (barbutton()) */
+    click = ClkRoot;
     xytonode(srv, srv->cursor.wlr->x, srv->cursor.wlr->y, NULL, &c, NULL, NULL, NULL);
     if (c)
         click = ClkClient;
@@ -172,7 +172,6 @@ buttonpress(struct wl_listener *listener, void *data)
         break;
     case WL_POINTER_BUTTON_STATE_RELEASED:
         /* If you released any buttons, we exit interactive move/resize mode. */
-        /* TODO: should reset to the pointer focus's current setcursor */
         if (!srv->locked && srv->cursor.mode != CurNormal && srv->cursor.mode != CurPressed) {
             wlr_cursor_set_xcursor(srv->cursor.wlr, srv->cursor.mgr, "default");
             srv->cursor.mode = CurNormal;
@@ -180,6 +179,12 @@ buttonpress(struct wl_listener *listener, void *data)
             srv->out.selmon = xytomon(srv, srv->cursor.wlr->x, srv->cursor.wlr->y);
             setmon(srv, srv->cursor.grabc, srv->out.selmon, 0);
             srv->cursor.grabc = NULL;
+            /* the cursor image of what is below: setcursor() ignored the
+             * clients' during the grab, and the one under the pointer kept
+             * its focus, so it would only set its own again on the next
+             * enter. A leave and an enter make it set it now. */
+            wlr_seat_pointer_notify_clear_focus(srv->seat);
+            motionnotify(srv, 0, NULL, 0, 0, 0, 0);
             return;
         }
         srv->cursor.mode = CurNormal;

@@ -18,7 +18,9 @@
 #include "awl_sni.h"
 #include "awl_notifications.h"
 #include "awl_spawn.h"
+#ifdef AWL_TEST
 #include "awl_test.h"
+#endif
 #include "awl_wallpaper.h"
 #include "awl_xwayland.h"
 #include "tray/awl_tray.h"
@@ -32,7 +34,7 @@ static void cleanup(awl_server_t *srv);
 static void cleanuplisteners(awl_server_t *srv);
 static void gpureset(struct wl_listener *listener, void *data);
 static int handlesigquit(int signo, void *data);
-static void run(awl_server_t *srv, char *startup_cmd);
+static void run(awl_server_t *srv, char *startup_cmd, int nolock);
 static void serverinit(awl_server_t *srv);
 static void setup(awl_server_t *srv);
 
@@ -157,7 +159,6 @@ cleanup(awl_server_t *srv)
     barfree(srv);
     awl_alert_fini(srv);
     inputfree(srv);
-    testfini(srv);
 }
 
 void
@@ -240,7 +241,7 @@ quit(awl_server_t *srv, const Arg *arg)
 }
 
 void
-run(awl_server_t *srv, char *startup_cmd)
+run(awl_server_t *srv, char *startup_cmd, int nolock)
 {
     /* Add a Unix socket to the Wayland display. */
     const char *socket = wl_display_add_socket_auto(srv->dpy);
@@ -275,14 +276,18 @@ run(awl_server_t *srv, char *startup_cmd)
      * cursor position, and set default cursor image */
     srv->out.selmon = xytomon(srv, srv->cursor.wlr->x, srv->cursor.wlr->y);
 
-    /* TODO hack to get cursor to display in its initial location (100, 100)
-     * instead of (0, 0) and then jumping. Still may not be fully
-     * initialized, as the image/coordinates are not transformed for the
-     * monitor when displayed here */
-    wlr_cursor_warp_closest(srv->cursor.wlr, NULL, srv->cursor.wlr->x, srv->cursor.wlr->y);
+    /* the pointer starts in the middle of that monitor: wlr_cursor starts
+     * at (0, 0), the layout's top left corner, and nothing moves it there */
+    if (srv->out.selmon)
+        wlr_cursor_warp_closest(srv->cursor.wlr, NULL,
+                srv->out.selmon->m.x + srv->out.selmon->m.width / 2.0,
+                srv->out.selmon->m.y + srv->out.selmon->m.height / 2.0);
+    else
+        wlr_cursor_warp_closest(srv->cursor.wlr, NULL, srv->cursor.wlr->x, srv->cursor.wlr->y);
     wlr_cursor_set_xcursor(srv->cursor.wlr, srv->cursor.mgr, "default");
 
-    if (srv->cfg->lock.at_start)
+    /* -L: not even if the config says so (test/live.sh's instances) */
+    if (srv->cfg->lock.at_start && !nolock)
         lockscreen(srv, NULL);
 
     /* Run the Wayland event loop. This does not return until you exit the
@@ -306,10 +311,12 @@ setup(awl_server_t *srv)
     sigaddset(&handled, SIGCHLD);
     sigaddset(&handled, SIGINT);
     sigaddset(&handled, SIGTERM);
+#ifdef AWL_TEST
     if (getenv("AWL_TEST_OUTPUTS")) {
         sigaddset(&handled, SIGUSR1);
         sigaddset(&handled, SIGUSR2);
     }
+#endif
     sigprocmask(SIG_BLOCK, &handled, NULL);
     /* a dead client must not kill awl (GIO ignores it anyway) */
     signal(SIGPIPE, SIG_IGN);
@@ -335,8 +342,10 @@ setup(awl_server_t *srv)
      * if an X11 server is running. */
     if (!(srv->backend = wlr_backend_autocreate(srv->event_loop, &srv->session)))
         die("couldn't create backend");
+#ifdef AWL_TEST
     /* the hooks of test/live.sh and test/windows.sh, if asked for */
     testinit(srv);
+#endif
 
     /* Initialize the scene graph used to lay out windows */
     srv->scene = wlr_scene_create();
@@ -359,13 +368,11 @@ setup(awl_server_t *srv)
     /* the alerts, over everything (awl_alert_draw() keeps it on top) */
     awl_alert_init(srv);
 
-    /* Autocreates a renderer, either Pixman, GLES2 or Vulkan for us. The user
-     * can also specify a renderer using the WLR_RENDERER env var.
-     * The renderer is responsible for defining the various pixel formats it
-     * supports for shared memory, this configures that for clients. */
-
-    // TODO this is for scenefx
-    // if (!(renderer = wlr_renderer_autocreate(backend)))
+    /* scenefx's GLES2 renderer, which draws its blur, shadows and rounded
+     * corners, instead of wlr_renderer_autocreate()'s (so WLR_RENDERER doesn't
+     * apply). The renderer is responsible for defining the various pixel
+     * formats it supports for shared memory, this configures that for
+     * clients. */
     if (!(srv->renderer = fx_renderer_create(srv->backend)))
         die("couldn't create renderer");
     wl_signal_add(&srv->renderer->events.lost, &srv->listen.gpu_reset);
@@ -568,13 +575,15 @@ main(int argc, char *argv[])
     awl_server_t *srv;
     char *startup_cmd = NULL;
     const char *logfile = AWL_LOGFILE;
-    int c;
+    int c, nolock = 0;
 
-    while ((c = getopt(argc, argv, "s:l:hdv")) != -1) {
+    while ((c = getopt(argc, argv, "s:l:Lhdv")) != -1) {
         if (c == 's')
             startup_cmd = optarg;
         else if (c == 'l')
             logfile = optarg;
+        else if (c == 'L')
+            nolock = 1;
         else if (c == 'd')
             awl_log_set_level(awl_loglevel_vrb); /* wlroots' too, see wlrloginit() */
         else if (c == 'v') {
@@ -597,12 +606,12 @@ main(int argc, char *argv[])
     serverinit(srv);
     setup(srv);
 
-    run(srv, startup_cmd);
+    run(srv, startup_cmd, nolock);
     cleanup(srv);
     free(srv);
     return EXIT_SUCCESS;
 
 usage:
-    fprintf(stderr, "Usage: %s [-v] [-d] [-l logfile] [-s startup command]\n", argv[0]);
+    fprintf(stderr, "Usage: %s [-v] [-d] [-L] [-l logfile] [-s startup command]\n", argv[0]);
     return EXIT_FAILURE;
 }

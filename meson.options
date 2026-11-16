@@ -20,6 +20,12 @@ option('native', type: 'feature', value: 'auto',
 option('fast_math', type: 'feature', value: 'auto',
        description: '-ffast-math (vendor/plutosvg is always built without it)')
 
+# awl_test.c: the AWL_TEST_* hooks test/live.sh (and so every scenario test)
+# needs: outputs added and removed by signals, a FIFO driving awl's own
+# popups; auto: in debug builds only (build-dev), not in what you install
+option('test_hooks', type: 'feature', value: 'auto',
+       description: 'the AWL_TEST_* hooks of test/live.sh (awl_test.c)')
+
 # libecal, for the calendar's events, is loaded at run time
 # (plugins/cal_eds.c): no build dependency. This checks cal_eds.c's prototypes
 # against its headers, which then have to be installed.

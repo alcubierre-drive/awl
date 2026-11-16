@@ -49,6 +49,7 @@ static int keypopup(awl_server_t *srv, KeyboardGroup *group, uint32_t keycode, u
 static void keypress(struct wl_listener *listener, void *data);
 static void keypressmod(struct wl_listener *listener, void *data);
 static int keyrepeat(void *data);
+static void seatcaps(awl_server_t *srv);
 static void untrackinputdevice(struct wl_listener *listener, void *data);
 static void trackinputdevice(awl_server_t *srv, struct wlr_input_device *device);
 
@@ -59,6 +60,9 @@ struct awl_input {
     KeyboardGroup *kb_group;
     /** InputDevice.link */
     struct wl_list devices;
+    /** the virtual keyboards (virtualkeyboard()), each in a group of its
+     * own; they count for the seat's keyboard capability (seatcaps()) */
+    int virtual_keyboards;
     /** What the keyboards were set up with, copied, to tell whether a reload
      * changed it */
     struct {
@@ -220,12 +224,19 @@ void
 destroykeyboardgroup(struct wl_listener *listener, void *data)
 {
     KeyboardGroup *group = wl_container_of(listener, group, destroy);
+    awl_server_t *srv = group->srv;
+    /* a virtual keyboard's (virtualkeyboard()) */
+    int virtual = group != srv->input->kb_group;
     wl_event_source_remove(group->key_repeat_source);
     wl_list_remove(&group->key.link);
     wl_list_remove(&group->modifiers.link);
     wl_list_remove(&group->destroy.link);
     wlr_keyboard_group_destroy(group->wlr_group);
     free(group);
+    if (virtual) {
+        srv->input->virtual_keyboards--;
+        seatcaps(srv);
+    }
 }
 
 void
@@ -235,7 +246,6 @@ inputdevice(struct wl_listener *listener, void *data)
     /* This event is raised by the backend when a new input device becomes
      * available. */
     struct wlr_input_device *device = data;
-    uint32_t caps;
 
     switch (device->type) {
     case WLR_INPUT_DEVICE_KEYBOARD:
@@ -247,16 +257,21 @@ inputdevice(struct wl_listener *listener, void *data)
         trackinputdevice(srv, device);
         break;
     default:
-        /* TODO handle other input device types */
+        /* touch screens, tablets and switches (a laptop's lid) aren't used */
         break;
     }
+    seatcaps(srv);
+}
 
-    /* We need to let the wlr_seat know what our capabilities are, which is
-     * communiciated to the client. In awl we always have a cursor, even if
-     * there are no pointer devices, so we always include that capability. */
-    /* TODO do we actually require a cursor? */
-    caps = WL_SEAT_CAPABILITY_POINTER;
-    if (!wl_list_empty(&srv->input->kb_group->wlr_group->devices))
+/* What the seat offers its clients: always a pointer, as there is always a
+ * cursor, even without a pointer device (awl's own popups and clients that
+ * place things by it, such as awlock, rely on it), and a keyboard while there
+ * is a physical or a virtual one. */
+void
+seatcaps(awl_server_t *srv)
+{
+    uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
+    if (!wl_list_empty(&srv->input->kb_group->wlr_group->devices) || srv->input->virtual_keyboards)
         caps |= WL_SEAT_CAPABILITY_KEYBOARD;
     wlr_seat_set_capabilities(srv->seat, caps);
 }
@@ -490,6 +505,8 @@ virtualkeyboard(struct wl_listener *listener, void *data)
 
     /* Add the new keyboard to the group */
     wlr_keyboard_group_add_keyboard(group->wlr_group, &kb->keyboard);
+    srv->input->virtual_keyboards++;
+    seatcaps(srv);
 }
 
 void
