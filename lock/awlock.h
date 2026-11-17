@@ -1,6 +1,6 @@
 // awlock: what its three parts share.
 //   awlock.c       the Wayland side: the lock, its surfaces, the logo, the
-//                  seat, options and main(); the event loop and the log
+//                  seat, options and main(); the event loop
 //   auth.c         passwords: typing them, and checking them with PAM in a
 //                  child process
 //   fingerprint.c  fingerprints, with fprintd
@@ -13,25 +13,23 @@
 #include <string.h>
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
+#include "awl_log.h"
 
 // from meson (-D): AWLOCK_VERSION, LOCK_PAM_SERVICE
 
-// The log: "[awlock:file:line] level: text" on stderr, for the levels up to
-// awlock_log_level. fmt is a string literal.
+// The log: awl's (awl_log.h), "[awl:level] awlock: file:line: text", to
+// awl's stderr and its log file, at awl's level (-d raises it to debug).
+// fmt is a string literal. Never a password, nor anything typed.
 
 enum log_level {
-	LOG_ERROR = 1,
-	LOG_INFO = 2,
-	LOG_DEBUG = 3,
+	LOG_ERROR = awl_loglevel_err,
+	LOG_INFO = awl_loglevel_log,
+	LOG_DEBUG = awl_loglevel_vrb,
 };
 
-extern enum log_level awlock_log_level; // awlock.c: LOG_ERROR, -d LOG_DEBUG
-
 #define awlock_log(level, fmt, ...) \
-	((level) <= awlock_log_level ? (void)fprintf(stderr, \
-		"[awlock:%s:%d] %s: " fmt "\n", __FILE_NAME__, __LINE__, \
-		(level) == LOG_ERROR ? "error" : (level) == LOG_INFO ? "info" : "debug", \
-		##__VA_ARGS__) : (void)0)
+	awl_dbg_printf((awl_loglevel_t)(level), "awlock: %s:%d: " fmt "\n", \
+		__FILE_NAME__, __LINE__, ##__VA_ARGS__)
 
 // the same, with ": " and errno's message after the text
 #define awlock_log_errno(level, fmt, ...) \
@@ -107,6 +105,7 @@ struct awlock_state {
 	struct loop_timer *clear_password_timer;  // clears the password buffer
 	struct wl_display *display;
 	int wayland_fd; // display's socket, from awl; the PAM child closes it
+	awl_process_t *proc; // awl's, this fork's copy: its log (-d)
 	struct wl_compositor *compositor;
 	struct wl_subcompositor *subcompositor;
 	struct wl_shm *shm;

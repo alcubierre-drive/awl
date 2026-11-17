@@ -30,6 +30,18 @@ typedef struct {
     int y, gy;
 } panel_t;
 
+/** what the graphs are drawn from: while it is the same, the cached
+ * drawing is too (the pointer moving over them changes none of it) */
+typedef struct {
+    unsigned samples, tsamples;
+    float scale;
+    int gw, gh, vis, filled, tfilled, npanels;
+    panel_t panel[3 + NSENSORS];
+    float tmin[NSENSORS], tmax[NSENSORS];
+    uint32_t cpu, io, mem, swap, popup_bg, popup_dim, popup_fg;
+    awl_colormap_t temperature;
+} graphs_key_t;
+
 /** the popup; layout in physical pixels, from the content's top left */
 struct awl_sysmon {
     /** the root */
@@ -38,7 +50,7 @@ struct awl_sysmon {
 
     /* the snapshot measure() took: the histories by age (0 the newest),
      * the first filled (tfilled) of them real */
-    unsigned samples;
+    unsigned samples, tsamples;
     int filled, tfilled;
     float cpu[N], io[N], sys[N], load[N], mem[N], swp[N];
     /** cpu + io, the CPU graph's top */
@@ -61,6 +73,13 @@ struct awl_sysmon {
     int gw, vis;
     panel_t panel[3 + NSENSORS];
     int npanels;
+
+    /** The graphs (their columns, quarters and boxes, not the pointer's
+     * line) drawn on transparent, gw x foot_y, for graphs_key; paint()
+     * composites it, so a moving pointer redraws only the text and the
+     * line. NULL until drawn. */
+    pixman_image_t* graphs;
+    graphs_key_t graphs_key;
 };
 
 static int px( awl_sysmon_t* sm, float v ) {
@@ -75,6 +94,7 @@ static int detail_lines( int kind ) {
 static void snap( awl_sysmon_t* sm ) {
     awl_plugin_data_t* P = sm->p;
     sm->filled = sm->tfilled = 0;
+    sm->samples = sm->tsamples = 0;
     sm->ntemps = 0;
     if (!P) return;
     awl_stats_t* m = P->stats;
@@ -100,7 +120,7 @@ static void snap( awl_sysmon_t* sm ) {
     }
     awl_temperature_t* T = P->temp;
     if (T) {
-        unsigned samples = atomic_load( &T->samples );
+        unsigned samples = sm->tsamples = atomic_load( &T->samples );
         sm->tfilled = stats_filled( samples );
         sm->ntemps = T->f_ntemps < NSENSORS ? T->f_ntemps : NSENSORS;
         for (int i = 0; i < sm->ntemps; i++) {
@@ -439,6 +459,17 @@ static void column( awl_sysmon_t* sm, pixman_image_t* pix, int x, int gy, int nn
         col[i][2] = (double)((c[i] >> 8) & 0xff) / 255. * a;
         col[i][3] = a;
     }
+    /* each segment's lowest and highest top in the column: a row below
+     * the lowest is all covered, one above the highest not at all, and
+     * only the rows between take the sum over the points */
+    double lo[3], up[3];
+    for (int i = 0; i < n; i++) {
+        lo[i] = up[i] = top[0][i];
+        for (int j = 1; j < nn; j++) {
+            if (top[j][i] < lo[i]) lo[i] = top[j][i];
+            if (top[j][i] > up[i]) up[i] = top[j][i];
+        }
+    }
     const double width = xs[nn - 1] - xs[0];
     for (int r = (int)floor( g - hi ); r < sm->gh; r++) {
         const int y = gy + r;
@@ -447,8 +478,12 @@ static void column( awl_sysmon_t* sm, pixman_image_t* pix, int x, int gy, int nn
         double acc[4] = { 0 }, under = 0;
         for (int i = 0; i < n; i++) {
             double area = 0;
-            for (int j = 0; j + 1 < nn; j++) area += row_area( top[j][i], top[j + 1][i], xs[j + 1] - xs[j], b0 );
-            area /= width;
+            if (b0 + 1 <= lo[i]) {
+                area = 1;
+            } else if (b0 < up[i]) {
+                for (int j = 0; j + 1 < nn; j++) area += row_area( top[j][i], top[j + 1][i], xs[j + 1] - xs[j], b0 );
+                area /= width;
+            }
             const double own = area - under;
             under = area;
             if (own <= 0) continue;
@@ -466,7 +501,8 @@ static void column( awl_sysmon_t* sm, pixman_image_t* pix, int x, int gy, int nn
     }
 }
 
-static void graph( awl_sysmon_t* sm, pixman_image_t* pix, int x0, int y0, const panel_t* p, int hover ) {
+/** panel p's graph, its quarters and its box into pix, offset by x0, y0 */
+static void graph( awl_sysmon_t* sm, pixman_image_t* pix, int x0, int y0, const panel_t* p ) {
     const awl_colors_t* k = &sm->p->config.colors;
     const awl_plugin_config_t* pc = &sm->p->plugin_config;
     const int gy = y0 + p->gy;
@@ -537,10 +573,58 @@ static void graph( awl_sysmon_t* sm, pixman_image_t* pix, int x0, int y0, const 
         awl_fill_shape( pix, (float)x0, (float)(gy + sm->gh * q / 4), (float)sm->gw, (float)line, 0, 0, grid );
     /* the box around it */
     awl_fill_shape( pix, (float)x0, (float)gy, (float)sm->gw, (float)sm->gh, 0, (float)line, secondary( sm ) );
-    if (hover >= 0 && hover < sm->gw) {
-        const int cx = hover + line > sm->gw ? sm->gw - line : hover;
-        awl_fill_shape( pix, (float)(x0 + cx), (float)gy, (float)line, (float)sm->gh, 0, 0, k->popup_fg );
+}
+
+/** the key of what the graphs show now */
+static void graphs_key( awl_sysmon_t* sm, graphs_key_t* key ) {
+    const awl_colors_t* k = &sm->p->config.colors;
+    const awl_plugin_config_t* pc = &sm->p->plugin_config;
+    /* all of it, the padding too: compared whole */
+    memset( key, 0, sizeof *key );
+    key->samples = sm->samples;
+    key->tsamples = sm->tsamples;
+    key->scale = sm->scale;
+    key->gw = sm->gw;
+    key->gh = sm->gh;
+    key->vis = sm->vis;
+    key->filled = sm->filled;
+    key->tfilled = sm->tfilled;
+    key->npanels = sm->npanels;
+    memcpy( key->panel, sm->panel, (size_t)sm->npanels * sizeof *sm->panel );
+    for (int i = 0; i < sm->ntemps; i++) {
+        key->tmin[i] = sm->tmin[i];
+        key->tmax[i] = sm->tmax[i];
     }
+    key->cpu = pc->colors.cpu;
+    key->io = pc->colors.io;
+    key->mem = pc->colors.mem;
+    key->swap = pc->colors.swap;
+    key->popup_bg = k->popup_bg;
+    key->popup_dim = k->popup_dim;
+    key->popup_fg = k->popup_fg;
+    memcpy( &key->temperature, &pc->colors.temperature, sizeof key->temperature );
+}
+
+/** sm->graphs for what measure() took, redrawn only if that changed;
+ * NULL if it can't be made */
+static pixman_image_t* graphs( awl_sysmon_t* sm ) {
+    graphs_key_t key;
+    graphs_key( sm, &key );
+    const int h = sm->foot_y;
+    if (sm->graphs && !memcmp( &key, &sm->graphs_key, sizeof key )) return sm->graphs;
+    if (sm->graphs && (pixman_image_get_width( sm->graphs ) != sm->gw || pixman_image_get_height( sm->graphs ) != h)) {
+        pixman_image_unref( sm->graphs );
+        sm->graphs = NULL;
+    }
+    if (sm->gw <= 0 || h <= 0) return NULL;
+    if (sm->graphs) /* transparent again */
+        memset( pixman_image_get_data( sm->graphs ), 0, (size_t)pixman_image_get_stride( sm->graphs ) * (size_t)h );
+    /* pixman's own bits, zeroed */
+    else if (!(sm->graphs = pixman_image_create_bits( PIXMAN_a8r8g8b8, sm->gw, h, NULL, 0 )))
+        return NULL;
+    for (int p = 0; p < sm->npanels; p++) graph( sm, sm->graphs, 0, 0, &sm->panel[p] );
+    sm->graphs_key = key;
+    return sm->graphs;
 }
 
 static uint32_t title_color( awl_sysmon_t* sm, const panel_t* p, int c ) {
@@ -580,7 +664,20 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
                      0 );
             if (rw) text_at( sm, pix, font, x0, y0, 0, y, sm->w, right, l ? dim : k->popup_fg, 2 );
         }
-        graph( sm, pix, x0, y0, pn, hover );
+    }
+    /* the graphs, drawn when their samples came; the pointer's line over
+     * them */
+    pixman_image_t* g = graphs( sm );
+    if (g)
+        pixman_image_composite32( PIXMAN_OP_OVER, g, NULL, pix, 0, 0, 0, 0, x0, y0, sm->gw, sm->foot_y );
+    else
+        for (int p = 0; p < sm->npanels; p++) graph( sm, pix, x0, y0, &sm->panel[p] );
+    if (hover >= 0) {
+        const int line = (int)sm->scale > 1 ? (int)sm->scale : 1;
+        const int cx = hover + line > sm->gw ? sm->gw - line : hover;
+        for (int p = 0; p < sm->npanels; p++)
+            awl_fill_shape( pix, (float)(x0 + cx), (float)(y0 + sm->panel[p].gy), (float)line, (float)sm->gh, 0, 0,
+                            k->popup_fg );
     }
     /* the time axis */
     char buf[32];
@@ -661,5 +758,6 @@ awl_sysmon_t* awl_sysmon_start( awl_plugin_data_t* p ) {
 void awl_sysmon_stop( awl_sysmon_t* sm ) {
     if (!sm) return;
     if (sm->win) awl_host->window_destroy( awl_host->srv, sm->win );
+    if (sm->graphs) pixman_image_unref( sm->graphs );
     free( sm );
 }

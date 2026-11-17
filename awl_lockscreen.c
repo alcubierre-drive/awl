@@ -12,6 +12,7 @@
 #include "awl_process.h"
 #include "awl_spawn.h"
 
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -32,6 +33,12 @@
 #define LOGIND_GRACE_MS 10000
 /** the most a lock waits to cover every output, ms (:c:func:`lockcovered`) */
 #define LOCK_COVER_MS 2000
+/** the most a locker may take to lock, ms; then it is stopped
+ * (:c:func:`lockerlate`) */
+#define LOCKER_START_MS 10000
+/** the most lockers awl starts on its own while the session is locked
+ * without a lock (:c:func:`lockrecover`), until the next unlock */
+#define LOCKER_RESTARTS 5
 
 typedef struct {
     struct wlr_scene_tree *scene;
@@ -48,6 +55,10 @@ static void destroylock(awl_server_t *srv, SessionLock *lock, int unlock);
 static void destroysessionlock(struct wl_listener *listener, void *data);
 static void lockcovered(awl_server_t *srv);
 static void lockergone(awl_server_t *srv);
+static int lockerlate(void *data);
+static void lockerstarted(awl_server_t *srv);
+static void lockrecover(void *data);
+static void lockrecoversoon(awl_server_t *srv);
 static int coveredtimeout(void *data);
 static int lockfire(int fd, uint32_t mask, void *data);
 static void lockwake(awl_process_t *proc);
@@ -75,6 +86,12 @@ struct awl_lock {
     struct wl_event_source *logind_timer;
     /** the most a lock waits for its first frame on every output */
     struct wl_event_source *covered_timer;
+    /** the most the locker takes to lock, :c:macro:`LOCKER_START_MS` */
+    struct wl_event_source *start_timer;
+    /** :c:func:`lockrecover`, due; NULL if not */
+    struct wl_event_source *recover_idle;
+    /** lockers :c:func:`lockrecover` started since the last unlock */
+    unsigned restarts;
     /** the locker :c:func:`lockscreen` started, until it exits; 0 if none
      * or awlock (``locker_client``) */
     pid_t locker_pid;
@@ -93,6 +110,10 @@ struct awl_lock {
     bool logind_missing:1;
     /** a lock waits for each output to show it, see :c:func:`lockcovered` */
     bool covered_pending:1;
+    /** the locker was stopped for taking too long (:c:func:`lockerlate`) */
+    bool locker_late:1;
+    /** :c:func:`lockfini` ran: no more lockers */
+    bool closing:1;
 };
 
 void
@@ -170,8 +191,11 @@ destroylock(awl_server_t *srv, SessionLock *lock, int unlock)
     if (srv->lock->covered_timer)
         wl_event_source_timer_update(srv->lock->covered_timer, 0);
     awl_plugins_set_covered(srv->proc, 0);
-    if ((srv->locked = !unlock))
+    if ((srv->locked = !unlock)) {
+        lockrecoversoon(srv);
         goto destroy;
+    }
+    srv->lock->restarts = 0;
     popupslocked(srv);
     srv->lock->keystrokes = 0;
     updatepluginpause(srv);
@@ -316,16 +340,18 @@ startawlock(awl_server_t *srv, const char *const *argv)
     }
     close(sv[1]);
     srv->lock->locker_client = client;
-    srv->lock->locker_locked = 0;
     srv->lock->locker_destroy.notify = awlockgone;
     wl_client_add_destroy_listener(client, &srv->lock->locker_destroy);
+    lockerstarted(srv);
     return true;
 }
 #endif
 
 /** Starts :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`, unless a lock is in place (a locker holds
  * it) or the one started last is still running and yet to lock. While
- * locked without a lock (the locker crashed), a new locker takes over.
+ * locked without a lock (the locker crashed), a new locker takes over;
+ * awl starts one itself then too (:c:func:`lockrecover`). A locker that
+ * doesn't lock within :c:macro:`LOCKER_START_MS` is stopped (:c:func:`lockerlate`).
  * awlock, :c:macro:`AWL_LOCKER`, is part of awl: a fork of the lock helper
  * (awl_lockhelper.h), on a socket awl made its client of. Any other locker
  * is looked for in ``PATH``. */
@@ -334,7 +360,7 @@ lockscreen(awl_server_t *srv, const Arg *arg)
 {
     const char *const *argv = srv->cfg->lock.locker;
     pid_t pid;
-    if (srv->lock->cur)
+    if (srv->lock->cur || srv->lock->closing)
         return;
     if (srv->lock->locker_pid > 0 || srv->lock->locker_client) {
         awl_log_printf("lock: %s is still starting\n", srv->lock->locker_name);
@@ -355,7 +381,7 @@ lockscreen(awl_server_t *srv, const Arg *arg)
     pid = spawn_pid(srv->proc, &(Arg){.v = argv});
     if (pid > 0) {
         srv->lock->locker_pid = pid;
-        srv->lock->locker_locked = 0;
+        lockerstarted(srv);
     } else {
         awl_alert_set(srv, AwlAlertLocker, "can't start %s", argv[0]);
     }
@@ -444,6 +470,8 @@ locksession(struct wl_listener *listener, void *data)
     updatepluginpause(srv);
     if (srv->lock->locker_pid > 0 || srv->lock->locker_client)
         srv->lock->locker_locked = 1;
+    if (srv->lock->start_timer)
+        wl_event_source_timer_update(srv->lock->start_timer, 0);
     awl_alert_clear(srv, AwlAlertLocker);
 
     LISTEN(&session_lock->events.new_surface, &lock->new_surface, createlocksurface);
@@ -492,6 +520,7 @@ lockinit(awl_server_t *srv)
         srv->lock->source = wl_event_loop_add_fd(srv->event_loop, atomic_load(&srv->proc->lock.fd),
                 WL_EVENT_READABLE, lockfire, srv);
     srv->lock->covered_timer = wl_event_loop_add_timer(srv->event_loop, coveredtimeout, srv);
+    srv->lock->start_timer = wl_event_loop_add_timer(srv->event_loop, lockerlate, srv);
     /* the logind thread has until then to start listening (logind_missing) */
     srv->lock->logind_timer = wl_event_loop_add_timer(srv->event_loop, logindtimeout, srv);
     wl_event_source_timer_update(srv->lock->logind_timer, LOGIND_GRACE_MS);
@@ -500,14 +529,19 @@ lockinit(awl_server_t *srv)
 void
 lockfini(awl_server_t *srv)
 {
-    /* the clients go after this: no alert for awlock then */
+    /* the clients go after this: no alert for awlock then, and no new
+     * locker for a lock that goes with its client */
+    srv->lock->closing = 1;
     if (srv->lock->locker_client)
         wl_list_remove(&srv->lock->locker_destroy.link);
     srv->lock->locker_client = NULL;
     if (srv->lock->source) wl_event_source_remove(srv->lock->source);
     if (srv->lock->logind_timer) wl_event_source_remove(srv->lock->logind_timer);
     if (srv->lock->covered_timer) wl_event_source_remove(srv->lock->covered_timer);
+    if (srv->lock->start_timer) wl_event_source_remove(srv->lock->start_timer);
+    if (srv->lock->recover_idle) wl_event_source_remove(srv->lock->recover_idle);
     srv->lock->source = srv->lock->logind_timer = srv->lock->covered_timer = NULL;
+    srv->lock->start_timer = srv->lock->recover_idle = NULL;
 }
 
 void
@@ -537,12 +571,90 @@ lockkeystroke(awl_server_t *srv)
         AWL_wlr_scene_blur_set_shatter(srv->lock->blur, (float)srv->lock->keystrokes/20.0);
 }
 
-/** the locker is gone: an alert if it never locked */
+/** a locker started: it has :c:macro:`LOCKER_START_MS` to lock */
+static void
+lockerstarted(awl_server_t *srv)
+{
+    srv->lock->locker_locked = 0;
+    srv->lock->locker_late = 0;
+    if (srv->lock->start_timer)
+        wl_event_source_timer_update(srv->lock->start_timer, LOCKER_START_MS);
+}
+
+/** The locker hasn't locked in :c:macro:`LOCKER_START_MS`: it is stopped,
+ * so the next lock request starts another instead of waiting for it.
+ * awlock's client goes (it exits once it sees that; its pid is the lock
+ * helper's), any other locker's process group gets SIGKILL. */
+static int
+lockerlate(void *data)
+{
+    awl_server_t *srv = data;
+    struct awl_lock *lock = srv->lock;
+    if (lock->locker_locked || (lock->locker_pid <= 0 && !lock->locker_client))
+        return 0;
+    awl_err_printf("lock: %s didn't lock in %d ms, stopping it\n",
+            lock->locker_name, LOCKER_START_MS);
+    lock->locker_late = 1;
+    if (lock->locker_client)
+        wl_client_destroy(lock->locker_client); /* awlockgone() */
+    else if (kill(-lock->locker_pid, SIGKILL) && kill(lock->locker_pid, SIGKILL))
+        awl_err_printf("lock: can't stop %s (%d): %s\n", lock->locker_name,
+                (int)lock->locker_pid, strerror(errno));
+    return 0;
+}
+
+/** the locker is gone: an alert if it never locked, and a new one if the
+ * session is still locked (:c:func:`lockrecover`) */
 static void
 lockergone(awl_server_t *srv)
 {
-    if (!srv->lock->locker_locked)
+    if (srv->lock->closing)
+        return;
+    if (srv->lock->start_timer)
+        wl_event_source_timer_update(srv->lock->start_timer, 0);
+    if (srv->lock->locker_late)
+        awl_alert_set(srv, AwlAlertLocker, "%s didn't lock in %d s", srv->lock->locker_name,
+                LOCKER_START_MS / 1000);
+    else if (!srv->lock->locker_locked)
         awl_alert_set(srv, AwlAlertLocker, "%s exited without locking", srv->lock->locker_name);
+    lockrecoversoon(srv);
+}
+
+/** :c:func:`lockrecover` once this round of events is through: of a locker
+ * that crashes, the lock and the client (or the process) go in either
+ * order */
+static void
+lockrecoversoon(awl_server_t *srv)
+{
+    if (srv->lock->closing || srv->lock->recover_idle)
+        return;
+    srv->lock->recover_idle = wl_event_loop_add_idle(srv->event_loop, lockrecover, srv);
+}
+
+/** Locked without a lock and without a locker (it crashed, or was
+ * stopped): the screen shows only the blur, and while locked no key binding
+ * starts one. awl starts the next locker itself, up to
+ * :c:macro:`LOCKER_RESTARTS` times until the next unlock; after that it
+ * takes a lock request (``loginctl lock-session``, a suspend). */
+static void
+lockrecover(void *data)
+{
+    awl_server_t *srv = data;
+    struct awl_lock *lock = srv->lock;
+    lock->recover_idle = NULL;
+    if (!srv->locked || lock->cur || lock->locker_pid > 0 || lock->locker_client)
+        return;
+    if (lock->restarts >= LOCKER_RESTARTS) {
+        awl_err_printf("lock: %s gone, locked without a locker; %d started already, "
+                "loginctl lock-session starts another\n", lock->locker_name, LOCKER_RESTARTS);
+        awl_alert_set(srv, AwlAlertLocker, "%s keeps failing: loginctl lock-session",
+                lock->locker_name);
+        return;
+    }
+    lock->restarts++;
+    awl_wrn_printf("lock: %s gone, locked without a locker; starting another (%u of %d)\n",
+            lock->locker_name, lock->restarts, LOCKER_RESTARTS);
+    lockscreen(srv, NULL);
 }
 
 void

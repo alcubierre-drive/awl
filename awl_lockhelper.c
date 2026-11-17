@@ -39,10 +39,14 @@ recvfd(struct msghdr *msg)
     return fd;
 }
 
-/** a locker: awlock with argv on fd; never returns */
+/** a locker: awlock with argv on fd, logging to proc's log; never returns */
 static _Noreturn void
-locker(int argc, char **argv, int fd)
+locker(awl_process_t *proc, int argc, char **argv, int fd)
 {
+    /* no core dump, no ptrace by the user's other programs: it holds the
+     * password, and its password child (a fork) inherits this */
+    if (prctl(PR_SET_DUMPABLE, 0, 0, 0, 0))
+        awl_wrn_printf("lock helper: %s stays dumpable: %s\n", argv[0], strerror(errno));
     /* the helper ignores it to reap its lockers; awlock waits for its PAM
      * child */
     signal(SIGCHLD, SIG_DFL);
@@ -50,12 +54,13 @@ locker(int argc, char **argv, int fd)
     setsid();
     /* for ps and pkill: awlock, as when it was a program */
     prctl(PR_SET_NAME, argv[0]);
-    exit(awlock_main(argc, argv, fd));
+    exit(awlock_main(proc, argc, argv, fd));
 }
 
-/** the helper: forks a locker for each request, until awl is gone */
+/** the helper: forks a locker for each request, until awl is gone; proc
+ * is the helper's copy of awl's, for the log */
 static _Noreturn void
-serve(int sock)
+serve(awl_process_t *proc, int sock)
 {
     /* the kernel reaps the lockers */
     signal(SIGCHLD, SIG_IGN);
@@ -89,7 +94,7 @@ serve(int sock)
         pid_t pid = fork();
         if (pid == 0) {
             close(sock);
-            locker(argc, argv, fd);
+            locker(proc, argc, argv, fd);
         }
         if (pid < 0)
             awl_err_printf("lock helper: can't fork %s: %s\n", argv[0], strerror(errno));
@@ -126,7 +131,7 @@ lockhelperstart(awl_process_t *proc)
             close(null);
         }
         dup2(STDERR_FILENO, STDOUT_FILENO);
-        serve(sv[1]);
+        serve(proc, sv[1]);
     }
     close(sv[1]);
     /* awl never waits on it: a request that doesn't fit now fails */

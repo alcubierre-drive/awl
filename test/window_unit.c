@@ -5,6 +5,7 @@
 #include "awl_process.h"
 #include "awl_window_draw.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -104,6 +105,120 @@ static void test_cut( void ) {
     free( t );
     /* not even one */
     CHECK( !awl_window_layout( &L, "x", &style, font, 1, 10000, 2 * 6 + fh - 1 ) );
+}
+
+/* ---- the frame's and the shapes' solid runs (awl_shape_inside()) ---- */
+
+/* the frame as it was painted before the runs: every pixel's coverage */
+static void ref_frame( uint32_t* data, int32_t stride, int w, int h, float bw, float r, uint32_t bg, uint32_t border ) {
+    float b[4], g[4];
+    const uint32_t cs[2] = { border, bg };
+    for (int i = 0; i < 2; i++) {
+        float* o = i ? g : b;
+        float a = (float)(cs[i] & 0xff) / 255.f;
+        o[0] = (float)((cs[i] >> 24) & 0xff) / 255.f * a;
+        o[1] = (float)((cs[i] >> 16) & 0xff) / 255.f * a;
+        o[2] = (float)((cs[i] >> 8) & 0xff) / 255.f * a;
+        o[3] = a;
+    }
+    float ri = fmaxf( r - bw, 0 );
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            float px = (float)x + 0.5f, py = (float)y + 0.5f;
+            float co = awl_shape_coverage( px, py, (float)w, (float)h, r );
+            float ci = bw > 0 ? awl_shape_coverage( px - bw, py - bw, (float)w - 2 * bw, (float)h - 2 * bw, ri ) : co;
+            float kb = co - ci, out[4];
+            for (int k = 0; k < 4; k++) out[k] = fminf( b[k] * kb + g[k] * ci, 1 );
+            ((uint32_t*)((char*)data + (size_t)y * stride))[x] =
+                (uint32_t)lroundf( out[3] * 255 ) << 24 | (uint32_t)lroundf( out[0] * 255 ) << 16 |
+                (uint32_t)lroundf( out[1] * 255 ) << 8 | (uint32_t)lroundf( out[2] * 255 );
+        }
+}
+
+/* awl_fill_shape() as it was: every pixel's coverage */
+static void ref_shape( pixman_image_t* pix, float x, float y, float w, float h, float r, float t, uint32_t c ) {
+    uint32_t* data = pixman_image_get_data( pix );
+    int stride = pixman_image_get_stride( pix ) / 4;
+    int iw = pixman_image_get_width( pix ), ih = pixman_image_get_height( pix );
+    float a = (float)(c & 0xff) / 255.f;
+    float col[3] = { (float)(c >> 24) / 255.f * a, (float)((c >> 16) & 0xff) / 255.f * a,
+                     (float)((c >> 8) & 0xff) / 255.f * a };
+    for (int yy = (int)floorf( y ); yy < (int)ceilf( y + h ); yy++) {
+        if (yy < 0 || yy >= ih) continue;
+        for (int xx = (int)floorf( x ); xx < (int)ceilf( x + w ); xx++) {
+            if (xx < 0 || xx >= iw) continue;
+            float fx = (float)xx + 0.5f - x, fy = (float)yy + 0.5f - y;
+            float k = awl_shape_coverage( fx, fy, w, h, r );
+            if (t > 0) k -= awl_shape_coverage( fx - t, fy - t, w - 2 * t, h - 2 * t, fmaxf( r - t, 0 ) );
+            if (k <= 0) continue;
+            uint32_t d = data[yy * stride + xx];
+            const int shift[4] = { 16, 8, 0, 24 };
+            const float src[4] = { col[0] * k, col[1] * k, col[2] * k, a * k };
+            uint32_t out = 0;
+            for (int i = 0; i < 4; i++) {
+                float v = src[i] * 255 + (float)((d >> shift[i]) & 0xff) * (1 - a * k);
+                out |= (uint32_t)lroundf( fminf( v, 255 ) ) << shift[i];
+            }
+            data[yy * stride + xx] = out;
+        }
+    }
+}
+
+/* the largest difference of a channel between a and b, n pixels */
+static int maxdiff( const uint32_t* a, const uint32_t* b, size_t n ) {
+    int m = 0;
+    for (size_t i = 0; i < n; i++)
+        for (int s = 0; s < 32; s += 8) {
+            int d = abs( (int)((a[i] >> s) & 0xff) - (int)((b[i] >> s) & 0xff) );
+            if (d > m) m = d;
+        }
+    return m;
+}
+
+static void test_runs( void ) {
+    printf( "-- solid runs\n" );
+    enum { W = 97, H = 61 };
+    static uint32_t a[W * H], b[W * H];
+    const int32_t stride = W * 4;
+    /* frames: border widths, radii (0, small, more than fits), sizes */
+    static const struct { int w, h, bw; float r; } frames[] = {
+        { 97, 61, 2, 8 }, { 97, 61, 0, 8 }, { 97, 61, 0, 0 }, { 97, 61, 3, 0 }, { 40, 20, 1, 30 },
+        { 3, 3, 1, 1 }, { 1, 1, 0, 0 }, { 97, 61, 4, 4 }, { 50, 61, 5, 2.5f }, { 12, 60, 2, 16 },
+    };
+    int worst = 0;
+    for (size_t i = 0; i < sizeof frames / sizeof *frames; i++) {
+        awl_window_layout_t L = { .width = frames[i].w, .height = frames[i].h,
+                                  .border_width = frames[i].bw, .radius = frames[i].r };
+        awl_window_style_t st = style;
+        st.bg = 0x3c3c3c4d;
+        memset( a, 0x5a, sizeof a );
+        memset( b, 0x5a, sizeof b );
+        awl_window_paint_frame( &L, &st, a, stride );
+        ref_frame( b, stride, frames[i].w, frames[i].h, (float)frames[i].bw, frames[i].r, st.bg, st.border );
+        int d = maxdiff( a, b, W * H );
+        if (d > worst) worst = d;
+    }
+    CHECK( worst == 0 );
+    /* shapes: filled and outlined, at fractions of a pixel, clipped */
+    static const struct { float x, y, w, h, r, t; } shapes[] = {
+        { 10, 10, 50, 30, 8, 0 },     { 10, 10, 50, 30, 8, 1 },    { 10.3f, 9.7f, 50.5f, 30.2f, 7.5f, 0 },
+        { 10.3f, 9.7f, 50.5f, 30.2f, 7.5f, 1.5f }, { -5, -3, 60, 40, 0, 2 }, { 80, 50, 40, 30, 10, 0 },
+        { 2, 2, 20, 4, 6, 0 },        { 2, 2, 20, 4, 6, 1 },       { 0, 0, 97, 61, 0, 3 },
+        { 30, 20, 1, 30, 0, 0 },      { 5, 5, 30, 30, 15, 0 },     { 5, 5, 30, 30, 15, 2 },
+    };
+    worst = 0;
+    for (size_t i = 0; i < sizeof shapes / sizeof *shapes; i++) {
+        for (int k = 0; k < W * H; k++) a[k] = b[k] = 0x80204060u + (uint32_t)k;
+        pixman_image_t* pa = pixman_image_create_bits( PIXMAN_a8r8g8b8, W, H, a, stride );
+        pixman_image_t* pb = pixman_image_create_bits( PIXMAN_a8r8g8b8, W, H, b, stride );
+        awl_fill_shape( pa, shapes[i].x, shapes[i].y, shapes[i].w, shapes[i].h, shapes[i].r, shapes[i].t, 0xc08040b0 );
+        ref_shape( pb, shapes[i].x, shapes[i].y, shapes[i].w, shapes[i].h, shapes[i].r, shapes[i].t, 0xc08040b0 );
+        pixman_image_unref( pa );
+        pixman_image_unref( pb );
+        int d = maxdiff( a, b, W * H );
+        if (d > worst) worst = d;
+    }
+    CHECK( worst == 0 );
 }
 
 static void test_paint( void ) {
@@ -315,6 +430,7 @@ int main( void ) {
     test_layout();
     test_cut();
     test_paint();
+    test_runs();
     test_input();
     test_place();
     awl_font_release( proc, font );

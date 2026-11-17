@@ -17,7 +17,8 @@
  * scale.
  * The pointer over the graphs picks a moment: a line marks it in all of
  * them and their numbers are that moment's. It follows the samples while
- * shown. One popup, on one monitor at a time. Main thread.
+ * shown. The graphs are drawn once a sample and kept: the pointer
+ * moving repaints only the numbers and the line. One popup, on one monitor at a time. Main thread.
  */
 
 #include "awl_bar_type.h"

@@ -52,6 +52,15 @@ struct awl_window {
     /** draws itself instead of the text, if painter.paint is set */
     awl_window_painter_t painter;
     void* painter_data;
+    /** the hovered part changed while shown: the window is redrawn once
+     * the event loop is done with this round's events (idle), however
+     * many motion events moved it; srv is the scheduler's */
+    bool hover_pending:1;
+    struct wl_event_source* hover_idle;
+    awl_server_t* srv;
+    /** what draw() paints into, reused while the scene has no lock on
+     * them; dropped when the window is hidden */
+    Buffer* bufs[2];
 };
 
 /** like the bar's buffers (awl_bar.c): read-only for the renderer */
@@ -113,9 +122,49 @@ awl_window_t* awl_window_create( struct wlr_scene_tree* parent, const awl_window
     return win;
 }
 
+/** a new w x h buffer */
+static Buffer* buffer_new( int w, int h ) {
+    const int32_t stride = awl_draw_stride( (unsigned)w );
+    Buffer* b = ecalloc( 1, sizeof(Buffer) + (size_t)stride * h );
+    b->stride = (size_t)stride;
+    b->w = (size_t)w;
+    b->h = (size_t)h;
+    wlr_buffer_init( &b->base, &buffer_impl, w, h );
+    return b;
+}
+
+/** gives up the buffer slots; the scene keeps what it still holds */
+static void buffers_drop( awl_window_t* win ) {
+    for (size_t i = 0; i < sizeof win->bufs / sizeof *win->bufs; i++) {
+        if (win->bufs[i]) wlr_buffer_drop( &win->bufs[i]->base );
+        win->bufs[i] = NULL;
+    }
+}
+
+/** a w x h buffer to paint all of: a slot the scene no longer holds (it
+ * lets go once it has the texture), else a new one in a free slot, else a
+ * one-off (*oneoff), to drop once the scene has it */
+static Buffer* buffer_get( awl_window_t* win, int w, int h, int* oneoff ) {
+    *oneoff = 0;
+    for (size_t i = 0; i < sizeof win->bufs / sizeof *win->bufs; i++) {
+        Buffer* b = win->bufs[i];
+        if (b && b->base.n_locks) continue;
+        if (b && (b->w != (size_t)w || b->h != (size_t)h)) {
+            wlr_buffer_drop( &b->base );
+            b = NULL;
+        }
+        if (!b) b = win->bufs[i] = buffer_new( w, h );
+        return b;
+    }
+    *oneoff = 1;
+    return buffer_new( w, h );
+}
+
 void awl_window_destroy( awl_window_t* win ) {
     if (!win) return;
+    if (win->hover_idle) wl_event_source_remove( win->hover_idle );
     wlr_scene_node_destroy( &win->tree->node );
+    buffers_drop( win );
     free( win->text );
     free( win );
 }
@@ -222,12 +271,10 @@ static int draw( awl_window_t* win ) {
                            : !awl_window_layout( &L, win->text, &st, font, s, (int)(w * s), (int)(h * s) ))
         return 0;
 
-    int32_t stride = awl_draw_stride( L.width );
-    Buffer* b = ecalloc( 1, sizeof(Buffer) + (size_t)stride * L.height );
-    b->stride = stride;
-    b->w = L.width;
-    b->h = L.height;
-    wlr_buffer_init( &b->base, &buffer_impl, L.width, L.height );
+    /* the frame paints every pixel: a reused buffer needs no clearing */
+    int oneoff;
+    Buffer* b = buffer_get( win, L.width, L.height, &oneoff );
+    const int32_t stride = (int32_t)b->stride;
     if (win->painter.paint)
         paint_painted( win, &L, font, s, b->data, stride );
     else
@@ -238,7 +285,7 @@ static int draw( awl_window_t* win ) {
     win->lh = (int)lroundf( L.height / s );
     wlr_scene_buffer_set_buffer( win->buffer, &b->base );
     wlr_scene_buffer_set_dest_size( win->buffer, win->lw, win->lh );
-    wlr_buffer_drop( &b->base ); /* the scene holds it now */
+    if (oneoff) wlr_buffer_drop( &b->base ); /* the scene holds it now */
     if (win->blur) {
         wlr_scene_blur_set_size( win->blur, win->lw, win->lh );
         wlr_scene_blur_set_corner_radius( win->blur, st.radius );
@@ -274,7 +321,8 @@ void awl_window_update( awl_server_t* srv, awl_window_t* win, Monitor* m ) {
         return;
     }
     const float s = m->wlr_output->scale;
-    if (!win->drawn || win->scale != s || win->font != font_of( m )) {
+    if (!win->drawn || win->hover_pending || win->scale != s || win->font != font_of( m )) {
+        win->hover_pending = 0;
         win->drawn = draw( win );
         win->scale = s;
         win->font = font_of( m );
@@ -320,11 +368,13 @@ void awl_window_show_at( awl_server_t* srv, awl_window_t* win, Monitor* m, int a
 void awl_window_hide( awl_window_t* win ) {
     if (!win || !win->m) return;
     win->m = NULL;
+    win->hover_pending = 0;
     if (win->hover != -1) {
         win->hover = -1;
         win->drawn = 0;
     }
     wlr_scene_node_set_enabled( &win->tree->node, 0 );
+    buffers_drop( win );
     /* last: it may show or destroy the window */
     if (win->hidden) win->hidden( win, win->hidden_data );
 }
@@ -424,6 +474,28 @@ static int cell_at( const awl_window_t* win, double lx, double ly, int* row, int
                                (int)((ly - win->tree->node.y) * win->scale), row, col );
 }
 
+static void hover_fire( void* data ) {
+    awl_window_t* win = data;
+    win->hover_idle = NULL;
+    if (win->hover_pending && win->m) awl_window_update( win->srv, win, win->m );
+}
+
+/** win's hovered part changed: it is redrawn once this round of events
+ * is handled, so a burst of motion costs one paint, not one per event;
+ * the painter's data hasn't changed, so its hit() and box() hold until
+ * then. Hidden, it is drawn when shown. */
+static void hover_changed( awl_server_t* srv, awl_window_t* win ) {
+    if (!win->m) {
+        win->drawn = 0;
+        return;
+    }
+    win->hover_pending = 1;
+    win->srv = srv;
+    if (!win->hover_idle) win->hover_idle = wl_event_loop_add_idle( srv->event_loop, hover_fire, win );
+    /* out of memory: now */
+    if (!win->hover_idle) awl_window_update( srv, win, win->m );
+}
+
 int awl_window_pointer_motion( awl_server_t* srv, awl_window_t* win, double lx, double ly ) {
     int row, col;
     cell_at( win, lx, ly, &row, &col );
@@ -431,8 +503,7 @@ int awl_window_pointer_motion( awl_server_t* srv, awl_window_t* win, double lx, 
     win->pointer_in = 1;
     if (row != win->hover) {
         win->hover = row;
-        win->drawn = 0;
-        awl_window_update( srv, win, win->m );
+        hover_changed( srv, win );
     } else if (!entered)
         return row;
     /* last: it may hide or show windows, this one too */
@@ -445,8 +516,7 @@ void awl_window_pointer_leave( awl_server_t* srv, awl_window_t* win ) {
     win->pointer_in = 0;
     if (win->hover != -1) {
         win->hover = -1;
-        win->drawn = 0;
-        if (win->m) awl_window_update( srv, win, win->m );
+        hover_changed( srv, win );
     }
     if (was_in && win->hover_cb) win->hover_cb( win, -1, 0, win->hover_data );
 }

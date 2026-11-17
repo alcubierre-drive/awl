@@ -6,7 +6,9 @@ thread or device, awl forks a lock helper (awl_lockhelper.c, shown as
 `awl-lockhelper`); for each lock, awl sends it the config's `locker`
 arguments and a socket for the Wayland connection, and the helper forks
 awlock (shown as `awlock`). A locker that crashes takes only itself, and
-awl stays locked until the next one.
+awl stays locked until the next one, which awl starts. awlock can't be
+core dumped or traced (it holds the password), and it logs into awl's log,
+at awl's level (`-d` in `locker`: everything).
 
 Instead of a ring it draws
 awl's logo (logo.xpm, compiled in) at the pointer, coloured by state: waiting, typing,

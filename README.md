@@ -75,6 +75,9 @@ part of awl: no program of that name; see lock/README.md), `at_start`, and `on_s
 the locker covers every output (through a logind delay inhibitor). With
 that, no separate lock handler (`xss-lock`, a `sleep.target` unit calling
 `loginctl lock-session`) is needed; `loginctl lock-session` still works.
+A locker that hasn't locked after 10 s is stopped. One that exits while
+locked leaves awl locked, and awl starts the next itself, up to 5 times
+until the next unlock; after that, `loginctl lock-session` starts one.
 
 The battery popup (hover the battery or dock widget) sets the battery's
 charge thresholds: its ‹ › buttons, or the wheel over a threshold's row,

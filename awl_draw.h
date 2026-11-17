@@ -10,6 +10,7 @@
  * that draws with it is awl_bar_type.h's. No wlroots here.
  */
 
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -92,6 +93,25 @@ static inline float awl_shape_coverage( float x, float y, float w, float h, floa
     return fminf( fmaxf( 0.5f - d, 0 ), 1 );
 }
 
+/** The pixels of a row a w x h box with corner radius r covers whole
+ * (:c:func:`awl_shape_coverage` 1), its left edge at x: the row's center
+ * y from the box's top, the run from ``*x0`` to ``*x1``, pixel indices; returns 0
+ * if there is none. Painters fill that run without the coverage. */
+static inline int awl_shape_inside( float x, float w, float h, float r, float y, int* x0, int* x1 ) {
+    if (w <= 0 || h <= 0) return 0;
+    r = fmaxf( fminf( r, fminf( w, h ) / 2 ), 0 );
+    /* at least half a pixel from the straight edges: away from the
+     * corners' rows all of the width, else between the corners */
+    float inset;
+    if (y >= r + 0.5f && y <= h - r - 0.5f) inset = 0;
+    else if (y >= 0.5f && y <= h - 0.5f) inset = r;
+    else return 0;
+    /* the centers in [inset + 0.5, w - inset - 0.5] from the left edge */
+    *x0 = (int)ceilf( x + inset );
+    *x1 = (int)floorf( x + w - inset - 1 );
+    return *x0 <= *x1;
+}
+
 /** c (0xRRGGBBAA) over pix (premultiplied ARGB) in the w x h box at x, y
  * with corner radius r, antialiased; with t > 0 only its outline, t wide.
  * Physical pixels, for a painter's paint(). */
@@ -104,13 +124,29 @@ static inline void awl_fill_shape( pixman_image_t* pix, float x, float y, float 
     float a = (float)(c & 0xff) / 255.f;
     float col[3] = { (float)(c >> 24) / 255.f * a, (float)((c >> 16) & 0xff) / 255.f * a,
                      (float)((c >> 8) & 0xff) / 255.f * a };
+    const float ri = fmaxf( r - t, 0 );
     for (int yy = (int)floorf( y ); yy < (int)ceilf( y + h ); yy++) {
         if (yy < 0 || yy >= ih) continue;
+        const float fy = (float)yy + 0.5f - y;
+        /* inside: an outline leaves it, a fill covers it whole */
+        int in0, in1;
+        if (!(t > 0 ? awl_shape_inside( x + t, w - 2 * t, h - 2 * t, ri, fy - t, &in0, &in1 )
+                    : awl_shape_inside( x, w, h, r, fy, &in0, &in1 )))
+            in0 = INT_MAX, in1 = INT_MIN;
         for (int xx = (int)floorf( x ); xx < (int)ceilf( x + w ); xx++) {
             if (xx < 0 || xx >= iw) continue;
-            float fx = (float)xx + 0.5f - x, fy = (float)yy + 0.5f - y;
-            float k = awl_shape_coverage( fx, fy, w, h, r );
-            if (t > 0) k -= awl_shape_coverage( fx - t, fy - t, w - 2 * t, h - 2 * t, fmaxf( r - t, 0 ) );
+            float k;
+            if (xx >= in0 && xx <= in1) {
+                if (t > 0) {
+                    xx = in1;
+                    continue;
+                }
+                k = 1;
+            } else {
+                float fx = (float)xx + 0.5f - x;
+                k = awl_shape_coverage( fx, fy, w, h, r );
+                if (t > 0) k -= awl_shape_coverage( fx - t, fy - t, w - 2 * t, h - 2 * t, ri );
+            }
             if (k <= 0) continue;
             uint32_t d = data[yy * stride + xx];
             const int shift[4] = { 16, 8, 0, 24 };

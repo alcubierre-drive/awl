@@ -74,7 +74,9 @@ void awl_window_set_text( awl_server_t* srv, awl_window_t* win, const char* text
  * column 0 (-1, -1 off them), and with a click callback the painter gets
  * the hovered one. */
 void awl_window_set_painter( awl_server_t* srv, awl_window_t* win, const awl_window_painter_t* painter, void* data );
-/** what a painter draws changed: measures and paints it again if shown */
+/** what a painter draws changed: measures and paints it again if shown,
+ * right away (its hit() and box() hold for the new layout once this
+ * returns) */
 void awl_window_redraw( awl_server_t* srv, awl_window_t* win );
 
 /** Shows the window on m, or moves it there: on the bar's side of m's window
@@ -94,7 +96,8 @@ void awl_window_show_beside( awl_server_t* srv, awl_window_t* win, Monitor* m, c
  * bar, or the bar's height along its top or bottom edge, flush (dx, dy
  * ignored). */
 void awl_window_show_at( awl_server_t* srv, awl_window_t* win, Monitor* m, int at, int dx, int dy );
-/** hides win; it keeps its contents for the next show */
+/** hides win; it keeps its contents for the next show, the scene its
+ * last buffer (the spare ones go) */
 void awl_window_hide( awl_window_t* win );
 /** the monitor it is shown on, NULL while hidden */
 Monitor* awl_window_monitor( const awl_window_t* win );
@@ -141,9 +144,12 @@ int awl_window_contains( const awl_window_t* win, double lx, double ly );
  * visible at lx, ly (layout coordinates) */
 int awl_window_takes_pointer( const awl_window_t* win, double lx, double ly );
 /** The pointer is at lx, ly over win: highlights the row there. Returns
- * it, -1 off the text. */
+ * it, -1 off the text. The highlight is painted once the event loop is
+ * done with this round's events, however many moved it (a burst of motion
+ * costs one paint); until then the window shows the last one. */
 int awl_window_pointer_motion( awl_server_t* srv, awl_window_t* win, double lx, double ly );
-/** the pointer left win: no row highlighted */
+/** the pointer left win: no row highlighted (painted as for
+ * :c:func:`awl_window_pointer_motion`) */
 void awl_window_pointer_leave( awl_server_t* srv, awl_window_t* win );
 /** A press at lx, ly: calls the click callback; the cell into ``*row``, ``*col``. */
 void awl_window_pointer_button( awl_window_t* win, double lx, double ly, uint32_t button, int* row, int* col );

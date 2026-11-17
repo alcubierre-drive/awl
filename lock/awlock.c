@@ -1,6 +1,6 @@
 // awlock: awl's screen locker, a fork of swaylock-fprintd
 // (https://github.com/SL-RU/swaylock-fprintd, 536d9df). This is its Wayland
-// side: the log and the event loop, then the lock (ext-session-lock-v1) with
+// side: the event loop, then the lock (ext-session-lock-v1) with
 // a transparent lock surface per output and the logo on a subsurface of it,
 // the seat (keys go to auth.c), the options and main(). See awlock.h.
 #define _GNU_SOURCE // memfd_create(): glibc declares it for nothing narrower
@@ -18,10 +18,6 @@
 #include "ext-session-lock-v1-client-protocol.h"
 #include "single-pixel-buffer-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
-
-// The log (awlock.h)
-
-enum log_level awlock_log_level = LOG_ERROR;
 
 // The event loop: poll() on the fds, with the next timer's timeout
 
@@ -1098,7 +1094,7 @@ static int parse_options(int argc, char **argv, struct awlock_state *state) {
 	while ((c = getopt_long(argc, argv, "dehuv", long_options, &opt_idx)) != -1) {
 		switch (c) {
 		case 'd':
-			awlock_log_level = LOG_DEBUG;
+			awl_log_set_level(state->proc, awl_loglevel_vrb);
 			break;
 		case 'e':
 			state->args.ignore_empty = true;
@@ -1168,9 +1164,10 @@ static void display_in(void *data) {
 	}
 }
 
-int awlock_main(int argc, char **argv, int wayland_fd) {
+int awlock_main(awl_process_t *proc, int argc, char **argv, int wayland_fd) {
 	// awl's main() ran getopt() before the helper forked
 	optind = 1;
+	state.proc = proc;
 	state.wayland_fd = wayland_fd;
 	state.args = (struct awlock_args){
 		.logo_scale = 3,

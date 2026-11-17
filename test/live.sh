@@ -10,6 +10,7 @@
 #                           (where the popups' pointer input goes, ...)
 #   live.sh stop            SIGTERM, wait for it to exit
 #   live.sh alive           exit status: is it running
+#   live.sh pid             awl's pid (not gdb's)
 #   live.sh add | remove    add an output / remove the newest (AWL_TEST_OUTPUTS)
 #   live.sh shot FILE       screenshot of all outputs (grim)
 #   live.sh randr [ARGS]    wlr-randr
@@ -175,6 +176,7 @@ stop)
 	grep -E "exited (normally|with code)|received signal" "$log" | tail -1
 	;;
 alive) pid >/dev/null ;;
+pid) pid ;;
 add) kill -USR1 "$(pid)" && sleep 0.3 ;;
 remove) kill -USR2 "$(pid)" && sleep 0.3 ;;
 shot) envs; grim "$2" ;;

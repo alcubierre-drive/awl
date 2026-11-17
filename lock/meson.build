@@ -39,6 +39,8 @@ if lock_wayland_client.found() and lock_pam.found()
   # awl calls awlock_main() (awlock_main.h)
   lock_libs = [static_library('awlock', lock_sources, lock_protos,
     c_args: lock_c_args,
+    # awl_log.h: awlock logs to awl's log
+    include_directories: root_inc,
     override_options: ['warning_level=2'],
     dependencies: lock_deps,
   )]

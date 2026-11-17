@@ -13,24 +13,41 @@ static void unpack( uint32_t c, float out[4] ) {
     out[3] = a;
 }
 
-/** the background: bg inside the border, the border around it */
+/** the frame's pixel of coverages ci (inside the border) and kb (the border) */
+static uint32_t frame_pixel( const float b[4], const float g[4], float kb, float ci ) {
+    float out[4];
+    for (int k = 0; k < 4; k++)
+        out[k] = fminf( b[k] * kb + g[k] * ci, 1 );
+    return (uint32_t)lroundf( out[3] * 255 ) << 24 | (uint32_t)lroundf( out[0] * 255 ) << 16 |
+           (uint32_t)lroundf( out[1] * 255 ) << 8 | (uint32_t)lroundf( out[2] * 255 );
+}
+
+/** The background: bg inside the border, the border around it. Inside
+ * the inner edge's straight parts every pixel is bg whole (both shapes
+ * cover it), so only the band along the edges and the corners take the
+ * coverage, the rest is one value. */
 static void draw_frame( uint32_t* data, size_t stride, int w, int h, float bw, float r,
                         uint32_t bg, uint32_t border ) {
     float b[4], g[4];
     unpack( bg, g );
     unpack( border, b );
     float ri = fmaxf( r - bw, 0 );
+    const uint32_t solid = frame_pixel( b, g, 0, 1 );
     for (int y = 0; y < h; y++) {
         uint32_t* row = (uint32_t*)((char*)data + (size_t)y * stride);
+        const float py = (float)y + 0.5f;
+        /* the run every pixel of which is bg whole */
+        int s0, s1;
+        if (!awl_shape_inside( bw, (float)w - 2 * bw, (float)h - 2 * bw, ri, py - bw, &s0, &s1 )) s0 = w, s1 = w - 1;
         for (int x = 0; x < w; x++) {
-            float px = (float)x + 0.5f, py = (float)y + 0.5f;
+            if (x == s0) {
+                for (; x <= s1; x++) row[x] = solid;
+                if (x >= w) break;
+            }
+            float px = (float)x + 0.5f;
             float co = awl_shape_coverage( px, py, (float)w, (float)h, r );
             float ci = bw > 0 ? awl_shape_coverage( px - bw, py - bw, (float)w - 2 * bw, (float)h - 2 * bw, ri ) : co;
-            float kb = co - ci, out[4];
-            for (int k = 0; k < 4; k++)
-                out[k] = fminf( b[k] * kb + g[k] * ci, 1 );
-            row[x] = (uint32_t)lroundf( out[3] * 255 ) << 24 | (uint32_t)lroundf( out[0] * 255 ) << 16 |
-                     (uint32_t)lroundf( out[1] * 255 ) << 8 | (uint32_t)lroundf( out[2] * 255 );
+            row[x] = frame_pixel( b, g, co - ci, ci );
         }
     }
 }

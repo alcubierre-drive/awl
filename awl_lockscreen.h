@@ -8,7 +8,9 @@
  * session is locked only the locker's surfaces are shown (over a blur,
  * :c:member:`cfg->lock.blur <awl_config_t.lock.blur>`) and get input. A lock covers the screen
  * once every output has shown it; before a suspend, the logind thread waits
- * for that. While the logind thread doesn't listen for all it should, an
+ * for that. A locker that doesn't lock in time is stopped; one that goes
+ * while locked leaves the session locked, and awl starts the next itself,
+ * a few times until the next unlock (awl_lockscreen.c). While the logind thread doesn't listen for all it should, an
  * alert is up (awl_alert.h).
  *
  * Main thread only, except the logind thread's two below

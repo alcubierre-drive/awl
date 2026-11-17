@@ -1,10 +1,16 @@
 #!/bin/bash
 # Scenario test of the screen lock (awl_lockscreen.c) with a real
-# ext-session-lock client (test/lock.c) in a live.sh test instance: it
-# locks every output; a locker that crashes leaves awl locked and alive,
-# and a new one can lock again; and awl exits cleanly on SIGTERM while a
-# lock is in place (the lock then goes with its client, after lockfini()
-# has removed the lock's timers).
+# ext-session-lock client (test/lock.c) in a live.sh test instance: a
+# locker that doesn't lock in time is stopped (the lock helper held up, so
+# awlock never starts); the client locks every output; a locker that
+# crashes leaves awl locked and alive, and awl starts its own, awlock, up to
+# 5 times until an unlock; a new locker can lock again; and awl exits
+# cleanly on SIGTERM while a lock is in place (the lock then goes with its
+# client, after lockfini() has removed the lock's timers).
+#
+# awlock is the instance's, found by its parents (awl, the lock helper),
+# never by name alone: the real session's must be left alone. It locks;
+# nothing types a password.
 #
 #   test/lock.sh        with build-dev/awl (the debug build) if it is there,
 #                       else build/awl
@@ -57,9 +63,44 @@ locker() {
 	return 1
 }
 
+# the instance's lock helper, and its awlock (none: empty)
+helper() { pgrep -P "$("$live" pid)" -x awl-lockhelper; }
+awlock() { pgrep -P "$(helper)" -x awlock; }
+
+# waits ($3 s at most, by default 5) for the log to have $1 lines matching $2
+logged() {
+	for _ in $(seq $((${3:-5} * 10))); do
+		[ "$("$live" log | grep -c -- "$2")" -ge "$1" ] && return 0
+		sleep 0.1
+	done
+	return 1
+}
+
+# waits (5 s at most) for an awlock other than $1 to run
+newawlock() {
+	local p
+	for _ in $(seq 50); do
+		p=$(awlock)
+		[ -n "$p" ] && [ "$p" != "${1:-}" ] && return 0
+		sleep 0.1
+	done
+	return 1
+}
+
 ninja -C "$builddir" test/lock >/dev/null || exit 1
 "$live" stop >/dev/null 2>&1
 "$live" start >/dev/null || die "awl didn't start"
+
+echo "-- a locker that doesn't lock"
+h=$(helper) || die "no lock helper"
+kill -STOP "$h"
+"$live" win locker >/dev/null
+check "it is stopped after 10 s" logged 1 "awlock didn't lock in 10000 ms" 15
+kill -CONT "$h"
+check "awl survives it" "$live" alive
+"$live" alive || die "awl died"
+sleep 0.5
+check "the awlock that started late is gone" test -z "$(awlock)"
 
 echo "-- lock"
 check "the locker locks every output" locker 1
@@ -71,6 +112,19 @@ pkill -KILL -x -P "${lockers[0]}" lock || die "no locker to kill"
 wait "${lockers[0]}" 2>/dev/null
 sleep 0.5
 check "awl survives it" "$live" alive
+"$live" alive || die "awl died"
+check "awl starts awlock" newawlock
+check "and says so" logged 1 "starting another (1 of 5)"
+
+echo "-- awlock crashes"
+for i in 2 3 4 5 6; do
+	p=$(awlock) || die "no awlock"
+	kill -KILL "$p"
+	[ $i -le 5 ] && check "awl starts awlock again" newawlock "$p"
+done
+check "5 times at most" logged 1 "started already"
+sleep 0.5
+check "then none" test -z "$(awlock)"
 "$live" alive || die "awl died"
 check "a new locker locks again" locker 2
 "$live" alive || die "awl died"
