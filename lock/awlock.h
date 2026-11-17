@@ -79,6 +79,7 @@ struct logo_colors {
 struct awlock_args {
 	struct logo_colors colors[LOGO_STATES];
 	uint32_t logo_scale; // logical pixels per logo pixel (--logo-scale)
+	const char *logo_file; // --logo: an XPM instead of logo.xpm, or NULL
 	int debug_state; // --debug-state: an enum logo_state shown always, or -1
 	bool ignore_empty;
 	bool show_logo; // the logo (-u: none)
@@ -105,6 +106,7 @@ struct awlock_state {
 	struct loop_timer *auth_idle_timer; // timer to stop displaying AUTH_STATE_INVALID
 	struct loop_timer *clear_password_timer;  // clears the password buffer
 	struct wl_display *display;
+	int wayland_fd; // display's socket, from awl; the PAM child closes it
 	struct wl_compositor *compositor;
 	struct wl_subcompositor *subcompositor;
 	struct wl_shm *shm;

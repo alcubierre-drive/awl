@@ -131,8 +131,12 @@ awl_draw_stride(unsigned int width)
     return (((PIXMAN_FORMAT_BPP(PIXMAN_a8r8g8b8) * width + 7) / 8 + 4 - 1) & -4);
 }
 
+/* awl_process.h's: the font registry is awl_process_t.fonts, the
+ * proc the functions below take */
+typedef struct awl_process_t awl_process_t;
+
 /** fcft's setup; once, later calls return the first's result */
-int awl_draw_init(void);
+int awl_draw_init(awl_process_t *proc);
 
 /** :c:func:`awl_font_get`'s last resort, as :c:member:`awl_config_t.font` and fontsize */
 #define AWL_FONT_FALLBACK "monospace:size="
@@ -161,13 +165,13 @@ int awl_draw_init(void);
  * :c:func:`awl_font_release`. Main thread; loading a new font blocks on fontconfig
  * and the font files.
  */
-struct fcft_font *awl_font_get(const char *name, float size, float scale);
+struct fcft_font *awl_font_get(awl_process_t *proc, const char *name, float size, float scale);
 /** like :c:func:`awl_font_get`, but NULL instead of a fallback */
-struct fcft_font *awl_font_get_exact(const char *name, float size, float scale);
+struct fcft_font *awl_font_get_exact(awl_process_t *proc, const char *name, float size, float scale);
 /** like :c:func:`awl_font_get_exact`, but in emoji presentation (emoji with a text
  * default, like 🖥, in color too), and NULL if the font draws emoji in black
  * and white (then a text font's would come out too), not in color */
-struct fcft_font *awl_font_get_emoji(const char *name, float size, float scale);
+struct fcft_font *awl_font_get_emoji(awl_process_t *proc, const char *name, float size, float scale);
 /** :c:func:`awl_font_style`'s styles, a mask: bold */
 #define AWL_FONT_BOLD 1
 /** italic */
@@ -185,13 +189,13 @@ struct fcft_font *awl_font_get_emoji(const char *name, float size, float scale);
  * reference), so callers needn't fall back. NULL only for a font that isn't
  * the registry's (or NULL). Main thread.
  */
-struct fcft_font *awl_font_style(struct fcft_font *font, int style);
+struct fcft_font *awl_font_style(awl_process_t *proc, struct fcft_font *font, int style);
 /** gives back a font from :c:func:`awl_font_get`; NULL, or a font that isn't the
  * registry's (logged), does nothing */
-void awl_font_release(struct fcft_font *font);
+void awl_font_release(awl_process_t *proc, struct fcft_font *font);
 /** makes the next get try the fonts that didn't load again (after a config
  * reload: a font may have been installed meanwhile) */
-void awl_font_retry(void);
+void awl_font_retry(awl_process_t *proc);
 
 /** an image to draw into: w x h pixels of premultiplied ARGB at bits, stride
  * bytes a row, clipped to them. Give it back with pixman_image_unref(). */
@@ -210,4 +214,4 @@ int awl_draw_text_over(pixman_image_t *pix, struct fcft_font *font, int x, int y
 unsigned int awl_draw_text_width(struct fcft_font *font, const char *text);
 
 /** fcft's teardown */
-void awl_draw_fini(void);
+void awl_draw_fini(awl_process_t *proc);

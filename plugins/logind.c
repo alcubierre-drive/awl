@@ -68,7 +68,7 @@ static void report( logind_t* s ) {
         flags |= AWL_LOGIND_SLEEP;
     if (flags == s->reported) return;
     s->reported = flags;
-    awl_host->logind_state( flags );
+    awl_host->logind_state( awl_host->srv, flags );
 }
 
 static int reply_ok( sd_bus_message* m, logind_t* s, const char* what ) {
@@ -133,7 +133,7 @@ static int on_sleep( sd_bus_message* m, void* userdata, sd_bus_error* ret_error 
         awl_log_printf( "logind: going to sleep, locking%s\n",
                         s->inhibit_fd >= 0 ? "" : " (without an inhibitor: suspend won't wait)" );
         s->sleeping = 1;
-        awl_host->lock_request();
+        awl_host->lock_request( awl_host->srv );
         check_release( s );
     } else {
         if (s->sleeping && s->inhibit_fd >= 0)
@@ -148,7 +148,7 @@ static int on_sleep( sd_bus_message* m, void* userdata, sd_bus_error* ret_error 
 static int on_lock( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)m; (void)userdata; (void)ret_error;
     awl_log_printf( "logind: Lock\n" );
-    awl_host->lock_request();
+    awl_host->lock_request( awl_host->srv );
     return 0;
 }
 

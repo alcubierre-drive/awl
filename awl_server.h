@@ -125,8 +125,14 @@ typedef struct {
     awl_window_t *keyboard;
 } awl_popups_t;
 
+/* awl_process.h's */
+typedef struct awl_process_t awl_process_t;
+
 /** The compositor: one, made by setup() */
 typedef struct awl_server_t {
+    /** the process it runs in, from ``main()``: for the modules that keep
+     * their state there (awl_process.h) */
+    awl_process_t *proc;
     struct wl_display *dpy;
     struct wl_event_loop *event_loop;
     struct wlr_backend *backend;

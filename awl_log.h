@@ -5,7 +5,10 @@
  * prefix colored if stderr is a terminal) and, uncolored, to the log file
  * (``-l``, by default :c:macro:`AWL_LOGFILE`). Messages above the log level (:c:func:`awl_log_set_level`; ``-d``
  * raises it to verbose) are dropped. Any thread may log; each message is one
- * ``write()`` per output.
+ * ``write()`` per output. The printf functions take no
+ * :c:type:`awl_process_t`: they are called from anywhere, any thread, so
+ * they write the log of the process :c:func:`awl_log_init` was given, the
+ * one global pointer (awl_process.h).
  *
  * The implementation (awl_log.c) lives in awl. libawlplugins.so (built with
  * ``AWL_HOSTED``) reaches awl only through its host table, so there
@@ -38,13 +41,18 @@ typedef enum {
 #define AWL_LOGFILE "/tmp/awl.log"
 #endif
 
-/** opens the log file path (truncating it; NULL or "": none) and decides on
- * colors; before it, messages go to stderr only */
-void awl_log_init( const char* path );
+/* awl_process.h's: the log's state is awl_process_t.log */
+typedef struct awl_process_t awl_process_t;
+
+/** opens the log file path (truncating it; NULL or "": none), decides on
+ * colors, and makes proc's log the one the printf functions write, from
+ * now on (proc must outlive every message); before it, messages go to
+ * stderr only, at the default level. Once, before any thread starts. */
+void awl_log_init( awl_process_t* proc, const char* path );
 /** discards every message above loglevel */
-void awl_log_set_level( awl_loglevel_t loglevel );
+void awl_log_set_level( awl_process_t* proc, awl_loglevel_t loglevel );
 /** what :c:func:`awl_log_set_level` set */
-awl_loglevel_t awl_log_level( void );
+awl_loglevel_t awl_log_level( const awl_process_t* proc );
 
 /** prints fmt with the prefix of loglevel; fmt ends in its own newline */
 void awl_dbg_printf( awl_loglevel_t loglevel, const char* fmt, ... )

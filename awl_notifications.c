@@ -68,7 +68,9 @@ typedef struct {
 struct awl_notifs {
     /** NULL while it isn't running */
     struct wl_event_loop* loop;
-    void (*changed)( void );
+    /** called with proc, the server's */
+    void (*changed)( awl_process_t* proc );
+    awl_process_t* proc;
     struct wl_event_source* idle;
     awl_bus_t* conn;
     sd_bus* bus;
@@ -98,7 +100,7 @@ struct awl_notifs {
 static void changed_fire( void* data ) {
     awl_notifs_t* N = data;
     N->idle = NULL;
-    if (N->changed) N->changed();
+    if (N->changed) N->changed( N->proc );
 }
 
 /** the library hears of it once this loop round is done */
@@ -807,13 +809,14 @@ static const awl_bus_ops_t ops = {
     .dropped = dropped,
 };
 
-int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( void ) ) {
+int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( awl_process_t* proc ) ) {
     awl_notifs_t* N;
     if (srv->notifs) return 0;
     N = srv->notifs = ecalloc( 1, sizeof(*N) );
     N->next_id = 1;
     N->loop = loop;
     N->changed = changed;
+    N->proc = srv->proc;
     N->last_activity = now_ms();
     if (!(N->conn = awl_bus_start( loop, &ops, srv ))) {
         N->loop = NULL;

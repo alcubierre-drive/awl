@@ -3,6 +3,7 @@
 #include "awl_util.h"
 #include "awl_plugin_abi.h"
 #include "awl_plugin_host.h"
+#include "awl_server.h"
 
 /** everything a panel's pixels depend on; zeroed before filling, so the
  * padding compares equal too */
@@ -167,7 +168,7 @@ static int draw( awl_desktop_t* desk, DesktopView* v, const awl_plugin_api_t* ap
 void desktop_update( awl_desktop_t* desk, Monitor* m ) {
     DesktopView* v = view_of( desk, m );
     if (!v) return;
-    const awl_plugin_api_t* api = awl_plugins_api();
+    const awl_plugin_api_t* api = awl_plugins_api( m->srv->proc );
 
     DesktopKey key;
     memset( &key, 0, sizeof(key) );
@@ -203,8 +204,8 @@ void desktop_reloaded( awl_desktop_t* desk ) {
     desktop_update_all( desk );
 }
 
-int desktop_click( awl_desktop_t* desk, int button, uint32_t mods ) {
-    const awl_plugin_api_t* api = awl_plugins_api();
+int desktop_click( awl_process_t* proc, awl_desktop_t* desk, int button, uint32_t mods ) {
+    const awl_plugin_api_t* api = awl_plugins_api( proc );
     if (!api || !api->desktop_click( button, mods )) return 0;
     desktop_update_all( desk );
     return 1;

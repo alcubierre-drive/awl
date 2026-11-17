@@ -1,7 +1,8 @@
 # awlock: the lock screen client, a fork of swaylock-fprintd
-# (https://github.com/SL-RU/swaylock-fprintd, 536d9df), copied in. A separate
-# program, not part of awl: it talks to awl over ext-session-lock-v1 like any
-# other locker. See README.md.
+# (https://github.com/SL-RU/swaylock-fprintd, 536d9df), copied in. A library
+# linked into awl, run in a fork of awl's lock helper (awl_lockhelper.c),
+# not a program of its own; it talks to awl over ext-session-lock-v1 like
+# any other locker. See README.md.
 #
 # Built from awl's meson.build (subdir), with swaylock's own warnings: awl's
 # warning_level=3 (-Wpedantic) is not applied to it.
@@ -33,8 +34,12 @@ if lock_wayland_client.found() and lock_pam.found()
   lock_c_args = ['-Wno-unused-result', '-Wundef', '-Wvla',
     '-DAWLOCK_VERSION="@0@"'.format(meson.project_version()),
     '-DLOCK_PAM_SERVICE="@0@"'.format(get_option('lock_pam_service'))]
-  # the executable itself is in awl's meson.build: next to awl in the build
-  # directory too, where awl looks for its locker first
   # PAM: an existing service (lock_pam_service, auth.c), so awlock needs no
   # file of its own in /etc/pam.d
+  # awl calls awlock_main() (awlock_main.h)
+  lock_libs = [static_library('awlock', lock_sources, lock_protos,
+    c_args: lock_c_args,
+    override_options: ['warning_level=2'],
+    dependencies: lock_deps,
+  )]
 endif

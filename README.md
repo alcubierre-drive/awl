@@ -16,7 +16,8 @@ its own:
 - a panel listing the files in `~/Desktop`
 - blur and rounded corners for layer surfaces (scenefx)
 - desktop notifications for its own events
-- screen locking with an ext-session-lock client (swaylock by default) on
+- screen locking with its own locker, awlock (lock/), or any other
+  ext-session-lock client, on
   `loginctl lock-session` and before suspend, which waits for the lock; a red
   alert on screen if that stops working
 
@@ -69,7 +70,8 @@ The configuration is in two files:
   plugins.h what each one does.
 
 The config's `lock` has the screen locker: `locker`, the ext-session-lock
-client to run, `at_start`, and `on_suspend`, which makes suspend wait until
+client to run with its options (`"awlock"`, the default, is awl's own,
+part of awl: no program of that name; see lock/README.md), `at_start`, and `on_suspend`, which makes suspend wait until
 the locker covers every output (through a logind delay inhibitor). With
 that, no separate lock handler (`xss-lock`, a `sleep.target` unit calling
 `loginctl lock-session`) is needed; `loginctl lock-session` still works.

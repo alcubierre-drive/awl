@@ -137,7 +137,7 @@ void
 wlrloginit(awl_server_t *srv)
 {
     int level = srv->cfg->wlr_log_level;
-    if (awl_log_level() >= awl_loglevel_vrb) /* awl -d */
+    if (awl_log_level(srv->proc) >= awl_loglevel_vrb) /* awl -d */
         level = WLR_DEBUG;
     wlr_log_init(level < WLR_SILENT ? WLR_SILENT : level > WLR_DEBUG ? WLR_DEBUG : level, wlrlog);
 }
@@ -149,7 +149,7 @@ updatepluginpause(awl_server_t *srv)
     int visible = 0;
     wl_list_for_each(m, &srv->out.mons, link)
         visible |= m->wlr_output->enabled;
-    awl_plugins_set_paused(srv->locked || !visible);
+    awl_plugins_set_paused(srv->proc, srv->locked || !visible);
 }
 
 /* what the config's environment changed, and builtinconfig(), are
@@ -172,7 +172,7 @@ static const char *const envimported[] = {
 /** sets name to value (NULL: unsets it), if that changes it: other threads
  * may be reading the environment */
 static void
-envset(const char *name, const char *value)
+envset(awl_process_t *proc, const char *name, const char *value)
 {
     const char *now = getenv(name);
     const char *const *n;
@@ -183,14 +183,14 @@ envset(const char *name, const char *value)
     else
         unsetenv(name);
     for (n = envimported; *n; n++)
-        awl_proc.config.envimportdirty |= !strcmp(*n, name);
+        proc->config.envimportdirty |= !strcmp(*n, name);
 }
 
 void
-environmentimport(void)
+environmentimport(awl_process_t *proc)
 {
-    awl_proc.config.envimportstarted = 1;
-    awl_proc.config.envimportdirty = 0;
+    proc->config.envimportstarted = 1;
+    proc->config.envimportdirty = 0;
     awl_bus_import_environment(envimported);
 }
 
@@ -198,34 +198,35 @@ environmentimport(void)
 static void
 environmentapply(awl_server_t *srv)
 {
+    awl_process_t *proc = srv->proc;
     size_t i, j;
-    for (i = 0; i < awl_proc.config.nenvsaved; i++)
-        if (!envconfigured(srv, awl_proc.config.envsaved[i].name))
-            envset(awl_proc.config.envsaved[i].name, awl_proc.config.envsaved[i].orig);
+    for (i = 0; i < proc->config.nenvsaved; i++)
+        if (!envconfigured(srv, proc->config.envsaved[i].name))
+            envset(proc, proc->config.envsaved[i].name, proc->config.envsaved[i].orig);
     for (i = 0; i < srv->cfg->environment.n; i++) {
         const EnvVar *e = &srv->cfg->environment.v[i];
         if (!e->name || !*e->name || strchr(e->name, '=')) {
             awl_wrn_printf("environment: no variable \"%s\"\n", e->name ? e->name : "(null)");
             continue;
         }
-        for (j = 0; j < awl_proc.config.nenvsaved && strcmp(awl_proc.config.envsaved[j].name, e->name); j++)
+        for (j = 0; j < proc->config.nenvsaved && strcmp(proc->config.envsaved[j].name, e->name); j++)
             ;
-        if (j == awl_proc.config.nenvsaved) {
-            void *more = realloc(awl_proc.config.envsaved, (awl_proc.config.nenvsaved + 1) * sizeof(*awl_proc.config.envsaved));
+        if (j == proc->config.nenvsaved) {
+            void *more = realloc(proc->config.envsaved, (proc->config.nenvsaved + 1) * sizeof(*proc->config.envsaved));
             const char *orig = getenv(e->name);
             if (!more)
                 continue;
-            awl_proc.config.envsaved = more;
-            awl_proc.config.envsaved[j].name = strdup(e->name);
-            awl_proc.config.envsaved[j].orig = orig ? strdup(orig) : NULL;
-            if (!awl_proc.config.envsaved[j].name || (orig && !awl_proc.config.envsaved[j].orig)) {
-                free(awl_proc.config.envsaved[j].name);
-                free(awl_proc.config.envsaved[j].orig);
+            proc->config.envsaved = more;
+            proc->config.envsaved[j].name = strdup(e->name);
+            proc->config.envsaved[j].orig = orig ? strdup(orig) : NULL;
+            if (!proc->config.envsaved[j].name || (orig && !proc->config.envsaved[j].orig)) {
+                free(proc->config.envsaved[j].name);
+                free(proc->config.envsaved[j].orig);
                 continue;
             }
-            awl_proc.config.nenvsaved++;
+            proc->config.nenvsaved++;
         }
-        envset(e->name, e->value);
+        envset(proc, e->name, e->value);
     }
     /* grim's default folder: the desktop's, unless the config sets it */
     if (!envconfigured(srv, "GRIM_DEFAULT_DIR")) {
@@ -237,10 +238,10 @@ environmentapply(awl_server_t *srv)
             snprintf(path, sizeof(path), "%s", dir.str);
         awl_dict_unlock(srv->cfgdict);
         if (*path)
-            envset("GRIM_DEFAULT_DIR", path);
+            envset(proc, "GRIM_DEFAULT_DIR", path);
     }
-    if (awl_proc.config.envimportstarted && awl_proc.config.envimportdirty)
-        environmentimport();
+    if (proc->config.envimportstarted && proc->config.envimportdirty)
+        environmentimport(proc);
 }
 
 /** Brings everything that was set up from the config up to
@@ -275,7 +276,7 @@ configapply(awl_server_t *srv)
 void
 configuse(awl_server_t *srv)
 {
-    const awl_plugin_api_t *api = awl_plugins_api();
+    const awl_plugin_api_t *api = awl_plugins_api(srv->proc);
     const Layout *old = srv->cfg->layouts.v;
     size_t n_old = srv->cfg->layouts.n;
     if (api) {
@@ -286,7 +287,7 @@ configuse(awl_server_t *srv)
         awl_config_fill_defaults(&srv->conf->loaded);
         srv->cfg = &srv->conf->loaded;
     } else {
-        srv->cfg = builtinconfig();
+        srv->cfg = builtinconfig(srv->proc);
     }
     layoutsmoved(srv, old, n_old);
     configapply(srv);
@@ -303,7 +304,7 @@ pluginsdetach(awl_server_t *srv)
     /* the popups stay until the library's fini gives them back (or
      * pluginsreap() destroys them): its painters and callbacks are still
      * there until then. cfg points into the library */
-    srv->cfg = builtinconfig();
+    srv->cfg = builtinconfig(srv->proc);
     layoutsmoved(srv, old, n_old);
 }
 
@@ -328,7 +329,7 @@ pluginrestart(void *data)
     awl_plugins_reload(srv, pluginsdetach, pluginsattach);
 
     /* the reloaded config's tray icon theme */
-    awl_tray_app_set_theme(srv->cfg->tray.icon_theme);
+    awl_tray_app_set_theme(srv->proc, srv->cfg->tray.icon_theme);
 }
 
 /** The plugin_restart action: reloads ``libawlplugins.so`` (its tray widget
@@ -352,12 +353,12 @@ configdefaults(awl_config_t *c)
 }
 
 const awl_config_t *
-builtinconfig(void)
+builtinconfig(awl_process_t *proc)
 {
-    if (!awl_proc.config.builtin_filled) {
-        awl_proc.config.builtin = awl_config_defaults;
-        awl_config_fill_defaults(&awl_proc.config.builtin);
-        awl_proc.config.builtin_filled = 1;
+    if (!proc->config.builtin_filled) {
+        proc->config.builtin = awl_config_defaults;
+        awl_config_fill_defaults(&proc->config.builtin);
+        proc->config.builtin_filled = 1;
     }
-    return &awl_proc.config.builtin;
+    return &proc->config.builtin;
 }

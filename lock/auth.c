@@ -204,8 +204,9 @@ static _Noreturn void child_run(void) {
 	exit(EXIT_SUCCESS);
 }
 
-// the pipes, and the child; each keeps its two ends
-static bool child_start(void) {
+// the pipes, and the child; each keeps its two ends. The child closes
+// wayland_fd, the locker's connection to awl.
+static bool child_start(int wayland_fd) {
 	int passwords[2], replies[2]; // [0] read, [1] written
 	if (pipe(passwords) != 0 || pipe(replies) != 0) {
 		awlock_log_errno(LOG_ERROR, "failed to create pipe");
@@ -222,6 +223,8 @@ static bool child_start(void) {
 	close(passwords[in_child ? 1 : 0]);
 	close(replies[in_child ? 0 : 1]);
 	if (in_child) {
+		// awl sees the locker go when its last copy closes
+		close(wayland_fd);
 		child_run();
 	}
 	return true;
@@ -376,7 +379,7 @@ static void reply_in(void *data) {
 
 void auth_start(struct awlock_state *state) {
 	// first: the child gets no password buffer
-	if (!child_start()) {
+	if (!child_start(state->wayland_fd)) {
 		exit(EXIT_FAILURE);
 	}
 	state->password.len = 0;

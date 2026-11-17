@@ -522,7 +522,8 @@ typedef struct awl_config_t {
     struct {
         /** an ext-session-lock client (argv, NULL terminated), started on
          * logind's Lock (loginctl lock-session), before suspend and by the
-         * lockscreen action */
+         * lockscreen action; argv[0] :c:macro:`AWL_LOCKER` is awl's own,
+         * awlock (awl_lockscreen.h) */
         const char *const *locker;
         /** lock right after awl started */
         bool at_start:1;

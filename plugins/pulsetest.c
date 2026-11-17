@@ -169,7 +169,7 @@ static void sink_info_callback( pa_context* c, const pa_sink_info* i, int eol, v
         atomic_load( &t->speaker_muted ) != !!i->mute) {
         atomic_store( &t->cause, PULSE_CAUSE_OTHER );
         atomic_store( &t->speaker_muted, !!i->mute );
-        awl_host->redraw_request();
+        awl_host->redraw_request( awl_host->srv );
     }
     if (i && i->name && !strcmp( i->name, pa->name )) {
         float value = (float)pa_cvolume_avg(&(i->volume)) / (float)PA_VOLUME_NORM;
@@ -192,7 +192,7 @@ static void sink_info_callback( pa_context* c, const pa_sink_info* i, int eol, v
         int changed = switched;
         changed |= atomic_exchange( &t->value, value ) != value;
         changed |= atomic_exchange( &t->muted, muted ) != muted;
-        if (changed) awl_host->redraw_request();
+        if (changed) awl_host->redraw_request( awl_host->srv );
     }
 }
 

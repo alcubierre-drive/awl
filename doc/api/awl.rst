@@ -5,15 +5,16 @@ The compositor itself. awl.h holds every type the plugin library shares with
 awl, the configuration :c:type:`awl_config_t` among them; awl_core.h the types only
 awl's modules share; awl_server.h the core objects every part of awl uses
 (the display, the backend, the scene, the seat), made by ``main()`` and
-passed in; awl_process.h the process' state, :c:var:`awl_proc`, the core's
-only global. awl.c starts awl, runs its
+passed in; awl_process.h the process' state, made by ``main()`` and passed
+in too (the log keeps a pointer to it, the core's only global). awl.c
+starts awl, runs its
 main loop and takes it down again; everything else is a module of its own,
 each with a header: the configuration, its defaults (awl_config_defaults.h) and its
 reloads (awl_config.h), the
 outputs (awl_output.h), the clients (awl_client.h, awl_xwayland.h), layouts
 and tags (awl_layout.h), layer surfaces (awl_layer.h), the input devices and
 the pointer (awl_input.h, awl_cursor.h), the screen lock (awl_lockscreen.h,
-awl_alert.h), awl's own popups (awl_popup.h, awl_window.h), child
+awl_lockhelper.h, awl_alert.h), awl's own popups (awl_popup.h, awl_window.h), child
 processes (awl_spawn.h) and the test hooks (awl_test.h). The bar
 (:doc:`bar`) and the wallpaper (:doc:`wallpaper`) have pages of their own.
 
@@ -106,6 +107,11 @@ awl_lockscreen.c
 ----------------
 
 .. c:autodoc:: awl_lockscreen.c
+
+awl_lockhelper.h
+----------------
+
+.. c:autodoc:: awl_lockhelper.h
 
 awl_alert.h
 -----------

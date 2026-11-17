@@ -93,7 +93,7 @@ static int set_int( atomic_int* a, int v ) {
 /** n of :c:member:`awl_backlight_t.unanswered` are answered, or dropped; the last
  * one asks for a redraw, the OSD's cue to check its guess */
 static void answered( awl_backlight_t* b, int n ) {
-    if (n && atomic_fetch_sub( &b->unanswered, n ) == n) awl_host->redraw_request();
+    if (n && atomic_fetch_sub( &b->unanswered, n ) == n) awl_host->redraw_request( awl_host->srv );
 }
 
 /** brightness in [0,1] as per mille; the daemon's -1 (none yet) as
@@ -112,7 +112,7 @@ static void set_gone( awl_backlight_bus_t* s ) {
     changed |= set_int( &b->screen, BACKLIGHT_UNKNOWN );
     changed |= set_int( &b->webcam, BACKLIGHT_UNKNOWN );
     atomic_store( &b->source, BACKLIGHT_SOURCE_UNKNOWN );
-    if (changed) awl_host->redraw_request();
+    if (changed) awl_host->redraw_request( awl_host->srv );
 }
 
 /** a method reply: whether it is a proper one; marks the connection as
@@ -173,7 +173,7 @@ static void read_properties( awl_backlight_bus_t* s, sd_bus_message* m, int runn
     }
     sd_bus_message_exit_container( m );
 out:
-    if (changed) awl_host->redraw_request();
+    if (changed) awl_host->redraw_request( awl_host->srv );
 }
 
 /** The answer to :c:func:`query_properties`: all of the daemon's

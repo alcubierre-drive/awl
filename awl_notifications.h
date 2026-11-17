@@ -54,9 +54,9 @@ struct wl_event_loop;
 typedef struct awl_notifs awl_notifs_t;
 
 /** Makes :c:member:`awl_server_t.notifs` and starts it on loop; it connects from the loop. changed, if not NULL, is
- * called once per loop round after the open notifications changed.
- * Returns 0, or -1 (logged). */
-int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( void ) );
+ * called with :c:member:`srv->proc <awl_server_t.proc>` once per loop round
+ * after the open notifications changed. Returns 0, or -1 (logged). */
+int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( awl_process_t* proc ) );
 /** Stops it, letting go of the name; the open notifications are dropped
  * without a signal, :c:member:`awl_server_t.notifs` freed. Nothing if it
  * isn't running. */

@@ -19,22 +19,30 @@ static const struct { const char *name, *color; } levels[] = {
     [awl_loglevel_vrb] = { "verbose", "\033[38;5;248;1m" },
 };
 
-void awl_log_init( const char* path ) {
-    awl_proc.log.colors = isatty( STDERR_FILENO );
+/** The process whose log the printf functions write: the core's only
+ * global (awl_process.h). They are called from anywhere, any thread, with
+ * nothing to pass; NULL before :c:func:`awl_log_init`, when they write to
+ * stderr at the default level. Set before any thread starts, never reset:
+ * the process outlives every caller. */
+static awl_process_t* logged;
+
+void awl_log_init( awl_process_t* proc, const char* path ) {
+    logged = proc;
+    proc->log.colors = isatty( STDERR_FILENO );
     if (!path || !*path) return;
     /* O_APPEND: after the truncation below writes start over at 0;
      * O_CLOEXEC: spawned programs don't inherit it */
-    awl_proc.log.fd = open( path, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND | O_CLOEXEC, 0644 );
-    if (awl_proc.log.fd < 0)
+    proc->log.fd = open( path, O_WRONLY | O_CREAT | O_TRUNC | O_APPEND | O_CLOEXEC, 0644 );
+    if (proc->log.fd < 0)
         awl_wrn_printf( "can't open %s (%s), logging to stderr only\n", path, strerror( errno ) );
 }
 
-void awl_log_set_level( awl_loglevel_t l ) {
-    awl_proc.log.level = l;
+void awl_log_set_level( awl_process_t* proc, awl_loglevel_t l ) {
+    proc->log.level = l;
 }
 
-awl_loglevel_t awl_log_level( void ) {
-    return awl_proc.log.level;
+awl_loglevel_t awl_log_level( const awl_process_t* proc ) {
+    return proc->log.level;
 }
 
 /* one write() of "<color>[awl:level]<reset> message" */
@@ -47,7 +55,8 @@ static void emit( int fd, awl_loglevel_t l, int color, const char* msg, size_t m
 }
 
 void awl_dbg_vprintf( awl_loglevel_t l, const char* fmt, va_list ap ) {
-    if (l > awl_proc.log.level) return;
+    awl_process_t* proc = logged;
+    if (l > (proc ? proc->log.level : awl_loglevel_log)) return;
     if (l < awl_loglevel_err) l = awl_loglevel_err;
     if (l > awl_loglevel_vrb) l = awl_loglevel_vrb;
 
@@ -58,14 +67,14 @@ void awl_dbg_vprintf( awl_loglevel_t l, const char* fmt, va_list ap ) {
     size_t len = (size_t)ret < sizeof(msg)-1 ? (size_t)ret : sizeof(msg)-1;
     if (len == sizeof(msg)-1) msg[len-1] = '\n';
 
-    emit( STDERR_FILENO, l, awl_proc.log.colors, msg, len );
-    if (awl_proc.log.fd < 0) return;
-    pthread_mutex_lock( &awl_proc.log.mtx );
+    emit( STDERR_FILENO, l, proc && proc->log.colors, msg, len );
+    if (!proc || proc->log.fd < 0) return;
+    pthread_mutex_lock( &proc->log.mtx );
     /* the prefix is at most 20 bytes, close enough for the size cap */
-    awl_proc.log.size += len + 20;
-    if (awl_proc.log.size >= AWL_LOGFILE_MAX && !ftruncate( awl_proc.log.fd, 0 )) awl_proc.log.size = len + 20;
-    emit( awl_proc.log.fd, l, 0, msg, len );
-    pthread_mutex_unlock( &awl_proc.log.mtx );
+    proc->log.size += len + 20;
+    if (proc->log.size >= AWL_LOGFILE_MAX && !ftruncate( proc->log.fd, 0 )) proc->log.size = len + 20;
+    emit( proc->log.fd, l, 0, msg, len );
+    pthread_mutex_unlock( &proc->log.mtx );
 }
 
 void awl_dbg_printf( awl_loglevel_t l, const char* fmt, ... ) {

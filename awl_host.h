@@ -216,19 +216,23 @@ typedef struct awl_host_t {
 
     /* ---- any thread ---- */
 
-    /** :c:func:`awl_redraw_request`, called as :c:member:`awl_host->redraw_request() <awl_host_t.redraw_request>` */
-    void (*redraw_request)( void );
+    /** :c:func:`awl_redraw_request`, called as
+     * :c:member:`awl_host->redraw_request( awl_host->srv ) <awl_host_t.redraw_request>`.
+     * The calls here that take srv take :c:member:`~awl_host_t.srv`: awl
+     * reaches its process' state through it (awl_process.h); it is set
+     * before any of the library's threads start and doesn't change. */
+    void (*redraw_request)( awl_server_t* srv );
     /** :c:func:`awl_dbg_printf`: the libraries' :c:macro:`awl_err_printf() <awl_err_printf>` & co. (awl_log.h)
      * expand to it */
     void (*log)( awl_loglevel_t loglevel, const char* fmt, ... )
         __attribute__(( format( printf, 2, 3 ) ));
     /** :c:func:`awl_lock_request`: lock the screen (the config's :c:member:`lock.locker <awl_config_t.lock.locker>`),
      * unless it is or is about to be */
-    void (*lock_request)( void );
+    void (*lock_request)( awl_server_t* srv );
     /** :c:func:`awl_lock_logind_state`: what the logind thread listens for now,
      * :c:enum:`awl_logind_flags` or'ed (0 when it stops); awl raises an alert while
      * that's less than it needs */
-    void (*logind_state)( unsigned flags );
+    void (*logind_state)( awl_server_t* srv, unsigned flags );
     /**
      * config values that can change while awl runs, by name. awl owns the
      * dictionary (``cfg.s``, :c:member:`awl_server_t.cfgdict`): it lives as long as awl
@@ -268,9 +272,9 @@ typedef struct awl_host_t {
     /** :c:func:`awl_font_style`: font (e.g. a painter's) in bold and/or italic,
      * :c:macro:`AWL_FONT_BOLD`, :c:macro:`AWL_FONT_ITALIC`; font itself if that doesn't load.
      * Give it back with :c:member:`font_release() <awl_host_t.font_release>`. */
-    struct fcft_font* (*font_style)( struct fcft_font* font, int style );
+    struct fcft_font* (*font_style)( awl_server_t* srv, struct fcft_font* font, int style );
     /** :c:func:`awl_font_release` */
-    void (*font_release)( struct fcft_font* font );
+    void (*font_release)( awl_server_t* srv, struct fcft_font* font );
 
     /* ---- awl's state and actions ---- */
 

@@ -72,7 +72,9 @@ typedef struct {
     bool ready:1;
     /** its look, filled in (look_filled()) */
     awl_notif_look_t look;
-    char* summary;
+    /** the summary, its runs' styles in bold (markup the spec allows only
+     * in the body, but as other servers do: bold italic for <i>) */
+    awl_markup_t summary;
     /** "{app}" after the summary (show_app), NULL none */
     char* app;
     awl_markup_t body;
@@ -101,6 +103,12 @@ typedef struct {
     awl_markup_layout_t layout;
     uint64_t laid;
     int laid_w, laid_lines;
+    /** the summary laid out on one line for text_w at generation title_laid */
+    awl_markup_layout_t title;
+    uint64_t title_laid;
+    int title_laid_w;
+    /** the title line's baseline from its top */
+    int sum_asc;
     /** the content's height at most (restack(): what room is left), 0 any */
     int max_h;
     int w, h, img_sz, text_x, text_w, sum_y, sum_h, body_y, bar_y, bar_h;
@@ -189,7 +197,7 @@ static awl_notif_look_t look_filled( const awl_notify_t* ns, awl_notif_look_t l,
 static void fonts_release( note_t* n ) {
     for (int i = 1; i < 4; i++) {
         /* font itself too, when a style didn't load: a reference each */
-        if (n->fonts[i]) awl_host->font_release( n->fonts[i] );
+        if (n->fonts[i]) awl_host->font_release( awl_host->srv, n->fonts[i] );
         n->fonts[i] = NULL;
     }
     n->fonts[0] = n->font = NULL;
@@ -200,12 +208,8 @@ static void fonts_for( note_t* n, struct fcft_font* font ) {
     if (font == n->font) return;
     fonts_release( n );
     n->font = n->fonts[0] = font;
-    for (int i = 1; i < 4; i++) n->fonts[i] = awl_host->font_style( font, i );
-    n->laid = 0;
-}
-
-static struct fcft_font* bold( const note_t* n ) {
-    return n->fonts[AWL_MARKUP_BOLD] ? n->fonts[AWL_MARKUP_BOLD] : n->font;
+    for (int i = 1; i < 4; i++) n->fonts[i] = awl_host->font_style( awl_host->srv, font, i );
+    n->laid = n->title_laid = 0;
 }
 
 static struct fcft_font* italic( const note_t* n ) {
@@ -254,6 +258,35 @@ static void image_for( awl_notify_t* ns, note_t* n, int full ) {
 }
 
 /* ---- the painter ---- */
+
+/** the title's line: the summary on one line, cut first, down to half the
+ * line, then the app in italic, on one baseline (sum_asc); 0 when out of
+ * memory */
+static int title_lay( note_t* n ) {
+    struct fcft_font* i = italic( n );
+    int asc = 0, desc = 0;
+    if (n->summary.len && (n->title_laid != n->generation || n->title_laid_w != n->text_w)) {
+        int room = n->text_w;
+        if (n->app) {
+            room -= (int)awl_host->text_width( i, n->app ) + (int)awl_host->text_width( i, " " );
+            if (room < n->text_w / 2) room = n->text_w / 2;
+        }
+        if (!awl_markup_layout( &n->title, &n->summary, n->fonts, awl_host->text_width, room, 1, 0 )) return 0;
+        n->title_laid = n->generation;
+        n->title_laid_w = n->text_w;
+    }
+    if (n->summary.len && n->title.nlines) {
+        asc = n->title.lines[0].baseline;
+        desc = n->title.lines[0].h - asc;
+    }
+    if (n->app) {
+        if (i->ascent > asc) asc = i->ascent;
+        if (i->height - i->ascent > desc) desc = i->height - i->ascent;
+    }
+    n->sum_asc = asc;
+    n->sum_h = asc + desc;
+    return 1;
+}
 
 /** the parts' places below the summary, the body cut at lines (0 any, < 0
  * none); returns the content's height, -1 when out of memory */
@@ -323,7 +356,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     note_t* n = data;
     awl_notify_t* ns = n->ns;
     if (!font) return 0;
-    if (scale != n->scale) n->laid = 0;
+    if (scale != n->scale) n->laid = n->title_laid = 0;
     n->scale = scale;
     fonts_for( n, font );
     const int pad = px( n, (float)ns->p->config.popup.padding );
@@ -339,9 +372,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     n->text_x = n->img_sz ? n->img_sz + pad : 0;
     n->text_w = n->w - n->text_x;
     if (n->text_w < 1) return 0;
-    /* the title's line: the summary in bold, the app in italic */
-    n->sum_h = *n->summary ? bold( n )->height : 0;
-    if (n->app && italic( n )->height > n->sum_h) n->sum_h = italic( n )->height;
+    if (!title_lay( n )) return 0;
 
     int y = stack( n, font, n->look.max_lines.v > 0 ? n->look.max_lines.v : 0 );
     if (y > max_h && n->layout.nlines) {
@@ -383,59 +414,51 @@ static int part_box( void* data, int part, int* x, int* y, int* w, int* h ) {
     return 1;
 }
 
-static void paint_body( note_t* n, pixman_image_t* pix, int x0, int y0, uint32_t fg ) {
-    const awl_markup_layout_t* L = &n->layout;
-    for (unsigned l = 0; l < L->nlines; l++) {
-        const awl_markup_line_t* line = &L->lines[l];
-        const int top = y0 + n->body_y + line->y;
-        if (n->body_y + line->y >= n->h) break;
-        for (unsigned k = line->first; k < line->first + line->n; k++) {
-            const awl_markup_piece_t* p = &L->pieces[k];
-            struct fcft_font* f = awl_markup_font( n->fonts, p->style );
-            const uint32_t c = p->style & AWL_MARKUP_COLOR ? p->color : fg;
-            const int x = x0 + n->text_x + p->x;
-            const int room = n->text_w - p->x;
-            if (room <= 0) continue;
-            awl_host->text_over( pix, f, x, top + line->baseline - f->ascent, (unsigned)room, (unsigned)f->height,
-                                 p->text, c );
-            if (p->style & AWL_MARKUP_UNDERLINE) {
-                const int t = f->underline.thickness > 0 ? f->underline.thickness : 1;
-                awl_fill_shape( pix, (float)x, (float)(top + line->baseline - f->underline.position), (float)p->w,
-                                (float)t, 0, 0, c );
-            }
+/** line of L's pieces from x (dx into the text's width) on baseline, in fg
+ * but where a piece has its own color */
+static void paint_line( const note_t* n, pixman_image_t* pix, const awl_markup_layout_t* L,
+                        const awl_markup_line_t* line, int x0, int dx, int baseline, uint32_t fg ) {
+    for (unsigned k = line->first; k < line->first + line->n; k++) {
+        const awl_markup_piece_t* p = &L->pieces[k];
+        struct fcft_font* f = awl_markup_font( n->fonts, p->style );
+        const uint32_t c = p->style & AWL_MARKUP_COLOR ? p->color : fg;
+        const int x = x0 + dx + p->x;
+        const int room = n->text_w - dx - p->x;
+        if (room <= 0) continue;
+        awl_host->text_over( pix, f, x, baseline - f->ascent, (unsigned)room, (unsigned)f->height, p->text, c );
+        if (p->style & AWL_MARKUP_UNDERLINE) {
+            const int t = f->underline.thickness > 0 ? f->underline.thickness : 1;
+            awl_fill_shape( pix, (float)x, (float)(baseline - f->underline.position), (float)p->w, (float)t, 0, 0,
+                            c );
         }
     }
 }
 
-/** the summary in bold, then the app in italic, on one baseline; the
- * summary cut first, down to half the line */
-static void paint_title( note_t* n, pixman_image_t* pix, int x0, int y0, uint32_t fg ) {
-    struct fcft_font *b = bold( n ), *i = italic( n );
-    const int asc = n->app && i->ascent > b->ascent ? i->ascent : b->ascent;
-    int sum_w = *n->summary ? (int)awl_host->text_width( b, n->summary ) : 0;
-    int app_w = 0, sep = 0;
-    if (n->app) {
-        app_w = (int)awl_host->text_width( i, n->app );
-        if (sum_w) sep = (int)awl_host->text_width( i, " " );
-        const int room = n->text_w - app_w - sep;
-        if (sum_w > room) sum_w = room > n->text_w / 2 ? room : n->text_w / 2;
-    } else if (sum_w > n->text_w) {
-        sum_w = n->text_w;
+static void paint_body( note_t* n, pixman_image_t* pix, int x0, int y0, uint32_t fg ) {
+    const awl_markup_layout_t* L = &n->layout;
+    for (unsigned l = 0; l < L->nlines; l++) {
+        const awl_markup_line_t* line = &L->lines[l];
+        if (n->body_y + line->y >= n->h) break;
+        paint_line( n, pix, L, line, x0 + n->text_x, 0, y0 + n->body_y + line->y + line->baseline, fg );
     }
-    int x = x0 + n->text_x;
-    y0 += n->sum_y;
+}
+
+/** the title's line as title_lay() laid it out */
+static void paint_title( note_t* n, pixman_image_t* pix, int x0, int y0, uint32_t fg ) {
+    struct fcft_font* i = italic( n );
+    const int has_sum = n->summary.len && n->title.nlines;
+    const int sum_w = has_sum ? n->title.w : 0;
+    const int sep = has_sum && n->app ? (int)awl_host->text_width( i, " " ) : 0;
+    int dx = 0;
+    const int baseline = y0 + n->sum_y + n->sum_asc;
+    x0 += n->text_x;
     /* an OSD's text alone: centered */
     if ((n->flags & AWL_NOTIF_OSD) && !n->app && n->value < 0 && !n->body.len && !n->nactions)
-        x += (n->text_w - sum_w) / 2;
-    /* text_over() cuts at a width it doesn't exceed: one more when whole */
-    const int whole = *n->summary && sum_w == (int)awl_host->text_width( b, n->summary );
-    if (sum_w > 0)
-        awl_host->text_over( pix, b, x, y0 + asc - b->ascent, (unsigned)(sum_w + whole), (unsigned)b->height,
-                             n->summary, fg );
-    const int ax = (sum_w > 0 ? sum_w : 0) + sep, left = n->text_w - ax;
+        dx = (n->text_w - sum_w) / 2;
+    if (has_sum) paint_line( n, pix, &n->title, &n->title.lines[0], x0, dx, baseline, fg );
+    const int ax = dx + sum_w + sep, left = n->text_w - ax;
     if (n->app && left > 0)
-        awl_host->text_over( pix, i, x + ax, y0 + asc - i->ascent, (unsigned)left, (unsigned)i->height, n->app,
-                             fg );
+        awl_host->text_over( pix, i, x0 + ax, baseline - i->ascent, (unsigned)left, (unsigned)i->height, n->app, fg );
 }
 
 /** the image centered in its square: scaled if it came at another size
@@ -635,16 +658,38 @@ static void sources( awl_notify_t* ns, note_t* n, const awl_notif_t* r ) {
     else if (!n->ready) n->ready_by = now_ms() + IMAGE_WAIT_MS;
 }
 
+/** r's summary into m, in bold, with markup as other servers take it; a
+ * warning if it has any (the spec allows it only in the body). 0 when out
+ * of memory. */
+static int summary_parse( awl_markup_t* m, const awl_notif_t* r ) {
+    awl_markup_t plain;
+    if (!awl_markup_parse( m, r->summary, 1 )) return 0;
+    if (!awl_markup_parse( &plain, r->summary, 0 )) {
+        awl_markup_free( m );
+        return 0;
+    }
+    int marked = strcmp( m->text, plain.text ) != 0;
+    for (unsigned i = 0; i < m->nruns; i++) {
+        marked |= m->runs[i].style != 0;
+        m->runs[i].style |= AWL_MARKUP_BOLD;
+    }
+    awl_markup_free( &plain );
+    if (marked)
+        awl_wrn_printf( "notify: %s sent markup in a summary, where the spec allows only plain text: %.80s\n",
+                        *r->app ? r->app : "an app", r->summary );
+    return 1;
+}
+
 /** copies r into n; returns 0 when out of memory */
 static int fill( awl_notify_t* ns, note_t* n, const awl_notif_t* r ) {
-    char* summary = strdup( r->summary );
+    awl_markup_t summary = { 0 };
     char* app = NULL;
     if (CFG->show_app && *r->app && !(r->flags & AWL_NOTIF_OSD) && (app = malloc( strlen( r->app ) + 3 )))
         sprintf( app, "(%s)", r->app );
     char** actions = calloc( (size_t)(r->nactions ? r->nactions : 1) * 2, sizeof(*actions) );
-    awl_markup_t body;
-    if (!summary || !actions || !awl_markup_parse( &body, r->body, 1 )) {
-        free( summary );
+    awl_markup_t body = { 0 };
+    if (!actions || !summary_parse( &summary, r ) || !awl_markup_parse( &body, r->body, 1 )) {
+        awl_markup_free( &summary );
         free( app );
         free( actions );
         return 0;
@@ -664,7 +709,7 @@ static int fill( awl_notify_t* ns, note_t* n, const awl_notif_t* r ) {
         }
         k++;
     }
-    free( n->summary );
+    awl_markup_free( &n->summary );
     free( n->app );
     for (int i = 0; i < 2 * n->nactions; i++) free( n->actions[i] );
     free( n->actions );
@@ -681,7 +726,7 @@ static int fill( awl_notify_t* ns, note_t* n, const awl_notif_t* r ) {
     n->look = look_filled( ns, r->look, n->urgency );
     n->flags = r->flags;
     sources( ns, n, r );
-    n->laid = 0;
+    n->laid = n->title_laid = 0;
     awl_host->window_set_colors( awl_host->srv, n->win, n->look.bg.v, n->look.fg.v, n->look.frame.v );
     awl_host->window_set_border_width( awl_host->srv, n->win, n->look.frame_width.v );
     return 1;
@@ -693,8 +738,9 @@ static void note_free( note_t* n ) {
     awl_host->window_destroy( awl_host->srv, n->win );
     fonts_release( n );
     awl_markup_layout_free( &n->layout );
+    awl_markup_layout_free( &n->title );
     awl_markup_free( &n->body );
-    free( n->summary );
+    awl_markup_free( &n->summary );
     free( n->app );
     for (int i = 0; i < 2 * n->nactions; i++) free( n->actions[i] );
     free( n->actions );
@@ -880,7 +926,7 @@ void awl_notify_changed( awl_notify_t* ns ) {
     restack( ns );
     awl_notify_menu_changed( ns->menu );
     /* the bar's widget */
-    awl_host->redraw_request();
+    awl_host->redraw_request( awl_host->srv );
 }
 
 awl_notify_menu_t* awl_notify_menu( awl_notify_t* ns ) {
@@ -902,7 +948,7 @@ void awl_notify_set_dnd( awl_notify_t* ns, int on ) {
         restack( ns );
         awl_notify_menu_changed( ns->menu );
     }
-    awl_host->redraw_request();
+    awl_host->redraw_request( awl_host->srv );
 }
 
 int awl_notify_count( awl_notify_t* ns, int* critical ) {
@@ -941,7 +987,7 @@ void awl_notify_reveal( awl_notify_t* ns, uint32_t id ) {
     }
     restack( ns );
     awl_notify_menu_changed( ns->menu );
-    awl_host->redraw_request();
+    awl_host->redraw_request( awl_host->srv );
 }
 
 /** the icons the image thread is done with into ns->icons */

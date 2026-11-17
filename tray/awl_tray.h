@@ -9,6 +9,10 @@
 
 #include <stdint.h>
 
+/* awl_process.h's: what is made below is awl_process_t.tray,
+ * the proc the functions take */
+typedef struct awl_process_t awl_process_t;
+
 /** What a program awl starts that asks for the tray's icon theme
  * (:c:macro:`TRAY_ICONS`, awl.h) gets: a dconf profile of its own, the one it
  * would have had, but with org.gnome.desktop.interface's icon-theme set to
@@ -34,10 +38,10 @@ typedef struct awl_tray_app_env_t {
  * first use, and anew after a reload changed icon_theme, for the programs
  * started from then on. It lives until the next call or
  * :c:func:`awl_tray_app_cleanup`. */
-const awl_tray_app_env_t *awl_tray_app_env(void);
+const awl_tray_app_env_t *awl_tray_app_env(awl_process_t *proc);
 
 /** the config's icon_theme (NULL or "": none), at startup and after each
  * plugin reload; the next :c:func:`awl_tray_app_env` makes it anew if it changed */
-void awl_tray_app_set_theme(const char *theme);
+void awl_tray_app_set_theme(awl_process_t *proc, const char *theme);
 /** removes what :c:func:`awl_tray_app_env` made */
-void awl_tray_app_cleanup(void);
+void awl_tray_app_cleanup(awl_process_t *proc);

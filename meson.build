@@ -148,16 +148,30 @@ if get_option('test_hooks').disable_auto_if(not dev).allowed()
   awl_test_src = files('awl_test.c')
   awl_test_args = ['-DAWL_TEST']
 endif
+# awlock (lock/meson.build), part of awl: a library linked in, started by
+# awl's lock helper (awl_lockhelper.c), AWL_AWLOCK
+lock_libs = []
+awl_lock_src = []
+awl_lock_args = []
+if get_option('lock').allowed()
+  subdir('lock')
+endif
+if lock_libs.length() > 0
+  awl_deps += lock_deps
+  awl_lock_src = files('awl_lockhelper.c')
+  awl_lock_args = ['-DAWL_AWLOCK']
+endif
 awl = executable('awl',
   'awl.c', 'awl_config.c', 'awl_output.c', 'awl_bar.c', 'awl_popup.c', 'awl_client.c',
   'awl_xwayland.c', 'awl_layout.c', 'awl_layer.c', 'awl_input.c', 'awl_cursor.c',
   'awl_lockscreen.c', 'awl_spawn.c', 'awl_wallpaper.c', 'awl_log.c',
   'awl_dict.c', 'awl_util.c', 'awl_draw.c', 'awl_plugin_host.c', 'awl_desktop.c',
   'awl_background.c', 'awl_redraw.c', 'awl_sni.c', 'awl_bus.c', 'awl_notifications.c', 'awl_alert.c', 'awl_window.c',
-  'awl_window_draw.c', 'awl_process.c', 'tray/app_env.c', awl_test_src,
+  'awl_window_draw.c', 'awl_process.c', 'tray/app_env.c', awl_test_src, awl_lock_src,
   protocol_headers, version_h,
-  c_args: awl_c_args + awl_test_args,
+  c_args: awl_c_args + awl_test_args + awl_lock_args,
   dependencies: awl_deps,
+  link_with: lock_libs,
   install: true,
 )
 
@@ -242,19 +256,4 @@ custom_target('libawlplugins.so',
   install_dir: 'lib/',
 )
 
-lock_sources = []
-if get_option('lock').allowed()
-  subdir('lock')
-endif
-# awlock (lock/meson.build): here, so that it is next to awl in the build
-# directory as when installed; awl looks for its locker there first
-# (lockerpath(), awl_lockscreen.c)
-if lock_sources.length() > 0
-  executable('awlock', lock_sources, lock_protos,
-    c_args: lock_c_args,
-    override_options: ['warning_level=2'],
-    dependencies: lock_deps,
-    install: true,
-  )
-endif
 subdir('test')

@@ -210,7 +210,7 @@ static void publish( awl_sni_t* s ) {
     s->snap = snap;
     pthread_mutex_unlock( &s->lock );
     sni_snap_unref( old );
-    awl_host->redraw_request();
+    awl_host->redraw_request( awl_host->srv );
 }
 
 /* ---- to the main thread ---- */

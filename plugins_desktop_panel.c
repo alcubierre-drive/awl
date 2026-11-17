@@ -136,7 +136,7 @@ static void* scanner( void* data ) {
                 *copy = sc->files;
                 /* replaces one the main thread hasn't taken yet */
                 free( atomic_exchange( &sc->pending, copy ) );
-                awl_host->redraw_request();
+                awl_host->redraw_request( awl_host->srv );
                 unsent = 0;
             }
         }

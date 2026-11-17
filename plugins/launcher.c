@@ -731,7 +731,7 @@ static const char* prompt( awl_launcher_t* la ) {
 
 static void prompt_free( awl_launcher_t* la ) {
     for (int i = 1; i < 4; i++)
-        if (la->pm.fonts[i]) awl_host->font_release( la->pm.fonts[i] );
+        if (la->pm.fonts[i]) awl_host->font_release( awl_host->srv, la->pm.fonts[i] );
     free( la->pm.src );
     awl_markup_free( &la->pm.m );
     memset( &la->pm, 0, sizeof la->pm );
@@ -751,8 +751,8 @@ static int prompt_ready( awl_launcher_t* la, struct fcft_font* font ) {
     }
     if (font != la->pm.font) {
         for (int i = 1; i < 4; i++) {
-            if (la->pm.fonts[i]) awl_host->font_release( la->pm.fonts[i] );
-            la->pm.fonts[i] = awl_host->font_style( font, i );
+            if (la->pm.fonts[i]) awl_host->font_release( awl_host->srv, la->pm.fonts[i] );
+            la->pm.fonts[i] = awl_host->font_style( awl_host->srv, font, i );
         }
         la->pm.font = la->pm.fonts[0] = font;
     }

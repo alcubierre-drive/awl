@@ -1,15 +1,25 @@
 #pragma once
 
 /**
- * The process' state, :c:var:`awl_proc`: what belongs to awl the process,
- * not to the compositor (:c:type:`awl_server_t`, which ``main()`` makes and
- * passes in). It is the core's only global, and the place to look for what
- * a signal handler or another thread reaches without a parameter. Each
- * member says who touches it and from which thread; nothing in it points
- * into the server.
+ * The process' state, :c:type:`awl_process_t`: what belongs to awl the
+ * process, not to the compositor (:c:type:`awl_server_t`). Each member says
+ * who touches it and from which thread; nothing in it points into the
+ * server.
  *
- * Only the modules named below include this header, and each reads only its
- * own member. Everyone else goes through their functions.
+ * There is no global of it. ``main()`` makes the one
+ * (:c:func:`awl_process_init`) and passes it on, as the server: the
+ * functions that use it take it (``awl_process_t *proc``), or reach it
+ * through the server they take (:c:member:`awl_server_t.proc`); the plugin
+ * library's calls into awl through the server they pass back
+ * (:c:member:`awl_host_t.srv`). Only the modules named below include this
+ * header, and each reads only its own member. Everyone else goes through
+ * their functions.
+ *
+ * The one exception is the log: its printf functions are called from
+ * anywhere, any thread, with nothing to pass, so :c:func:`awl_log_init`
+ * keeps a pointer to the process it was given, for
+ * :c:member:`awl_process_t.log`. That pointer, in awl_log.c, is the core's
+ * only global.
  */
 
 #include "awl_config.h"
@@ -44,14 +54,17 @@ enum awl_warned {
     AwlWarnedFontNone = 1 << 1,
 };
 
-/** true the first time for bit, an :c:enum:`awl_warned`, and false from then
- * on: ``if (AWL_ONCE(AwlWarnedFontSlots)) awl_err_printf(...)`` */
-#define AWL_ONCE(bit) (!(awl_proc.warned & (bit)) && (awl_proc.warned |= (bit)))
+/** true the first time for bit, an :c:enum:`awl_warned`, in proc (an
+ * :c:type:`awl_process_t` pointer), and false from then on:
+ * ``if (AWL_ONCE(proc, AwlWarnedFontSlots)) awl_err_printf(...)`` */
+#define AWL_ONCE(proc, bit) (!((proc)->warned & (bit)) && ((proc)->warned |= (bit)))
 
-/** The type of :c:var:`awl_proc` */
-typedef struct {
-    /** awl_log.c's: any thread. ``level`` and ``colors`` are set before the
-     * threads start; ``mtx`` guards ``fd``'s writes and ``size`` */
+/** The process' state; see awl_process.h */
+typedef struct awl_process_t {
+    /** awl_log.c's: any thread, through the pointer :c:func:`awl_log_init`
+     * keeps (the one global, see above). ``level`` and ``colors`` are set
+     * before the threads start; ``mtx`` guards ``fd``'s writes and
+     * ``size`` */
     struct {
         awl_loglevel_t level;
         /** stderr is a terminal */
@@ -72,6 +85,15 @@ typedef struct {
         /** how many autostarted are set */
         int nautostarted;
     } spawn;
+
+    /** awl_lockhelper.c's helper, awlock's parent; main thread (fork()ed
+     * before there is any other) */
+    struct {
+        /** awl's end of its socket, -1: none */
+        int fd;
+        /** 0: none */
+        pid_t pid;
+    } lockhelper;
 
     /** awl_redraw.c's eventfd, -1 before :c:func:`awl_redraw_init`; written from any
      * thread */
@@ -147,5 +169,6 @@ typedef struct {
     unsigned warned;
 } awl_process_t;
 
-/** the process' state, the core's only global (awl_process.c) */
-extern awl_process_t awl_proc;
+/** proc as a process starts: nothing open, nothing made (awl_process.c);
+ * once, before anything uses it */
+void awl_process_init(awl_process_t *proc);

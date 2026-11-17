@@ -528,11 +528,12 @@ void togglebar_mon(awl_server_t *srv, Monitor* m) {
 static void
 updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const char *what)
 {
-    awl_font_release(*f);
+    awl_process_t *proc = m->srv->proc;
+    awl_font_release(proc, *f);
     *f = NULL;
     if (!font)
         return;
-    if (!(*f = awl_font_get_exact(font, (float)size, m->wlr_output->scale)))
+    if (!(*f = awl_font_get_exact(proc, font, (float)size, m->wlr_output->scale)))
         awl_wrn_printf("%s font %s not found, using the bar's\n", what, font);
 }
 
@@ -540,11 +541,11 @@ updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const c
 static void
 updateemojifont(awl_server_t *srv, Monitor *m)
 {
-    awl_font_release(m->bar.emojifont);
+    awl_font_release(srv->proc, m->bar.emojifont);
     m->bar.emojifont = NULL;
     if (!srv->cfg->emoji_font)
         return;
-    if (!(m->bar.emojifont = awl_font_get_emoji(srv->cfg->emoji_font, (float)srv->cfg->fontsize,
+    if (!(m->bar.emojifont = awl_font_get_emoji(srv->proc, srv->cfg->emoji_font, (float)srv->cfg->fontsize,
                 m->wlr_output->scale)))
         awl_wrn_printf("emoji font %s not found or not in color, the bar shows text instead\n",
                 srv->cfg->emoji_font);
@@ -575,7 +576,7 @@ updatebar(awl_server_t *srv, Monitor *m)
     }
 
     /* falls back to monospace; keeps the old font if even that fails */
-    awl_bar_set_font(&m->bar, srv->cfg->font, (float)srv->cfg->fontsize, m->wlr_output->scale, 1);
+    awl_bar_set_font(srv->proc, &m->bar, srv->cfg->font, (float)srv->cfg->fontsize, m->wlr_output->scale, 1);
 
     m->bar_area.scale = m->wlr_output->scale;
     /* no font at all: an empty bar of a monospace:size=10's height */
@@ -635,7 +636,7 @@ void
 baraddmon(awl_server_t *srv, Monitor *m)
 {
     awl_bar_setup(&m->bar, m);
-    awl_plugins_bar_widgets(&m->bar);
+    awl_plugins_bar_widgets(srv->proc, &m->bar);
 
     /* LyrBottom sits below LyrTile/LyrFloat, so floating windows dragged
      * over the bar's area render on top of it -- intentional */
@@ -670,11 +671,11 @@ barremovemon(awl_server_t *srv, Monitor *m)
         setleavepending(srv->bars, 0);
         srv->bars->hover_active = NULL;
     }
-    awl_font_release(m->popupfont);
+    awl_font_release(srv->proc, m->popupfont);
     m->popupfont = NULL;
-    awl_font_release(m->desktopfont);
+    awl_font_release(srv->proc, m->desktopfont);
     m->desktopfont = NULL;
-    awl_bar_teardown(&m->bar);
+    awl_bar_teardown(srv->proc, &m->bar);
 }
 
 void
@@ -704,7 +705,7 @@ barwidgetsattach(awl_server_t *srv)
 
     wl_list_for_each(m, &srv->out.mons, link)
         if (m->bar.m)
-            awl_plugins_bar_widgets(&m->bar);
+            awl_plugins_bar_widgets(srv->proc, &m->bar);
 }
 
 void
@@ -713,7 +714,7 @@ barconfigure(awl_server_t *srv)
     Monitor *m;
 
     /* the bars' font, and with it their height */
-    awl_font_retry();
+    awl_font_retry(srv->proc);
     if (!streqnull(srv->cfg->font, srv->bars->applied.font) || srv->cfg->fontsize != srv->bars->applied.fontsize) {
         free(srv->bars->applied.font);
         srv->bars->applied.font = strdupnull(srv->cfg->font);
@@ -836,16 +837,16 @@ void awl_bar_setup(awl_bar_t *bar, Monitor *m) {
     /* the widgets come from libawlplugins.so, see awl_plugin_host.h */
 }
 
-struct fcft_font *awl_bar_set_font(awl_bar_t *bar, const char *name, float size, float scale,
-        int fallback) {
-    struct fcft_font *font = fallback ? awl_font_get(name, size, scale)
-                                      : awl_font_get_exact(name, size, scale);
+struct fcft_font *awl_bar_set_font(awl_process_t *proc, awl_bar_t *bar, const char *name,
+        float size, float scale, int fallback) {
+    struct fcft_font *font = fallback ? awl_font_get(proc, name, size, scale)
+                                      : awl_font_get_exact(proc, name, size, scale);
     if (!bar || !font) {
-        awl_font_release(font);
+        awl_font_release(proc, font);
         return NULL;
     }
     /* the new one first: if it is the same, the old reference keeps it */
-    awl_font_release(bar->font);
+    awl_font_release(proc, bar->font);
     bar->font = font;
     return font;
 }
@@ -866,12 +867,12 @@ void awl_bar_finish_drawing(awl_bar_t *bar) {
     }
 }
 
-void awl_bar_teardown(awl_bar_t *bar) {
+void awl_bar_teardown(awl_process_t *proc, awl_bar_t *bar) {
     if (!bar)
         return;
     awl_bar_finish_drawing(bar);
-    awl_font_release(bar->font);
-    awl_font_release(bar->emojifont);
+    awl_font_release(proc, bar->font);
+    awl_font_release(proc, bar->emojifont);
     awl_bar_widgets_clear(bar);
     *bar = (awl_bar_t){ 0 };
 }

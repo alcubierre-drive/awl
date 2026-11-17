@@ -1,6 +1,7 @@
 /* Unit test of awl_draw.c's font registry: styled fonts (awl_font_style()),
  * with real fcft fonts. Built and run by meson test; prints ok/FAIL per
  * check, the exit status is the number of failures. */
+#include "awl_process.h"
 #include "awl_draw.h"
 
 #include <stdio.h>
@@ -48,11 +49,11 @@ static int lean( struct fcft_font* font, uint32_t c ) {
     return top - bottom;
 }
 
-static void test_style( struct fcft_font* f ) {
+static void test_style( awl_process_t* proc, struct fcft_font* f ) {
     printf( "-- style\n" );
-    struct fcft_font* b = awl_font_style( f, AWL_FONT_BOLD );
-    struct fcft_font* i = awl_font_style( f, AWL_FONT_ITALIC );
-    struct fcft_font* bi = awl_font_style( f, AWL_FONT_BOLD | AWL_FONT_ITALIC );
+    struct fcft_font* b = awl_font_style( proc, f, AWL_FONT_BOLD );
+    struct fcft_font* i = awl_font_style( proc, f, AWL_FONT_ITALIC );
+    struct fcft_font* bi = awl_font_style( proc, f, AWL_FONT_BOLD | AWL_FONT_ITALIC );
     CHECK( b && i && bi );
     CHECK( b != f && i != f && bi != f && b != i && b != bi && i != bi );
     /* the same height class: same size and dpi */
@@ -62,66 +63,68 @@ static void test_style( struct fcft_font* f ) {
     CHECK( i && lean( i, 'l' ) > lean( f, 'l' ) );
 
     /* shared: the same entry again */
-    struct fcft_font* b2 = awl_font_style( f, AWL_FONT_BOLD );
+    struct fcft_font* b2 = awl_font_style( proc, f, AWL_FONT_BOLD );
     CHECK( b2 == b );
-    awl_font_release( b2 );
+    awl_font_release( proc, b2 );
     /* a style adds to the font's own */
-    struct fcft_font* bi2 = awl_font_style( b, AWL_FONT_ITALIC );
+    struct fcft_font* bi2 = awl_font_style( proc, b, AWL_FONT_ITALIC );
     CHECK( bi2 == bi );
-    awl_font_release( bi2 );
-    struct fcft_font* b3 = awl_font_style( b, AWL_FONT_BOLD );
+    awl_font_release( proc, bi2 );
+    struct fcft_font* b3 = awl_font_style( proc, b, AWL_FONT_BOLD );
     CHECK( b3 == b );
-    awl_font_release( b3 );
+    awl_font_release( proc, b3 );
     /* style 0 and unknown bits: the font itself */
-    struct fcft_font* f2 = awl_font_style( f, 0 );
+    struct fcft_font* f2 = awl_font_style( proc, f, 0 );
     CHECK( f2 == f );
-    awl_font_release( f2 );
-    f2 = awl_font_style( f, 0x100 );
+    awl_font_release( proc, f2 );
+    f2 = awl_font_style( proc, f, 0x100 );
     CHECK( f2 == f );
-    awl_font_release( f2 );
+    awl_font_release( proc, f2 );
     /* not the registry's */
-    CHECK( awl_font_style( NULL, AWL_FONT_BOLD ) == NULL );
+    CHECK( awl_font_style( proc, NULL, AWL_FONT_BOLD ) == NULL );
 
     /* held fonts survive the ring filling up; their entries are found again */
     for (int n = 0; n < 2 * AWL_FONT_SLOTS; n++) {
-        struct fcft_font* t = awl_font_get_exact( "monospace:size=", 6 + n, 0.5f );
-        awl_font_release( t );
+        struct fcft_font* t = awl_font_get_exact( proc, "monospace:size=", 6 + n, 0.5f );
+        awl_font_release( proc, t );
     }
-    b2 = awl_font_style( f, AWL_FONT_BOLD );
+    b2 = awl_font_style( proc, f, AWL_FONT_BOLD );
     CHECK( b2 == b );
-    awl_font_release( b2 );
+    awl_font_release( proc, b2 );
 
-    awl_font_release( b );
-    awl_font_release( i );
-    awl_font_release( bi );
+    awl_font_release( proc, b );
+    awl_font_release( proc, i );
+    awl_font_release( proc, bi );
 }
 
-static void test_emoji( void ) {
+static void test_emoji( awl_process_t* proc ) {
     printf( "-- emoji\n" );
-    struct fcft_font* e = awl_font_get_emoji( "emoji:size=", 20, 0.5f );
+    struct fcft_font* e = awl_font_get_emoji( proc, "emoji:size=", 20, 0.5f );
     if (!e) {
         printf( "skip  no color emoji font\n" );
         return;
     }
     /* emoji fonts aren't styled */
-    struct fcft_font* eb = awl_font_style( e, AWL_FONT_BOLD );
+    struct fcft_font* eb = awl_font_style( proc, e, AWL_FONT_BOLD );
     CHECK( eb == e );
-    awl_font_release( eb );
-    awl_font_release( e );
+    awl_font_release( proc, eb );
+    awl_font_release( proc, e );
 }
 
 int main( void ) {
+    awl_process_t process, *proc = &process;
     struct fcft_font* f;
 
+    awl_process_init( proc );
     /* 96 dpi: monospace:size=10 at a scale of 1/2 */
-    if (!awl_draw_init() || !(f = awl_font_get_exact( "monospace:size=", 20, 0.5f ))) {
+    if (!awl_draw_init( proc ) || !(f = awl_font_get_exact( proc, "monospace:size=", 20, 0.5f ))) {
         fprintf( stderr, "no font monospace:size=10\n" );
         return 100;
     }
-    test_style( f );
-    test_emoji();
-    awl_font_release( f );
-    awl_draw_fini();
+    test_style( proc, f );
+    test_emoji( proc );
+    awl_font_release( proc, f );
+    awl_draw_fini( proc );
     printf( "%d failed\n", fails );
     return fails;
 }

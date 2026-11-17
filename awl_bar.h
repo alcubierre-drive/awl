@@ -67,17 +67,18 @@ int barbutton(awl_server_t *srv, uint32_t button, unsigned int *click);
 /** makes bar m's (m->bar, unused), without font or widgets */
 void awl_bar_setup(awl_bar_t *bar, Monitor *m);
 /** Makes the registry's font (:c:func:`awl_font_get`, or :c:func:`awl_font_get_exact` if
- * !fallback) bar's, giving back its old one. Returns it; NULL (bar keeps
- * its font) if none loads. */
-struct fcft_font *awl_bar_set_font(awl_bar_t *bar, const char *name, float size, float scale,
-        int fallback);
+ * !fallback; proc's registry) bar's, giving back its old one. Returns it;
+ * NULL (bar keeps its font) if none loads. */
+struct fcft_font *awl_bar_set_font(awl_process_t *proc, awl_bar_t *bar, const char *name,
+        float size, float scale, int fallback);
 /** makes :c:member:`bar->pix <awl_bar_t.pix>` an image of bits, see :c:func:`awl_draw_image` */
 void awl_bar_prepare_drawing(awl_bar_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride);
 /** lets go of what :c:func:`awl_bar_prepare_drawing` pointed at */
 void awl_bar_finish_drawing(awl_bar_t *bar);
-/** gives back bar's font and image, frees its widgets and empties it: its
- * monitor has no bar anymore (:c:member:`bar->m <awl_bar_t.m>` is NULL) */
-void awl_bar_teardown(awl_bar_t *bar);
+/** gives back bar's font (to proc's registry) and image, frees its widgets
+ * and empties it: its monitor has no bar anymore
+ * (:c:member:`bar->m <awl_bar_t.m>` is NULL) */
+void awl_bar_teardown(awl_process_t *proc, awl_bar_t *bar);
 /** Frees every widget's userdata and empties the widget lists, so nothing in
  * the bar points into ``libawlplugins.so`` anymore. */
 void awl_bar_widgets_clear(awl_bar_t *bar);

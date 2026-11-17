@@ -10,10 +10,14 @@
 #include "awl_input.h"
 #include "awl_layer.h"
 #include "awl_lockscreen.h"
+#ifdef AWL_AWLOCK
+#include "awl_lockhelper.h"
+#endif
 #include "awl_log.h"
 #include "awl_output.h"
 #include "awl_plugin_host.h"
 #include "awl_popup.h"
+#include "awl_process.h"
 #include "awl_redraw.h"
 #include "awl_sni.h"
 #include "awl_notifications.h"
@@ -77,8 +81,8 @@ serverinit(awl_server_t *srv)
 static int redraw_fire( int fd, uint32_t mask, void* data ) {
     awl_server_t *srv = data;
     (void)fd; (void)mask; (void)data;
-    awl_redraw_drain();
-    awl_plugins_redraw();
+    awl_redraw_drain(srv->proc);
+    awl_plugins_redraw(srv->proc);
     drawbars(srv);
     desktop_update_all(srv->desktop);
     wallpapertake(srv);
@@ -113,7 +117,7 @@ cleanup(awl_server_t *srv)
     awl_sni_watcher_stop(srv->sni);
     srv->sni = NULL;
     awl_notifications_stop(srv);
-    awl_tray_app_cleanup();
+    awl_tray_app_cleanup(srv->proc);
 
     /* The event loop doesn't run any more, so nothing reads the signalfd:
      * let SIGINT and SIGTERM end awl the usual way again
@@ -128,7 +132,7 @@ cleanup(awl_server_t *srv)
     xwaylandfini(srv);
 #endif
     wl_display_destroy_clients(srv->dpy);
-    stopchildren();
+    stopchildren(srv->proc);
     wlr_xcursor_manager_destroy(srv->cursor.mgr);
 
     inputfini(srv);
@@ -145,16 +149,16 @@ cleanup(awl_server_t *srv)
     /* The monitors, and with them the bars' widgets, are gone: the plugins
      * stop while their popups' scene and their timers' loop are still there
      * to give back. cfg points into the library. */
-    srv->cfg = builtinconfig();
+    srv->cfg = builtinconfig(srv->proc);
     awl_plugins_unload(srv);
 
     wl_display_destroy(srv->dpy);
     popupsfini(srv);
     wlr_scene_node_destroy(&srv->scene->tree.node);
-    awl_draw_fini();
+    awl_draw_fini(srv->proc);
     configfini(srv);
     /* only now nothing can request a redraw or a lock anymore */
-    awl_redraw_fini();
+    awl_redraw_fini(srv->proc);
     awl_lock_fini(srv);
     barfree(srv);
     awl_alert_fini(srv);
@@ -223,7 +227,7 @@ gpureset(struct wl_listener *listener, void *data)
 
     wlr_allocator_destroy(old_alloc);
     wlr_renderer_destroy(old_renderer);
-    awl_redraw_request();
+    awl_redraw_request(srv->proc);
 }
 
 int
@@ -249,9 +253,9 @@ run(awl_server_t *srv, char *startup_cmd, int nolock)
         die("startup: display_add_socket_auto");
     setenv("WAYLAND_DISPLAY", socket, 1);
     /* the rest of awl's environment is the config's (configapply()) */
-    environmentimport();
+    environmentimport(srv->proc);
     /* the icon theme of the programs started with TRAY_ICONS */
-    awl_tray_app_set_theme(srv->cfg->tray.icon_theme);
+    awl_tray_app_set_theme(srv->proc, srv->cfg->tray.icon_theme);
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM
      * master, etc */
@@ -260,7 +264,7 @@ run(awl_server_t *srv, char *startup_cmd, int nolock)
 
     /* Now that the socket exists and the backend is started, run the
      * startup command and cfg->autostart */
-    spawnstartup(startup_cmd);
+    spawnstartup(srv->proc, startup_cmd);
     autostartall(srv);
 
     /* Mark stdout as non-blocking to avoid the startup script
@@ -322,7 +326,7 @@ setup(awl_server_t *srv)
     signal(SIGPIPE, SIG_IGN);
 
     /* until the library is loaded */
-    srv->cfg = builtinconfig();
+    srv->cfg = builtinconfig(srv->proc);
 
     wlrloginit(srv);
 
@@ -549,8 +553,8 @@ setup(awl_server_t *srv)
     /* before the plugins: their threads wake these from the start, and a
      * wake without the eventfd is lost (the logind state then stays unseen
      * and its alert up) */
-    if (awl_redraw_init() >= 0)
-        srv->redraw_source = wl_event_loop_add_fd(srv->event_loop, awl_redraw_fd(),
+    if (awl_redraw_init(srv->proc) >= 0)
+        srv->redraw_source = wl_event_loop_add_fd(srv->event_loop, awl_redraw_fd(srv->proc),
                 WL_EVENT_READABLE, redraw_fire, srv);
     lockinit(srv);
     /* before the plugins: their tray widget asks it for the items */
@@ -558,7 +562,7 @@ setup(awl_server_t *srv)
     awl_notifications_start(srv, srv->event_loop, awl_plugins_notifications_changed);
     awl_plugins_load(srv, 0, srv->cfgdict);
     configuse(srv);
-    awl_draw_init();
+    awl_draw_init(srv->proc);
 
     /* Make sure XWayland clients don't connect to the parent X server,
      * e.g when running in the x11 backend or the wayland backend and the
@@ -572,11 +576,17 @@ setup(awl_server_t *srv)
 int
 main(int argc, char *argv[])
 {
+    /* the one, passed on from here (awl_process.h); static, not on the
+     * stack: the log keeps a pointer to it, and wlroots and fcft may still
+     * log from exit() after main() returned */
+    static awl_process_t process;
+    awl_process_t *proc = &process;
     awl_server_t *srv;
     char *startup_cmd = NULL;
     const char *logfile = AWL_LOGFILE;
     int c, nolock = 0;
 
+    awl_process_init(proc);
     while ((c = getopt(argc, argv, "s:l:Lhdv")) != -1) {
         if (c == 's')
             startup_cmd = optarg;
@@ -585,7 +595,7 @@ main(int argc, char *argv[])
         else if (c == 'L')
             nolock = 1;
         else if (c == 'd')
-            awl_log_set_level(awl_loglevel_vrb); /* wlroots' too, see wlrloginit() */
+            awl_log_set_level(proc, awl_loglevel_vrb); /* wlroots' too, see wlrloginit() */
         else if (c == 'v') {
             puts("awl " VERSION);
             return EXIT_SUCCESS;
@@ -600,9 +610,14 @@ main(int argc, char *argv[])
     if (!getenv("XDG_RUNTIME_DIR"))
         die("XDG_RUNTIME_DIR must be set");
     /* only now: awl -v or a usage error must not truncate a running awl's log */
-    awl_log_init(logfile);
+    awl_log_init(proc, logfile);
+#ifdef AWL_AWLOCK
+    /* before anything else: the helper must have nothing to inherit */
+    lockhelperstart(proc);
+#endif
 
     srv = ecalloc(1, sizeof *srv);
+    srv->proc = proc;
     serverinit(srv);
     setup(srv);
 

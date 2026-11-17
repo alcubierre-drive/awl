@@ -9,13 +9,14 @@
  * defaults are in plugins_config_defaults.h.
  */
 #include "awl_config.h"
+#include "awl_lockscreen.h"
 
 /* commands */
 static const char *const termcmd[] = { "foot", NULL };
 static const char *const menucmd[] = { "wmenu-run", NULL };
-/* the screen lock's locker: awlock (lock/), next to awl's executable or in
- * PATH */
-static const char *const locker[] = { "awlock", NULL };
+/* the screen lock's locker: awlock (lock/), part of awl (AWL_LOCKER,
+ * awl_lockscreen.h) */
+static const char *const locker[] = { AWL_LOCKER, NULL };
 
 static void tagmonf(awl_server_t *srv, const Arg *arg) { AWL_ACTION(tagmon)(srv, arg); AWL_ACTION(focusmon)(srv, arg); }
 

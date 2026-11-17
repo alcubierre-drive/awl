@@ -2,6 +2,7 @@
 
 #include "notify_menu.h"
 #include "notify.h"
+#include "markup.h"
 #include "../plugins.h"
 #include "../awl_log.h"
 
@@ -110,9 +111,16 @@ static row_t* row_add( awl_notify_menu_t* mn, kind_t kind, uint32_t id ) {
     return r;
 }
 
-/** row t's title: summary, else app; "(app)" after a summary */
+/** row t's title: summary (its markup's text, see notify.c), else app;
+ * "(app)" after a summary */
 static int title_set( awl_notify_menu_t* mn, row_t* t, const char* summary, const char* app ) {
-    t->text = one_line( *summary ? summary : app );
+    awl_markup_t m;
+    if (*summary && awl_markup_parse( &m, summary, 1 )) {
+        t->text = one_line( m.text );
+        awl_markup_free( &m );
+    } else {
+        t->text = one_line( *summary ? summary : app );
+    }
     if (*summary && *app && (t->app = malloc( strlen( app ) + 3 ))) sprintf( t->app, "(%s)", app );
     if (t->text) return 1;
     free( t->app );
@@ -190,8 +198,8 @@ static void rows_build( awl_notify_menu_t* mn ) {
 /* ---- the painter ---- */
 
 static void fonts_release( awl_notify_menu_t* mn ) {
-    if (mn->bold) awl_host->font_release( mn->bold );
-    if (mn->italic) awl_host->font_release( mn->italic );
+    if (mn->bold) awl_host->font_release( awl_host->srv, mn->bold );
+    if (mn->italic) awl_host->font_release( awl_host->srv, mn->italic );
     mn->bold = mn->italic = NULL;
     mn->font = NULL;
 }
@@ -200,8 +208,8 @@ static void fonts_for( awl_notify_menu_t* mn, struct fcft_font* font ) {
     if (font == mn->font) return;
     fonts_release( mn );
     mn->font = font;
-    mn->bold = awl_host->font_style( font, AWL_FONT_BOLD );
-    mn->italic = awl_host->font_style( font, AWL_FONT_ITALIC );
+    mn->bold = awl_host->font_style( awl_host->srv, font, AWL_FONT_BOLD );
+    mn->italic = awl_host->font_style( awl_host->srv, font, AWL_FONT_ITALIC );
 }
 
 /** what row r has right of its title: its button, a past one's time */

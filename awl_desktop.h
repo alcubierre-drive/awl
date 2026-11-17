@@ -61,5 +61,5 @@ void desktop_reloaded( awl_desktop_t* desk );
 
 /** a click on the bare desktop, mods as ``WLR_MODIFIER_*`` without the
  * ignored ones; returns whether it was taken (forwards to
- * :c:member:`awl_plugin_api_t.desktop_click`) */
-int desktop_click( awl_desktop_t* desk, int button, uint32_t mods );
+ * :c:member:`awl_plugin_api_t.desktop_click`, of proc's library) */
+int desktop_click( awl_process_t* proc, awl_desktop_t* desk, int button, uint32_t mods );

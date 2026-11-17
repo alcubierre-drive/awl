@@ -1,0 +1,12 @@
+// awlock's entry point, for awl_lockhelper.c: awlock is part of awl, a
+// fork of awl's lock helper, not a program of its own.
+#ifndef AWLOCK_MAIN_H
+#define AWLOCK_MAIN_H
+
+/** awlock's main(), in a fork of awl's lock helper (awl_lockhelper.h).
+ * argv as a main()'s, argv[0] the locker's name; wayland_fd its connection
+ * to awl (a socket :c:func:`wl_client_create` took the other end of); its
+ * exit status */
+int awlock_main(int argc, char **argv, int wayland_fd);
+
+#endif

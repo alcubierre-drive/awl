@@ -38,7 +38,7 @@ void awl_alert_set( awl_server_t* srv, awl_alert_id_t id, const char* fmt, ... )
     if (!srv->alerts->texts[id][0]) notify( srv, text );
     memcpy( srv->alerts->texts[id], text, sizeof text );
     srv->alerts->version++;
-    awl_redraw_request();
+    awl_redraw_request( srv->proc );
 }
 
 void awl_alert_clear( awl_server_t* srv, awl_alert_id_t id ) {
@@ -46,7 +46,7 @@ void awl_alert_clear( awl_server_t* srv, awl_alert_id_t id ) {
     awl_log_printf( "alert (%s) cleared\n", names[id] );
     srv->alerts->texts[id][0] = 0;
     srv->alerts->version++;
-    awl_redraw_request();
+    awl_redraw_request( srv->proc );
 }
 
 int awl_alert_up( awl_server_t* srv, awl_alert_id_t id ) {
@@ -125,7 +125,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
     }
 
     /* the font only while drawing; the registry keeps it loaded */
-    if (!(font = awl_font_get( srv->cfg->font, srv->cfg->fontsize * srv->cfg->alert.font_scale, s ))) {
+    if (!(font = awl_font_get( srv->proc, srv->cfg->font, srv->cfg->fontsize * srv->cfg->alert.font_scale, s ))) {
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
         return;
     }
@@ -135,7 +135,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
     if (w > (int)(m->w.width * s) - 2 * (int)(margin * s))
         w = (int)(m->w.width * s) - 2 * (int)(margin * s);
     if (w <= 0) {
-        awl_font_release( font );
+        awl_font_release( srv->proc, font );
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
         return;
     }
@@ -145,7 +145,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
         awl_draw_text( pix, font, 0, 0, w, h, pad, text, fg, bg );
         pixman_image_unref( pix );
     }
-    awl_font_release( font );
+    awl_font_release( srv->proc, font );
 
     wlr_scene_buffer_set_buffer( m->alert, &buf->base );
     wlr_buffer_drop( &buf->base ); /* the scene holds it now */

@@ -1,6 +1,9 @@
 #pragma once
 
 typedef struct awl_server_t awl_server_t;
+/* awl_process.h's: the loaded library is awl_process_t.plugins,
+ * the proc the functions below take */
+typedef struct awl_process_t awl_process_t;
 
 /**
  * awl's side of ``libawlplugins.so`` (see awl_plugin_abi.h): loads it, swaps
@@ -37,20 +40,20 @@ int awl_plugins_reload( awl_server_t* srv, void (*detach)( awl_server_t* srv ), 
 void awl_plugins_unload( awl_server_t *srv );
 
 /** :c:member:`awl_plugin_api_t.set_paused`, if a library is loaded */
-void awl_plugins_set_paused( int paused );
+void awl_plugins_set_paused( awl_process_t* proc, int paused );
 
 /** :c:member:`awl_plugin_api_t.session_covered`, if a library is loaded; also given
  * to every library started later */
-void awl_plugins_set_covered( int covered );
+void awl_plugins_set_covered( awl_process_t* proc, int covered );
 
 /** :c:member:`awl_plugin_api_t.notifications_changed`, if a library is loaded */
-void awl_plugins_notifications_changed( void );
+void awl_plugins_notifications_changed( awl_process_t* proc );
 
 /** :c:member:`awl_plugin_api_t.redraw`, if a library is loaded */
-void awl_plugins_redraw( void );
+void awl_plugins_redraw( awl_process_t* proc );
 
 /** Fills an empty bar's widget lists; no-op without a loaded library. */
-void awl_plugins_bar_widgets( awl_bar_t* bar );
+void awl_plugins_bar_widgets( awl_process_t* proc, awl_bar_t* bar );
 
 typedef struct awl_actions_t awl_actions_t;
 /** awl's functions plugins_config.c binds keys to, for the library */
@@ -64,4 +67,4 @@ typedef struct awl_host_t awl_host_t;
 typedef struct awl_plugin_api_t awl_plugin_api_t;
 /** The loaded library's table, NULL if none. Changes on reload, so don't
  * keep it (or anything from it) across one. */
-const awl_plugin_api_t* awl_plugins_api( void );
+const awl_plugin_api_t* awl_plugins_api( awl_process_t* proc );

@@ -97,7 +97,7 @@ static void* worker( void* arg ) {
             else w->results = m;
             w->last = m;
             pthread_mutex_unlock( &w->lock );
-            awl_host->redraw_request();
+            awl_host->redraw_request( awl_host->srv );
         }
     }
     return NULL;

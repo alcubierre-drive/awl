@@ -167,7 +167,7 @@ buttonpress(struct wl_listener *listener, void *data)
         }
         /* the library declines the modified clicks it has no use for */
         if (click == ClkRoot && !srv->clients.exclusive_focus && desktopat(srv, srv->cursor.wlr->x, srv->cursor.wlr->y)
-                && desktop_click(srv->desktop, event->button, CLEANMASK(mods)))
+                && desktop_click(srv->proc, srv->desktop, event->button, CLEANMASK(mods)))
             return;
         break;
     case WL_POINTER_BUTTON_STATE_RELEASED:

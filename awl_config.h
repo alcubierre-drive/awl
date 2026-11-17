@@ -15,8 +15,9 @@
  * unset still unset (:c:func:`awl_config_fill_defaults`) */
 void configdefaults(awl_config_t *c);
 /** awl's defaults (awl_config_defaults.h), filled in
- * (:c:func:`awl_config_fill_defaults`), constant */
-const awl_config_t *builtinconfig(void);
+ * (:c:func:`awl_config_fill_defaults`), constant; made once, in proc
+ * (:c:member:`awl_process_t.config`) */
+const awl_config_t *builtinconfig(awl_process_t *proc);
 /** creates cfgdict with its defaults (see there); NULL out of memory, then
  * every lookup fails */
 void configinit(awl_server_t *srv);
@@ -27,8 +28,9 @@ void configuse(awl_server_t *srv);
 /** Hands DISPLAY, WAYLAND_DISPLAY and XDG_CURRENT_DESKTOP to systemd's and
  * the session bus' environment (:c:func:`awl_bus_import_environment`), once they
  * are set at the start; after that, every reload that changes one of them
- * does it again. Blocks for up to a few seconds. */
-void environmentimport(void);
+ * does it again. Blocks for up to a few seconds. What it did is proc's
+ * (:c:member:`awl_process_t.config`). */
+void environmentimport(awl_process_t *proc);
 /** wlroots' log level: :c:member:`cfg->wlr_log_level <awl_config_t.wlr_log_level>`, WLR_DEBUG with awl -d; at
  * startup and after every config change */
 void wlrloginit(awl_server_t *srv);

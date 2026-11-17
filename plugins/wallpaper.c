@@ -247,7 +247,7 @@ static void change( Changer* c, int steps, int random, int back, unsigned asked 
     if (!img) return;
     /* replaces one the main thread hasn't taken yet */
     free( atomic_exchange( &c->pending, img ) );
-    awl_host->redraw_request();
+    awl_host->redraw_request( awl_host->srv );
 }
 
 static void* changer( void* data ) {

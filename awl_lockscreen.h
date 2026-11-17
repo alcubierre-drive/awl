@@ -15,12 +15,20 @@
  * (plugins/logind.h): it calls :c:func:`awl_lock_request` and
  * :c:func:`awl_lock_logind_state` from its own thread, as
  * :c:member:`awl_host->lock_request() <awl_host_t.lock_request>` and :c:member:`awl_host->logind_state() <awl_host_t.logind_state>`. Both wake
- * the main loop through an eventfd; requests made before it gets around to
- * them coalesce into one.
+ * the main loop through an eventfd, :c:member:`awl_process_t.lock`'s;
+ * requests made before it gets around to them coalesce into one.
  */
 
 #include "awl_server.h"
 #include <sys/types.h>
+
+/** The locker's name that is awl's own, awlock (lock/), built into awl if
+ * the meson option ``lock`` allows (``AWL_AWLOCK`` defined then). As
+ * :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`'s argv[0], awl
+ * starts it through its lock helper (awl_lockhelper.h), the rest of that
+ * argv its options. Without ``AWL_AWLOCK``, a program by that name
+ * in ``PATH``. */
+#define AWL_LOCKER "awlock"
 
 
 /** :c:member:`awl_server_t.lock`, the eventfd for the logind thread and its
@@ -40,16 +48,17 @@ void lockshown(awl_server_t *srv, Monitor *m);
 void lockresize(awl_server_t *srv);
 /** a key was pressed while locked */
 void lockkeystroke(awl_server_t *srv);
-/** pid, a child, exited: if it was the locker, it may never have locked */
+/** pid, a child, exited: if it was the locker, it may never have locked;
+ * if it was the lock helper, there is no awlock anymore */
 void lockerexited(awl_server_t *srv, pid_t pid);
 /** after plugins_config.c changed: the blur */
 void lockconfigure(awl_server_t *srv);
 
-/** Asks awl to lock the screen. Any thread. */
-void awl_lock_request(void);
+/** Asks awl, proc's, to lock the screen. Any thread. */
+void awl_lock_request(awl_process_t *proc);
 /** What the logind thread listens for now, :c:enum:`awl_logind_flags` (awl_host.h);
  * 0 when it stops. Any thread. */
-void awl_lock_logind_state(unsigned flags);
+void awl_lock_logind_state(awl_process_t *proc, unsigned flags);
 /** Closes the eventfd (requests and states are dropped from then on) and
  * frees :c:member:`awl_server_t.lock`. Only once nothing can call the two
  * above anymore: after the plugins are unloaded. */

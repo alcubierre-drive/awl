@@ -21,7 +21,7 @@ extern int execvpe(const char *file, char *const argv[], char *const envp[]);
 /** how long awl waits on exit for its children */
 #define CHILD_STOP_MS 3000
 
-static void autostart(const char *const *argv);
+static void autostart(awl_process_t *proc, const char *const *argv);
 static void unblocksignals(void);
 
 
@@ -44,7 +44,7 @@ handlesigchld(int signo, void *data)
 }
 
 pid_t
-spawn_pid(const Arg *arg)
+spawn_pid(awl_process_t *proc, const Arg *arg)
 {
     char **argv = (char **)arg->v, **envp = NULL;
     const awl_tray_app_env_t *tray = NULL;
@@ -54,7 +54,7 @@ spawn_pid(const Arg *arg)
     if (argv[0] && !strcmp(argv[0], TRAY_ICONS)) {
         if (!*++argv)
             return -1;
-        if ((tray = awl_tray_app_env()) && !(envp = envwith(tray->env))) {
+        if ((tray = awl_tray_app_env(proc)) && !(envp = envwith(tray->env))) {
             awl_err_printf("%s: out of memory, starting it in the desktop's icon theme\n", argv[0]);
             tray = NULL;
         }
@@ -84,39 +84,39 @@ spawn_pid(const Arg *arg)
     return pid < 0 ? -1 : pid;
 }
 
-void spawn(awl_server_t *srv, const Arg *arg) { spawn_pid(arg); }
+void spawn(awl_server_t *srv, const Arg *arg) { spawn_pid(srv->proc, arg); }
 
 /** spawns argv and remembers it, so it is stopped when awl exits; refuses to
  * start it at all if there is no room left to remember it */
 void
-autostart(const char *const *argv)
+autostart(awl_process_t *proc, const char *const *argv)
 {
     pid_t pid;
-    if (awl_proc.spawn.nautostarted >= (int)LENGTH(awl_proc.spawn.autostarted)) {
+    if (proc->spawn.nautostarted >= (int)LENGTH(proc->spawn.autostarted)) {
         awl_wrn_printf("autostart: more than %d programs, not starting %s\n",
-                (int)LENGTH(awl_proc.spawn.autostarted),
+                (int)LENGTH(proc->spawn.autostarted),
                 argv[0] && !strcmp(argv[0], TRAY_ICONS) && argv[1] ? argv[1] : argv[0]);
         return;
     }
     /* a failed spawn returns -1; never let that reach kill()/waitpid() */
-    if ((pid = spawn_pid(&(const Arg){.v=argv})) > 0)
-        awl_proc.spawn.autostarted[awl_proc.spawn.nautostarted++] = pid;
+    if ((pid = spawn_pid(proc, &(const Arg){.v=argv})) > 0)
+        proc->spawn.autostarted[proc->spawn.nautostarted++] = pid;
 }
 
 void
-stopchildren(void)
+stopchildren(awl_process_t *proc)
 {
-    pid_t pids[LENGTH(awl_proc.spawn.autostarted) + 1], r;
+    pid_t pids[LENGTH(proc->spawn.autostarted) + 1], r;
     struct timespec tick = {0, 20 * 1000 * 1000};
     int i, n = 0, left, waited;
 
-    if (awl_proc.spawn.startup > 0)
-        pids[n++] = awl_proc.spawn.startup;
-    for (i = 0; i < awl_proc.spawn.nautostarted; i++)
-        if (awl_proc.spawn.autostarted[i] > 0)
-            pids[n++] = awl_proc.spawn.autostarted[i];
-    awl_proc.spawn.startup = -1;
-    awl_proc.spawn.nautostarted = 0;
+    if (proc->spawn.startup > 0)
+        pids[n++] = proc->spawn.startup;
+    for (i = 0; i < proc->spawn.nautostarted; i++)
+        if (proc->spawn.autostarted[i] > 0)
+            pids[n++] = proc->spawn.autostarted[i];
+    proc->spawn.startup = -1;
+    proc->spawn.nautostarted = 0;
 
     for (i = 0; i < n; i++)
         kill(-pids[i], SIGTERM);
@@ -157,7 +157,7 @@ unblocksignals(void)
 }
 
 void
-spawnstartup(const char *cmd)
+spawnstartup(awl_process_t *proc, const char *cmd)
 {
     /* Uses vfork(), not fork(): by this point setup() has already started the
      * plugin/GPU driver threads, so a plain fork() risks inheriting a lock
@@ -165,9 +165,9 @@ spawnstartup(const char *cmd)
      * of the fork -- see vfork() above. */
     if (!cmd)
         return;
-    if ((awl_proc.spawn.startup = vfork()) < 0)
+    if ((proc->spawn.startup = vfork()) < 0)
         die("startup: vfork:");
-    if (awl_proc.spawn.startup == 0) {
+    if (proc->spawn.startup == 0) {
         unblocksignals();
         close(STDIN_FILENO);
         setsid();
@@ -182,6 +182,6 @@ autostartall(awl_server_t *srv)
 {
     for (size_t i = 0; i < srv->cfg->autostart.n; ++i) {
         if (!srv->cfg->autostart.v[i][0]) continue; /* { NULL }: an empty entry */
-        autostart(srv->cfg->autostart.v[i]);
+        autostart(srv->proc, srv->cfg->autostart.v[i]);
     }
 }

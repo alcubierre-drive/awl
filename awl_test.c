@@ -143,6 +143,8 @@ testunescape(char *s)
  *   persist N on|off       N is persistent (:c:func:`popupsetpersistent`)
  *   lock 1|0               what locking the screen does to the popups (sets
  *                          :c:member:`awl_server_t.locked` without a locker: test only)
+ *   locker                 a lock request, as ``loginctl lock-session``
+ *                          (:c:func:`awl_lock_request`): the configured locker
  *   restart                the plugin_restart action (:c:func:`pluginsreap`
  *                          destroys them all)
  *   nclose ID REASON       the notification server's host calls, as the
@@ -277,6 +279,8 @@ testwincmd(struct awl_test *T, char *line)
             popupshideall(srv);
         srv->locked = !!x;
         popupslocked(srv);
+    } else if (!strcmp(cmd, "locker")) {
+        awl_lock_request(srv->proc);
     } else if (!strcmp(cmd, "hideall")) {
         popupshideall(srv);
     } else if (!strcmp(cmd, "restart")) {

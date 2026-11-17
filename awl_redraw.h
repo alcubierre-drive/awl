@@ -7,17 +7,21 @@
  * :c:member:`awl_host->redraw_request() <awl_host_t.redraw_request>`. A change on awl's main thread that only
  * the bars show takes :c:func:`barsdirty` (awl_bar.h) instead, which redraws them
  * before the loop waits again. Requests made before the
- * main loop gets around to it coalesce into a single redraw.
+ * main loop gets around to it coalesce into a single redraw. The eventfd is
+ * :c:member:`awl_process_t.redraw_fd`, proc's.
  */
+
+/* awl_process.h's */
+typedef struct awl_process_t awl_process_t;
 
 /** Creates the eventfd. Returns it, or -1 on failure (requests are then
  * silently dropped). */
-int awl_redraw_init( void );
+int awl_redraw_init( awl_process_t* proc );
 /** Closes the eventfd. Only call once nothing can request a redraw anymore. */
-void awl_redraw_fini( void );
+void awl_redraw_fini( awl_process_t* proc );
 /** Safe to call from any thread. */
-void awl_redraw_request( void );
+void awl_redraw_request( awl_process_t* proc );
 /** Resets the eventfd's counter; call from the fd's event handler. */
-void awl_redraw_drain( void );
+void awl_redraw_drain( awl_process_t* proc );
 /** The eventfd to poll for readability, or -1. */
-int awl_redraw_fd( void );
+int awl_redraw_fd( awl_process_t* proc );

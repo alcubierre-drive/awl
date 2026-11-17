@@ -2,6 +2,7 @@
  * compositor: layout, painting into memory and placement, with a real fcft
  * font. Built and run by meson test; prints ok/FAIL per check, the exit
  * status is the number of failures. */
+#include "awl_process.h"
 #include "awl_window_draw.h"
 
 #include <stdio.h>
@@ -302,8 +303,11 @@ static void test_place( void ) {
 }
 
 int main( void ) {
+    awl_process_t process, *proc = &process;
+
+    awl_process_init( proc );
     /* 96 dpi: monospace:size=10 at a scale of 1/2 */
-    if (!awl_draw_init() || !(font = awl_font_get_exact( "monospace:size=", 20, 0.5f ))) {
+    if (!awl_draw_init( proc ) || !(font = awl_font_get_exact( proc, "monospace:size=", 20, 0.5f ))) {
         fprintf( stderr, "no font monospace:size=10\n" );
         return 100;
     }
@@ -313,8 +317,8 @@ int main( void ) {
     test_paint();
     test_input();
     test_place();
-    awl_font_release( font );
-    awl_draw_fini();
+    awl_font_release( proc, font );
+    awl_draw_fini( proc );
     printf( "%d failed\n", fails );
     return fails;
 }

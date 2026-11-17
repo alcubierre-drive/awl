@@ -14,6 +14,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "awlock.h"
+#include "awlock_main.h"
 #include "ext-session-lock-v1-client-protocol.h"
 #include "single-pixel-buffer-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
@@ -221,38 +222,48 @@ struct awlock_surface {
  *   darker   border: the state's border colour (the cuts, the outlines)
  *   lighter  fill: the state's fill colour (the letters)
  * It is drawn scaled by a whole number, nearest-neighbour, so its pixels
- * stay square.
+ * stay square. --logo <file> reads another XPM of the same kind instead.
  */
 #include "logo.xpm"
 
-// logo_xpm as logo_load() found it
+// the logo's size at most, in logo pixels: logo.xpm's or --logo's
+#define LOGO_MAX_SIZE 256
+
+// logo_xpm or --logo's file, as logo_load() found it
 static struct {
 	int w, h; // in logo pixels
 	const char *const *rows; // h rows of w characters
 	char border, fill; // their characters; the third is empty
 } logo;
 
-// logo_xpm: "w h 3 1", then the colours as "<char> c <None|#rrggbb>", then
-// the rows; anything else (more colours, symbolic ones, other keys than c,
-// as some editors write) is refused, and awlock doesn't lock
-static bool logo_load(void) {
-	const int lines = sizeof(logo_xpm) / sizeof(*logo_xpm);
+// an XPM's strings: "w h 3 1", then the colours as "<char> c <None|#rrggbb>",
+// then the rows; anything else (more colours, symbolic ones, other keys than
+// c, as some editors write, extensions) is refused. name is for the log:
+// logo.xpm (logo_xpm, compiled in) or --logo's file.
+static bool logo_load(const char *const *xpm, int lines, const char *name) {
 	int ncolors, cpp;
-	if (sscanf(logo_xpm[0], "%d %d %d %d", &logo.w, &logo.h, &ncolors, &cpp) != 4 ||
+	if (lines < 1 ||
+			sscanf(xpm[0], "%d %d %d %d", &logo.w, &logo.h, &ncolors, &cpp) != 4 ||
 			logo.w <= 0 || logo.h <= 0 || ncolors != 3 || cpp != 1 ||
 			lines != 1 + ncolors + logo.h) {
-		awlock_log(LOG_ERROR, "logo.xpm: not 3 colours, 1 character per pixel");
+		awlock_log(LOG_ERROR, "%s: not 3 colours, 1 character per pixel", name);
+		return false;
+	}
+	// a buffer per state and output, logo_scale * scale pixels per logo pixel
+	if (logo.w > LOGO_MAX_SIZE || logo.h > LOGO_MAX_SIZE) {
+		awlock_log(LOG_ERROR, "%s: %d by %d, more than %d", name,
+			logo.w, logo.h, LOGO_MAX_SIZE);
 		return false;
 	}
 	char empty = 0, chars[2];
 	int n = 0, brightness[2];
 	for (int i = 1; i <= ncolors; i++) {
-		const char *line = logo_xpm[i];
+		const char *line = xpm[i];
 		char spec[8], end;
 		unsigned rgb;
 		if (line[0] == '\0' || sscanf(line + 1, " c %7s %c", spec, &end) != 1) {
-			awlock_log(LOG_ERROR, "logo.xpm: colour \"%s\" isn't \"<char> c "
-				"<colour>\"", line);
+			awlock_log(LOG_ERROR, "%s: colour \"%s\" isn't \"<char> c "
+				"<colour>\"", name, line);
 			return false;
 		}
 		if (strcasecmp(spec, "None") == 0 && !empty) {
@@ -262,28 +273,87 @@ static bool logo_load(void) {
 			chars[n] = line[0];
 			brightness[n++] = (rgb >> 16) + ((rgb >> 8) & 0xFF) + (rgb & 0xFF);
 		} else {
-			awlock_log(LOG_ERROR, "logo.xpm: the colours are None and two "
-				"#rrggbb, not %s", spec);
+			awlock_log(LOG_ERROR, "%s: the colours are None and two "
+				"#rrggbb, not %s", name, spec);
 			return false;
 		}
 	}
 	if (n != 2 || brightness[0] == brightness[1] || chars[0] == chars[1] ||
 			empty == chars[0] || empty == chars[1]) {
-		awlock_log(LOG_ERROR, "logo.xpm: the colours are None and two "
-			"#rrggbb, one darker (the border) and one lighter (the fill)");
+		awlock_log(LOG_ERROR, "%s: the colours are None and two "
+			"#rrggbb, one darker (the border) and one lighter (the fill)", name);
 		return false;
 	}
 	bool first_darker = brightness[0] < brightness[1];
 	logo.border = chars[!first_darker];
 	logo.fill = chars[first_darker];
-	logo.rows = (const char *const *)logo_xpm + 1 + ncolors;
+	logo.rows = xpm + 1 + ncolors;
 	char used[] = {empty, logo.border, logo.fill, '\0'};
 	for (int y = 0; y < logo.h; y++) {
 		if ((int)strlen(logo.rows[y]) != logo.w ||
 				(int)strspn(logo.rows[y], used) != logo.w) {
-			awlock_log(LOG_ERROR, "logo.xpm: row %d is not %d of its colours",
-				y + 1, logo.w);
+			awlock_log(LOG_ERROR, "%s: row %d is not %d of its colours",
+				name, y + 1, logo.w);
 			return false;
+		}
+	}
+	return true;
+}
+
+// --logo's file: an XPM as image editors write it, C source whose strings
+// (outside comments) logo_load() takes; *lines of them in *xpm, kept for
+// logo.rows, as the file's contents they are in. Not C's escapes: a
+// backslash is refused, as no XPM needs one.
+static bool logo_read(const char *path, char ***xpm, int *lines) {
+	FILE *f = fopen(path, "r");
+	if (!f) {
+		awlock_log_errno(LOG_ERROR, "--logo: %s", path);
+		return false;
+	}
+	// 256 by 256 is 64 KiB of rows, with quotes and commas a little more
+	static char text[LOGO_MAX_SIZE * (LOGO_MAX_SIZE + 8) + 4096];
+	size_t len = fread(text, 1, sizeof(text), f);
+	bool err = ferror(f), big = len == sizeof(text);
+	fclose(f);
+	if (err || big) {
+		awlock_log(LOG_ERROR, "--logo: %s: %s", path,
+			err ? "can't read it" : "too big for an XPM logo");
+		return false;
+	}
+	text[len] = '\0';
+	*xpm = NULL;
+	*lines = 0;
+	for (char *p = text; *p; p++) {
+		if (p[0] == '/' && p[1] == '*') {
+			char *end = strstr(p + 2, "*/");
+			if (!end) {
+				break;
+			}
+			p = end + 1;
+		} else if (p[0] == '/' && p[1] == '/') {
+			p += strcspn(p, "\n");
+			if (!*p) {
+				break;
+			}
+		} else if (*p == '"') {
+			char *end = strpbrk(p + 1, "\"\\\n");
+			if (!end || *end != '"') {
+				awlock_log(LOG_ERROR, "--logo: %s: a string that doesn't "
+					"end on its line, or with a backslash", path);
+				free(*xpm);
+				*xpm = NULL;
+				return false;
+			}
+			*end = '\0';
+			char **grown = realloc(*xpm, (*lines + 1) * sizeof(**xpm));
+			if (!grown) {
+				free(*xpm);
+				*xpm = NULL;
+				return false;
+			}
+			*xpm = grown;
+			(*xpm)[(*lines)++] = p + 1;
+			p = end;
 		}
 	}
 	return true;
@@ -974,6 +1044,7 @@ static int parse_options(int argc, char **argv, struct awlock_state *state) {
 	enum long_option_codes {
 		LO_NO_FINGERPRINT = 256,
 		LO_LOGO_SCALE,
+		LO_LOGO_FILE,
 		LO_DEBUG_STATE,
 		// --logo-<state>-border, --logo-<state>-fill: LO_LOGO + 2 * state
 		// (+ 1 for the fill)
@@ -989,6 +1060,7 @@ static int parse_options(int argc, char **argv, struct awlock_state *state) {
 		{"no-logo", no_argument, NULL, 'u'},
 		{"version", no_argument, NULL, 'v'},
 		{"logo-scale", required_argument, NULL, LO_LOGO_SCALE},
+		{"logo", required_argument, NULL, LO_LOGO_FILE},
 		{"debug-state", required_argument, NULL, LO_DEBUG_STATE},
 		{"logo-waiting-border", required_argument, NULL, LO_LOGO + 2 * LOGO_WAITING},
 		{"logo-waiting-fill", required_argument, NULL, LO_LOGO + 2 * LOGO_WAITING + 1},
@@ -1009,6 +1081,8 @@ static int parse_options(int argc, char **argv, struct awlock_state *state) {
 		"typing, caps-lock, validating, wrong), centred and dimmed on the\n"
 		"other outputs. Colors are rrggbb[aa].\n"
 		"\n"
+		"  --logo <file.xpm>              another logo: None and two #rrggbb,\n"
+		"                                 the darker the border (logo.xpm)\n"
 		"  --logo-scale <n>               pixels per logo pixel (3)\n"
 		"  --logo-<state>-border <color>  the logo's outline and cuts\n"
 		"  --logo-<state>-fill <color>    the logo's letters\n"
@@ -1052,6 +1126,9 @@ static int parse_options(int argc, char **argv, struct awlock_state *state) {
 			state->args.logo_scale = n;
 			break;
 		}
+		case LO_LOGO_FILE:
+			state->args.logo_file = optarg;
+			break;
 		case LO_DEBUG_STATE:
 			for (int i = 0; i < LOGO_STATES; i++) {
 				if (strcmp(optarg, logo_state_names[i]) == 0) {
@@ -1091,7 +1168,10 @@ static void display_in(void *data) {
 	}
 }
 
-int main(int argc, char **argv) {
+int awlock_main(int argc, char **argv, int wayland_fd) {
+	// awl's main() ran getopt() before the helper forked
+	optind = 1;
+	state.wayland_fd = wayland_fd;
 	state.args = (struct awlock_args){
 		.logo_scale = 3,
 		.debug_state = -1,
@@ -1105,7 +1185,19 @@ int main(int argc, char **argv) {
 	if (result != 0) {
 		return result;
 	}
-	if (!logo_load()) {
+	// a bad --logo still locks, with logo.xpm: the screen matters more
+	char **file_xpm = NULL;
+	int file_lines;
+	if (state.args.logo_file && (!logo_read(state.args.logo_file,
+			&file_xpm, &file_lines) || !logo_load((const char *const *)file_xpm,
+			file_lines, state.args.logo_file))) {
+		awlock_log(LOG_ERROR, "--logo: %s refused, logo.xpm instead",
+			state.args.logo_file);
+		state.args.logo_file = NULL;
+		free(file_xpm);
+	}
+	if (!state.args.logo_file && !logo_load((const char *const *)logo_xpm,
+			sizeof(logo_xpm) / sizeof(*logo_xpm), "logo.xpm")) {
 		return EXIT_FAILURE;
 	}
 	// after the options: the password child logs at their level (-d)
@@ -1113,11 +1205,9 @@ int main(int argc, char **argv) {
 
 	wl_list_init(&state.surfaces);
 	state.xkb.context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-	state.display = wl_display_connect(NULL);
+	state.display = wl_display_connect_to_fd(wayland_fd);
 	if (!state.display) {
-		awlock_log(LOG_ERROR, "Unable to connect to the compositor. "
-				"If your compositor is running, check or set the "
-				"WAYLAND_DISPLAY environment variable.");
+		awlock_log_errno(LOG_ERROR, "Unable to use awl's connection");
 		return EXIT_FAILURE;
 	}
 

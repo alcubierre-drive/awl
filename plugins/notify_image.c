@@ -351,7 +351,7 @@ static void* worker( void* data ) {
             *tail = w;
             pthread_mutex_unlock( &x->lock );
             /* the bar's measure() takes it */
-            if (bar) awl_host->redraw_request();
+            if (bar) awl_host->redraw_request( awl_host->srv );
         }
     }
     cache_free( x );
