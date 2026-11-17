@@ -155,6 +155,13 @@ static const awl_config_t awl_config_defaults = {
         /* .menu_*: all unset, the popups' */
         .alert_fg       = 0xffffffff,
         .alert_bg       = 0xc00000ff,
+        /* awlock's logo: light gray cuts and outlines; the letters blue,
+         * purple, orange (as awl's warnings), green, red */
+        .lock_waiting    = { molokai_light_gray, molokai_blue },
+        .lock_typing     = { molokai_light_gray, molokai_purple },
+        .lock_caps_lock  = { molokai_light_gray, molokai_orange },
+        .lock_validating = { molokai_light_gray, molokai_green },
+        .lock_wrong      = { molokai_light_gray, molokai_red },
     },
     .borderpx = 1,
     .font = "monospace:size=",
@@ -189,6 +196,9 @@ static const awl_config_t awl_config_defaults = {
 
     .lock = {
         .locker = locker,
+        .logo = NULL,    /* awlock's own (lock/logo.xpm) */
+        .logo_scale = 3,
+        .fingerprint = 1,
         .at_start = 0,
         .on_suspend = 1,
         .blur = 1,

@@ -34,11 +34,11 @@ static char *password_buffer_create(size_t size) {
 	int result = posix_memalign(&buffer, sysconf(_SC_PAGESIZE), size);
 	if (result) {
 		errno = result; // posix_memalign() doesn't set it
-		awlock_log_errno(LOG_ERROR, "failed to alloc password buffer");
+		awl_err_printf("awlock: failed to alloc password buffer: %s\n", strerror(errno));
 		return NULL;
 	}
 	if (mlock(buffer, size) != 0) {
-		awlock_log_errno(LOG_ERROR, "mlock() failed, a password may be swapped");
+		awl_err_printf("awlock: mlock() failed, a password may be swapped: %s\n", strerror(errno));
 	}
 	return buffer;
 }
@@ -91,7 +91,7 @@ static bool send_password(struct awlock_password *pw) {
 	bool sent = write_all(password_fd, &size, sizeof(size)) &&
 		write_all(password_fd, pw->buffer, size);
 	if (!sent) {
-		awlock_log_errno(LOG_ERROR, "Failed to send the password");
+		awl_err_printf("awlock: Failed to send the password: %s\n", strerror(errno));
 	}
 	clear_password_buffer(pw);
 	return sent;
@@ -101,7 +101,7 @@ static bool send_password(struct awlock_password *pw) {
 static bool receive_reply(void) {
 	bool right;
 	if (!read_all(reply_fd, &right, sizeof(right))) {
-		awlock_log_errno(LOG_ERROR, "Failed to read the password's check");
+		awl_err_printf("awlock: Failed to read the password's check: %s\n", strerror(errno));
 		return false;
 	}
 	return right;
@@ -116,11 +116,11 @@ static char *receive_password(size_t *size) {
 		if (errno == 0) {
 			return NULL;
 		}
-		awlock_log_errno(LOG_ERROR, "Failed to read a password");
+		awl_err_printf("awlock: Failed to read a password: %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	if (*size == 0 || *size > PASSWORD_SIZE) {
-		awlock_log(LOG_ERROR, "A password of %zu bytes", *size);
+		awl_err_printf("awlock: A password of %zu bytes\n", *size);
 		exit(EXIT_FAILURE);
 	}
 	char *password = password_buffer_create(*size);
@@ -128,7 +128,7 @@ static char *receive_password(size_t *size) {
 		exit(EXIT_FAILURE);
 	}
 	if (!read_all(password_fd, password, *size) || password[*size - 1] != '\0') {
-		awlock_log_errno(LOG_ERROR, "Failed to read a password");
+		awl_err_printf("awlock: Failed to read a password: %s\n", strerror(errno));
 		password_buffer_destroy(password, *size);
 		exit(EXIT_FAILURE);
 	}
@@ -169,17 +169,17 @@ static int converse(int num_msg, const struct pam_message **msg,
 static _Noreturn void child_run(void) {
 	struct passwd *passwd = getpwuid(getuid());
 	if (!passwd) {
-		awlock_log_errno(LOG_ERROR, "getpwuid failed");
+		awl_err_printf("awlock: getpwuid failed: %s\n", strerror(errno));
 		exit(EXIT_FAILURE);
 	}
 	char *password = NULL;
 	const struct pam_conv conv = {converse, &password};
 	pam_handle_t *pam = NULL;
 	if (pam_start(LOCK_PAM_SERVICE, passwd->pw_name, &conv, &pam) != PAM_SUCCESS) {
-		awlock_log(LOG_ERROR, "pam_start failed");
+		awl_err_printf("awlock: pam_start failed\n");
 		exit(EXIT_FAILURE);
 	}
-	awlock_log(LOG_DEBUG, "Checking passwords of %s", passwd->pw_name);
+	awl_vrb_printf("awlock: Checking passwords of %s\n", passwd->pw_name);
 
 	int status = PAM_SUCCESS;
 	size_t size;
@@ -188,12 +188,12 @@ static _Noreturn void child_run(void) {
 		password_buffer_destroy(password, size);
 		password = NULL;
 		if (status != PAM_SUCCESS) {
-			awlock_log(LOG_ERROR, "pam_authenticate failed: %s",
+			awl_err_printf("awlock: pam_authenticate failed: %s\n",
 				pam_strerror(pam, status));
 		}
 		bool right = status == PAM_SUCCESS;
 		if (!write_all(reply_fd, &right, sizeof(right))) {
-			awlock_log_errno(LOG_ERROR, "Failed to reply");
+			awl_err_printf("awlock: Failed to reply: %s\n", strerror(errno));
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -209,12 +209,12 @@ static _Noreturn void child_run(void) {
 static bool child_start(int wayland_fd) {
 	int passwords[2], replies[2]; // [0] read, [1] written
 	if (pipe(passwords) != 0 || pipe(replies) != 0) {
-		awlock_log_errno(LOG_ERROR, "failed to create pipe");
+		awl_err_printf("awlock: failed to create pipe: %s\n", strerror(errno));
 		return false;
 	}
 	pid_t child = fork();
 	if (child < 0) {
-		awlock_log_errno(LOG_ERROR, "failed to fork");
+		awl_err_printf("awlock: failed to fork: %s\n", strerror(errno));
 		return false;
 	}
 	bool in_child = child == 0;
@@ -290,7 +290,8 @@ static void schedule_password_clear(struct awlock_state *state) {
 }
 
 static void submit_password(struct awlock_state *state) {
-	if (state->args.ignore_empty && state->password.len == 0) {
+	// nothing to check: not a wrong password for PAM (pam_faillock)
+	if (state->password.len == 0) {
 		return;
 	}
 

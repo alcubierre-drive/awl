@@ -1,6 +1,6 @@
 // awlock: what its three parts share.
 //   awlock.c       the Wayland side: the lock, its surfaces, the logo, the
-//                  seat, options and main(); the event loop
+//                  seat and main(); the event loop
 //   auth.c         passwords: typing them, and checking them with PAM in a
 //                  child process
 //   fingerprint.c  fingerprints, with fprintd
@@ -14,26 +14,14 @@
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 #include "awl_log.h"
+#include "awlock_main.h"
 
-// from meson (-D): AWLOCK_VERSION, LOCK_PAM_SERVICE
+// from meson (-D): LOCK_PAM_SERVICE
 
-// The log: awl's (awl_log.h), "[awl:level] awlock: file:line: text", to
-// awl's stderr and its log file, at awl's level (-d raises it to debug).
-// fmt is a string literal. Never a password, nor anything typed.
-
-enum log_level {
-	LOG_ERROR = awl_loglevel_err,
-	LOG_INFO = awl_loglevel_log,
-	LOG_DEBUG = awl_loglevel_vrb,
-};
-
-#define awlock_log(level, fmt, ...) \
-	awl_dbg_printf((awl_loglevel_t)(level), "awlock: %s:%d: " fmt "\n", \
-		__FILE_NAME__, __LINE__, ##__VA_ARGS__)
-
-// the same, with ": " and errno's message after the text
-#define awlock_log_errno(level, fmt, ...) \
-	awlock_log(level, fmt ": %s", ##__VA_ARGS__, strerror(errno))
+// The log: awl's own (awl_log.h's awl_err_printf() and the others), each
+// line "awlock: ...". This fork has a copy of awl's memory, its log among
+// it: the same stderr, file and level as awl's. Never a password, nor
+// anything typed.
 
 // The event loop (awlock.c): a few fds (the display's, the password child's,
 // the system bus's) and timers
@@ -68,21 +56,8 @@ enum logo_state {
 	LOGO_STATES,
 };
 
-// a state's colours, RRGGBBAA: the logo's border and fill pixels (logo.xpm)
-struct logo_colors {
-	uint32_t border;
-	uint32_t fill;
-};
-
-struct awlock_args {
-	struct logo_colors colors[LOGO_STATES];
-	uint32_t logo_scale; // logical pixels per logo pixel (--logo-scale)
-	const char *logo_file; // --logo: an XPM instead of logo.xpm, or NULL
-	int debug_state; // --debug-state: an enum logo_state shown always, or -1
-	bool ignore_empty;
-	bool show_logo; // the logo (-u: none)
-	bool fingerprint;
-};
+// a state's colours (awlock_main.h): LOGO_STATES of them, in its order
+_Static_assert(LOGO_STATES == AWLOCK_STATES, "awlock_config_t.colors");
 
 // the password typed so far: UTF-8, NUL-terminated
 #define PASSWORD_SIZE 1024 // its buffer's, the NUL included
@@ -105,12 +80,11 @@ struct awlock_state {
 	struct loop_timer *clear_password_timer;  // clears the password buffer
 	struct wl_display *display;
 	int wayland_fd; // display's socket, from awl; the PAM child closes it
-	awl_process_t *proc; // awl's, this fork's copy: its log (-d)
 	struct wl_compositor *compositor;
 	struct wl_subcompositor *subcompositor;
 	struct wl_shm *shm;
 	struct wl_list surfaces; // struct awlock_surface::link, one per output
-	struct awlock_args args;
+	awlock_config_t args; // awl's (awlock_main.h)
 	struct awlock_password password;
 	struct awlock_xkb xkb;
 	enum auth_state auth_state; // state of the authentication attempt

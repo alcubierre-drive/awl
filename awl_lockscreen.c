@@ -316,13 +316,42 @@ awlockgone(struct wl_listener *listener, void *data)
     lockergone(lock->srv);
 }
 
-/** awlock with argv, through the lock helper, on a socketpair whose other
- * end is its client; false if it can't */
+/** awlock's configuration from awl's (:c:member:`awl_config_t.lock`, the
+ * lock_* colors); a logo file name too long is logged, and awlock's own
+ * logo drawn */
+static void
+awlockconfig(const awl_config_t *c, awlock_config_t *a)
+{
+    const awl_lock_colors_t *k[AWLOCK_STATES] = {
+        &c->colors.lock_waiting, &c->colors.lock_typing, &c->colors.lock_caps_lock,
+        &c->colors.lock_validating, &c->colors.lock_wrong,
+    };
+    memset(a, 0, sizeof *a);
+    for (int i = 0; i < AWLOCK_STATES; i++)
+        a->colors[i] = (awlock_colors_t){ k[i]->border, k[i]->fill };
+    a->show_logo = !c->lock.logo || c->lock.logo[0];
+    if (c->lock.logo && strlen(c->lock.logo) >= sizeof a->logo)
+        awl_err_printf("lock: logo %s: longer than %d bytes, awlock's own instead\n",
+                c->lock.logo, AWLOCK_LOGO_MAX - 1);
+    else if (c->lock.logo)
+        strcpy(a->logo, c->lock.logo);
+    a->logo_scale = c->lock.logo_scale;
+    a->fingerprint = c->lock.fingerprint;
+}
+
+/** awlock, through the lock helper, on a socketpair whose other end is its
+ * client; false if it can't. argv is the config's locker: awlock takes no
+ * arguments, any are logged */
 static bool
 startawlock(awl_server_t *srv, const char *const *argv)
 {
     int sv[2];
     struct wl_client *client;
+    awlock_config_t cfg;
+    if (argv[1])
+        awl_wrn_printf("lock: %s takes no arguments (%s ...): lock.* and colors.lock_* "
+                "configure it\n", argv[0], argv[1]);
+    awlockconfig(srv->cfg, &cfg);
     if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv)) {
         awl_err_printf("lock: no socket for %s: %s\n", argv[0], strerror(errno));
         return false;
@@ -333,7 +362,7 @@ startawlock(awl_server_t *srv, const char *const *argv)
         close(sv[1]);
         return false;
     }
-    if (!lockhelperrun(srv->proc, argv, sv[1])) {
+    if (!lockhelperrun(srv->proc, &cfg, sv[1])) {
         close(sv[1]);
         wl_client_destroy(client);
         return false;
@@ -660,9 +689,7 @@ lockrecover(void *data)
 void
 lockerexited(awl_server_t *srv, pid_t pid)
 {
-#ifdef AWL_AWLOCK
     lockhelperexited(srv->proc, pid);
-#endif
     if (pid != srv->lock->locker_pid)
         return;
     srv->lock->locker_pid = 0;

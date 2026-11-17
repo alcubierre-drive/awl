@@ -148,18 +148,37 @@ if get_option('test_hooks').disable_auto_if(not dev).allowed()
   awl_test_src = files('awl_test.c')
   awl_test_args = ['-DAWL_TEST']
 endif
-# awlock (lock/meson.build), part of awl: a library linked in, started by
-# awl's lock helper (awl_lockhelper.c), AWL_AWLOCK
-lock_libs = []
+# awlock (lock/), part of awl: the lock screen client. Compiled into awl,
+# run in a fork of awl's lock helper (awl_lockhelper.c), AWL_AWLOCK; not a
+# program of its own, it talks to awl over ext-session-lock-v1 like any
+# other locker. See lock/README.md.
+# Without it, awl_lockhelper.c's shim stands in for the helper.
 awl_lock_src = []
 awl_lock_args = []
-if get_option('lock').allowed()
-  subdir('lock')
-endif
-if lock_libs.length() > 0
-  awl_deps += lock_deps
-  awl_lock_src = files('awl_lockhelper.c')
-  awl_lock_args = ['-DAWL_AWLOCK']
+lock_wayland_client = dependency('wayland-client', version: '>=1.20.0', required: get_option('lock'))
+# passwords go through PAM only (lock/auth.c), as the user: no shadow fallback
+lock_pam = cc.find_library('pam', required: get_option('lock'))
+if lock_wayland_client.found() and lock_pam.found()
+  # the lock; the transparent background: one pixel, stretched
+  foreach xml : [wl_protocols / 'staging/ext-session-lock/ext-session-lock-v1.xml',
+                 wl_protocols / 'staging/single-pixel-buffer/single-pixel-buffer-v1.xml',
+                 wl_protocols / 'stable/viewporter/viewporter.xml']
+    base = fs.stem(xml)
+    awl_lock_src += custom_target(base + '-protocol.c', input: xml,
+      output: base + '-protocol.c',
+      command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'])
+    awl_lock_src += custom_target(base + '-client-protocol.h', input: xml,
+      output: base + '-client-protocol.h',
+      command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'])
+  endforeach
+  awl_lock_src += files('lock/awlock.c', 'lock/auth.c', 'lock/fingerprint.c')
+  # libsystemd (or libelogind), awl's already: sd-bus, for fprintd
+  # (lock/fingerprint.c)
+  awl_deps += [lock_wayland_client, lock_pam]
+  # PAM: an existing service (lock_pam_service, lock/auth.c), so awlock
+  # needs no file of its own in /etc/pam.d
+  awl_lock_args = ['-DAWL_AWLOCK',
+    '-DLOCK_PAM_SERVICE="@0@"'.format(get_option('lock_pam_service'))]
 endif
 awl = executable('awl',
   'awl.c', 'awl_config.c', 'awl_output.c', 'awl_bar.c', 'awl_popup.c', 'awl_client.c',
@@ -167,11 +186,10 @@ awl = executable('awl',
   'awl_lockscreen.c', 'awl_spawn.c', 'awl_wallpaper.c', 'awl_log.c',
   'awl_dict.c', 'awl_util.c', 'awl_draw.c', 'awl_plugin_host.c', 'awl_desktop.c',
   'awl_background.c', 'awl_redraw.c', 'awl_sni.c', 'awl_bus.c', 'awl_notifications.c', 'awl_alert.c', 'awl_window.c',
-  'awl_window_draw.c', 'awl_process.c', 'tray/app_env.c', awl_test_src, awl_lock_src,
+  'awl_window_draw.c', 'awl_process.c', 'awl_lockhelper.c', 'tray/app_env.c', awl_test_src, awl_lock_src,
   protocol_headers, version_h,
   c_args: awl_c_args + awl_test_args + awl_lock_args,
   dependencies: awl_deps,
-  link_with: lock_libs,
   install: true,
 )
 

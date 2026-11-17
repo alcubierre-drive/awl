@@ -71,7 +71,9 @@ The configuration is in two files:
 
 The config's `lock` has the screen locker: `locker`, the ext-session-lock
 client to run with its options (`"awlock"`, the default, is awl's own,
-part of awl: no program of that name; see lock/README.md), `at_start`, and `on_suspend`, which makes suspend wait until
+part of awl: no program of that name, and no options; see lock/README.md),
+awlock's `logo`, `logo_scale` and `fingerprint` (its colors are
+`colors.lock_*`), `at_start`, and `on_suspend`, which makes suspend wait until
 the locker covers every output (through a logind delay inhibitor). With
 that, no separate lock handler (`xss-lock`, a `sleep.target` unit calling
 `loginctl lock-session`) is needed; `loginctl lock-session` still works.

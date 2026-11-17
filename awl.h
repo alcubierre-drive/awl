@@ -265,6 +265,12 @@ enum awl_window_at {
 #define molokai_dark_gray 0x1b1d1effu
 #define molokai_light_gray 0x455354ffu
 
+/** :c:type:`awl_colors_t`'s lock_*: the logo's border and fill pixels in
+ * one state of awlock's, 0xRRGGBBAA */
+typedef struct awl_lock_colors_t {
+    uint32_t border, fill;
+} awl_lock_colors_t;
+
 /** :c:member:`awl_config_t.colors`: the colors awl itself draws with, 0xRRGGBBAA
  * (the plugins' own are :c:type:`awl_plugin_colors_t`, plugins.h). The optional
  * ones (:c:type:`awl_opt_color_t`) say what they are unset;
@@ -291,6 +297,11 @@ typedef struct awl_colors_t {
     awl_opt_color_t menu_bg, menu_fg, menu_border, menu_highlight, menu_highlight_fg, menu_dim;
     /** the alert (awl_alert.h): its text and background */
     uint32_t alert_fg, alert_bg;
+    /** awlock's logo (:c:macro:`AWL_LOCKER`), by state: nothing typed (and
+     * listening for a fingerprint), something typed, Caps Lock on, the
+     * password being checked, a wrong one; each its border (outline and
+     * cuts) and fill (letters) */
+    awl_lock_colors_t lock_waiting, lock_typing, lock_caps_lock, lock_validating, lock_wrong;
 } awl_colors_t;
 
 /** :c:member:`awl_config_t.popup`: how awl's own popups (awl_window.h) look, the bar
@@ -523,8 +534,17 @@ typedef struct awl_config_t {
         /** an ext-session-lock client (argv, NULL terminated), started on
          * logind's Lock (loginctl lock-session), before suspend and by the
          * lockscreen action; argv[0] :c:macro:`AWL_LOCKER` is awl's own,
-         * awlock (awl_lockscreen.h) */
+         * awlock (awl_lockscreen.h), which takes no arguments: the rest of
+         * this struct and :c:type:`awl_colors_t`'s lock_* configure it */
         const char *const *locker;
+        /** awlock's logo: an XPM file instead of its own (lock/README.md),
+         * NULL its own, "" none */
+        const char *logo;
+        /** awlock's logo: logical pixels per logo pixel, 1 to 16; 0 is 3 */
+        int logo_scale;
+        /** awlock unlocks with a fingerprint too (fprintd's, if there is a
+         * reader) */
+        bool fingerprint:1;
         /** lock right after awl started */
         bool at_start:1;
         /** suspend waits until the locker covers every output (a logind
@@ -594,6 +614,8 @@ static inline void awl_config_fill_defaults( awl_config_t* c ) {
     if (c->border_clock.hour_len <= 0) c->border_clock.hour_len = 24;
     if (c->border_clock.minute_len <= 0) c->border_clock.minute_len = 12;
     if (c->border_clock.min_update_time_ms <= 0) c->border_clock.min_update_time_ms = 15000;
+    if (c->lock.logo_scale <= 0) c->lock.logo_scale = 3;
+    if (c->lock.logo_scale > 16) c->lock.logo_scale = 16;
 }
 
 /** an argv's first word (an autostart's, a spawn binding's) that starts

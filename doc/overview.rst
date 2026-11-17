@@ -111,8 +111,9 @@ Locking
 -------
 
 awl locks with an ext-session-lock client, ``cfg->lock.locker``
-(swaylock by default), started by :c:func:`lockscreen`: as the :c:func:`lockscreen`
-action, at start with ``lock_at_start``, and on request of the plugins'
+(awl's own, awlock, by default: lock/README.md), started by
+:c:func:`lockscreen`: as the :c:func:`lockscreen` action, at start with
+``lock.at_start``, and on request of the plugins'
 logind thread, which listens for ``loginctl lock-session`` and for an
 upcoming suspend. Before suspend it holds a delay inhibitor until the locker
 covers every output, so the machine never sleeps, or wakes, showing the

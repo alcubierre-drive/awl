@@ -1,10 +1,8 @@
-// awlock: awl's screen locker, a fork of swaylock-fprintd
-// (https://github.com/SL-RU/swaylock-fprintd, 536d9df). This is its Wayland
-// side: the event loop, then the lock (ext-session-lock-v1) with
-// a transparent lock surface per output and the logo on a subsurface of it,
-// the seat (keys go to auth.c), the options and main(). See awlock.h.
+// awlock: awl's screen locker (README.md). This is its Wayland side: the
+// event loop, then the lock (ext-session-lock-v1) with a transparent lock
+// surface per output and the logo on a subsurface of it, the seat (keys go
+// to auth.c) and main(). See awlock.h.
 #define _GNU_SOURCE // memfd_create(): glibc declares it for nothing narrower
-#include <getopt.h>
 #include <math.h>
 #include <poll.h>
 #include <stdio.h>
@@ -14,7 +12,6 @@
 #include <time.h>
 #include <unistd.h>
 #include "awlock.h"
-#include "awlock_main.h"
 #include "ext-session-lock-v1-client-protocol.h"
 #include "single-pixel-buffer-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
@@ -63,7 +60,7 @@ static void loop_poll(void) {
 
 	int n = poll(loop.fds, loop.nfds, ms);
 	if (n < 0 && errno != EINTR) {
-		awlock_log_errno(LOG_ERROR, "poll failed");
+		awl_err_printf("awlock: poll failed: %s\n", strerror(errno));
 		exit(1);
 	}
 	for (int i = 0; n > 0 && i < loop.nfds; i++) {
@@ -86,7 +83,7 @@ static void loop_poll(void) {
 
 void loop_add_fd(int fd, void (*callback)(void *data), void *data) {
 	if (loop.nfds == LOOP_FDS) {
-		awlock_log(LOG_ERROR, "more than %d fds", LOOP_FDS);
+		awl_err_printf("awlock: more than %d fds\n", LOOP_FDS);
 		return;
 	}
 	loop.fds[loop.nfds] = (struct pollfd){.fd = fd, .events = POLLIN};
@@ -106,7 +103,7 @@ struct loop_timer *loop_add_timer(int ms, void (*callback)(void *data),
 		void *data) {
 	struct loop_timer *timer = calloc(1, sizeof(*timer));
 	if (!timer) {
-		awlock_log(LOG_ERROR, "Unable to allocate memory for timer");
+		awl_err_printf("awlock: Unable to allocate memory for timer\n");
 		return NULL;
 	}
 	timer->callback = callback;
@@ -213,19 +210,19 @@ struct awlock_surface {
  *
  * It is logo.xpm, compiled in: an image editor's file, and C. Its three
  * colours, one character per pixel, are what the pixels are, not what they
- * look like (that is the state's, --logo-<state>-*):
+ * look like (that is the state's, awl's colors.lock_*):
  *   None     empty: transparent, not drawn (between the outlines)
  *   darker   border: the state's border colour (the cuts, the outlines)
  *   lighter  fill: the state's fill colour (the letters)
  * It is drawn scaled by a whole number, nearest-neighbour, so its pixels
- * stay square. --logo <file> reads another XPM of the same kind instead.
+ * stay square. awl's lock.logo reads another XPM of the same kind instead.
  */
 #include "logo.xpm"
 
-// the logo's size at most, in logo pixels: logo.xpm's or --logo's
+// the logo's size at most, in logo pixels: logo.xpm's or lock.logo's
 #define LOGO_MAX_SIZE 256
 
-// logo_xpm or --logo's file, as logo_load() found it
+// logo_xpm or lock.logo's file, as logo_load() found it
 static struct {
 	int w, h; // in logo pixels
 	const char *const *rows; // h rows of w characters
@@ -235,19 +232,19 @@ static struct {
 // an XPM's strings: "w h 3 1", then the colours as "<char> c <None|#rrggbb>",
 // then the rows; anything else (more colours, symbolic ones, other keys than
 // c, as some editors write, extensions) is refused. name is for the log:
-// logo.xpm (logo_xpm, compiled in) or --logo's file.
+// logo.xpm (logo_xpm, compiled in) or lock.logo's file.
 static bool logo_load(const char *const *xpm, int lines, const char *name) {
 	int ncolors, cpp;
 	if (lines < 1 ||
 			sscanf(xpm[0], "%d %d %d %d", &logo.w, &logo.h, &ncolors, &cpp) != 4 ||
 			logo.w <= 0 || logo.h <= 0 || ncolors != 3 || cpp != 1 ||
 			lines != 1 + ncolors + logo.h) {
-		awlock_log(LOG_ERROR, "%s: not 3 colours, 1 character per pixel", name);
+		awl_err_printf("awlock: %s: not 3 colours, 1 character per pixel\n", name);
 		return false;
 	}
 	// a buffer per state and output, logo_scale * scale pixels per logo pixel
 	if (logo.w > LOGO_MAX_SIZE || logo.h > LOGO_MAX_SIZE) {
-		awlock_log(LOG_ERROR, "%s: %d by %d, more than %d", name,
+		awl_err_printf("awlock: %s: %d by %d, more than %d\n", name,
 			logo.w, logo.h, LOGO_MAX_SIZE);
 		return false;
 	}
@@ -258,8 +255,8 @@ static bool logo_load(const char *const *xpm, int lines, const char *name) {
 		char spec[8], end;
 		unsigned rgb;
 		if (line[0] == '\0' || sscanf(line + 1, " c %7s %c", spec, &end) != 1) {
-			awlock_log(LOG_ERROR, "%s: colour \"%s\" isn't \"<char> c "
-				"<colour>\"", name, line);
+			awl_err_printf("awlock: %s: colour \"%s\" isn't \"<char> c "
+				"<colour>\"\n", name, line);
 			return false;
 		}
 		if (strcasecmp(spec, "None") == 0 && !empty) {
@@ -269,15 +266,15 @@ static bool logo_load(const char *const *xpm, int lines, const char *name) {
 			chars[n] = line[0];
 			brightness[n++] = (rgb >> 16) + ((rgb >> 8) & 0xFF) + (rgb & 0xFF);
 		} else {
-			awlock_log(LOG_ERROR, "%s: the colours are None and two "
-				"#rrggbb, not %s", name, spec);
+			awl_err_printf("awlock: %s: the colours are None and two "
+				"#rrggbb, not %s\n", name, spec);
 			return false;
 		}
 	}
 	if (n != 2 || brightness[0] == brightness[1] || chars[0] == chars[1] ||
 			empty == chars[0] || empty == chars[1]) {
-		awlock_log(LOG_ERROR, "%s: the colours are None and two "
-			"#rrggbb, one darker (the border) and one lighter (the fill)", name);
+		awl_err_printf("awlock: %s: the colours are None and two "
+			"#rrggbb, one darker (the border) and one lighter (the fill)\n", name);
 		return false;
 	}
 	bool first_darker = brightness[0] < brightness[1];
@@ -288,7 +285,7 @@ static bool logo_load(const char *const *xpm, int lines, const char *name) {
 	for (int y = 0; y < logo.h; y++) {
 		if ((int)strlen(logo.rows[y]) != logo.w ||
 				(int)strspn(logo.rows[y], used) != logo.w) {
-			awlock_log(LOG_ERROR, "%s: row %d is not %d of its colours",
+			awl_err_printf("awlock: %s: row %d is not %d of its colours\n",
 				name, y + 1, logo.w);
 			return false;
 		}
@@ -296,14 +293,14 @@ static bool logo_load(const char *const *xpm, int lines, const char *name) {
 	return true;
 }
 
-// --logo's file: an XPM as image editors write it, C source whose strings
+// lock.logo's file: an XPM as image editors write it, C source whose strings
 // (outside comments) logo_load() takes; *lines of them in *xpm, kept for
 // logo.rows, as the file's contents they are in. Not C's escapes: a
 // backslash is refused, as no XPM needs one.
 static bool logo_read(const char *path, char ***xpm, int *lines) {
 	FILE *f = fopen(path, "r");
 	if (!f) {
-		awlock_log_errno(LOG_ERROR, "--logo: %s", path);
+		awl_err_printf("awlock: logo: %s: %s\n", path, strerror(errno));
 		return false;
 	}
 	// 256 by 256 is 64 KiB of rows, with quotes and commas a little more
@@ -312,7 +309,7 @@ static bool logo_read(const char *path, char ***xpm, int *lines) {
 	bool err = ferror(f), big = len == sizeof(text);
 	fclose(f);
 	if (err || big) {
-		awlock_log(LOG_ERROR, "--logo: %s: %s", path,
+		awl_err_printf("awlock: logo: %s: %s\n", path,
 			err ? "can't read it" : "too big for an XPM logo");
 		return false;
 	}
@@ -334,8 +331,8 @@ static bool logo_read(const char *path, char ***xpm, int *lines) {
 		} else if (*p == '"') {
 			char *end = strpbrk(p + 1, "\"\\\n");
 			if (!end || *end != '"') {
-				awlock_log(LOG_ERROR, "--logo: %s: a string that doesn't "
-					"end on its line, or with a backslash", path);
+				awl_err_printf("awlock: logo: %s: a string that doesn't "
+					"end on its line, or with a backslash\n", path);
 				free(*xpm);
 				*xpm = NULL;
 				return false;
@@ -358,19 +355,7 @@ static bool logo_read(const char *path, char ***xpm, int *lines) {
 // alpha of the logo on an output the pointer isn't on, times the state's
 static const float LOGO_DIM_ALPHA = 0.4f;
 
-// the states' names in options: --logo-<name>-border, --debug-state <name>
-static const char *const logo_state_names[LOGO_STATES] = {
-	[LOGO_WAITING] = "waiting",
-	[LOGO_TYPING] = "typing",
-	[LOGO_CAPS_LOCK] = "caps-lock",
-	[LOGO_VALIDATING] = "validating",
-	[LOGO_WRONG] = "wrong",
-};
-
 static enum logo_state logo_state(const struct awlock_state *state) {
-	if (state->args.debug_state >= 0) {
-		return state->args.debug_state;
-	}
 	if (state->auth_state == AUTH_STATE_INVALID) {
 		return LOGO_WRONG;
 	}
@@ -426,10 +411,10 @@ static struct shm_buffer *logo_buffer(struct awlock_surface *surface,
 
 	int px = state->args.logo_scale * surface->scale;
 	if (!create_buffer(state->shm, buf, logo.w * px, logo.h * px)) {
-		awlock_log(LOG_ERROR, "Failed to create the logo's buffer");
+		awl_err_printf("awlock: Failed to create the logo's buffer\n");
 		return NULL;
 	}
-	struct logo_colors c = state->args.colors[ls];
+	awlock_colors_t c = state->args.colors[ls];
 	uint32_t border = premultiplied(dim ? logo_dim(c.border) : c.border);
 	uint32_t fill = premultiplied(dim ? logo_dim(c.fill) : c.fill);
 	uint32_t *row = buf->data;
@@ -513,22 +498,6 @@ static void draw_logo(struct awlock_surface *surface) {
 }
 
 // Surfaces, outputs, the lock
-
-// rrggbb or rrggbbaa, # or not, as RRGGBBAA
-static bool parse_color(const char *s, uint32_t *color) {
-	if (*s == '#') {
-		s++;
-	}
-	size_t len = strlen(s);
-	if ((len != 6 && len != 8) || strspn(s, "0123456789abcdefABCDEF") != len) {
-		return false;
-	}
-	*color = strtoul(s, NULL, 16);
-	if (len == 6) {
-		*color = *color << 8 | 0xFF;
-	}
-	return true;
-}
 
 static void destroy_surface(struct awlock_surface *surface) {
 	wl_list_remove(&surface->link);
@@ -699,8 +668,8 @@ static void ext_session_lock_v1_handle_locked(void *data, struct ext_session_loc
 }
 
 static void ext_session_lock_v1_handle_finished(void *data, struct ext_session_lock_v1 *lock) {
-	awlock_log(LOG_ERROR, "Failed to lock session -- "
-			"is another lockscreen running?");
+	awl_err_printf("awlock: Failed to lock session -- "
+			"is another lockscreen running?\n");
 	exit(2);
 }
 
@@ -729,13 +698,13 @@ static void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
 	struct awlock_state *state = seat->state;
 	if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
 		close(fd);
-		awlock_log(LOG_ERROR, "Unknown keymap format %d, aborting", format);
+		awl_err_printf("awlock: Unknown keymap format %d, aborting\n", format);
 		exit(1);
 	}
 	char *map_shm = mmap(NULL, size - 1, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (map_shm == MAP_FAILED) {
 		close(fd);
-		awlock_log(LOG_ERROR, "Unable to initialize keymap shm, aborting");
+		awl_err_printf("awlock: Unable to initialize keymap shm, aborting\n");
 		exit(1);
 	}
 	struct xkb_keymap *keymap = xkb_keymap_new_from_buffer(
@@ -745,12 +714,12 @@ static void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
 	close(fd);
 	// keep the keymap there is: dying would leave awl locked without a locker
 	if (!keymap) {
-		awlock_log(LOG_ERROR, "Unable to compile the keymap");
+		awl_err_printf("awlock: Unable to compile the keymap\n");
 		return;
 	}
 	struct xkb_state *xkb_state = xkb_state_new(keymap);
 	if (!xkb_state) {
-		awlock_log(LOG_ERROR, "Unable to create the keyboard state");
+		awl_err_printf("awlock: Unable to create the keyboard state\n");
 		xkb_keymap_unref(keymap);
 		return;
 	}
@@ -964,7 +933,7 @@ static const struct wl_seat_listener seat_listener = {
 	.name = seat_handle_name,
 };
 
-// The registry, options, main()
+// The registry, main()
 
 static void handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
@@ -1026,136 +995,6 @@ static const struct wl_registry_listener registry_listener = {
 	.global_remove = handle_global_remove,
 };
 
-static void set_default_colors(struct logo_colors *colors) {
-	// awl's molokai palette (awl.h): light gray cuts and outlines; the
-	// letters blue, purple, orange (as awl's warnings), green, red
-	colors[LOGO_WAITING] = (struct logo_colors){0x455354FF, 0x66D9EFFF};
-	colors[LOGO_TYPING] = (struct logo_colors){0x455354FF, 0xAE81FFFF};
-	colors[LOGO_CAPS_LOCK] = (struct logo_colors){0x455354FF, 0xFD971FFF};
-	colors[LOGO_VALIDATING] = (struct logo_colors){0x455354FF, 0xA6E22EFF};
-	colors[LOGO_WRONG] = (struct logo_colors){0x455354FF, 0xF92672FF};
-}
-
-static int parse_options(int argc, char **argv, struct awlock_state *state) {
-	enum long_option_codes {
-		LO_NO_FINGERPRINT = 256,
-		LO_LOGO_SCALE,
-		LO_LOGO_FILE,
-		LO_DEBUG_STATE,
-		// --logo-<state>-border, --logo-<state>-fill: LO_LOGO + 2 * state
-		// (+ 1 for the fill)
-		LO_LOGO,
-		LO_LOGO_END = LO_LOGO + 2 * LOGO_STATES,
-	};
-
-	static struct option long_options[] = {
-		{"debug", no_argument, NULL, 'd'},
-		{"ignore-empty-password", no_argument, NULL, 'e'},
-		{"help", no_argument, NULL, 'h'},
-		{"no-fingerprint", no_argument, NULL, LO_NO_FINGERPRINT},
-		{"no-logo", no_argument, NULL, 'u'},
-		{"version", no_argument, NULL, 'v'},
-		{"logo-scale", required_argument, NULL, LO_LOGO_SCALE},
-		{"logo", required_argument, NULL, LO_LOGO_FILE},
-		{"debug-state", required_argument, NULL, LO_DEBUG_STATE},
-		{"logo-waiting-border", required_argument, NULL, LO_LOGO + 2 * LOGO_WAITING},
-		{"logo-waiting-fill", required_argument, NULL, LO_LOGO + 2 * LOGO_WAITING + 1},
-		{"logo-typing-border", required_argument, NULL, LO_LOGO + 2 * LOGO_TYPING},
-		{"logo-typing-fill", required_argument, NULL, LO_LOGO + 2 * LOGO_TYPING + 1},
-		{"logo-caps-lock-border", required_argument, NULL, LO_LOGO + 2 * LOGO_CAPS_LOCK},
-		{"logo-caps-lock-fill", required_argument, NULL, LO_LOGO + 2 * LOGO_CAPS_LOCK + 1},
-		{"logo-validating-border", required_argument, NULL, LO_LOGO + 2 * LOGO_VALIDATING},
-		{"logo-validating-fill", required_argument, NULL, LO_LOGO + 2 * LOGO_VALIDATING + 1},
-		{"logo-wrong-border", required_argument, NULL, LO_LOGO + 2 * LOGO_WRONG},
-		{"logo-wrong-fill", required_argument, NULL, LO_LOGO + 2 * LOGO_WRONG + 1},
-		{0, 0, 0, 0}
-	};
-
-	const char usage[] =
-		"Usage: awlock [options...]\n"
-		"Lock awl. The logo is at the pointer, coloured by state (waiting,\n"
-		"typing, caps-lock, validating, wrong), centred and dimmed on the\n"
-		"other outputs. Colors are rrggbb[aa].\n"
-		"\n"
-		"  --logo <file.xpm>              another logo: None and two #rrggbb,\n"
-		"                                 the darker the border (logo.xpm)\n"
-		"  --logo-scale <n>               pixels per logo pixel (3)\n"
-		"  --logo-<state>-border <color>  the logo's outline and cuts\n"
-		"  --logo-<state>-fill <color>    the logo's letters\n"
-		"  -u, --no-logo                  no logo\n"
-		"  -e, --ignore-empty-password    don't check an empty password\n"
-		"  --no-fingerprint               no fingerprints (else fprintd's, if any)\n"
-		"  -d, --debug                    debug log\n"
-		"  --debug-state <state>          always show this state (tests)\n"
-		"  -v, --version                  version\n"
-		"  -h, --help                     this\n";
-
-	int c, opt_idx;
-	while ((c = getopt_long(argc, argv, "dehuv", long_options, &opt_idx)) != -1) {
-		switch (c) {
-		case 'd':
-			awl_log_set_level(state->proc, awl_loglevel_vrb);
-			break;
-		case 'e':
-			state->args.ignore_empty = true;
-			break;
-		case LO_NO_FINGERPRINT:
-			state->args.fingerprint = false;
-			break;
-		case 'u':
-			state->args.show_logo = false;
-			break;
-		case 'h':
-			fputs(usage, stdout);
-			exit(EXIT_SUCCESS);
-		case 'v':
-			puts("awlock version " AWLOCK_VERSION);
-			exit(EXIT_SUCCESS);
-		case LO_LOGO_SCALE: {
-			char *end;
-			long n = strtol(optarg, &end, 10);
-			// 16: 848 logical pixels wide, up to ten buffers per output
-			if (*optarg == '\0' || *end != '\0' || n < 1 || n > 16) {
-				awlock_log(LOG_ERROR, "--logo-scale: 1 to 16, not %s", optarg);
-				return 1;
-			}
-			state->args.logo_scale = n;
-			break;
-		}
-		case LO_LOGO_FILE:
-			state->args.logo_file = optarg;
-			break;
-		case LO_DEBUG_STATE:
-			for (int i = 0; i < LOGO_STATES; i++) {
-				if (strcmp(optarg, logo_state_names[i]) == 0) {
-					state->args.debug_state = i;
-				}
-			}
-			if (state->args.debug_state < 0) {
-				awlock_log(LOG_ERROR, "--debug-state: no state %s", optarg);
-				return 1;
-			}
-			break;
-		default:
-			if (c >= LO_LOGO && c < LO_LOGO_END) {
-				struct logo_colors *lc =
-					&state->args.colors[(c - LO_LOGO) / 2];
-				if (!parse_color(optarg,
-						(c - LO_LOGO) % 2 ? &lc->fill : &lc->border)) {
-					awlock_log(LOG_ERROR, "--%s: rrggbb[aa], not %s",
-						long_options[opt_idx].name, optarg);
-					return 1;
-				}
-				break;
-			}
-			fputs(usage, stderr);
-			return 1;
-		}
-	}
-
-	return 0;
-}
-
 static struct awlock_state state;
 
 static void display_in(void *data) {
@@ -1164,54 +1003,44 @@ static void display_in(void *data) {
 	}
 }
 
-int awlock_main(awl_process_t *proc, int argc, char **argv, int wayland_fd) {
-	// awl's main() ran getopt() before the helper forked
-	optind = 1;
-	state.proc = proc;
+int awlock_main(const awlock_config_t *cfg, int wayland_fd) {
 	state.wayland_fd = wayland_fd;
-	state.args = (struct awlock_args){
-		.logo_scale = 3,
-		.debug_state = -1,
-		.show_logo = true,
-		.fingerprint = true, // logs it if there is no fprintd or reader
-	};
-	set_default_colors(state.args.colors);
-
-	// no config file: the options are the command line's (awl's locker)
-	int result = parse_options(argc, argv, &state);
-	if (result != 0) {
-		return result;
+	state.args = *cfg;
+	// 16: 848 logical pixels wide, up to ten buffers per output
+	if (state.args.logo_scale < 1 || state.args.logo_scale > 16) {
+		awl_err_printf("awlock: logo_scale: 1 to 16, not %u; 3\n",
+			(unsigned)state.args.logo_scale);
+		state.args.logo_scale = 3;
 	}
-	// a bad --logo still locks, with logo.xpm: the screen matters more
+
+	// a bad logo file still locks, with logo.xpm: the screen matters more
 	char **file_xpm = NULL;
 	int file_lines;
-	if (state.args.logo_file && (!logo_read(state.args.logo_file,
-			&file_xpm, &file_lines) || !logo_load((const char *const *)file_xpm,
-			file_lines, state.args.logo_file))) {
-		awlock_log(LOG_ERROR, "--logo: %s refused, logo.xpm instead",
-			state.args.logo_file);
-		state.args.logo_file = NULL;
+	const char *logo_file = state.args.logo;
+	if (*logo_file && (!logo_read(logo_file, &file_xpm, &file_lines) ||
+			!logo_load((const char *const *)file_xpm, file_lines, logo_file))) {
+		awl_err_printf("awlock: logo: %s refused, logo.xpm instead\n", logo_file);
+		logo_file = "";
 		free(file_xpm);
 	}
-	if (!state.args.logo_file && !logo_load((const char *const *)logo_xpm,
+	if (!*logo_file && !logo_load((const char *const *)logo_xpm,
 			sizeof(logo_xpm) / sizeof(*logo_xpm), "logo.xpm")) {
 		return EXIT_FAILURE;
 	}
-	// after the options: the password child logs at their level (-d)
 	auth_start(&state);
 
 	wl_list_init(&state.surfaces);
 	state.xkb.context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 	state.display = wl_display_connect_to_fd(wayland_fd);
 	if (!state.display) {
-		awlock_log_errno(LOG_ERROR, "Unable to use awl's connection");
+		awl_err_printf("awlock: Unable to use awl's connection: %s\n", strerror(errno));
 		return EXIT_FAILURE;
 	}
 
 	struct wl_registry *registry = wl_display_get_registry(state.display);
 	wl_registry_add_listener(registry, &registry_listener, &state);
 	if (wl_display_roundtrip(state.display) == -1) {
-		awlock_log(LOG_ERROR, "wl_display_roundtrip() failed");
+		awl_err_printf("awlock: wl_display_roundtrip() failed\n");
 		return EXIT_FAILURE;
 	}
 
@@ -1222,7 +1051,7 @@ int awlock_main(awl_process_t *proc, int argc, char **argv, int wayland_fd) {
 		!state.single_pixel ? "single-pixel-buffer-v1" :
 		!state.viewporter ? "viewporter" : NULL;
 	if (missing) {
-		awlock_log(LOG_ERROR, "Missing %s", missing);
+		awl_err_printf("awlock: Missing %s\n", missing);
 		return 1;
 	}
 	// all zero: transparent, so awl's lock screen (its blur, shatter) shows
@@ -1244,15 +1073,15 @@ int awlock_main(awl_process_t *proc, int argc, char **argv, int wayland_fd) {
 
 	while (!state.locked) {
 		if (wl_display_dispatch(state.display) < 0) {
-			awlock_log(LOG_ERROR, "wl_display_dispatch() failed");
+			awl_err_printf("awlock: wl_display_dispatch() failed\n");
 			return 2;
 		}
 	}
 
 	loop_add_fd(wl_display_get_fd(state.display), display_in, NULL);
 
-	// unlocked only by a password or a fingerprint: no signal unlocks
-	// (swaylock's SIGUSR1), and a locker that dies leaves awl locked
+	// unlocked only by a password or a fingerprint: no signal unlocks, and
+	// a locker that dies leaves awl locked
 
 	struct fingerprint *fingerprint = NULL;
 	if (state.args.fingerprint) {

@@ -10,9 +10,7 @@
 #include "awl_input.h"
 #include "awl_layer.h"
 #include "awl_lockscreen.h"
-#ifdef AWL_AWLOCK
 #include "awl_lockhelper.h"
-#endif
 #include "awl_log.h"
 #include "awl_output.h"
 #include "awl_plugin_host.h"
@@ -611,10 +609,8 @@ main(int argc, char *argv[])
         die("XDG_RUNTIME_DIR must be set");
     /* only now: awl -v or a usage error must not truncate a running awl's log */
     awl_log_init(proc, logfile);
-#ifdef AWL_AWLOCK
     /* before anything else: the helper must have nothing to inherit */
     lockhelperstart(proc);
-#endif
 
     srv = ecalloc(1, sizeof *srv);
     srv->proc = proc;

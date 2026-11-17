@@ -113,6 +113,14 @@ awl_lockhelper.h
 
 .. c:autodoc:: awl_lockhelper.h
 
+lock/awlock_main.h
+------------------
+
+awlock's entry point and its configuration; awlock itself (lock/) is
+described in lock/README.md.
+
+.. c:autodoc:: lock/awlock_main.h
+
 awl_alert.h
 -----------
 

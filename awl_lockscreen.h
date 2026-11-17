@@ -27,9 +27,10 @@
 /** The locker's name that is awl's own, awlock (lock/), built into awl if
  * the meson option ``lock`` allows (``AWL_AWLOCK`` defined then). As
  * :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`'s argv[0], awl
- * starts it through its lock helper (awl_lockhelper.h), the rest of that
- * argv its options. Without ``AWL_AWLOCK``, a program by that name
- * in ``PATH``. */
+ * starts it through its lock helper (awl_lockhelper.h), configured by the
+ * rest of :c:member:`awl_config_t.lock` and :c:type:`awl_colors_t`'s
+ * lock_*; it takes no arguments. Without ``AWL_AWLOCK``, a program by that
+ * name in ``PATH``. */
 #define AWL_LOCKER "awlock"
 
 

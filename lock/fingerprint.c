@@ -63,7 +63,7 @@ static void call_device(struct fingerprint *fp, const char *method,
 	int r = sd_bus_call_method_async(fp->bus, NULL, FPRINT, fp->device,
 		FPRINT_DEVICE, method, reply, fp, types, arg);
 	if (r < 0) {
-		awlock_log(LOG_ERROR, "Fingerprint: %s: %s", method, strerror(-r));
+		awl_err_printf("awlock: Fingerprint: %s: %s\n", method, strerror(-r));
 	}
 }
 
@@ -74,7 +74,7 @@ static const char *error_name(sd_bus_message *m) {
 
 static void log_error(const char *what, sd_bus_message *m) {
 	const sd_bus_error *e = sd_bus_message_get_error(m);
-	awlock_log(LOG_ERROR, "Fingerprint: %s: %s", what,
+	awl_err_printf("awlock: Fingerprint: %s: %s\n", what,
 		e && e->message ? e->message : "failed");
 }
 
@@ -103,7 +103,7 @@ static int verify_started(sd_bus_message *m, void *data, sd_bus_error *err) {
 		retry_later(fp, restart_timer);
 		return 0;
 	}
-	awlock_log(LOG_DEBUG, "Fingerprint: verifying");
+	awl_vrb_printf("awlock: Fingerprint: verifying\n");
 	fp->verifying = true;
 	return 0;
 }
@@ -121,7 +121,7 @@ static int claimed(sd_bus_message *m, void *data, sd_bus_error *err) {
 		const char *name = error_name(m);
 		if (name && strcmp(name, FPRINT_IN_USE) == 0) {
 			// e.g. a login prompt has it: later
-			awlock_log(LOG_DEBUG, "Fingerprint: the reader is in use");
+			awl_vrb_printf("awlock: Fingerprint: the reader is in use\n");
 			retry_later(fp, claim_timer);
 		} else {
 			log_error("Claim", m);
@@ -149,7 +149,7 @@ static int verify_status(sd_bus_message *m, void *data, sd_bus_error *err) {
 	if (!fp->verifying || sd_bus_message_read(m, "sb", &result, &done) < 0) {
 		return 0;
 	}
-	awlock_log(LOG_INFO, "Fingerprint: %s%s", result, done ? "" : " (go on)");
+	awl_log_printf("awlock: Fingerprint: %s%s\n", result, done ? "" : " (go on)");
 	if (strcmp(result, "verify-match") == 0) {
 		fp->state->running = false; // unlocks, as a right password does
 	} else if (strcmp(result, "verify-disconnected") == 0) {
@@ -177,10 +177,10 @@ static int got_device(sd_bus_message *m, void *data, sd_bus_error *err) {
 		// no fprintd, or no reader: no fingerprints, said once
 		const char *name = error_name(m);
 		if (name && strcmp(name, FPRINT ".Error.NoSuchDevice") == 0) {
-			awlock_log(LOG_ERROR, "Fingerprint: no reader, passwords only");
+			awl_err_printf("awlock: Fingerprint: no reader, passwords only\n");
 		} else if (name && (strcmp(name, SD_BUS_ERROR_SERVICE_UNKNOWN) == 0 ||
 				strcmp(name, SD_BUS_ERROR_NAME_HAS_NO_OWNER) == 0)) {
-			awlock_log(LOG_ERROR, "Fingerprint: no fprintd, passwords only");
+			awl_err_printf("awlock: Fingerprint: no fprintd, passwords only\n");
 		} else {
 			log_error("GetDefaultDevice", m);
 		}
@@ -189,11 +189,11 @@ static int got_device(sd_bus_message *m, void *data, sd_bus_error *err) {
 	if (sd_bus_message_read(m, "o", &path) < 0 || !(fp->device = strdup(path))) {
 		return 0;
 	}
-	awlock_log(LOG_DEBUG, "Fingerprint: reader %s", fp->device);
+	awl_vrb_printf("awlock: Fingerprint: reader %s\n", fp->device);
 	int r = sd_bus_match_signal_async(fp->bus, &fp->status, FPRINT, fp->device,
 		FPRINT_DEVICE, "VerifyStatus", verify_status, NULL, fp);
 	if (r < 0) {
-		awlock_log(LOG_ERROR, "Fingerprint: VerifyStatus: %s", strerror(-r));
+		awl_err_printf("awlock: Fingerprint: VerifyStatus: %s\n", strerror(-r));
 		return 0;
 	}
 	claim(fp);
@@ -207,7 +207,7 @@ static void find_reader(void *data) {
 	int r = sd_bus_call_method_async(fp->bus, NULL, FPRINT, FPRINT_MANAGER_PATH,
 		FPRINT_MANAGER, "GetDefaultDevice", got_device, fp, "");
 	if (r < 0) {
-		awlock_log(LOG_ERROR, "Fingerprint: GetDefaultDevice: %s", strerror(-r));
+		awl_err_printf("awlock: Fingerprint: GetDefaultDevice: %s\n", strerror(-r));
 	}
 }
 
@@ -218,7 +218,7 @@ static void bus_in(void *data) {
 	}
 	if (r < 0) {
 		// the bus is gone: fingerprints are off
-		awlock_log(LOG_ERROR, "Fingerprint: system bus: %s", strerror(-r));
+		awl_err_printf("awlock: Fingerprint: system bus: %s\n", strerror(-r));
 		loop_remove_fd(fp->fd);
 		fp->fd = -1;
 	}
@@ -233,7 +233,7 @@ struct fingerprint *fingerprint_start(struct awlock_state *state) {
 	fp->fd = -1;
 	int r = sd_bus_open_system(&fp->bus);
 	if (r < 0) {
-		awlock_log(LOG_ERROR, "Fingerprint: no system bus (%s), passwords only",
+		awl_err_printf("awlock: Fingerprint: no system bus (%s), passwords only\n",
 			strerror(-r));
 		free(fp);
 		return NULL;
