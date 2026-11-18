@@ -339,6 +339,7 @@ awlockconfig(const awl_config_t *c, awlock_config_t *a)
     a->fingerprint = c->lock.fingerprint;
     a->inactive_alpha = c->lock.inactive_alpha;
     a->active_alpha = c->lock.active_alpha;
+    a->fingerprint_retry_ms = abs(c->lock.fingerprint_retry_ms);
 }
 
 /** awlock, through the lock helper, on a socketpair whose other end is its

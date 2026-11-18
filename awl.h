@@ -550,6 +550,9 @@ typedef struct awl_config_t {
          * pointer's output, and on every output before the pointer has been
          * on one; default 1 */
         float active_alpha;
+        /** in case :c:member:`fingerprint` is enabled the retry time for
+         * fprintd */
+        int fingerprint_retry_ms;
         /** awlock unlocks with a fingerprint too (fprintd's, if there is a
          * reader) */
         bool fingerprint:1;

@@ -200,6 +200,7 @@ static const awl_config_t awl_config_defaults = {
         .logo_scale = 3,
         .inactive_alpha = 0.4,
         .active_alpha = 1.0,
+        .fingerprint_retry_ms = 1000,
         .fingerprint = 1,
         .at_start = 0,
         .on_suspend = 1,

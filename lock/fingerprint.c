@@ -23,8 +23,9 @@
 #define FPRINT_DEVICE FPRINT ".Device"
 #define FPRINT_MANAGER_PATH "/net/reactivated/Fprint/Manager"
 #define FPRINT_IN_USE FPRINT ".Error.AlreadyInUse"
-// claiming again, verifying again after an error
-#define RETRY_MS 2000
+
+#define FPRINT_RETRY_MS_CAP_UPPER 10000u
+#define FPRINT_RETRY_MS_CAP_LOWER   100u
 
 struct fingerprint {
     struct awlock_state *state;
@@ -54,7 +55,10 @@ static void show_wrong(struct awlock_state *state) {
 
 static void retry_later(struct fingerprint *fp, void (*callback)(void *data)) {
     loop_remove_timer(fp->retry);
-    fp->retry = loop_add_timer(RETRY_MS, callback, fp);
+    unsigned retry_ms = fp->state->args.fingerprint_retry_ms;
+    retry_ms = retry_ms < FPRINT_RETRY_MS_CAP_LOWER ? FPRINT_RETRY_MS_CAP_LOWER : retry_ms;
+    retry_ms = retry_ms > FPRINT_RETRY_MS_CAP_UPPER ? FPRINT_RETRY_MS_CAP_UPPER : retry_ms;
+    fp->retry = loop_add_timer(retry_ms, callback, fp);
 }
 
 // a method of the reader, answered by reply

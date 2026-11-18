@@ -39,6 +39,8 @@ typedef struct awlock_config_t {
     /** the logo's opacity, 0 to 1 (times its colors'), on the pointer's
      * output, and on every output before the pointer has been on one */
     float active_alpha;
+    /** timeout to retry on failed fprintd/already taken/... */
+    uint32_t fingerprint_retry_ms;
 } awlock_config_t;
 
 /** awlock's main(), in a fork of awl's lock helper (awl_lockhelper.h),
