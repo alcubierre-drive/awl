@@ -46,7 +46,9 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .bad            = molokai_red,
         /* the color maps' stops: {at, color}, at 0 to 1, linearly in
          * between */
-        .temperature    = COLORMAP( { 0, 0x40cfebff }, { 0.5f, 0xfd9e2fff }, { 1, 0xf9327aff } ),
+        .temperature    = COLORMAP( {0.00, 0x66d9efffu}, {0.25, 0x9ff1faffu},
+                                    {0.50, 0xffffffffu}, {0.75, 0xffa6baffu},
+                                    {1.00, 0xf92672ffu} ),
         .battery        = COLORMAP( { 0.15f, molokai_red }, { 0.25f, molokai_orange },
                                     { 0.3f, 0xf5efffff /* bar_fg */ } ),
         .battery_charging = COLORMAP( { 0, molokai_green }, { 0.9f, molokai_blue } ),

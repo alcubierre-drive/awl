@@ -104,7 +104,7 @@ typedef struct Buffer Buffer;
 /** how long ``rendermon()`` (awl_output.c) holds back frames for a window's answer to a
  * resize, in ms; a window that doesn't answer (a hung client) would freeze
  * the output otherwise */
-#define RESIZE_WAIT_MS 200
+#define RESIZE_WAIT_MS 100
 
 /** A window, XDG shell or XWayland. */
 struct Client {
