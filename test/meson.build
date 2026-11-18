@@ -48,7 +48,7 @@ test('markup_unit', markup_unit)
 test('icon_unit', icon_unit, args: [meson.current_source_dir() / 'data'])
 
 # vptr, the pointer injector live.sh uses; sni_menu, a tray item with a menu;
-# lock (below), a screen locker
+# lock and hang (below), a screen locker and a window that stops answering
 vptr_protocol = 'wlr-virtual-pointer-unstable-v1.xml'
 executable('vptr', 'vptr.c',
   custom_target('wlr-virtual-pointer-unstable-v1-client-protocol.h',
@@ -67,6 +67,17 @@ executable('lock', 'lock.c',
     command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@']),
   custom_target('ext-session-lock-v1-protocol.c',
     input: lock_protocol, output: '@BASENAME@-protocol.c',
+    command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@']),
+  dependencies: dependency('wayland-client'),
+)
+# hang, a window that stops answering resizes (rendermon()'s RESIZE_WAIT_MS)
+hang_protocol = wl_protocols / 'stable/xdg-shell/xdg-shell.xml'
+executable('hang', 'hang.c',
+  custom_target('hang-xdg-shell-client-protocol.h',
+    input: hang_protocol, output: 'xdg-shell-client-protocol.h',
+    command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@']),
+  custom_target('hang-xdg-shell-protocol.c',
+    input: hang_protocol, output: 'xdg-shell-protocol.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@']),
   dependencies: dependency('wayland-client'),
 )

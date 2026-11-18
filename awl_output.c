@@ -463,6 +463,22 @@ powermgrsetmode(struct wl_listener *listener, void *data)
     outputsupdate(m->srv);
 }
 
+/** whether c has kept its resize unanswered for :c:macro:`RESIZE_WAIT_MS`
+ * by now; logs it the first time */
+static int
+resizelate(Client *c, const struct timespec *now)
+{
+    int64_t ms = (int64_t)now->tv_sec * 1000 + now->tv_nsec / 1000000;
+    if (ms - c->resize_sent < RESIZE_WAIT_MS)
+        return 0;
+    if (!c->resize_late) {
+        c->resize_late = 1;
+        awl_wrn_printf("client '%s': no answer to a resize in %d ms, drawing without it\n",
+                client_get_appid(c), RESIZE_WAIT_MS);
+    }
+    return 1;
+}
+
 void
 rendermon(struct wl_listener *listener, void *data)
 {
@@ -474,10 +490,12 @@ rendermon(struct wl_listener *listener, void *data)
     struct wlr_output_state pending = {0};
     struct timespec now;
 
+    clock_gettime(CLOCK_MONOTONIC, &now);
     /* Render if no XDG clients have an outstanding resize and are visible on
-     * this monitor. */
+     * this monitor, or one has kept us waiting for RESIZE_WAIT_MS. */
     wl_list_for_each(c, &srv->clients.list, link) {
-        if (c->resize && !c->isfloating && client_is_rendered_on_mon(c, m) && !client_is_stopped(c))
+        if (c->resize && !c->isfloating && client_is_rendered_on_mon(c, m) && !client_is_stopped(c)
+                && !resizelate(c, &now))
             goto skip;
     }
 
@@ -492,7 +510,6 @@ rendermon(struct wl_listener *listener, void *data)
 
 skip:
     /* Let clients know a frame has been rendered */
-    clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(m->scene_output, &now);
     wlr_output_state_finish(&pending);
 }

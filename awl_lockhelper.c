@@ -5,21 +5,9 @@
 /* awlock isn't built in (meson option lock): no helper, and awl never asks
  * one, it looks for a program by that name instead (awl_lockscreen.c) */
 
-void
-lockhelperstart(awl_process_t *proc)
-{
-}
-
-bool
-lockhelperrun(awl_process_t *proc, const awlock_config_t *cfg, int fd)
-{
-    return false;
-}
-
-void
-lockhelperexited(awl_process_t *proc, pid_t pid)
-{
-}
+void lockhelperstart(awl_process_t *proc) {}
+bool lockhelperrun(awl_process_t *proc, const awlock_config_t *cfg, int fd) {return false;}
+void lockhelperexited(awl_process_t *proc, pid_t pid) {}
 
 #else
 #include "awl_log.h"

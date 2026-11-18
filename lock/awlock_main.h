@@ -33,6 +33,12 @@ typedef struct awlock_config_t {
     bool show_logo;
     /** fprintd's fingerprints too, if there is a reader */
     bool fingerprint;
+    /** the logo's opacity, 0 to 1 (times its colors'), on the outputs
+     * without the pointer, once the pointer has been on one */
+    float inactive_alpha;
+    /** the logo's opacity, 0 to 1 (times its colors'), on the pointer's
+     * output, and on every output before the pointer has been on one */
+    float active_alpha;
 } awlock_config_t;
 
 /** awlock's main(), in a fork of awl's lock helper (awl_lockhelper.h),

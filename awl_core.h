@@ -101,6 +101,11 @@ enum SceneLayer {
 
 typedef struct Buffer Buffer;
 
+/** how long ``rendermon()`` (awl_output.c) holds back frames for a window's answer to a
+ * resize, in ms; a window that doesn't answer (a hung client) would freeze
+ * the output otherwise */
+#define RESIZE_WAIT_MS 200
+
 /** A window, XDG shell or XWayland. */
 struct Client {
     /* Must keep these three elements in this order */
@@ -152,7 +157,14 @@ struct Client {
     bool isvisible:1;
     bool ismaximized:1;
     bool isontop:1;
-    uint32_t resize; /* configure serial of a pending resize */
+    /** waited for :c:macro:`RESIZE_WAIT_MS` since resize_sent, the output was
+     * drawn without its answer (logged once) */
+    bool resize_late:1;
+    /** configure serial of a pending resize; 0 for none */
+    uint32_t resize;
+    /** when the oldest unanswered resize went out, in ms (CLOCK_MONOTONIC):
+     * ``rendermon()`` waits for it only :c:macro:`RESIZE_WAIT_MS` */
+    int64_t resize_sent;
 };
 
 /** a view's layout and its settings, :c:member:`Monitor.ptlt` */

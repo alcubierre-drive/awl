@@ -337,6 +337,8 @@ awlockconfig(const awl_config_t *c, awlock_config_t *a)
         strcpy(a->logo, c->lock.logo);
     a->logo_scale = c->lock.logo_scale;
     a->fingerprint = c->lock.fingerprint;
+    a->inactive_alpha = c->lock.inactive_alpha;
+    a->active_alpha = c->lock.active_alpha;
 }
 
 /** awlock, through the lock helper, on a socketpair whose other end is its

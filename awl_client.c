@@ -877,6 +877,7 @@ resize(awl_server_t *srv, Client *c, struct wlr_box geo, int interact)
     struct wlr_box *bbox;
     struct wlr_box clip;
     int old_width, old_height;
+    uint32_t serial;
 
     if (!c->mon || !client_surface(c)->mapped)
         return;
@@ -912,8 +913,16 @@ resize(awl_server_t *srv, Client *c, struct wlr_box geo, int interact)
         borderclockclient(srv, c);
 
     /* this is a no-op if size hasn't changed */
-    c->resize = client_set_size(c, c->geom.width - 2 * c->bw,
+    serial = client_set_size(c, c->geom.width - 2 * c->bw,
             c->geom.height - 2 * c->bw);
+    /* the oldest unanswered one: rendermon() waits for it only so long */
+    if (serial && !c->resize) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        c->resize_sent = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+        c->resize_late = 0;
+    }
+    c->resize = serial;
     client_get_clip(c, &clip);
     wlr_scene_subsurface_tree_set_clip(&c->scene_surface->node, &clip);
 }

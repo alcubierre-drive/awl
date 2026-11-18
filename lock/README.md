@@ -15,7 +15,9 @@ awlock has no command line: awl's config configures it (awl.h,
 it draws awl's logo (logo.xpm, compiled in) at the pointer, `lock.logo_scale`
 logical pixels per logo pixel, coloured by state: waiting, typing, Caps
 Lock, validating, wrong (`colors.lock_waiting` and so on, each a border and
-a fill). On outputs without the pointer the logo is centred and dimmed.
+a fill), at `lock.active_alpha` opacity (times the colours'). On outputs
+without the pointer the logo is centred, at `lock.inactive_alpha` once the
+pointer has been on one (0.4 and 1 by default; 0 to 1).
 `lock.logo` names another XPM to draw instead (`""`: no logo), of the same
 kind as logo.xpm: up to 256 by 256, one character per pixel, the colours
 `None` and two `#rrggbb` (the darker is the border, the lighter the fill;

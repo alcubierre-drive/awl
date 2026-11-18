@@ -310,6 +310,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
 
     /* the screen lock */
     c->lock.at_start = 1;
+    c->lock.logo_scale = 2;
+    c->lock.inactive_alpha = 0.2;
+    c->lock.active_alpha = 0.7;
 
     /* colors */
     c->colors.border          = molokai_gray;

@@ -542,6 +542,14 @@ typedef struct awl_config_t {
         const char *logo;
         /** awlock's logo: logical pixels per logo pixel, 1 to 16; 0 is 3 */
         int logo_scale;
+        /** awlock's logo: its opacity, 0 to 1 (times its colors'), on the
+         * outputs without the pointer, once the pointer has been on one;
+         * default 0.4 */
+        float inactive_alpha;
+        /** awlock's logo: its opacity, 0 to 1 (times its colors'), on the
+         * pointer's output, and on every output before the pointer has been
+         * on one; default 1 */
+        float active_alpha;
         /** awlock unlocks with a fingerprint too (fprintd's, if there is a
          * reader) */
         bool fingerprint:1;
