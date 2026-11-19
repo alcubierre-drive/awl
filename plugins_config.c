@@ -193,6 +193,7 @@ static const char *const launcher_terminal[] = { "kitty", NULL };
 static const char *const hyprcopy[] = { "hyprcopy", NULL };
 static const char *const grimslurp[] = { "grim_slurp", NULL };
 static const char *const wdisplays[] = { "wdisplays", NULL };
+static const char *const btrfs_snap_cpp_ask[] = { "btrfs-snap-cpp", "ask", NULL };
 
 /* started with awl (only at its start), terminated when it exits;
  * TRAY_ICONS first: in the tray's icon theme */
@@ -254,6 +255,7 @@ static const Key keys[] = {
     { 0,                         XKB_KEY_Print,      AWL_ACTION(spawn),            {.v=grimslurp} },
     { MODKEY,                    XKB_KEY_d,          AWL_ACTION(spawn),            {.v=wdisplays} },
     { 0,                         XKB_KEY_XF86Display,AWL_ACTION(spawn),            {.v=wdisplays} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_A,          AWL_ACTION(spawn),            {.v=btrfs_snap_cpp_ask} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_G,          AWL_ACTION(lockscreen),       {0} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_z,          AWL_ACTION(transluce),        {.i=+1} },
     { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_Z,AWL_ACTION(transluce), {.i=-1} },
