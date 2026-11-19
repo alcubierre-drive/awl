@@ -357,7 +357,7 @@ static int idle_check( void* data ) {
 
 void awl_notifications_activity( awl_server_t *srv ) {
     awl_notifs_t* N = srv->notifs;
-    if (!N) return;
+    if (!N || srv->locked) return;
     N->last_activity = now_ms();
     if (!N->paused) return;
     awl_vrb_printf( "notifications: active, timeouts resumed\n" );
