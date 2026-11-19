@@ -290,6 +290,13 @@ static const Key keys[] = {
     CHVT(7), CHVT(8), CHVT(9), CHVT(10), CHVT(11), CHVT(12),
 };
 
+static const Button buttons[] = {
+    { ClkClient,   MODKEY, BTN_LEFT,   AWL_ACTION(moveresize),     {.ui = CurMove} },
+    { ClkClient,   MODKEY, BTN_MIDDLE, AWL_ACTION(togglefloating), {0} },
+    { ClkClient,   MODKEY, BTN_RIGHT,  AWL_ACTION(moveresize),     {.ui = CurResize} },
+    { ClkClient,   MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT, BTN_LEFT, AWL_ACTION(killclient), {.i=1} },
+};
+
 /* configure() changes what differs from the defaults; awl_config_defaults.h
  * and plugins_config_defaults.h list every setting with its default. */
 static void
@@ -298,6 +305,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* bindings and lists */
     c->modkey = WLR_MODIFIER_LOGO;
     SETLIST(c->keys, keys);
+    SETLIST(c->buttons, buttons);
     SETLIST(c->rules, rules);
     SETLIST(c->layouts, layouts);
     SETLIST(c->monrules, monrules);
@@ -380,7 +388,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the desktop file list */
     c->desktop.font         = "sans:size=";
     AWL_SET(c->desktop.fontsize,     10);
-    c->desktop.margin       = 20;
+    c->desktop.margin       = 25;
     c->desktop.columns      = 2;
 
     /* keyboard */

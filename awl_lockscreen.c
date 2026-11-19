@@ -147,11 +147,11 @@ lockpointer(void *data)
     motionnotify(data, 0, NULL, 0, 0, 0, 0);
 }
 
-/** A lock surface was mapped. The pointer only enters a surface when it
- * moves, so one that appeared under a still pointer wouldn't know where the
- * pointer is; awlock would draw its logo centred until it moved. It enters
- * once the commit is done (:c:func:`lockpointer`, idle): the map comes during
- * the commit, before the scene shows the surface. */
+/** A lock surface was mapped. The pointer entered it when it was created
+ * (:c:func:`createlocksurface`), but a motion since then, while it wasn't in
+ * the scene, left it again; it enters once the commit is done
+ * (:c:func:`lockpointer`, idle): the map comes during the commit, before the
+ * scene shows the surface. */
 static void
 maplocksurface(struct wl_listener *listener, void *data)
 {
@@ -171,6 +171,12 @@ createlocksurface(struct wl_listener *listener, void *data)
     m->lock_surface = lock_surface;
 
     wlr_scene_node_set_position(&scene_tree->node, m->m.x, m->m.y);
+    /* the pointer enters before the configure, so awlock's first buffer has
+     * its logo at the pointer already, not centred for a frame (the surface
+     * isn't in the scene yet, so motionnotify wouldn't find it) */
+    if (wlr_box_contains_point(&m->m, srv->cursor.wlr->x, srv->cursor.wlr->y))
+        wlr_seat_pointer_notify_enter(srv->seat, lock_surface->surface,
+                srv->cursor.wlr->x - m->m.x, srv->cursor.wlr->y - m->m.y);
     wlr_session_lock_surface_v1_configure(lock_surface, m->m.width, m->m.height);
 
     LISTEN(&lock_surface->events.destroy, &m->destroy_lock_surface, destroylocksurface);

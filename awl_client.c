@@ -500,9 +500,56 @@ fullscreennotify(struct wl_listener *listener, void *data)
 void
 killclient(awl_server_t *srv, const Arg *arg)
 {
+    /* arg->i 0: asks the window to close, which a hung client never answers;
+     * else: kills the client's process (SIGKILL), its windows go with it */
     Client *sel = focustop(srv, srv->out.selmon);
-    if (sel)
+    pid_t pid = 0;
+    if (!sel)
+        return;
+    if (!arg->i) {
         client_send_close(sel);
+        return;
+    }
+#ifdef XWAYLAND
+    if (client_is_x11(sel)) {
+        /* _NET_WM_PID or XRes, 0 if unknown; never Xwayland itself, that
+         * would take every X11 window along */
+        pid = sel->surface.xwayland->pid;
+        if (srv->xwayland && srv->xwayland->server && pid == srv->xwayland->server->pid)
+            pid = 0;
+        if (pid <= 1 || pid == getpid()) {
+            /* no process to kill: have the X server drop the window's
+             * client (xkill), on a connection of our own for just that,
+             * flushed, not waited for */
+            xcb_connection_t *x = NULL;
+            if (srv->xwayland && srv->xwayland->display_name)
+                x = xcb_connect(srv->xwayland->display_name, NULL);
+            if (!x || xcb_connection_has_error(x)) {
+                awl_wrn_printf("killclient: can't connect to Xwayland to kill \"%s\"\n",
+                        client_get_title(sel));
+            } else {
+                awl_log_printf("killclient: killing the X11 client of \"%s\"\n",
+                        client_get_title(sel));
+                xcb_kill_client(x, sel->surface.xwayland->window_id);
+                xcb_flush(x);
+            }
+            if (x)
+                xcb_disconnect(x);
+            return;
+        }
+    } else
+#endif
+    {
+        struct wl_client *wc = sel->surface.xdg->client->client;
+        wl_client_get_credentials(wc, &pid, NULL, NULL);
+        if (pid <= 1 || pid == getpid()) {
+            /* not a process of its own: disconnect it instead */
+            wl_client_destroy(wc);
+            return;
+        }
+    }
+    awl_log_printf("killclient: killing %d (\"%s\")\n", (int)pid, client_get_title(sel));
+    kill(pid, arg->i < 0 ? -arg->i : SIGKILL);
 }
 
 void
