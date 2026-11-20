@@ -234,11 +234,11 @@ static void add_theme( awl_icons_t* ic, const char* name, int depth ) {
     free( e );
 }
 
-awl_icons_t* awl_icons_new( const char* const* themes ) {
+awl_icons_t* awl_icons_new( const char* const* themes, const char* home ) {
     awl_icons_t* ic = calloc( 1, sizeof(*ic) );
     if (!ic) return NULL;
     pthread_mutex_init( &ic->lock, NULL );
-    const char* home = getenv( "HOME" );
+    if (home && !*home) home = NULL;
     add_base( ic, home, "/.icons" );
     const char* data = getenv( "XDG_DATA_HOME" );
     if (data && *data) add_base( ic, data, "/icons" );
@@ -261,13 +261,12 @@ awl_icons_t* awl_icons_new( const char* const* themes ) {
 
 /** the desktop's icon theme as GTK's settings.ini has it, "" if it doesn't
  * (GNOME's dconf setting isn't read) */
-static void desktop_theme( char* out, size_t size ) {
+static void desktop_theme( char* out, size_t size, const char* home ) {
     char path[4096];
     const char* config = getenv( "XDG_CONFIG_HOME" );
-    const char* home = getenv( "HOME" );
     *out = 0;
     if (config && *config) snprintf( path, sizeof path, "%s/gtk-3.0/settings.ini", config );
-    else if (home) snprintf( path, sizeof path, "%s/.config/gtk-3.0/settings.ini", home );
+    else if (home && *home) snprintf( path, sizeof path, "%s/.config/gtk-3.0/settings.ini", home );
     else return;
     FILE* f = fopen( path, "re" );
     if (!f) return;
@@ -287,16 +286,16 @@ static void desktop_theme( char* out, size_t size ) {
     fclose( f );
 }
 
-awl_icons_t* awl_icons_new_desktop( const char* theme ) {
+awl_icons_t* awl_icons_new_desktop( const char* theme, const char* home ) {
     char desktop[256];
-    desktop_theme( desktop, sizeof desktop );
+    desktop_theme( desktop, sizeof desktop, home );
     const char* names[4];
     int n = 0;
     if (theme && *theme) names[n++] = theme;
     if (*desktop) names[n++] = desktop;
     names[n++] = "Adwaita";
     names[n] = NULL;
-    return awl_icons_new( names );
+    return awl_icons_new( names, home );
 }
 
 void awl_icons_free( awl_icons_t* ic ) {
@@ -595,6 +594,14 @@ static pixman_image_t* scaled( pixman_image_t* img, int max_w, int max_h ) {
     pixman_image_composite32( PIXMAN_OP_SRC, img, NULL, out, 0, 0, 0, 0, 0, 0, tw, th );
     pixman_image_unref( img );
     return out;
+}
+
+pixman_image_t* awl_icon_fit( pixman_image_t* img, int max_w, int max_h ) {
+    if (!img || max_w < 1 || max_h < 1) {
+        if (img) pixman_image_unref( img );
+        return NULL;
+    }
+    return scaled( img, max_w, max_h );
 }
 
 /* ---- EXIF orientation ---- */

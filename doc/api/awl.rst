@@ -14,7 +14,8 @@ reloads (awl_config.h), the
 outputs (awl_output.h), the clients (awl_client.h, awl_xwayland.h), layouts
 and tags (awl_layout.h), layer surfaces (awl_layer.h), the input devices and
 the pointer (awl_input.h, awl_cursor.h), the screen lock (awl_lockscreen.h,
-awl_lockhelper.h, awl_alert.h), awl's own popups (awl_popup.h, awl_window.h), child
+awl_lockhelper.h, awl_alert.h), awl's own popups (awl_popup.h, awl_window.h), what
+screenshots need of it (awl_capture.h), child
 processes (awl_spawn.h) and the test hooks (awl_test.h). The bar
 (:doc:`bar`) and the wallpaper (:doc:`wallpaper`) have pages of their own.
 
@@ -125,6 +126,11 @@ awl_alert.h
 -----------
 
 .. c:autodoc:: awl_alert.h
+
+awl_capture.h
+-------------
+
+.. c:autodoc:: awl_capture.h
 
 awl_popup.h
 -----------

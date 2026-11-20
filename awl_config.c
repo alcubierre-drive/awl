@@ -17,8 +17,10 @@
 #include "awl_wallpaper.h"
 #include "tray/awl_tray.h"
 #include <limits.h>
+#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static void configapply(awl_server_t *srv);
 static void pluginsdetach(awl_server_t *srv);
@@ -62,6 +64,21 @@ configfini(awl_server_t *srv)
     srv->conf = NULL;
 }
 
+int
+cfghome(awl_server_t *srv, char *out, size_t n)
+{
+    awl_dict_val_t v;
+    int r = -1;
+    awl_dict_lock(srv->cfgdict);
+    if (awl_dict_get(srv->cfgdict, "home", &v) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR
+            && v.str && *v.str) {
+        int len = snprintf(out, n, "%s", v.str);
+        r = len >= 0 && (size_t)len < n ? 0 : -1;
+    }
+    awl_dict_unlock(srv->cfgdict);
+    return r;
+}
+
 /** the config dictionary's keys awl sets when it starts */
 static void
 cfgdictdefaults(awl_server_t *srv)
@@ -72,9 +89,19 @@ cfgdictdefaults(awl_server_t *srv)
     if (!awl_localtime(buf))
         awl_dict_set(srv->cfgdict, "t_awl_started", &AWL_DICT_STR(buf));
 
+    /* "home": the user's home folder, $HOME, else the password database's;
+     * none without either. awl and the library take it from here, not
+     * from the environment. */
+    const char *home = getenv("HOME");
+    if (!home || !*home) {
+        const struct passwd *pw = getpwuid(getuid());
+        home = pw && pw->pw_dir && *pw->pw_dir ? pw->pw_dir : NULL;
+    }
+    if (home)
+        awl_dict_set(srv->cfgdict, "home", &AWL_DICT_STR(home));
+
     /* "desktop_dir": the folder the desktop panels list, $HOME/Desktop */
     char dir[PATH_MAX];
-    const char *home = getenv("HOME");
     snprintf(dir, sizeof(dir), "%s/Desktop", home ? home : "/tmp");
     awl_dict_set(srv->cfgdict, "desktop_dir", &AWL_DICT_STR(dir));
 
@@ -329,7 +356,11 @@ pluginrestart(void *data)
     awl_plugins_reload(srv, pluginsdetach, pluginsattach);
 
     /* the reloaded config's tray icon theme */
-    awl_tray_app_set_theme(srv->proc, srv->cfg->tray.icon_theme);
+    {
+        char home[PATH_MAX];
+        awl_tray_app_set_theme(srv->proc, srv->cfg->tray.icon_theme,
+                cfghome(srv, home, sizeof(home)) ? NULL : home);
+    }
 }
 
 /** The plugin_restart action: reloads ``libawlplugins.so`` (its tray widget

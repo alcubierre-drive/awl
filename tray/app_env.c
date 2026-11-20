@@ -59,10 +59,12 @@ copy(const char *s)
 }
 
 void
-awl_tray_app_set_theme(awl_process_t *proc, const char *theme)
+awl_tray_app_set_theme(awl_process_t *proc, const char *theme, const char *home)
 {
     free(proc->tray.theme);
     proc->tray.theme = theme && *theme ? copy(theme) : NULL;
+    free(proc->tray.home);
+    proc->tray.home = home && *home ? copy(home) : NULL;
 }
 
 /** forgets what :c:func:`awl_tray_app_env` made */
@@ -97,13 +99,12 @@ each_data_dir(int (*each)(const char *dir, void *data), void *data)
     return r;
 }
 
-/** XDG_DATA_HOME, or ~/.local/share; malloc()ed */
+/** XDG_DATA_HOME, or home's .local/share; malloc()ed */
 static char *
-user_data_dir(void)
+user_data_dir(const char *home)
 {
     const char *d = getenv("XDG_DATA_HOME");
     if (d && *d) return copy(d);
-    const char *home = getenv("HOME");
     return fmt("%s/.local/share", home ? home : "");
 }
 
@@ -122,12 +123,12 @@ theme_in(const char *dir, void *name)
     return found;
 }
 
-/** whether an icon theme name is installed where GTK looks for one */
+/** whether an icon theme name is installed where GTK looks for one; home
+ * the user's home folder (NULL: none) */
 static int
-installed(const char *name)
+installed(const char *name, const char *home)
 {
-    char *user = user_data_dir();
-    const char *home = getenv("HOME");
+    char *user = user_data_dir(home);
     char *dot = fmt("%s/.icons/%s/index.theme", home ? home : "", name);
     int found = theme_in(user, (void *)name) || exists(dot)
             || each_data_dir(theme_in, (void *)name);
@@ -419,7 +420,7 @@ awl_tray_app_env(awl_process_t *proc)
     if (proc->tray.made_for && !strcmp(proc->tray.made_for, proc->tray.theme)) return proc->tray.env.env ? &proc->tray.env : NULL;
     drop(proc);
     proc->tray.made_for = copy(proc->tray.theme);
-    if (!installed(proc->tray.theme)) {
+    if (!installed(proc->tray.theme, proc->tray.home)) {
         awl_wrn_printf("tray: icon theme %s isn't installed, programs keep the desktop's\n", proc->tray.theme);
         return NULL;
     }
@@ -438,4 +439,6 @@ awl_tray_app_cleanup(awl_process_t *proc)
     drop(proc);
     free(proc->tray.theme);
     proc->tray.theme = NULL;
+    free(proc->tray.home);
+    proc->tray.home = NULL;
 }

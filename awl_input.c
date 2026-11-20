@@ -1,4 +1,5 @@
 #include "awl_input.h"
+#include "awl_capture.h"
 #include "awl_config.h"
 #include "awl_cursor.h"
 #include "awl_lockscreen.h"
@@ -352,6 +353,17 @@ keypress(struct wl_listener *listener, void *data)
 
     if (srv->locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
         lockkeystroke(srv);
+
+    /* A grab gets the presses, without repeat, before a popup or a
+     * binding; the releases go on to the client, as a binding's do. */
+    if (!srv->locked && srv->cursor.mode == CurGrab && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        group->nsyms = 0;
+        wl_event_source_timer_update(group->key_repeat_source, 0);
+        /* the callback may end the grab */
+        for (i = 0; i < nsyms && srv->cursor.mode == CurGrab; i++)
+            grabkey(srv, syms[i], mods);
+        return;
+    }
 
     /* A popup that has the keyboard (the launcher) gets every key before the
      * bindings, and no client gets any: none has the focus meanwhile. */

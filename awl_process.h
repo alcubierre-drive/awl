@@ -158,6 +158,8 @@ typedef struct awl_process_t {
     struct {
         /** the config's icon_theme, NULL: none */
         char *theme;
+        /** the config dictionary's "home", NULL: none */
+        char *home;
         /** the theme env was made for, NULL: nothing yet */
         char *made_for;
         /** what :c:func:`awl_tray_app_env` made; :c:member:`env.env <awl_tray_app_env_t.env>` NULL: nothing to give */

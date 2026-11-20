@@ -31,6 +31,7 @@ started out as `drwl <https://codeberg.org/sewn/drwl>`_.
    api/tray
    api/notifications
    api/launcher
+   api/screenshot
    api/awl
 
 .. toctree::

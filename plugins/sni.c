@@ -419,7 +419,9 @@ int sni_call_async( awl_sni_t* s, uint64_t v, sd_bus* bus, sd_bus_message* call,
 
 awl_icons_t* sni_themes( awl_sni_t* s ) {
     if (!s->themes) {
-        s->themes = awl_icons_new_desktop( s->icon_theme );
+        char* home = awl_cfg_strdup( "home" );
+        s->themes = awl_icons_new_desktop( s->icon_theme, home );
+        free( home );
     }
     return s->themes;
 }

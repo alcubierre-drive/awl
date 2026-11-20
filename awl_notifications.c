@@ -412,8 +412,40 @@ static int read_str( sd_bus_message* m, const char* type, char** out, size_t max
     return 1;
 }
 
-/** image-data's (iiibiiay) into n, rows packed, if it is one awl takes
- * (then ``*taken``) */
+/** an image's pixels (as :c:member:`awl_notif_t.image_data`, rows stride
+ * bytes apart, size bytes of them) into n, rows packed: 1 if awl takes
+ * them, 0 if it refuses them, -ENOMEM */
+static int set_pixels( awl_notifs_t* N, notif_t* n, const uint8_t* data, size_t size, int w, int h, int stride,
+                       int alpha, int bits, int channels ) {
+    if (!data || bits != 8 || channels != (alpha ? 4 : 3) || w < 1 || h < 1 || w > MAX_DIM || h > MAX_DIM ||
+        stride < w * channels || (uint64_t)(h - 1) * (uint64_t)stride + (uint64_t)(w * channels) > size) {
+        awl_vrb_printf( "notifications: image data %dx%d, stride %d, %d bits, %d channels, %zu bytes refused\n",
+                        w, h, stride, bits, channels, size );
+        return 0;
+    }
+    size_t row = (size_t)(w * channels), len = row * (size_t)h;
+    if (N->image_bytes + len > MAX_IMAGES) {
+        awl_wrn_printf( "notifications: too much image data open, one dropped\n" );
+        return 0;
+    }
+    uint8_t* pixels = malloc( len );
+    if (!pixels) return -ENOMEM;
+    for (int y = 0; y < h; y++)
+        memcpy( pixels + (size_t)y * row, data + (size_t)y * (size_t)stride, row );
+    free( n->pixels );
+    n->pixels = pixels;
+    n->npixels = len;
+    n->pub.image_data.data = pixels;
+    n->pub.image_data.w = w;
+    n->pub.image_data.h = h;
+    n->pub.image_data.stride = (int)row;
+    n->pub.image_data.has_alpha = !!alpha;
+    n->pub.image_data.channels = channels;
+    return 1;
+}
+
+/** image-data's (iiibiiay) into n, if it is one awl takes (then
+ * ``*taken``) */
 static int read_image( awl_notifs_t* N, sd_bus_message* m, const char* type, notif_t* n, int* taken ) {
     int32_t w, h, stride, bits, channels;
     int alpha;
@@ -426,31 +458,8 @@ static int read_image( awl_notifs_t* N, sd_bus_message* m, const char* type, not
         (r = sd_bus_message_read_array( m, 'y', &data, &size )) < 0 ||
         (r = sd_bus_message_exit_container( m )) < 0)
         return r;
-    if (bits != 8 || channels != (alpha ? 4 : 3) || w < 1 || h < 1 || w > MAX_DIM || h > MAX_DIM ||
-        stride < w * channels || (uint64_t)(h - 1) * (uint64_t)stride + (uint64_t)(w * channels) > size) {
-        awl_vrb_printf( "notifications: image data %dx%d, stride %d, %d bits, %d channels, %zu bytes refused\n",
-                        w, h, stride, bits, channels, size );
-        return 1;
-    }
-    size_t row = (size_t)(w * channels), len = row * (size_t)h;
-    if (N->image_bytes + len > MAX_IMAGES) {
-        awl_wrn_printf( "notifications: too much image data open, one dropped\n" );
-        return 1;
-    }
-    uint8_t* pixels = malloc( len );
-    if (!pixels) return -ENOMEM;
-    for (int y = 0; y < h; y++)
-        memcpy( pixels + (size_t)y * row, (const uint8_t*)data + (size_t)y * (size_t)stride, row );
-    free( n->pixels );
-    n->pixels = pixels;
-    n->npixels = len;
-    n->pub.image_data.data = pixels;
-    n->pub.image_data.w = w;
-    n->pub.image_data.h = h;
-    n->pub.image_data.stride = (int)row;
-    n->pub.image_data.has_alpha = !!alpha;
-    n->pub.image_data.channels = channels;
-    *taken = 1;
+    if ((r = set_pixels( N, n, data, size, w, h, stride, alpha, bits, channels )) < 0) return r;
+    *taken = r;
     return 1;
 }
 
@@ -723,7 +732,11 @@ uint32_t awl_notifications_send( awl_server_t* srv, const awl_notif_send_t* s ) 
     n->pub.timeout = s->timeout >= 0 ? s->timeout : default_timeout( srv, n->pub.urgency );
     if (!(n->pub.app = strdup( "awl" )) || !(n->pub.summary = copy_utf8( s->summary, MAX_SUMMARY )) ||
         !(n->pub.body = copy_utf8( s->body, MAX_BODY )) || !(n->pub.image_path = copy_utf8( s->image, MAX_PATH )) ||
-        !(n->tag = copy_utf8( s->tag, MAX_SHORT )) || strings_set( n ) < 0) {
+        !(n->tag = copy_utf8( s->tag, MAX_SHORT )) || strings_set( n ) < 0 ||
+        (s->image_data.data && s->image_data.h > 0 && s->image_data.stride > 0 &&
+         set_pixels( N, n, s->image_data.data, (size_t)s->image_data.stride * (size_t)s->image_data.h,
+                     s->image_data.w, s->image_data.h, s->image_data.stride, s->image_data.has_alpha, 8,
+                     s->image_data.channels ) < 0)) {
         notif_free( n );
         return 0;
     }

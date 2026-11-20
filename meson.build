@@ -183,7 +183,7 @@ endif
 awl = executable('awl',
   'awl.c', 'awl_config.c', 'awl_output.c', 'awl_bar.c', 'awl_popup.c', 'awl_client.c',
   'awl_xwayland.c', 'awl_layout.c', 'awl_layer.c', 'awl_input.c', 'awl_cursor.c',
-  'awl_lockscreen.c', 'awl_spawn.c', 'awl_wallpaper.c', 'awl_log.c',
+  'awl_lockscreen.c', 'awl_capture.c', 'awl_spawn.c', 'awl_wallpaper.c', 'awl_log.c',
   'awl_dict.c', 'awl_util.c', 'awl_draw.c', 'awl_plugin_host.c', 'awl_desktop.c',
   'awl_background.c', 'awl_redraw.c', 'awl_sni.c', 'awl_bus.c', 'awl_notifications.c', 'awl_alert.c', 'awl_window.c',
   'awl_window_draw.c', 'awl_process.c', 'awl_lockhelper.c', 'tray/app_env.c', awl_test_src, awl_lock_src,
@@ -247,11 +247,11 @@ plugins_sources = files(
   'plugins/backlight.c', 'plugins/bat.c', 'plugins/batpopup.c', 'plugins/calendar.c', 'plugins/calpopup.c',
   'plugins/colors.c', 'plugins/date.c', 'plugins/desktop_entry.c', 'plugins/fuzzy.c', 'plugins/markup.c',
   'plugins/ipaddr.c', 'plugins/launcher.c', 'plugins/logind.c', 'plugins/loop.c',
-  'plugins/nm.c', 'plugins/notify.c', 'plugins/notify_image.c', 'plugins/notify_menu.c', 'plugins/osd.c', 'plugins/persistent.c', 'plugins/poller.c', 'plugins/pulsetest.c',
-  'plugins/readdir.c', 'plugins/sni.c', 'plugins/sni_menu.c', 'plugins/stats.c', 'plugins/sysmon.c',
+  'plugins/nm.c', 'plugins/notify.c', 'plugins/notify_image.c', 'plugins/notify_menu.c', 'plugins/osd.c', 'plugins/persistent.c', 'plugins/png.c', 'plugins/poller.c', 'plugins/pulsetest.c',
+  'plugins/readdir.c', 'plugins/screenshot.c', 'plugins/sni.c', 'plugins/sni_menu.c', 'plugins/stats.c', 'plugins/sysmon.c',
   'plugins/temp.c', 'plugins/thread.c', 'plugins/tray_menu_window.c',
   'plugins/tray_tooltip.c', 'plugins/wallpaper.c',
-  'vendor/wuffs/wuffs.c', 'icons/icon.c', 'icons/xpm.c',
+  'vendor/wuffs/wuffs.c', 'vendor/sdefl/sdefl.c', 'icons/icon.c', 'icons/xpm.c',
 )
 # linked under a temporary name and copied into place by a rename, so a
 # running awl that reloads mid-build reads either the old or the new library,

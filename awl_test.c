@@ -1,4 +1,5 @@
 #include "awl_test.h"
+#include "awl_capture.h"
 #include "awl_config.h"
 #include "awl_lockscreen.h"
 #include "awl_log.h"
@@ -7,6 +8,7 @@
 #include "awl_popup.h"
 #include <fcntl.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -112,6 +114,64 @@ testwinscroll(awl_window_t *win, int row, int col, uint32_t orientation, double 
             testslot(T, win), row, col, orientation, value120, delta > 0 ? 1 : delta < 0 ? -1 : 0);
 }
 
+/** what grab on's callbacks append to clicks (the test's state is data) */
+static void
+testappend(struct awl_test *T, const char *fmt, ...)
+{
+    size_t len = strlen(T->clicks);
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(T->clicks + len, sizeof(T->clicks) - len, fmt, ap);
+    va_end(ap);
+}
+
+static void
+testgrabmotion(double x, double y, void *data)
+{
+    testappend(data, "gmotion %.0f %.0f\n", x, y);
+}
+
+static void
+testgrabbutton(uint32_t button, int pressed, uint32_t mods, void *data)
+{
+    testappend(data, "gbutton %u %d %u\n", button, pressed, mods);
+}
+
+static int
+testgrabkey(uint32_t sym, uint32_t mods, void *data)
+{
+    testappend(data, "gkey %u %u\n", sym, mods);
+    return 1;
+}
+
+static void
+testgrabcancel(void *data)
+{
+    testappend(data, "gcancel\n");
+}
+
+/** capture's image as a PAM (RGB_ALPHA, premultiplied as it is) at path */
+static int
+testpam(pixman_image_t *img, const char *path)
+{
+    int w = pixman_image_get_width(img), h = pixman_image_get_height(img);
+    int stride = pixman_image_get_stride(img);
+    const unsigned char *bits = (const unsigned char *)pixman_image_get_data(img);
+    FILE *f = fopen(path, "w");
+    if (!f)
+        return 0;
+    fprintf(f, "P7\nWIDTH %d\nHEIGHT %d\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n", w, h);
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            uint32_t p = ((const uint32_t *)(bits + (size_t)y * stride))[x];
+            fputc((p >> 16) & 0xff, f);
+            fputc((p >> 8) & 0xff, f);
+            fputc(p & 0xff, f);
+            fputc(p >> 24, f);
+        }
+    return fclose(f) == 0;
+}
+
 /** \n, \t and \\ in s, in place */
 static void
 testunescape(char *s)
@@ -159,6 +219,20 @@ testunescape(char *s)
  *   nsend URGENCY TIMEOUT LINES WIDTH TAG|- SUMMARY\tBODY
  *                          awl's own (:c:func:`awl_notifications_send`), its look's
  *                          max_lines and width
+ *   grab on|off            a screenshot's grab (:c:func:`grabstart`, :c:func:`grabend`):
+ *                          what it gets goes to dump, as gmotion X Y,
+ *                          gbutton BUTTON PRESSED MODS, gkey SYM MODS, gcancel
+ *   mark X Y W H [DIM FRAME FW]  :c:func:`grabmark`; W 0 shades everything,
+ *                          mark - takes it down; colors 0xRRGGBBAA
+ *   hit X Y                the client and monitor there (:c:func:`clientat`,
+ *                          :c:func:`monitorat`) to dump, as hit CX CY CW CH MX MY
+ *                          MW MH (- for none's), with the focused client's
+ *                          box (focused X Y W H or focused -) and every
+ *                          monitor's (layout X Y W H)
+ *   capture X Y W H SCALE PATH  :c:func:`capture` into PATH as a PAM, RGB_ALPHA;
+ *                          SCALE 0: the highest
+ *   clip MIME TEXT         :c:func:`clipboardset`: TEXT as MIME's; @PATH:
+ *                          the file PATH's bytes (64 MiB at most)
  *   dump PATH              writes PATH.tmp, then renames it to PATH:
  *                            mon NAME X Y W H WX WY WW WH SCALE ENABLED
  *                            win N MON|- X Y W H VISIBLE HOVERROW PERSISTENT
@@ -275,8 +349,10 @@ testwincmd(struct awl_test *T, char *line)
         /* as awl_lockscreen.c does, without a locker */
         if (sscanf(line, "%d", &x) != 1)
             goto bad;
-        if (x)
+        if (x) {
             popupshideall(srv);
+            grabcancel(srv);
+        }
         srv->locked = !!x;
         popupslocked(srv);
     } else if (!strcmp(cmd, "locker")) {
@@ -330,6 +406,80 @@ testwincmd(struct awl_test *T, char *line)
         if (sscanf(line, "%u %63s %63s", &id, key, token) < 2)
             goto bad;
         awl_notifications_invoke(srv, id, key, *token ? token : NULL);
+    } else if (!strcmp(cmd, "grab")) {
+        static const awl_grab_t grab = {
+            .motion = testgrabmotion, .button = testgrabbutton,
+            .key = testgrabkey, .cancel = testgrabcancel,
+        };
+        if (!strcmp(line, "on")) {
+            if (!grabstart(srv, &grab, T, NULL))
+                goto bad;
+        } else if (!strcmp(line, "off")) {
+            grabend(srv);
+        } else {
+            goto bad;
+        }
+    } else if (!strcmp(cmd, "mark")) {
+        awl_box_t b;
+        unsigned int dim = 0x00000080, frame = 0xffffffff;
+        int fw = 2;
+        if (!strcmp(line, "-")) {
+            grabmark(srv, NULL, 0, 0, 0);
+        } else {
+            if (sscanf(line, "%d %d %d %d %x %x %d", &b.x, &b.y, &b.w, &b.h, &dim, &frame, &fw) < 4)
+                goto bad;
+            grabmark(srv, &b, dim, frame, fw);
+        }
+    } else if (!strcmp(cmd, "hit")) {
+        awl_box_t cb, mb;
+        double hx, hy;
+        Client *c;
+        if (sscanf(line, "%lf %lf", &hx, &hy) != 2)
+            goto bad;
+        c = clientat(srv, hx, hy);
+        m = monitorat(srv, hx, hy);
+        if (clientbox(srv, c, 1, &cb))
+            testappend(T, "hit %d %d %d %d", cb.x, cb.y, cb.w, cb.h);
+        else
+            testappend(T, "hit - - - -");
+        if (monitorbox(srv, m, &mb))
+            testappend(T, " %d %d %d %d\n", mb.x, mb.y, mb.w, mb.h);
+        else
+            testappend(T, " - - - -\n");
+        if (clientbox(srv, clientfocused(srv), 1, &cb))
+            testappend(T, "focused %d %d %d %d\n", cb.x, cb.y, cb.w, cb.h);
+        else
+            testappend(T, "focused -\n");
+        if (monitorbox(srv, NULL, &mb))
+            testappend(T, "layout %d %d %d %d\n", mb.x, mb.y, mb.w, mb.h);
+    } else if (!strcmp(cmd, "capture")) {
+        awl_box_t b;
+        float scale;
+        pixman_image_t *img;
+        if (sscanf(line, "%d %d %d %d %f %n", &b.x, &b.y, &b.w, &b.h, &scale, &args) != 5 || !line[args])
+            goto bad;
+        if (!(img = capture(srv, &b, scale)))
+            goto bad;
+        x = testpam(img, line + args);
+        pixman_image_unref(img);
+        if (!x)
+            goto bad;
+    } else if (!strcmp(cmd, "clip")) {
+        char *bytes = NULL;
+        size_t len = 0;
+        if (sscanf(line, "%63s %n", key, &args) != 1)
+            goto bad;
+        if (line[args] == '@') {
+            if (!(f = fopen(line + args + 1, "r")))
+                goto bad;
+            bytes = ecalloc(1, 64 << 20);
+            len = fread(bytes, 1, 64 << 20, f);
+            fclose(f);
+        }
+        x = clipboardset(srv, key, bytes ? bytes : line + args, bytes ? len : strlen(line + args));
+        free(bytes);
+        if (!x)
+            goto bad;
     } else if (!strcmp(cmd, "dump") && *line) {
         snprintf(tmp, sizeof(tmp), "%s.tmp", line);
         if (!(f = fopen(tmp, "w")))

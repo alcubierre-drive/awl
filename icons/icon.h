@@ -56,16 +56,19 @@ typedef struct awl_icons awl_icons_t;
 
 /** The themes named, in order (NULL terminated; NULL itself, NULL and ""
  * entries: none), each followed by what it inherits, then hicolor, looked
- * up in the usual places: ~/.icons, $XDG_DATA_HOME/icons, each of
- * $XDG_DATA_DIRS' icons, and, for icons outside any theme,
- * /usr/share/pixmaps. Themes that aren't installed are left out. Reads the
+ * up in the usual places: home's .icons, $XDG_DATA_HOME/icons (else home's
+ * .local/share/icons), each of $XDG_DATA_DIRS' icons, and, for icons
+ * outside any theme, /usr/share/pixmaps. home is the user's home folder
+ * (NULL or "": none, its places are left out), not taken from $HOME. Themes that aren't installed are left out. Reads the
  * themes' index.theme files, so they are best made once and kept; a theme
  * changed on disk takes a new one. */
-awl_icons_t* awl_icons_new( const char* const* themes );
+awl_icons_t* awl_icons_new( const char* const* themes, const char* home );
 /** The themes as GTK has them: theme (NULL or "": none, e.g.
  * :c:member:`awl_config_t.tray`'s icon_theme), the desktop's (gtk-3.0/settings.ini's
- * gtk-icon-theme-name; GNOME's dconf setting isn't read), then Adwaita. */
-awl_icons_t* awl_icons_new_desktop( const char* theme );
+ * gtk-icon-theme-name; GNOME's dconf setting isn't read), then Adwaita;
+ * home as :c:func:`awl_icons_new` has it (and where settings.ini is without
+ * $XDG_CONFIG_HOME). */
+awl_icons_t* awl_icons_new_desktop( const char* theme, const char* home );
 /** NULL is fine */
 void awl_icons_free( awl_icons_t* icons );
 
@@ -119,6 +122,12 @@ pixman_image_t* awl_icon_decode_limited( const void* data, size_t len, int file,
                                          const char* source, const awl_icon_limits_t* lim );
 /** :c:func:`awl_icon_load` within lim (NULL: :c:var:`awl_icon_limits`) */
 pixman_image_t* awl_icon_load_limited( const char* path, int max_w, int max_h, const awl_icon_limits_t* lim );
+
+/** img, premultiplied PIXMAN_a8r8g8b8 (or x8r8g8b8 with its top byte 0xff),
+ * fitted into max_w x max_h as :c:func:`awl_icon_decode` fits what it
+ * decodes; takes img (it may come back itself). NULL if out of memory or
+ * max_w or max_h isn't positive. */
+pixman_image_t* awl_icon_fit( pixman_image_t* img, int max_w, int max_h );
 
 /** one of an item's pixmaps (StatusNotifierItem's IconPixmap, a(iiay)): w x h
  * pixels of non-premultiplied ARGB, 4 bytes each in network byte order */

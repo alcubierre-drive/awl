@@ -3,7 +3,8 @@
 # (test/windows.sh tests the popups in a running awl), test/fuzzy_unit.c and
 # test/desktop_entry_unit.c, the launcher's matcher and .desktop files;
 # test/markup_unit.c, notification markup and its layout; test/icon_unit.c,
-# PNG, JPEG, GIF and XPM decoding (test/data). Each
+# PNG, JPEG, GIF and XPM decoding (test/data); test/png_unit.c, the
+# screenshots' PNG encoder, decoded again by Wuffs. Each
 # exits with the number of failed checks.
 window_unit = executable('window_unit', 'window_unit.c', protocol_headers,
   objects: awl.extract_objects('awl_window_draw.c', 'awl_draw.c', 'awl_log.c', 'awl_process.c'),
@@ -35,6 +36,12 @@ icon_unit = executable('icon_unit', 'icon_unit.c', protocol_headers,
   include_directories: [root_inc, plutovg_inc],
   dependencies: plugins_deps,
 )
+png_unit = executable('png_unit', 'png_unit.c',
+  objects: plugins_linked.extract_objects('plugins/png.c', 'vendor/sdefl/sdefl.c', 'vendor/wuffs/wuffs.c'),
+  c_args: plugins_c_args,
+  include_directories: root_inc,
+  dependencies: threads,
+)
 desktop_entry_unit = executable('desktop_entry_unit', 'desktop_entry_unit.c',
   objects: plugins_linked.extract_objects('plugins/desktop_entry.c'),
   c_args: awl_c_args,
@@ -45,6 +52,7 @@ test('font_unit', font_unit)
 test('fuzzy_unit', fuzzy_unit)
 test('desktop_entry_unit', desktop_entry_unit)
 test('markup_unit', markup_unit)
+test('png_unit', png_unit)
 test('icon_unit', icon_unit, args: [meson.current_source_dir() / 'data'])
 
 # vptr, the pointer injector live.sh uses; sni_menu, a tray item with a menu;

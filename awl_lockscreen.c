@@ -1,6 +1,7 @@
 #include "awl_lockscreen.h"
 #include "awl_alert.h"
 #include "awl_bar.h"
+#include "awl_capture.h"
 #include "awl_client.h"
 #include "awl_config.h"
 #include "awl_cursor.h"
@@ -159,6 +160,9 @@ maplocksurface(struct wl_listener *listener, void *data)
     wl_event_loop_add_idle(m->srv->event_loop, lockpointer, m->srv);
 }
 
+/** The locker made a surface for a monitor: it goes into the lock's scene
+ * at the monitor, the pointer enters it if over that monitor, and the
+ * keyboard if it is the selected one. */
 void
 createlocksurface(struct wl_listener *listener, void *data)
 {
@@ -498,8 +502,9 @@ locksession(struct wl_listener *listener, void *data)
     lock->srv = srv;
     focusclient(srv, NULL, 0);
     /* the launcher drops the keyboard, the menus go: they'd only wait under
-     * the locker */
+     * the locker; a screenshot's grab ends */
     popupshideall(srv);
+    grabcancel(srv);
 
     lock->scene = wlr_scene_tree_create(srv->layers[LyrBlock]);
     srv->lock->cur = lock->lock = session_lock;

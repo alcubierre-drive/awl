@@ -3,6 +3,7 @@
 
 #include "awl_plugin_host.h"
 #include "awl_plugin_abi.h"
+#include "awl_capture.h"
 #include "awl_client.h"
 #include "awl_dict.h"
 #include "awl_layout.h"
@@ -75,13 +76,14 @@ static void notifinvoke( awl_server_t* srv, uint32_t id, const char* key ) {
  * timers it left (warning about them), whose callbacks point into it */
 static void pluginsreap( awl_server_t *srv ) {
     awl_timer_t *t, *tmp;
-    int np = popupsreap(srv), nt = 0;
+    int np = popupsreap(srv), nt = 0, ng = grabreap(srv);
     wl_list_for_each_safe( t, tmp, &srv->proc->plugins.timers, link ) {
         nt++;
         timer_remove( t );
     }
-    if (np || nt)
-        awl_wrn_printf( "plugins: the library left %d popup(s) and %d timer(s), removed\n", np, nt );
+    if (np || nt || ng)
+        awl_wrn_printf( "plugins: the library left %d popup(s), %d timer(s) and %d grab(s), removed\n",
+                        np, nt, ng );
 }
 
 /* The library's calls that reach awl's process state: the library passes
@@ -190,6 +192,17 @@ static const awl_host_t host_template = {
     .timer_add = timer_add,
     .timer_set = timer_set,
     .timer_remove = timer_remove,
+
+    .grab_start = grabstart,
+    .grab_end = grabend,
+    .grab_mark = grabmark,
+    .client_at = clientat,
+    .client_focused = clientfocused,
+    .client_box = clientbox,
+    .monitor_at = monitorat,
+    .monitor_box = monitorbox,
+    .capture = capture,
+    .clipboard_set = clipboardset,
 };
 
 /** $AWL_PLUGINS, or libawlplugins.so next to the awl binary */

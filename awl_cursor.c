@@ -1,5 +1,6 @@
 #include "awl_cursor.h"
 #include "awl_bar.h"
+#include "awl_capture.h"
 #include "awl_client.h"
 #include "awl_config.h"
 #include "awl_desktop.h"
@@ -43,6 +44,10 @@ axisnotify(struct wl_listener *listener, void *data)
     Client* c = NULL;
     awl_window_t *twin;
     int row, col;
+
+    /* a grab drops the scrolling */
+    if (srv->cursor.mode == CurGrab)
+        return;
 
     /* A popup that takes the pointer gets the scrolling, as it gets the
      * presses; one with only a click callback drops it: its motion took the
@@ -94,6 +99,14 @@ buttonpress(struct wl_listener *listener, void *data)
 
     wlr_idle_notifier_v1_notify_activity(srv->idle_notifier, srv->seat);
     awl_notifications_activity(srv);
+
+    /* a grab takes every press and release, before an open menu's grab */
+    if (srv->cursor.mode == CurGrab) {
+        keyboard = wlr_seat_get_keyboard(srv->seat);
+        grabbutton(srv, event->button, event->state == WL_POINTER_BUTTON_STATE_PRESSED,
+                keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0);
+        return;
+    }
 
     /* a press an awl window took (below) swallows its release too, so
      * nothing below sees half a click */
@@ -314,7 +327,8 @@ motionnotify(awl_server_t *srv, uint32_t time, struct wlr_input_device *device, 
         wl_list_for_each(constraint, &srv->cursor.constraints->constraints, link)
             cursorconstrain(srv, constraint);
 
-        if (srv->cursor.active_constraint && srv->cursor.mode != CurResize && srv->cursor.mode != CurMove) {
+        if (srv->cursor.active_constraint && srv->cursor.mode != CurResize && srv->cursor.mode != CurMove
+                && srv->cursor.mode != CurGrab) {
             toplevel_from_wlr_surface(srv->cursor.active_constraint->surface, &c, NULL);
             if (c && srv->cursor.active_constraint->surface == srv->seat->pointer_state.focused_surface) {
                 sx = srv->cursor.wlr->x - c->geom.x - c->bw;
@@ -337,6 +351,13 @@ motionnotify(awl_server_t *srv, uint32_t time, struct wlr_input_device *device, 
         /* Update selmon (even while dragging a window) */
         if (srv->cfg->sloppyfocus)
             setselmon(srv, xytomon(srv, srv->cursor.wlr->x, srv->cursor.wlr->y));
+    }
+
+    /* a grab gets the motion, nothing below does */
+    if (srv->cursor.mode == CurGrab) {
+        wlr_scene_node_set_position(&srv->cursor.drag_icon->node, (int)round(srv->cursor.wlr->x), (int)round(srv->cursor.wlr->y));
+        grabmotion(srv);
+        return;
     }
 
     /* Find the client under the pointer and send the event along. */

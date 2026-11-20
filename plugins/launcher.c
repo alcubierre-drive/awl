@@ -236,7 +236,7 @@ static void counts_save( const indexer_t* x, const char* name, const counts_t* c
 static char** app_dirs( int* n ) {
     char** dirs = NULL;
     *n = 0;
-    const char* home = getenv( "HOME" );
+    char* home = awl_cfg_strdup( "home" );
     const char* data_home = getenv( "XDG_DATA_HOME" );
     const char* data_dirs = getenv( "XDG_DATA_DIRS" );
     char buf[PATH_MAX];
@@ -244,6 +244,7 @@ static char** app_dirs( int* n ) {
     if (data_home && *data_home) snprintf( buf, sizeof buf, "%s/applications", data_home );
     else if (home) snprintf( buf, sizeof buf, "%s/.local/share/applications", home );
     else buf[0] = '\0';
+    free( home );
     size_t cap = 2;
     for (const char* p = data_dirs; *p; p++) cap += *p == ':';
     if (!(dirs = calloc( cap, sizeof(*dirs) ))) return NULL;
@@ -569,7 +570,9 @@ static void* indexer( void* data ) {
     int ifd = -1;
     unsigned present = 0;
     char buf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
-    awl_icons_t* icons = awl_icons_new_desktop( x->icon_theme );
+    char* home = awl_cfg_strdup( "home" );
+    awl_icons_t* icons = awl_icons_new_desktop( x->icon_theme, home );
+    free( home );
 
     counts_load( x, "launcher", &counts );
     counts_load( x, "run", &ran );

@@ -22,6 +22,7 @@
 #include "plugins/colors.h"
 #include "plugins_config_defaults.h"
 #include "plugins/logind.h"
+#include "plugins/screenshot.h"
 
 #define AWL_ACTION_REGISTER( name ) \
     void AWL_ACTION( name )( awl_server_t* srv, const Arg* arg ) { awl_host->actions->name( srv, arg ); }
@@ -42,6 +43,12 @@ static void AWL_ACTION( notifyconfig )( awl_server_t* srv, const Arg* arg ) {
 static void AWL_ACTION( launcher )( awl_server_t* srv, const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
     if (p) awl_launcher_toggle( p->launcher, arg->i );
+}
+
+/** takes a screenshot, :c:member:`arg->i <Arg.i>` of what (:c:enum:`awl_screenshot_mode`): the pointer chooses, the focused window, the selected monitor, all (:c:func:`awl_screenshot`) */
+static void AWL_ACTION( screenshot )( awl_server_t* srv, const Arg* arg ) {
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) awl_screenshot( p->screenshot, arg->i );
 }
 
 /** switches the backlight daemon's automatic updates on or off (:c:func:`backlight_toggle`) */
@@ -191,7 +198,6 @@ static const EnvVar environment[] = {
 static const char *const termcmd[] = { "kitty", "-d", "$HOME", NULL };
 static const char *const launcher_terminal[] = { "kitty", NULL };
 static const char *const hyprcopy[] = { "hyprcopy", NULL };
-static const char *const grimslurp[] = { "grim_slurp", NULL };
 static const char *const wdisplays[] = { "wdisplays", NULL };
 static const char *const btrfs_snap_cpp_ask[] = { "btrfs-snap-cpp", "ask", NULL };
 
@@ -252,7 +258,8 @@ static const Key keys[] = {
     { 0, XKB_KEY_XF86AudioMute,                      AWL_ACTION(volumemute),       {0} },
     { 0, XKB_KEY_XF86AudioMicMute,                   AWL_ACTION(micmute),          {0} },
     { MODKEY,                    XKB_KEY_F1,         AWL_ACTION(speakermute),      {0} },
-    { 0,                         XKB_KEY_Print,      AWL_ACTION(spawn),            {.v=grimslurp} },
+    { 0,                         XKB_KEY_Print,      AWL_ACTION(screenshot),       {.i=AWL_SCREENSHOT_SELECT} },
+    { WLR_MODIFIER_SHIFT,        XKB_KEY_Print,      AWL_ACTION(screenshot),       {.i=AWL_SCREENSHOT_WINDOW} },
     { MODKEY,                    XKB_KEY_d,          AWL_ACTION(spawn),            {.v=wdisplays} },
     { 0,                         XKB_KEY_XF86Display,AWL_ACTION(spawn),            {.v=wdisplays} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_A,          AWL_ACTION(spawn),            {.v=btrfs_snap_cpp_ask} },

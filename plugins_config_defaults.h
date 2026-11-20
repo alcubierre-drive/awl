@@ -69,6 +69,8 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .desktop_file   = 0xf8f8f2ff,
         .desktop_dir    = molokai_blue,
         .desktop_broken = molokai_red,
+        .screenshot_shade = 0x00000066,
+        .screenshot_frame = molokai_orange,
     },
     .temperature = {
         /* idles around 50, throttles at TjMax (110) */
@@ -153,5 +155,13 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .wallpaper_icon = "image-x-generic-symbolic;image-x-generic",
         .desktop_icon = "text-x-generic-symbolic;text-x-generic",
         .wallpaper_timer = 0,
+    },
+    .screenshot = {
+        /* .dir: NULL, the dictionary's desktop_dir; .name: NULL, %Y-%m-%d_%H-%M-%S */
+        .save = 1, .clipboard = 1, .notify = 1,
+        .border = 0,
+        .drag_px = 4,
+        .frame_width = 2,
+        .notify_timeout = 4000,
     },
 };

@@ -238,7 +238,7 @@ static char* desktop_icon( const char* id ) {
     size_t k = strlen( id );
     if (k > 8 && !strcmp( id + k - 8, ".desktop" )) k -= 8;
     if (!k || k > NAME_MAX - 8 || *id == '.' || memchr( id, '/', k )) return NULL;
-    const char* home = getenv( "HOME" );
+    char* home = awl_cfg_strdup( "home" );
     const char* data_home = getenv( "XDG_DATA_HOME" );
     const char* data_dirs = getenv( "XDG_DATA_DIRS" );
     char path[PATH_MAX], first[PATH_MAX];
@@ -246,6 +246,7 @@ static char* desktop_icon( const char* id ) {
     if (data_home && *data_home) snprintf( first, sizeof first, "%s", data_home );
     else if (home) snprintf( first, sizeof first, "%s/.local/share", home );
     else first[0] = '\0';
+    free( home );
     for (const char* p = data_dirs;;) {
         const char* dir;
         size_t dk;
@@ -318,7 +319,9 @@ static void grant_names( worker_t* x, awl_icons_t* icons, wish_t* w ) {
 
 static void* worker( void* data ) {
     worker_t* x = data;
-    awl_icons_t* icons = awl_icons_new_desktop( x->icon_theme );
+    char* home = awl_cfg_strdup( "home" );
+    awl_icons_t* icons = awl_icons_new_desktop( x->icon_theme, home );
+    free( home );
     while (1) {
         struct pollfd fd = { .fd = x->thread.wake_fd, .events = POLLIN };
         if (poll( &fd, 1, -1 ) < 0 && errno != EINTR) break;

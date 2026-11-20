@@ -49,6 +49,8 @@ typedef struct awl_sni_t awl_sni_t;
 typedef struct awl_tray_menu_window awl_tray_menu_window_t;
 /** plugins/tray_tooltip.h */
 typedef struct awl_tray_tooltip awl_tray_tooltip_t;
+/** plugins/screenshot.h */
+typedef struct awl_screenshot awl_screenshot_t;
 /** plugins_widgets.c (plugins.h), what the bar's widgets share */
 typedef struct awl_widgets awl_widgets_t;
 

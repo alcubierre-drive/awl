@@ -11,6 +11,7 @@
 #include "plugins/persistent.h"
 #include "plugins/logind.h"
 #include "plugins/osd.h"
+#include "plugins/screenshot.h"
 #include "plugins/calpopup.h"
 #include "plugins/batpopup.h"
 #include "plugins/sysmon.h"
@@ -178,12 +179,14 @@ static void api_init( int paused ) {
     plugin_data->sysmon = awl_sysmon_start( plugin_data );
     plugin_data->notify = awl_notify_start( plugin_data );
     plugin_data->osd = awl_osd_start( plugin_data );
+    plugin_data->screenshot = awl_screenshot_start( plugin_data );
 }
 
 static int api_fini( void ) {
     if (!plugin_data) return 0;
+    int stuck = awl_screenshot_stop( plugin_data->screenshot );
     awl_osd_stop( plugin_data->osd );
-    int stuck = awl_notify_stop( plugin_data->notify );
+    stuck |= awl_notify_stop( plugin_data->notify );
     stuck |= awl_calpopup_stop( plugin_data->calpopup );
     awl_batpopup_stop( plugin_data->batpopup );
     awl_sysmon_stop( plugin_data->sysmon );
@@ -223,6 +226,17 @@ void awl_notify( const char* title, const char* body ) {
     n.summary = title;
     n.body = body;
     awl_notify_send( &n );
+}
+
+char* awl_cfg_strdup( const char* key ) {
+    awl_dict_val_t v;
+    char* s = NULL;
+    /* the string is the dictionary's until it's unlocked */
+    AWL_HOST_CFG_LOCK( awl_host );
+    if (AWL_HOST_CFG_GET( awl_host, key, &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR && v.str && *v.str)
+        s = strdup( v.str );
+    AWL_HOST_CFG_UNLOCK( awl_host );
+    return s;
 }
 
 uint32_t awl_notify_send( const awl_notif_send_t* n ) {
@@ -406,7 +420,9 @@ static void api_notifications_changed( void ) {
 }
 
 static void api_redraw( void ) {
-    if (plugin_data) awl_osd_redraw( plugin_data->osd );
+    if (!plugin_data) return;
+    awl_osd_redraw( plugin_data->osd );
+    awl_screenshot_redraw( plugin_data->screenshot );
 }
 
 static const awl_plugin_api_t api = {

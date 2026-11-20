@@ -18,7 +18,9 @@
 #   live.sh click X Y [BUTTON...]  move the pointer there in layout pixels and
 #                           click left|middle|right, or scroll wheel:N (N
 #                           notches down, negative up), hwheel:N (right),
-#                           finger:D (a touchpad's D down), see vptr.c
+#                           finger:D (a touchpad's D down), to:X,Y (move
+#                           on), down:B / up:B (press / release only, so
+#                           down:left to:X,Y up:left drags), see vptr.c
 #                           Without a BUTTON it only moves. NB: on an output
 #                           too narrow for the bar's widgets (see the log),
 #                           they take clicks right of where they're drawn, by

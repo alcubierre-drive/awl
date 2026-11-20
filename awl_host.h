@@ -182,6 +182,21 @@ typedef struct awl_notif_send_t {
     /** an absolute path, a file:// URL or icon names (";" between them,
      * the first found); NULL none */
     const char* image;
+    /** the image as pixels, which come before image (the spec's order)
+     * if data isn't NULL; copied. As :c:member:`awl_notif_t.image_data`:
+     * 8 bits, channels 4 if has_alpha (straight, not premultiplied) else
+     * 3, R first, 1 to 1024 pixels on each side; rows stride bytes apart
+     * (at least w * channels). Anything else is refused: no image from
+     * it. */
+    struct {
+        /** the first row's first pixel; NULL none */
+        const uint8_t* data;
+        /** see data: its width and height, the bytes from a row to the
+         * next, bytes per pixel */
+        int w, h, stride, channels;
+        /** whether it has alpha */
+        bool has_alpha;
+    } image_data;
     awl_notif_urgency_t urgency;
     /** 0 to 100 (a progress bar); -1 none */
     int value;
@@ -199,6 +214,32 @@ typedef struct awl_notif_send_t {
 } awl_notif_send_t;
 
 #define AWL_NOTIF_SEND_INIT { .urgency = AWL_NOTIF_NORMAL, .value = -1, .timeout = -1 }
+
+/** a box in layout coordinates (logical pixels), as awl's ``struct wlr_box`` */
+typedef struct awl_box_t {
+    int x, y, w, h;
+} awl_box_t;
+
+/**
+ * What a pointer grab (:c:member:`awl_host_t.grab_start`) reports, main
+ * thread; data is grab_start's. While it holds, the pointer's motion, its
+ * presses and releases and the keys pressed go here and nowhere else (no
+ * client, no popup, no binding); scrolling is dropped. Any may be NULL.
+ */
+typedef struct awl_grab_t {
+    /** the pointer is at x, y (layout coordinates): once when the grab
+     * starts, then whenever it moves */
+    void (*motion)( double x, double y, void* data );
+    /** button (linux/input-event-codes.h) was pressed or released, with
+     * the modifiers mods (``WLR_MODIFIER_*``) held */
+    void (*button)( uint32_t button, int pressed, uint32_t mods, void* data );
+    /** the key sym (xkbcommon's keysym) was pressed with mods held; returns
+     * whether it took it (it goes nowhere else either way) */
+    int (*key)( uint32_t sym, uint32_t mods, void* data );
+    /** awl ended the grab (the screen locks): it is over, as after
+     * :c:member:`~awl_host_t.grab_end`, which this doesn't need */
+    void (*cancel)( void* data );
+} awl_grab_t;
 
 /**
  * What awl provides to libawlplugins.so, by topic. All functions are
@@ -447,6 +488,49 @@ typedef struct awl_host_t {
     void (*timer_set)( awl_timer_t* t, int ms );
     /** NULL is fine */
     void (*timer_remove)( awl_timer_t* t );
+
+    /* ---- screenshots (awl_capture.h) ---- */
+
+    /** :c:func:`grabstart`: takes the pointer and the keyboard for grab
+     * (:c:type:`awl_grab_t`, copied) with the cursor image cursor (an xcursor
+     * name, NULL ``crosshair``). Returns 0 if it can't: the screen is locked,
+     * another grab holds, a window is being moved or resized. The library
+     * ends its grab before it is unloaded; awl ends what it left then, with
+     * a warning. */
+    int (*grab_start)( awl_server_t* srv, const awl_grab_t* grab, void* data, const char* cursor );
+    /** :c:func:`grabend`: ends the grab and takes its mark down; nothing if
+     * none holds */
+    void (*grab_end)( awl_server_t* srv );
+    /** :c:func:`grabmark`: while a grab holds, shades everything but box
+     * in dim and frames it in frame (0xRRGGBBAA each), frame_width logical
+     * pixels outside it; a box without size shades everything, NULL takes
+     * it down */
+    void (*grab_mark)( awl_server_t* srv, const awl_box_t* box, uint32_t dim, uint32_t frame,
+                       int frame_width );
+    /** the client at x, y (layout coordinates), topmost, NULL if none:
+     * only a client's window, not a layer surface or awl's own */
+    Client* (*client_at)( awl_server_t* srv, double x, double y );
+    /** the focused client, NULL if none */
+    Client* (*client_focused)( awl_server_t* srv );
+    /** c's box, with its border if border; 0 (box unchanged) for NULL */
+    int (*client_box)( awl_server_t* srv, Client* c, int border, awl_box_t* box );
+    /** the monitor at x, y (layout coordinates), NULL if none */
+    Monitor* (*monitor_at)( awl_server_t* srv, double x, double y );
+    /** m's box, NULL's every monitor's together; 0 (box unchanged) if
+     * there is none */
+    int (*monitor_box)( awl_server_t* srv, Monitor* m, awl_box_t* box );
+    /** :c:func:`capture`: what box (layout coordinates) shows, rendered
+     * again for it (a grab's mark isn't in it), at scale (device pixels per
+     * logical one; <= 0: the highest of the monitors it covers), as a
+     * premultiplied a8r8g8b8 image the caller owns
+     * (``pixman_image_unref()``); what no monitor covers is transparent.
+     * NULL if it covers none or can't be rendered. Takes as long as a frame
+     * of each monitor it covers, on the main thread. */
+    pixman_image_t* (*capture)( awl_server_t* srv, const awl_box_t* box, float scale );
+    /** :c:func:`clipboardset`: makes len bytes of data (copied) the
+     * clipboard's, offered as mime (e.g. ``image/png``); they stay until
+     * someone else's copy replaces them. Returns 0 on failure. */
+    int (*clipboard_set)( awl_server_t* srv, const char* mime, const void* data, size_t len );
 } awl_host_t;
 
 /** :c:func:`awl_dict_get` on :c:member:`awl_host_t.cfg`; valptr is an ``awl_dict_val_t*`` */

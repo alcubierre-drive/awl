@@ -51,7 +51,9 @@ enum BorderColor { BorderNorm, BorderSel, BorderUrg,
     /** how many there are */
     BorderLast };
 /** cursor */
-enum CursorMode { CurNormal, CurPressed, CurMove, CurResize };
+enum CursorMode { CurNormal, CurPressed, CurMove, CurResize,
+    /** a pointer grab of the library's holds (awl_capture.h) */
+    CurGrab };
 /** where a click went, :c:member:`Button.click` */
 enum ClickRegion { ClkBar, ClkClient, ClkRoot };
 

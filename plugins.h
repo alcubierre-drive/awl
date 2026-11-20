@@ -102,6 +102,9 @@ typedef struct awl_plugin_colors_t {
     /** the desktop file list (awl_desktop.h): its background, the names of
      * files, folders and broken links */
     uint32_t desktop_bg, desktop_file, desktop_dir, desktop_broken;
+    /** a screenshot's choice with the pointer (plugins/screenshot.h): the
+     * shade over all but what it would take, the frame around that */
+    uint32_t screenshot_shade, screenshot_frame;
 } awl_plugin_colors_t;
 
 /** the bar's colors of :c:type:`awl_plugin_colors_t`, which
@@ -294,6 +297,30 @@ typedef struct awl_plugin_config_t {
          * user's */
         bool wallpaper_timer;
     } osd;
+    /** screenshots (plugins/screenshot.h), the screenshot action's; the
+     * choice's colors are colors.screenshot_* */
+    struct {
+        /** where they are saved (made if missing); "~/" is the home
+         * folder's (the config dictionary's "home"); NULL or "": the
+         * dictionary's ``desktop_dir`` (~/Desktop) */
+        const char* dir;
+        /** the file's name without ".png", a strftime() format of the
+         * local time it was taken; "-2", "-3", ... after it if taken. NULL
+         * or "": "%Y-%m-%d_%H-%M-%S" */
+        const char* name;
+        /** whether they are saved, put on the clipboard (as ``image/png``),
+         * shown in a notification (with the image) */
+        bool save, clipboard, notify;
+        /** whether a window's has its border */
+        bool border;
+        /** logical pixels a left press moves before it is a drag (a
+         * rectangle), not a click (a window) */
+        int drag_px;
+        /** the frame's width around what it would take, logical pixels */
+        int frame_width;
+        /** ms the notification stays; < 0 the config's for its urgency */
+        int notify_timeout;
+    } screenshot;
 } awl_plugin_config_t;
 
 /** :c:member:`awl_plugin_config_t.launcher`'s layout */
@@ -355,6 +382,8 @@ typedef struct awl_plugin_data_t {
     awl_logind_t* logind;
     /** the launcher */
     awl_launcher_t* launcher;
+    /** screenshots */
+    awl_screenshot_t* screenshot;
     /** the bar widgets' shared state (plugins_widgets.c) */
     awl_widgets_t* widgets;
 
@@ -375,6 +404,12 @@ typedef struct awl_plugin_data_t {
  * widgets' callbacks have it as :c:member:`widget_t.plugins`. Everything they
  * call gets it, or the part it needs, as an argument. */
 awl_plugin_data_t* awl_plugin_get( void );
+
+/** plugins.c: the config dictionary's string key (awl_host.h's
+ * :c:member:`~awl_host_t.cfg`), copied (the caller frees it); NULL if
+ * there is none, it is "" or out of memory. Any thread. Where the user's
+ * home folder comes from: its "home", not $HOME. */
+char* awl_cfg_strdup( const char* key );
 
 /** plugins.c: awl's own notification (:c:func:`awl_notify_send`) of title and
  * body (with markup) as AWL_NOTIF_SEND_INIT has it; main thread */

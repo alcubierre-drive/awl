@@ -3,6 +3,7 @@
 #include "awl_alert.h"
 #include "awl_background.h"
 #include "awl_bar.h"
+#include "awl_capture.h"
 #include "awl_client.h"
 #include "awl_config.h"
 #include "awl_cursor.h"
@@ -151,6 +152,7 @@ cleanup(awl_server_t *srv)
     awl_plugins_unload(srv);
 
     wl_display_destroy(srv->dpy);
+    capturefini(srv);
     popupsfini(srv);
     wlr_scene_node_destroy(&srv->scene->tree.node);
     awl_draw_fini(srv->proc);
@@ -253,7 +255,11 @@ run(awl_server_t *srv, char *startup_cmd, int nolock)
     /* the rest of awl's environment is the config's (configapply()) */
     environmentimport(srv->proc);
     /* the icon theme of the programs started with TRAY_ICONS */
-    awl_tray_app_set_theme(srv->proc, srv->cfg->tray.icon_theme);
+    {
+        char home[PATH_MAX];
+        awl_tray_app_set_theme(srv->proc, srv->cfg->tray.icon_theme,
+                cfghome(srv, home, sizeof(home)) ? NULL : home);
+    }
 
     /* Start the backend. This will enumerate outputs and inputs, become the DRM
      * master, etc */

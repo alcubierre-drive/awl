@@ -37,6 +37,8 @@ hawkmoth_clang = [
     # the generated headers (protocols, version.h): meson setup build
     '-I' + os.path.join(hawkmoth_root, 'build'),
     '-DWLR_USE_UNSTABLE', '-D_POSIX_C_SOURCE=200809L', '-DXWAYLAND',
+    # vendor/plutosvg/svg.h's plutovg.h, as meson.build's plutovg_inc
+    '-I' + os.path.join(hawkmoth_root, 'vendor/plutosvg/plutovg-1.3.3/include'),
     # CUSTOM: where this machine's scenefx is installed (meson.options' awl_libs)
     '-I' + os.path.expanduser('~/Desktop/awl-libs/include/scenefx-0.5'),
     # every header is also parsed on its own
@@ -70,7 +72,7 @@ nitpick_ignore_regex = [
     ('c:identifier', r'(wlr|wl|pixman|fcft|sd|pa|libinput|wuffs_base|xkb)_\w+'),
     # the modules' own state in awl_server_t, defined in .c files the docs
     # leave out
-    ('c:identifier', r'awl_(bars|alerts|input|sni_watcher|notifs|test)'),
+    ('c:identifier', r'awl_(bars|alerts|input|sni_watcher|notifs|test|capture)'),
 ]
 
 html_theme = 'sphinx_rtd_theme'

@@ -22,6 +22,10 @@ const awl_config_t *builtinconfig(awl_process_t *proc);
  * every lookup fails */
 void configinit(awl_server_t *srv);
 void configfini(awl_server_t *srv);
+/** the config dictionary's "home" (the user's home folder, which awl takes
+ * from there rather than $HOME) into out, n bytes; 0, or -1 if there is
+ * none or it doesn't fit */
+int cfghome(awl_server_t *srv, char *out, size_t n);
 /** switches to the loaded library's config, or awl's defaults,
  * and brings everything set up from it up to date */
 void configuse(awl_server_t *srv);

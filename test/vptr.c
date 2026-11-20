@@ -2,7 +2,9 @@
  * to layout pixel x,y and clicks each button (left, middle, right or a code)
  * there, through wlr-virtual-pointer. Instead of a button, wheel:N scrolls N
  * wheel notches down (negative: up), hwheel:N right, finger:D a touchpad's
- * continuous D down (no notches). Absolute motion maps onto the whole output
+ * continuous D down (no notches), to:X,Y moves on to X,Y, down:B and up:B
+ * only press or release button B (as above): down:left to:X,Y up:left
+ * drags. Absolute motion maps onto the whole output
  * layout, so pass its size as VPTR_EXTENT=WxH (default 1280x720). */
 #include <linux/input-event-codes.h>
 #include <stdio.h>
@@ -50,7 +52,7 @@ static int scroll( struct zwlr_virtual_pointer_v1* p, uint32_t* t, const char* a
 }
 
 int main( int argc, char** argv ) {
-    if (argc < 3) { fprintf( stderr, "usage: vptr x y [left|middle|right|code|wheel:N|hwheel:N|finger:D...]\n" ); return 2; }
+    if (argc < 3) { fprintf( stderr, "usage: vptr x y [[down:|up:]left|middle|right|code|wheel:N|hwheel:N|finger:D|to:X,Y...]\n" ); return 2; }
     unsigned ew = 1280, eh = 720;
     const char* e = getenv( "VPTR_EXTENT" );
     if (e && sscanf( e, "%ux%u", &ew, &eh ) != 2) { fprintf( stderr, "bad VPTR_EXTENT\n" ); return 2; }
@@ -64,13 +66,25 @@ int main( int argc, char** argv ) {
     zwlr_virtual_pointer_v1_motion_absolute( p, t++, (uint32_t)atoi( argv[1] ), (uint32_t)atoi( argv[2] ), ew, eh );
     zwlr_virtual_pointer_v1_frame( p );
     for (int i = 3; i < argc; i++) {
+        unsigned x, y;
         if (scroll( p, &t, argv[i] )) continue;
-        uint32_t b = !strcmp( argv[i], "left" ) ? BTN_LEFT : !strcmp( argv[i], "middle" ) ? BTN_MIDDLE
-                   : !strcmp( argv[i], "right" ) ? BTN_RIGHT : (uint32_t)strtoul( argv[i], NULL, 0 );
-        zwlr_virtual_pointer_v1_button( p, t++, b, WL_POINTER_BUTTON_STATE_PRESSED );
-        zwlr_virtual_pointer_v1_frame( p );
-        zwlr_virtual_pointer_v1_button( p, t++, b, WL_POINTER_BUTTON_STATE_RELEASED );
-        zwlr_virtual_pointer_v1_frame( p );
+        if (sscanf( argv[i], "to:%u,%u", &x, &y ) == 2) {
+            zwlr_virtual_pointer_v1_motion_absolute( p, t++, x, y, ew, eh );
+            zwlr_virtual_pointer_v1_frame( p );
+            continue;
+        }
+        int down = !strncmp( argv[i], "down:", 5 ), up = !strncmp( argv[i], "up:", 3 );
+        const char* name = down ? argv[i] + 5 : up ? argv[i] + 3 : argv[i];
+        uint32_t b = !strcmp( name, "left" ) ? BTN_LEFT : !strcmp( name, "middle" ) ? BTN_MIDDLE
+                   : !strcmp( name, "right" ) ? BTN_RIGHT : (uint32_t)strtoul( name, NULL, 0 );
+        if (!up) {
+            zwlr_virtual_pointer_v1_button( p, t++, b, WL_POINTER_BUTTON_STATE_PRESSED );
+            zwlr_virtual_pointer_v1_frame( p );
+        }
+        if (!down) {
+            zwlr_virtual_pointer_v1_button( p, t++, b, WL_POINTER_BUTTON_STATE_RELEASED );
+            zwlr_virtual_pointer_v1_frame( p );
+        }
     }
     wl_display_roundtrip( d );
     zwlr_virtual_pointer_v1_destroy( p );
