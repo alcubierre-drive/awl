@@ -82,10 +82,6 @@ struct awl_sysmon {
     graphs_key_t graphs_key;
 };
 
-static int px( awl_sysmon_t* sm, float v ) {
-    return (int)lroundf( v * sm->scale );
-}
-
 static int detail_lines( int kind ) {
     return kind == K_CPU ? 2 : 1;
 }
@@ -718,18 +714,9 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
     (void)win; (void)part; (void)col; (void)button;
 }
 
-/** the window, made on first use; NULL before awl is set up */
-static awl_window_t* window( awl_sysmon_t* sm ) {
-    if (sm->win) return sm->win;
-    if (!(sm->win = awl_host->window_create( awl_host->srv ))) return NULL;
-    awl_host->window_set_painter( awl_host->srv, sm->win, &painter, sm );
-    awl_host->window_set_click( awl_host->srv, sm->win, click, sm );
-    return sm->win;
-}
-
 void awl_sysmon_show( awl_sysmon_t* sm, widget_t* w, int center_x ) {
     if (!sm) return;
-    awl_window_t* win = window( sm );
+    awl_window_t* win = popup_window( &sm->win, &painter, click, NULL, sm );
     if (!win) return;
     w->popup_window = win;
     if (!awl_host->window_monitor( win )) sm->min_w = 0;

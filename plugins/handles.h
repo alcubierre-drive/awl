@@ -22,6 +22,8 @@
 typedef struct awl_osd awl_osd_t;
 /** plugins/batpopup.h */
 typedef struct awl_batpopup awl_batpopup_t;
+/** plugins/timerpopup.h */
+typedef struct awl_timerpopup awl_timerpopup_t;
 /** plugins/sysmon.h */
 typedef struct awl_sysmon awl_sysmon_t;
 /** plugins/calendar.h, the calendar popup's (plugins/calpopup.h) thread */

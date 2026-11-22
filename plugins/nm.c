@@ -1,10 +1,9 @@
 #include "nm.h"
+#include "pa_bus.h"
 #include <arpa/inet.h>
-#include <poll.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-#include <sys/time.h>
 #include <systemd/sd-bus.h>
 
 /** NetworkManager's D-Bus API, read-only. Its PropertiesChanged signals for
@@ -20,42 +19,24 @@
 #define NM_IP4    NM_IFACE ".IP4Config"
 #define NM_DEVICE NM_IFACE ".Device"
 #define RETRY_USEC (60 * 1000000ull)
-#define CALL_TIMEOUT_USEC (2 * 1000000ull)
 
 struct awl_nm_t {
-    pa_mainloop_api* api;
     void (*changed)( void* );
     void* userdata;
 
+    pa_bus_t* pb;
+    /** pb's connection, NULL while there is none */
     sd_bus* bus;
-    sd_bus_slot* owner_match;
     sd_bus_slot* props_match[3];
     /** the query in flight, at most one; unref'ing it drops its reply */
     sd_bus_slot* pending;
-    pa_io_event* io;
-    pa_time_event* timeout;
-    pa_time_event* retry;
-    int failed;
 
     /** the chain's progress */
     char device[256];
     awl_nm_state_t next, state;
 };
 
-static void bus_update( awl_nm_t* s );
 static void query( awl_nm_t* s );
-
-static struct timeval in_usec( uint64_t usec ) {
-    struct timeval tv;
-    gettimeofday( &tv, NULL );
-    tv.tv_sec += usec / 1000000;
-    tv.tv_usec += usec % 1000000;
-    if (tv.tv_usec >= 1000000) {
-        tv.tv_sec++;
-        tv.tv_usec -= 1000000;
-    }
-    return tv;
-}
 
 static void publish( awl_nm_t* s, const awl_nm_state_t* st ) {
     if (!memcmp( st, &s->state, sizeof *st )) return;
@@ -82,7 +63,7 @@ static int reply_ok( sd_bus_message* m, awl_nm_t* s ) {
     if (!sd_bus_error_has_name( e, SD_BUS_ERROR_SERVICE_UNKNOWN )
             && !sd_bus_error_has_name( e, SD_BUS_ERROR_UNKNOWN_OBJECT )
             && !sd_bus_error_has_name( e, SD_BUS_ERROR_UNKNOWN_METHOD ))
-        s->failed = 1;
+        pa_bus_fail( s->pb );
     return 0;
 }
 
@@ -91,7 +72,7 @@ static void get( awl_nm_t* s, const char* path, const char* iface, const char* p
     s->pending = sd_bus_slot_unref( s->pending );
     if (sd_bus_call_method_async( s->bus, &s->pending, NM_NAME, path, "org.freedesktop.DBus.Properties",
                                   prop ? "Get" : "GetAll", cb, s, prop ? "ss" : "s", iface, prop ) < 0)
-        s->failed = 1;
+        pa_bus_fail( s->pb );
 }
 
 /* 4. the device's IpInterface (s): where the address lives */
@@ -218,157 +199,44 @@ static int on_properties_changed( sd_bus_message* m, void* userdata, sd_bus_erro
     return 0;
 }
 
-/** NameOwnerChanged(s name, s old_owner, s new_owner) for NM_NAME */
-static int on_owner_changed( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)ret_error;
-    awl_nm_t* s = userdata;
-    const char *name = NULL, *old_owner = NULL, *new_owner = NULL;
-    if (sd_bus_message_read( m, "sss", &name, &old_owner, &new_owner ) < 0) return 0;
-    if (new_owner[0])
-        query( s );
-    else
-        set_gone( s );
-    return 0;
-}
-
-/** GetNameOwner(s) -> s; NameHasNoOwner if NetworkManager isn't running */
-static int on_owner( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)ret_error;
-    awl_nm_t* s = userdata;
-    const sd_bus_error* e = sd_bus_message_get_error( m );
-    if (e && sd_bus_error_has_name( e, SD_BUS_ERROR_NAME_HAS_NO_OWNER ))
-        set_gone( s );
-    else if (!e)
-        query( s );
-    else
-        s->failed = 1;
-    return 0;
-}
-
-static int on_subscribed( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)ret_error;
-    awl_nm_t* s = userdata;
-    if (sd_bus_message_is_method_error( m, NULL )) s->failed = 1;
-    return 0;
-}
-
-static void schedule_retry( awl_nm_t* s, uint64_t usec );
-
-static void drop_bus( awl_nm_t* s ) {
-    if (s->io) s->api->io_free( s->io );
-    if (s->timeout) s->api->time_free( s->timeout );
-    s->io = NULL;
-    s->timeout = NULL;
-    s->pending = sd_bus_slot_unref( s->pending );
-    s->owner_match = sd_bus_slot_unref( s->owner_match );
-    for (int i=0; i<3; ++i)
-        s->props_match[i] = sd_bus_slot_unref( s->props_match[i] );
-    /* not sd_bus_flush_close_unref(): that blocks until the queue is out */
-    if (s->bus) sd_bus_close( s->bus );
-    s->bus = sd_bus_unref( s->bus );
-    s->failed = 0;
-}
-
-static void bus_io( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
-    (void)a; (void)e; (void)fd; (void)f;
-    bus_update( userdata );
-}
-
-static void bus_timeout( pa_mainloop_api* a, pa_time_event* e, const struct timeval* tv, void* userdata ) {
-    (void)tv;
-    awl_nm_t* s = userdata;
-    a->time_free( e );
-    s->timeout = NULL;
-    bus_update( s );
-}
-
 static int add_props_match( awl_nm_t* s, sd_bus_slot** slot, const char* iface ) {
     char rule[512];
     snprintf( rule, sizeof rule, "type='signal',sender='" NM_NAME "',"
               "interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',arg0='%s'", iface );
-    return sd_bus_add_match_async( s->bus, slot, rule, on_properties_changed, on_subscribed, s );
+    return sd_bus_add_match_async( s->bus, slot, rule, on_properties_changed, NULL, s );
 }
 
-static void connect_bus( awl_nm_t* s ) {
-    /* the bus handles these in order: the matches are in place before the
-     * owner is asked for, so no change slips through in between */
-    if (sd_bus_open_system( &s->bus ) < 0 ||
-        sd_bus_set_method_call_timeout( s->bus, CALL_TIMEOUT_USEC ) < 0 ||
-        !(s->io = s->api->io_new( s->api, sd_bus_get_fd( s->bus ), PA_IO_EVENT_INPUT, bus_io, s )) ||
-        sd_bus_add_match_async( s->bus, &s->owner_match,
-                "type='signal',sender='org.freedesktop.DBus',path='/org/freedesktop/DBus',"
-                "interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='" NM_NAME "'",
-                on_owner_changed, on_subscribed, s ) < 0 ||
-        add_props_match( s, &s->props_match[0], NM_IFACE ) < 0 ||
-        add_props_match( s, &s->props_match[1], NM_ACTIVE ) < 0 ||
-        add_props_match( s, &s->props_match[2], NM_IP4 ) < 0 ||
-        sd_bus_call_method_async( s->bus, NULL, "org.freedesktop.DBus", "/org/freedesktop/DBus",
-                "org.freedesktop.DBus", "GetNameOwner", on_owner, s, "s", NM_NAME ) < 0) {
-        drop_bus( s );
-        set_gone( s );
-        schedule_retry( s, RETRY_USEC );
-        return;
-    }
-    bus_update( s );
+static int setup( sd_bus* bus, void* data ) {
+    awl_nm_t* s = data;
+    s->bus = bus;
+    return add_props_match( s, &s->props_match[0], NM_IFACE ) < 0 ||
+           add_props_match( s, &s->props_match[1], NM_ACTIVE ) < 0 ||
+           add_props_match( s, &s->props_match[2], NM_IP4 ) < 0 ? -1 : 0;
 }
 
-static void retry_callback( pa_mainloop_api* a, pa_time_event* e, const struct timeval* tv, void* userdata ) {
-    (void)tv;
-    awl_nm_t* s = userdata;
-    a->time_free( e );
-    s->retry = NULL;
-    connect_bus( s );
+static void appeared( void* s ) { query( s ); }
+static void gone( void* s ) { set_gone( s ); }
+
+/** with the connection (e.g. the system bus restarted) goes what it told */
+static void dropped( void* data ) {
+    awl_nm_t* s = data;
+    for (int i=0; i<3; ++i)
+        s->props_match[i] = sd_bus_slot_unref( s->props_match[i] );
+    s->bus = NULL;
+    set_gone( s );
 }
 
-static void schedule_retry( awl_nm_t* s, uint64_t usec ) {
-    if (s->retry) return;
-    struct timeval tv = in_usec( usec );
-    s->retry = s->api->time_new( s->api, &tv, retry_callback, s );
-}
-
-/** Handles whatever the bus has, then waits for what it wants next. */
-static void bus_update( awl_nm_t* s ) {
-    int r;
-    while ((r = sd_bus_process( s->bus, NULL )) > 0)
-        ;
-    if (r < 0 || s->failed) {
-        /* connection lost (e.g. the system bus restarted) or a broken reply */
-        drop_bus( s );
-        set_gone( s );
-        schedule_retry( s, RETRY_USEC );
-        return;
-    }
-
-    int events = sd_bus_get_events( s->bus );
-    s->api->io_enable( s->io, (events & POLLIN ? PA_IO_EVENT_INPUT : 0) |
-                              (events & POLLOUT ? PA_IO_EVENT_OUTPUT : 0) );
-
-    uint64_t until;
-    if (sd_bus_get_timeout( s->bus, &until ) < 0 || until == UINT64_MAX) {
-        if (s->timeout) s->api->time_free( s->timeout );
-        s->timeout = NULL;
-        return;
-    }
-    /* until is on CLOCK_MONOTONIC */
-    struct timespec ts;
-    clock_gettime( CLOCK_MONOTONIC, &ts );
-    uint64_t now = (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
-    struct timeval tv = in_usec( until > now ? until - now : 0 );
-    if (s->timeout)
-        s->api->time_restart( s->timeout, &tv );
-    else
-        s->timeout = s->api->time_new( s->api, &tv, bus_timeout, s );
-}
+static const pa_bus_ops_t ops = { .name = NM_NAME, .system = true, .retry_usec = RETRY_USEC,
+    .setup = setup, .appeared = appeared, .gone = gone, .dropped = dropped };
 
 awl_nm_t* nm_new( pa_mainloop_api* api, void (*changed)( void* userdata ), void* userdata ) {
     awl_nm_t* s = calloc( 1, sizeof *s );
     if (!s) return NULL;
-    s->api = api;
     s->changed = changed;
     s->userdata = userdata;
-    /* the first connection from the loop: no socket work on the caller's thread */
-    schedule_retry( s, 0 );
-    return s;
+    if ((s->pb = pa_bus_start( api, &ops, s ))) return s;
+    free( s );
+    return NULL;
 }
 
 const awl_nm_state_t* nm_state( const awl_nm_t* s ) {
@@ -377,7 +245,7 @@ const awl_nm_state_t* nm_state( const awl_nm_t* s ) {
 
 void nm_free( awl_nm_t* s ) {
     if (!s) return;
-    drop_bus( s );
-    if (s->retry) s->api->time_free( s->retry );
+    s->changed = NULL; /* the bus going says so, to no one */
+    pa_bus_stop( s->pb );
     free( s );
 }

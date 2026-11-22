@@ -107,10 +107,6 @@ struct awl_tray_menu_window {
     awl_timer_t* held_timer;
 };
 
-static int px( const level_t* L, float v ) {
-    return (int)lroundf( v * L->scale );
-}
-
 /* ---- drawing ---- */
 
 /** a check box or radio button of flags, s x s at x, y */
@@ -659,10 +655,8 @@ static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, d
     const int k = (int)(L_ - mw->lv);
     if (!mw->snap || k >= mw->depth || orientation != 0) return;
     level_t* L = &mw->lv[k];
-    L->acc += value120 ? value120 / 120.0 : delta / 10.0;
-    int steps = (int)L->acc;
+    const int steps = scroll_steps( &L->acc, value120, delta );
     if (!steps) return;
-    L->acc -= steps;
     L->top += steps;
     if (L->top < 0) L->top = 0;
     awl_host->window_redraw( awl_host->srv, L->win );

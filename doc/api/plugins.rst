@@ -83,6 +83,11 @@ plugins/batpopup.h
 
 .. c:autodoc:: plugins/batpopup.h
 
+plugins/timerpopup.h
+^^^^^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/timerpopup.h
+
 plugins/ipaddr.h
 ^^^^^^^^^^^^^^^^
 
@@ -92,6 +97,11 @@ plugins/nm.h
 ^^^^^^^^^^^^
 
 .. c:autodoc:: plugins/nm.h
+
+plugins/pa_bus.h
+^^^^^^^^^^^^^^^^
+
+.. c:autodoc:: plugins/pa_bus.h
 
 plugins/date.h
 ^^^^^^^^^^^^^^

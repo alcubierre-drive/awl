@@ -8,6 +8,8 @@ its own:
   memory and swap graphs, temperature, battery, volume, IP address, clock)
 - a system tray (StatusNotifierItem)
 - a calendar popup on the clock that shows evolution-data-server events
+- a timer popup: a right click on the clock cycles between it and the calendar,
+  a left click closes them
 - a system monitor popup on the graphs and the temperature: five minutes or
   more of CPU, memory, swap and temperature history, with the numbers
 - a battery popup on the battery and dock widgets that sets the charge

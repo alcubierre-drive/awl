@@ -946,10 +946,6 @@ static void index_take( awl_launcher_t* la ) {
 
 /* ---- the painter ---- */
 
-static int px( awl_launcher_t* la, float v ) {
-    return (int)lroundf( v * la->scale );
-}
-
 /** the icons' size, physical pixels; the cache is for the size shown */
 static void icon_size( awl_launcher_t* la, int ipx ) {
     if (ipx == la->icon_px) return;
@@ -1415,10 +1411,8 @@ static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, d
     awl_launcher_t* la = data;
     /* the bar layout's row goes sideways too */
     if (orientation != 0 && !bar( la )) return;
-    la->acc += value120 ? value120 / 120.0 : delta / 10.0;
-    const int steps = (int)la->acc;
+    const int steps = scroll_steps( &la->acc, value120, delta );
     if (!steps) return;
-    la->acc -= steps;
     choose( la, la->sel + steps );
 }
 

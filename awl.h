@@ -603,7 +603,10 @@ typedef struct awl_config_t {
          * :c:func:`activationtoken`) only makes the client's window urgent,
          * like any other client's xdg-activation, instead of showing and
          * focusing it */
-        bool activate_urgent;
+        bool activate_urgent:1;
+        /** have OSDs (:c:enumerator:`AWL_NOTIF_OSD`) skip the idle pause of its
+         * countdown (:c:member:`~awl_config_t.notifications.idle_pause`) */
+        bool osd_skips_pause:1;
     } notifications;
 } awl_config_t;
 

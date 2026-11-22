@@ -28,7 +28,6 @@ enum {
     P_DAY0, P_COUNT = P_DAY0 + 42
 };
 
-typedef struct { int x, y, w, h; } box_t;
 
 /** the popup; everything in physical pixels, from the content's top left */
 struct awl_calpopup {
@@ -63,14 +62,14 @@ struct awl_calpopup {
     /* other time zones: label and time, and measure()'s row for each */
     int n_zones;
     char zones[AWL_PLUGINS_MAX_N_ZONES][2][MAX_STRLEN_ZONES];
-    box_t zone_row[AWL_PLUGINS_MAX_N_ZONES];
+    awl_box_t zone_row[AWL_PLUGINS_MAX_N_ZONES];
 
     /* measure()'s layout */
-    box_t part[P_COUNT];
+    awl_box_t part[P_COUNT];
     int has[P_COUNT];
     int w, h, fh, bh, cell_h, grid_y, names_y, day_y, list_y, list_h, row_h, rows_fit;
     int dot_w, time_w, gap;
-    box_t month_label, year_label, day_label;
+    awl_box_t month_label, year_label, day_label;
 };
 
 /* ---- dates ---- */
@@ -121,18 +120,6 @@ static int touches( const awl_cal_event_t* e, time_t d0, time_t d1 ) {
 
 /* ---- drawing ---- */
 
-static int px( awl_calpopup_t* cp, float v ) {
-    return (int)lroundf( v * cp->scale );
-}
-
-/** text centered in b (offset by x0, y0), cut with an ellipsis if wider */
-static void text_center( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, box_t b,
-                         const char* s, uint32_t fg ) {
-    int w = (int)awl_host->text_width( font, s );
-    int x = w < b.w ? b.x + (b.w - w) / 2 : b.x;
-    awl_host->text_over( pix, font, x0 + x, y0 + b.y, (unsigned)(w < b.w ? w + 1 : b.w), (unsigned)b.h, s, fg );
-}
-
 static void strtime( awl_calpopup_t* cp, char* buf, size_t n, const char* fmt, time_t t ) {
     struct tm tm;
     localtime_r( &t, &tm );
@@ -176,7 +163,7 @@ static const awl_cal_event_t** day_events( awl_calpopup_t* cp, int* n ) {
 }
 
 static void set_part( awl_calpopup_t* cp, int p, int x, int y, int w, int h ) {
-    cp->part[p] = (box_t){ x, y, w, h };
+    cp->part[p] = (awl_box_t){ x, y, w, h };
     cp->has[p] = 1;
 }
 
@@ -254,7 +241,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
             strncpy(cp->zones[cp->n_zones][0], id, MAX_STRLEN_ZONES - 1);
             cp->zones[cp->n_zones][0][MAX_STRLEN_ZONES - 1] = '\0';
             strcpy(cp->zones[cp->n_zones][1], tId); /* gettime_tz() terminated it */
-            cp->zone_row[cp->n_zones] = (box_t){ 0, y, W, bh };
+            cp->zone_row[cp->n_zones] = (awl_box_t){ 0, y, W, bh };
             y += bh + px( cp, 2 );
             cp->n_zones++;
         }
@@ -262,11 +249,11 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
 
     /* the month and the year, each with its arrows */
     set_part( cp, P_MPREV, 0, y, arrow_w, bh );
-    cp->month_label = (box_t){ arrow_w, y, month_w, bh };
+    cp->month_label = (awl_box_t){ arrow_w, y, month_w, bh };
     set_part( cp, P_MNEXT, arrow_w + month_w, y, arrow_w, bh );
     int yx = W - 2 * arrow_w - year_w;
     set_part( cp, P_YPREV, yx, y, arrow_w, bh );
-    cp->year_label = (box_t){ yx + arrow_w, y, year_w, bh };
+    cp->year_label = (awl_box_t){ yx + arrow_w, y, year_w, bh };
     set_part( cp, P_YNEXT, yx + arrow_w + year_w, y, arrow_w, bh );
     y += bh + px( cp, 2 );
     /* the weekdays, then the weeks, each with its number in front */
@@ -279,7 +266,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     /* < the day >, then Today and the app's button on the right */
     cp->day_y = y;
     set_part( cp, P_DPREV, 0, y, arrow_w, bh );
-    cp->day_label = (box_t){ arrow_w, y, day_w, bh };
+    cp->day_label = (awl_box_t){ arrow_w, y, day_w, bh };
     set_part( cp, P_DNEXT, arrow_w + day_w, y, arrow_w, bh );
     int bx = W;
     if (app) {
@@ -326,13 +313,13 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     char buf[128];
     const float r = (float)px( cp, 4 );
     if (hover >= 0 && hover != P_LIST && cp->has[hover]) {
-        box_t b = cp->part[hover];
+        awl_box_t b = cp->part[hover];
         awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0, c->popup_hover );
     }
 
     /* the timezones */
     for (int z=0; z<cp->n_zones; ++z) {
-        const box_t b = cp->zone_row[z];
+        const awl_box_t b = cp->zone_row[z];
         int twl = (int)awl_host->text_width( font, cp->zones[z][0] );
         int twr = (int)awl_host->text_width( font, cp->zones[z][1] );
         awl_host->text_over( pix, font, x0 + b.x, y0 + b.y,
@@ -343,14 +330,14 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
 
     /* the heading */
     time_t first = awl_calendar_day_start( cp->year, cp->month, 1 );
-    text_center( pix, font, x0, y0, cp->part[P_MPREV], "‹", c->popup_fg );
+    text_in( pix, font, x0, y0, cp->part[P_MPREV], "‹", c->popup_fg, 1 );
     strtime( cp, buf, sizeof buf, "%B", first );
-    text_center( pix, font, x0, y0, cp->month_label, buf, c->popup_fg );
-    text_center( pix, font, x0, y0, cp->part[P_MNEXT], "›", c->popup_fg );
-    text_center( pix, font, x0, y0, cp->part[P_YPREV], "‹", c->popup_fg );
+    text_in( pix, font, x0, y0, cp->month_label, buf, c->popup_fg, 1 );
+    text_in( pix, font, x0, y0, cp->part[P_MNEXT], "›", c->popup_fg, 1 );
+    text_in( pix, font, x0, y0, cp->part[P_YPREV], "‹", c->popup_fg, 1 );
     snprintf( buf, sizeof buf, "%d", cp->year );
-    text_center( pix, font, x0, y0, cp->year_label, buf, c->popup_fg );
-    text_center( pix, font, x0, y0, cp->part[P_YNEXT], "›", c->popup_fg );
+    text_in( pix, font, x0, y0, cp->year_label, buf, c->popup_fg, 1 );
+    text_in( pix, font, x0, y0, cp->part[P_YNEXT], "›", c->popup_fg, 1 );
 
     /* weekdays and weeks */
     const int ws = week_start( cp ), cw = cp->part[P_DAY0].w;
@@ -359,28 +346,28 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     const int offset = (t.tm_wday - ws + 7) % 7;
     for (int col = 0; col < 7; col++) {
         strtime( cp, buf, sizeof buf, "%a", awl_calendar_day_start( 2024, 0, 7 + (ws + col) % 7 ) );
-        box_t b = { cp->part[P_DAY0 + col].x, cp->names_y, cw, cp->cell_h };
-        text_center( pix, font, x0, y0, b, buf, c->popup_dim );
+        awl_box_t b = { cp->part[P_DAY0 + col].x, cp->names_y, cw, cp->cell_h };
+        text_in( pix, font, x0, y0, b, buf, c->popup_dim, 1 );
     }
     awl_cal_month_t* events = cp->plain ? NULL : cached( cp, month_key( cp->year, cp->month ) );
     const int today = today_ymd(), thursday = (4 - ws + 7) % 7;
     for (int i = 0; i < 42; i++) {
-        box_t b = cp->part[P_DAY0 + i];
+        awl_box_t b = cp->part[P_DAY0 + i];
         time_t d0 = awl_calendar_day_start( cp->year, cp->month, i - offset + 1 );
         time_t d1 = awl_calendar_day_start( cp->year, cp->month, i - offset + 2 );
         localtime_r( &d0, &t );
         if (i % 7 == 0) {
             /* ISO week number, of the week's Thursday */
             strtime( cp, buf, sizeof buf, "%V", awl_calendar_day_start( cp->year, cp->month, i - offset + 1 + thursday ) );
-            box_t wb = { b.x - cw, b.y, cw, b.h };
-            text_center( pix, font, x0, y0, wb, buf[0] == '0' ? buf + 1 : buf, c->popup_dim );
+            awl_box_t wb = { b.x - cw, b.y, cw, b.h };
+            text_in( pix, font, x0, y0, wb, buf[0] == '0' ? buf + 1 : buf, c->popup_dim, 1 );
         }
         const int other = t.tm_mon != cp->month, sel = !other && t.tm_mday == cp->day;
         if (sel)
             awl_fill_shape( pix, (float)(x0 + b.x + 1), (float)(y0 + b.y), (float)(b.w - 2), (float)b.h, r, 0, pc->calendar_selected );
         uint32_t fg = ymd( &t ) == today ? pc->calendar_today : other ? c->popup_dim : c->popup_fg;
         snprintf( buf, sizeof buf, "%d", t.tm_mday );
-        text_center( pix, font, x0, y0, b, buf, fg );
+        text_in( pix, font, x0, y0, b, buf, fg, 1 );
         /* a dot under the days with events */
         int marked = 0;
         for (int k = 0; !other && events && k < events->n && !marked; k++)
@@ -393,12 +380,12 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     }
 
     /* the day */
-    text_center( pix, font, x0, y0, cp->part[P_DPREV], "‹", c->popup_fg );
+    text_in( pix, font, x0, y0, cp->part[P_DPREV], "‹", c->popup_fg, 1 );
     strtime( cp, buf, sizeof buf, "%A, %e %B", awl_calendar_day_start( cp->year, cp->month, cp->day ) );
-    text_center( pix, font, x0, y0, cp->day_label, buf, c->popup_fg );
-    text_center( pix, font, x0, y0, cp->part[P_DNEXT], "›", c->popup_fg );
-    text_center( pix, font, x0, y0, cp->part[P_TODAY], "Today", c->popup_fg );
-    if (cp->has[P_EVO]) text_center( pix, font, x0, y0, cp->part[P_EVO], app_label( cp ), c->popup_fg );
+    text_in( pix, font, x0, y0, cp->day_label, buf, c->popup_fg, 1 );
+    text_in( pix, font, x0, y0, cp->part[P_DNEXT], "›", c->popup_fg, 1 );
+    text_in( pix, font, x0, y0, cp->part[P_TODAY], "Today", c->popup_fg, 1 );
+    if (cp->has[P_EVO]) text_in( pix, font, x0, y0, cp->part[P_EVO], app_label( cp ), c->popup_fg, 1 );
 
     /* its events, once fetched */
     if (!cp->has[P_LIST]) return;
@@ -440,21 +427,12 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
 
 static int hit( void* data, int x, int y ) {
     awl_calpopup_t* cp = data;
-    for (int p = 0; p < P_COUNT; p++) {
-        box_t b = cp->part[p];
-        if (cp->has[p] && x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return p;
-    }
-    return -1;
+    return parts_hit( cp->part, cp->has, P_COUNT, x, y );
 }
 
 static int box( void* data, int p, int* x, int* y, int* w, int* h ) {
     awl_calpopup_t* cp = data;
-    if (p < 0 || p >= P_COUNT || !cp->has[p]) return 0;
-    *x = cp->part[p].x;
-    *y = cp->part[p].y;
-    *w = cp->part[p].w;
-    *h = cp->part[p].h;
-    return 1;
+    return parts_box( cp->part, cp->has, P_COUNT, p, x, y, w, h );
 }
 
 static const awl_window_painter_t painter = { measure, paint, hit, box };
@@ -522,16 +500,13 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
     redraw( cp );
 }
 
-/** a wheel notch is a step, a touchpad's 10 units as on the bar (awl_bar.c's
- * SCROLL_LIMIT); over a list longer than shown, rows, else months */
+/** over a list longer than shown, rows, else months */
 static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta,
                     int32_t value120, void* data ) {
     awl_calpopup_t* cp = data;
     if (orientation != 0) return;
-    cp->acc += value120 ? value120 / 120.0 : delta / 10.0;
-    int n = (int)cp->acc;
+    int n = scroll_steps( &cp->acc, value120, delta );
     if (!n) return;
-    cp->acc -= n;
     int nev = 0;
     if (part == P_LIST && day_events( cp, &nev ) && nev > cp->rows_fit) {
         cp->list_top += n; /* measure() keeps it in range */
@@ -569,19 +544,9 @@ int awl_calpopup_stop( awl_calpopup_t* cp ) {
     return stuck;
 }
 
-/** the window, made on first use; NULL before awl is set up */
-static awl_window_t* window( awl_calpopup_t* cp ) {
-    if (cp->win) return cp->win;
-    if (!(cp->win = awl_host->window_create( awl_host->srv ))) return NULL;
-    awl_host->window_set_painter( awl_host->srv, cp->win, &painter, cp );
-    awl_host->window_set_click( awl_host->srv, cp->win, click, cp );
-    awl_host->window_set_scroll( awl_host->srv, cp->win, scroll, cp );
-    return cp->win;
-}
-
 void awl_calpopup_show( awl_calpopup_t* cp, widget_t* w, int center_x ) {
     if (!cp) return;
-    awl_window_t* win = window( cp );
+    awl_window_t* win = popup_window( &cp->win, &painter, click, scroll, cp );
     if (!win) return;
     w->popup_window = win;
     Monitor* m = w->bar->m;

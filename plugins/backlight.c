@@ -19,17 +19,15 @@
  */
 
 #include "backlight.h"
+#include "pa_bus.h"
 #include "../awl_host.h"
 #include <stdarg.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <math.h>
-#include <poll.h>
-#include <time.h>
 #include <unistd.h>
 #include <sys/eventfd.h>
-#include <sys/time.h>
 #include <systemd/sd-bus.h>
 
 /** the daemon's name on the user bus */
@@ -42,8 +40,6 @@
 #define UNIT      "backlight-tooler.service"
 /** how long to wait before connecting again, after the bus failed */
 #define RETRY_USEC (30 * 1000000ull)
-/** how long a call may go unanswered before it counts as failed */
-#define CALL_TIMEOUT_USEC (2 * 1000000ull)
 
 /** :c:member:`awl_backlight_t.requests`; a second toggle before the loop got to the
  * first one cancels it */
@@ -52,14 +48,10 @@ enum awl_backlight_request { REQ_TOGGLE = 1, REQ_UPDATE = 2, REQ_ADJUST = 4 };
 struct awl_backlight_bus_t {
     awl_backlight_t* b;
     pa_mainloop_api* api;
-    sd_bus* bus;
-    sd_bus_slot* owner_match;
+    pa_bus_t* pb;
+    sd_bus* bus;            /* pb's connection, NULL while there is none */
     sd_bus_slot* props_match;
-    pa_io_event* io;
-    pa_time_event* timeout; /* the bus's next timeout, NULL if none */
-    pa_time_event* retry;   /* the next connection attempt, NULL if none */
     pa_io_event* wake;      /* awl_backlight_t.wake_fd */
-    bool failed;       /* set by callbacks, which can't drop the bus */
     /* the daemon's Interval and ConfigInterval as last seen; Interval as
      * last set by a toggle until the daemon tells otherwise */
     uint64_t interval, config_interval;
@@ -70,21 +62,7 @@ struct awl_backlight_bus_t {
     int adjust_calls;
 };
 
-static void bus_update( awl_backlight_bus_t* s );
 static void send_adjust( awl_backlight_bus_t* s );
-
-/** a timeval ``usec`` from now on the wall clock, which pa_mainloop_api takes */
-static struct timeval in_usec( uint64_t usec ) {
-    struct timeval tv;
-    gettimeofday( &tv, NULL );
-    tv.tv_sec += usec / 1000000;
-    tv.tv_usec += usec % 1000000;
-    if (tv.tv_usec >= 1000000) {
-        tv.tv_sec++;
-        tv.tv_usec -= 1000000;
-    }
-    return tv;
-}
 
 static int set_int( atomic_int* a, int v ) {
     return atomic_exchange( a, v ) != v;
@@ -113,14 +91,6 @@ static void set_gone( awl_backlight_bus_t* s ) {
     changed |= set_int( &b->webcam, BACKLIGHT_UNKNOWN );
     atomic_store( &b->source, BACKLIGHT_SOURCE_UNKNOWN );
     if (changed) awl_host->redraw_request( awl_host->srv );
-}
-
-/** a method reply: whether it is a proper one; marks the connection as
- * broken otherwise */
-static int reply_ok( sd_bus_message* m, awl_backlight_bus_t* s ) {
-    if (!sd_bus_message_is_method_error( m, NULL )) return 1;
-    s->failed = 1;
-    return 0;
 }
 
 /** ``LastSource``'s value as a :c:type:`backlight_source_t` */
@@ -203,7 +173,7 @@ static void call_daemon( awl_backlight_bus_t* s, const char* iface, const char* 
         sd_bus_message_set_auto_start( m, 0 ) < 0 ||
         (types && sd_bus_message_appendv( m, types, ap ) < 0) ||
         sd_bus_call_async( s->bus, NULL, m, callback, s, 0 ) < 0)
-        s->failed = 1;
+        pa_bus_fail( s->pb );
     va_end( ap );
     sd_bus_message_unref( m );
 }
@@ -237,144 +207,35 @@ static int on_properties_changed( sd_bus_message* m, void* userdata, sd_bus_erro
     return 0;
 }
 
-/** The bus says who owns :c:macro:`BUS_NAME` now (the bus is told to send
- * only this name's changes): someone, the daemon started, so ask it for its
- * properties (:c:func:`query_properties`); no one, it stopped
- * (:c:func:`set_gone`). */
-static int on_owner_changed( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)ret_error;
-    awl_backlight_bus_t* s = userdata;
-    const char *name = NULL, *old_owner = NULL, *new_owner = NULL;
-    if (sd_bus_message_read( m, "sss", &name, &old_owner, &new_owner ) < 0) return 0;
-    if (new_owner[0])
-        query_properties( s );
-    else
-        set_gone( s );
-    return 0;
+/** a new connection: the daemon's signals on it */
+static int setup( sd_bus* bus, void* data ) {
+    awl_backlight_bus_t* s = data;
+    s->bus = bus;
+    return sd_bus_add_match_async( s->bus, &s->props_match,
+                "type='signal',sender='" BUS_NAME "',path='" BUS_PATH "',"
+                "interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',"
+                "arg0='" BUS_IFACE "'",
+                on_properties_changed, NULL, s );
 }
 
-/** The bus's answer to who owns :c:macro:`BUS_NAME` now, asked once
- * connected: an error that no one does, the daemon isn't running
- * (:c:func:`set_gone`); else it is, so ask it for its properties
- * (:c:func:`query_properties`). */
-static int on_owner( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)ret_error;
-    awl_backlight_bus_t* s = userdata;
-    const sd_bus_error* e = sd_bus_message_get_error( m );
-    if (e && sd_bus_error_has_name( e, SD_BUS_ERROR_NAME_HAS_NO_OWNER ))
-        set_gone( s );
-    else if (reply_ok( m, s ))
-        query_properties( s );
-    return 0;
-}
+/** the daemon started, or runs: ask it for its properties
+ * (:c:func:`query_properties`) */
+static void appeared( void* s ) { query_properties( s ); }
+/** the daemon isn't running (:c:func:`set_gone`) */
+static void gone( void* s ) { set_gone( s ); }
 
-static int on_subscribed( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
-    (void)ret_error;
-    reply_ok( m, userdata );
-    return 0;
-}
-
-static void schedule_retry( awl_backlight_bus_t* s, uint64_t usec );
-
-static void drop_bus( awl_backlight_bus_t* s ) {
-    if (s->io) s->api->io_free( s->io );
-    if (s->timeout) s->api->time_free( s->timeout );
-    s->io = NULL;
-    s->timeout = NULL;
-    s->owner_match = sd_bus_slot_unref( s->owner_match );
+/** the connection is gone; the last known state stays */
+static void dropped( void* data ) {
+    awl_backlight_bus_t* s = data;
     s->props_match = sd_bus_slot_unref( s->props_match );
-    /* not sd_bus_flush_close_unref(): that blocks until the queue is out */
-    if (s->bus) sd_bus_close( s->bus );
-    s->bus = sd_bus_unref( s->bus );
-    s->failed = 0;
+    s->bus = NULL;
     /* the calls' replies won't come anymore */
     answered( s->b, s->pending_asks + s->adjust_calls );
     s->pending_adjust = s->pending_asks = s->adjust_calls = 0;
 }
 
-static void bus_io( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_event_flags_t f, void* userdata ) {
-    (void)a; (void)e; (void)fd; (void)f;
-    bus_update( userdata );
-}
-
-static void bus_timeout( pa_mainloop_api* a, pa_time_event* e, const struct timeval* tv, void* userdata ) {
-    (void)tv;
-    awl_backlight_bus_t* s = userdata;
-    a->time_free( e );
-    s->timeout = NULL;
-    bus_update( s );
-}
-
-static void connect_bus( awl_backlight_bus_t* s ) {
-    /* The bus handles these in order, so both matches are in place before
-     * the owner is asked for, and no change can slip through in between. */
-    if (sd_bus_open_user( &s->bus ) < 0 ||
-        sd_bus_set_method_call_timeout( s->bus, CALL_TIMEOUT_USEC ) < 0 ||
-        !(s->io = s->api->io_new( s->api, sd_bus_get_fd( s->bus ), PA_IO_EVENT_INPUT, bus_io, s )) ||
-        sd_bus_add_match_async( s->bus, &s->owner_match,
-                "type='signal',sender='org.freedesktop.DBus',path='/org/freedesktop/DBus',"
-                "interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='" BUS_NAME "'",
-                on_owner_changed, on_subscribed, s ) < 0 ||
-        sd_bus_add_match_async( s->bus, &s->props_match,
-                "type='signal',sender='" BUS_NAME "',path='" BUS_PATH "',"
-                "interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',"
-                "arg0='" BUS_IFACE "'",
-                on_properties_changed, on_subscribed, s ) < 0 ||
-        sd_bus_call_method_async( s->bus, NULL, "org.freedesktop.DBus", "/org/freedesktop/DBus",
-                "org.freedesktop.DBus", "GetNameOwner", on_owner, s, "s", BUS_NAME ) < 0) {
-        drop_bus( s );
-        schedule_retry( s, RETRY_USEC );
-        return;
-    }
-    bus_update( s );
-}
-
-static void retry_callback( pa_mainloop_api* a, pa_time_event* e, const struct timeval* tv, void* userdata ) {
-    (void)tv;
-    awl_backlight_bus_t* s = userdata;
-    a->time_free( e );
-    s->retry = NULL;
-    connect_bus( s );
-}
-
-static void schedule_retry( awl_backlight_bus_t* s, uint64_t usec ) {
-    if (s->retry) return;
-    struct timeval tv = in_usec( usec );
-    s->retry = s->api->time_new( s->api, &tv, retry_callback, s );
-}
-
-/** Handles whatever the bus has, then waits for what it wants next. */
-static void bus_update( awl_backlight_bus_t* s ) {
-    int r;
-    while ((r = sd_bus_process( s->bus, NULL )) > 0)
-        ;
-    if (r < 0 || s->failed) {
-        /* connection lost or the daemon can't be watched */
-        drop_bus( s );
-        schedule_retry( s, RETRY_USEC );
-        return;
-    }
-
-    int events = sd_bus_get_events( s->bus );
-    s->api->io_enable( s->io, (events & POLLIN ? PA_IO_EVENT_INPUT : 0) |
-                              (events & POLLOUT ? PA_IO_EVENT_OUTPUT : 0) );
-
-    uint64_t until;
-    if (sd_bus_get_timeout( s->bus, &until ) < 0 || until == UINT64_MAX) {
-        if (s->timeout) s->api->time_free( s->timeout );
-        s->timeout = NULL;
-        return;
-    }
-    /* until is on CLOCK_MONOTONIC */
-    struct timespec ts;
-    clock_gettime( CLOCK_MONOTONIC, &ts );
-    uint64_t now = (uint64_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
-    struct timeval tv = in_usec( until > now ? until - now : 0 );
-    if (s->timeout)
-        s->api->time_restart( s->timeout, &tv );
-    else
-        s->timeout = s->api->time_new( s->api, &tv, bus_timeout, s );
-}
+static const pa_bus_ops_t ops = { .name = BUS_NAME, .retry_usec = RETRY_USEC,
+    .setup = setup, .appeared = appeared, .gone = gone, .dropped = dropped };
 
 /** The answer to a toggle's setting the daemon's ``Interval``: an error
  * (a daemon whose ``Interval`` can't be set, an interval it won't take, no
@@ -392,7 +253,7 @@ static int on_set( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) 
 static void start_unit( awl_backlight_bus_t* s ) {
     if (sd_bus_call_method_async( s->bus, NULL, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
                 "org.freedesktop.systemd1.Manager", "StartUnit", NULL, NULL, "ss", UNIT, "replace" ) < 0)
-        s->failed = 1;
+        pa_bus_fail( s->pb );
 }
 
 static void do_toggle( awl_backlight_bus_t* s ) {
@@ -473,7 +334,7 @@ static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_eve
     if (req & REQ_TOGGLE) do_toggle( s );
     if (req & REQ_UPDATE) do_update( s );
     if (adjust || asks) do_adjust( s, adjust, asks );
-    bus_update( s );
+    pa_bus_update( s->pb );
 }
 
 static void request( awl_backlight_t* b, int req ) {
@@ -522,10 +383,7 @@ awl_backlight_t* backlight_init( pa_mainloop_api* api ) {
     b->bus->b = b;
     b->bus->api = api;
     b->bus->wake = api->io_new( api, b->wake_fd, PA_IO_EVENT_INPUT, wake_callback, b->bus );
-    if (!b->bus->wake) goto fail;
-    schedule_retry( b->bus, 0 );
-    if (!b->bus->retry) goto fail;
-    return b;
+    if (b->bus->wake && (b->bus->pb = pa_bus_start( api, &ops, b->bus ))) return b;
 fail:
     if (b->bus && b->bus->wake) api->io_free( b->bus->wake );
     if (b->wake_fd >= 0) close( b->wake_fd );
@@ -536,8 +394,7 @@ fail:
 
 void backlight_free( awl_backlight_t* b ) {
     if (!b) return;
-    drop_bus( b->bus );
-    if (b->bus->retry) b->bus->api->time_free( b->bus->retry );
+    pa_bus_stop( b->bus->pb );
     b->bus->api->io_free( b->bus->wake );
     close( b->wake_fd );
     free( b->bus );

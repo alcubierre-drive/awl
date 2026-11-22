@@ -73,10 +73,6 @@ struct awl_notify_menu {
     char past_count[16];
 };
 
-static int px( awl_notify_menu_t* mn, float v ) {
-    return (int)lroundf( v * mn->scale );
-}
-
 static const char* dnd_text( void ) {
     return awl_notify_dnd() ? "on" : "off";
 }

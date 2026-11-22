@@ -370,6 +370,8 @@ typedef struct awl_plugin_data_t {
     awl_calpopup_t* calpopup;
     /** the battery popup */
     awl_batpopup_t* batpopup;
+    /** the clock's timer popup */
+    awl_timerpopup_t* timerpopup;
     /** the system monitor popup */
     awl_sysmon_t* sysmon;
     /** the notifications */
@@ -499,3 +501,55 @@ void awl_plugin_config_fill_defaults( awl_plugin_config_t* p, const awl_config_t
  * config (:c:member:`awl_plugin_data_t.config`), awl's defaults if p is NULL
  * (the plugins don't run) */
 void awl_config_fill( const awl_plugin_data_t* p, awl_config_t* c );
+
+/* ---- what the popup windows share ---- */
+
+/** v logical pixels in physical ones at o's scale (o anything with a ``scale``) */
+#define px( o, v ) ((int)lroundf( (v) * (o)->scale ))
+
+/** whole steps from a scroll, the rest kept in *acc: a wheel notch is one, a
+ * touchpad's 10 units as on the bar (awl_bar.c's SCROLL_LIMIT) */
+static inline int scroll_steps( double* acc, int32_t value120, double delta ) {
+    *acc += value120 ? value120 / 120.0 : delta / 10.0;
+    const int n = (int)*acc;
+    *acc -= n;
+    return n;
+}
+
+/** of the n boxes part (those has, NULL all, says are there), the one with
+ * x, y in it; -1 if none */
+static inline int parts_hit( const awl_box_t* part, const int* has, int n, int x, int y ) {
+    for (int p = 0; p < n; p++)
+        if ((!has || has[p]) && x >= part[p].x && x < part[p].x + part[p].w &&
+            y >= part[p].y && y < part[p].y + part[p].h) return p;
+    return -1;
+}
+
+/** :c:member:`awl_window_painter_t.box` of the n boxes part (has as for
+ * :c:func:`parts_hit`) */
+static inline int parts_box( const awl_box_t* part, const int* has, int n, int p, int* x, int* y, int* w, int* h ) {
+    if (p < 0 || p >= n || (has && !has[p])) return 0;
+    *x = part[p].x, *y = part[p].y, *w = part[p].w, *h = part[p].h;
+    return 1;
+}
+
+/** s in b (offset by x0, y0), centered or left-aligned, cut with an
+ * ellipsis if wider */
+static inline void text_in( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, awl_box_t b,
+                            const char* s, uint32_t fg, int center ) {
+    int w = (int)awl_host->text_width( font, s );
+    int x = center && w < b.w ? b.x + (b.w - w) / 2 : b.x;
+    awl_host->text_over( pix, font, x0 + x, y0 + b.y, (unsigned)(w < b.w ? w + 1 : b.w), (unsigned)b.h, s, fg );
+}
+
+/** *win, made on first use with painter and the callbacks (scroll NULL for
+ * none); NULL before awl is set up */
+static inline awl_window_t* popup_window( awl_window_t** win, const awl_window_painter_t* painter,
+        void (*click)( awl_window_t*, int, int, uint32_t, void* ),
+        void (*scroll)( awl_window_t*, int, int, uint32_t, double, int32_t, void* ), void* data ) {
+    if (*win || !(*win = awl_host->window_create( awl_host->srv ))) return *win;
+    awl_host->window_set_painter( awl_host->srv, *win, painter, data );
+    awl_host->window_set_click( awl_host->srv, *win, click, data );
+    if (scroll) awl_host->window_set_scroll( awl_host->srv, *win, scroll, data );
+    return *win;
+}

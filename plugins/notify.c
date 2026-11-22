@@ -148,10 +148,6 @@ static long long now_ms( void ) {
     return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
 }
 
-static int px( const note_t* n, float v ) {
-    return (int)lroundf( v * n->scale );
-}
-
 /** id's record in what the server keeps open now, NULL if it closed */
 static const awl_notif_t* record( uint32_t id ) {
     const awl_notif_t* open[MAX_OPEN];

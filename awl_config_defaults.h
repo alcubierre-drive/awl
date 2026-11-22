@@ -253,7 +253,8 @@ static const awl_config_t awl_config_defaults = {
         .idle_pause = 10000,
         .idle_giveback = 0.33f,
         .idle_floor = 0.2f,
-        .activate_urgent = 0,
+        .activate_urgent = false,
+        .osd_skips_pause = true,
     },
     .wallpaper = {
         .dir = "Wallpapers", .fade_ms = 500, .interval = 7200, .mode = WallpaperRand,

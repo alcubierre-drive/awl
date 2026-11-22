@@ -1,9 +1,9 @@
 #include "awl_window.h"
+#include "awl_bar.h"
 #include "awl_config.h"
 #include "awl_draw.h"
 #include "awl_util.h"
 
-#include <drm_fourcc.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,31 +63,6 @@ struct awl_window {
     Buffer* bufs[2];
 };
 
-/** like the bar's buffers (awl_bar.c): read-only for the renderer */
-static void buffer_destroy( struct wlr_buffer* wb ) {
-    Buffer* b = wl_container_of( wb, b, base );
-    free( b );
-}
-
-static bool buffer_begin( struct wlr_buffer* wb, uint32_t flags, void** data,
-                          uint32_t* format, size_t* stride ) {
-    Buffer* b = wl_container_of( wb, b, base );
-    if (flags & WLR_BUFFER_DATA_PTR_ACCESS_WRITE) return false;
-    *data = b->data;
-    *stride = b->stride;
-    *format = DRM_FORMAT_ARGB8888;
-    return true;
-}
-
-static void buffer_end( struct wlr_buffer* wb ) {
-}
-
-static const struct wlr_buffer_impl buffer_impl = {
-    .destroy = buffer_destroy,
-    .begin_data_ptr_access = buffer_begin,
-    .end_data_ptr_access = buffer_end,
-};
-
 /** clicks and the pointer go through */
 static bool accepts_input( struct wlr_scene_buffer* buffer, double* sx, double* sy ) {
     return false;
@@ -122,17 +97,6 @@ awl_window_t* awl_window_create( struct wlr_scene_tree* parent, const awl_window
     return win;
 }
 
-/** a new w x h buffer */
-static Buffer* buffer_new( int w, int h ) {
-    const int32_t stride = awl_draw_stride( (unsigned)w );
-    Buffer* b = ecalloc( 1, sizeof(Buffer) + (size_t)stride * h );
-    b->stride = (size_t)stride;
-    b->w = (size_t)w;
-    b->h = (size_t)h;
-    wlr_buffer_init( &b->base, &buffer_impl, w, h );
-    return b;
-}
-
 /** gives up the buffer slots; the scene keeps what it still holds */
 static void buffers_drop( awl_window_t* win ) {
     for (size_t i = 0; i < sizeof win->bufs / sizeof *win->bufs; i++) {
@@ -153,11 +117,11 @@ static Buffer* buffer_get( awl_window_t* win, int w, int h, int* oneoff ) {
             wlr_buffer_drop( &b->base );
             b = NULL;
         }
-        if (!b) b = win->bufs[i] = buffer_new( w, h );
+        if (!b) b = win->bufs[i] = buffercreate( w, h );
         return b;
     }
     *oneoff = 1;
-    return buffer_new( w, h );
+    return buffercreate( w, h );
 }
 
 void awl_window_destroy( awl_window_t* win ) {

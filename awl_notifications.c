@@ -177,8 +177,11 @@ static void idle_arm( awl_server_t *srv ) {
  * else the whole timeout, unless it is held, has none or the user is away */
 static void arm( awl_server_t* srv, notif_t* n ) {
     awl_notifs_t* N = srv->notifs;
+    /* count down on OSDs even when away (if configured) */
+    const bool away = N->paused && !((n->pub.flags & AWL_NOTIF_OSD)
+            && srv->cfg->notifications.osd_skips_pause);
     if (n->pub.timeout > 0) idle_arm(srv);
-    if (n->held || n->pub.timeout <= 0 || N->paused) {
+    if (n->held || n->pub.timeout <= 0 || away) {
         if (n->timer) wl_event_source_timer_update( n->timer, 0 );
         n->deadline = 0;
         return;

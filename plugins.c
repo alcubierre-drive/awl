@@ -14,6 +14,7 @@
 #include "plugins/screenshot.h"
 #include "plugins/calpopup.h"
 #include "plugins/batpopup.h"
+#include "plugins/timerpopup.h"
 #include "plugins/sysmon.h"
 #include "plugins/tray_menu.h"
 #include "plugins/tray_tooltip.h"
@@ -176,6 +177,7 @@ static void api_init( int paused ) {
     plugin_data->wallpaper = awl_wallpaper_start();
     plugin_data->calpopup = awl_calpopup_start( plugin_data );
     plugin_data->batpopup = awl_batpopup_start( plugin_data );
+    plugin_data->timerpopup = awl_timerpopup_start( plugin_data );
     plugin_data->sysmon = awl_sysmon_start( plugin_data );
     plugin_data->notify = awl_notify_start( plugin_data );
     plugin_data->osd = awl_osd_start( plugin_data );
@@ -189,6 +191,7 @@ static int api_fini( void ) {
     stuck |= awl_notify_stop( plugin_data->notify );
     stuck |= awl_calpopup_stop( plugin_data->calpopup );
     awl_batpopup_stop( plugin_data->batpopup );
+    awl_timerpopup_stop( plugin_data->timerpopup );
     awl_sysmon_stop( plugin_data->sysmon );
     stuck |= awl_desktop_stop( plugin_data->desktop );
     stuck |= awl_launcher_stop( plugin_data->launcher );

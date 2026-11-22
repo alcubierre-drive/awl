@@ -1,4 +1,5 @@
 #include "awl_desktop.h"
+#include "awl_bar.h"
 #include "awl_draw.h"
 #include "awl_util.h"
 #include "awl_plugin_abi.h"
@@ -101,31 +102,6 @@ void desktop_removemon( awl_desktop_t* desk, Monitor* m ) {
     free( v );
 }
 
-/** like the bar's buffers (awl_bar.c): read-only for the renderer */
-static void buffer_destroy( struct wlr_buffer* wb ) {
-    Buffer* b = wl_container_of( wb, b, base );
-    free( b );
-}
-
-static bool buffer_begin( struct wlr_buffer* wb, uint32_t flags, void** data,
-                          uint32_t* format, size_t* stride ) {
-    Buffer* b = wl_container_of( wb, b, base );
-    if (flags & WLR_BUFFER_DATA_PTR_ACCESS_WRITE) return false;
-    *data = b->data;
-    *stride = b->stride;
-    *format = DRM_FORMAT_ARGB8888;
-    return true;
-}
-
-static void buffer_end( struct wlr_buffer* wb ) {
-}
-
-static const struct wlr_buffer_impl buffer_impl = {
-    .destroy = buffer_destroy,
-    .begin_data_ptr_access = buffer_begin,
-    .end_data_ptr_access = buffer_end,
-};
-
 /** what m's panel draws in: :c:member:`Monitor.desktopfont`, else the bar's; NULL if none */
 static struct fcft_font* font_of( Monitor* m ) {
     return m->desktopfont ? m->desktopfont : m->bar.font;
@@ -142,12 +118,8 @@ static int draw( awl_desktop_t* desk, DesktopView* v, const awl_plugin_api_t* ap
                           &x, &y, &width, &height );
     if (width <= 0 || height <= 0) return 0;
 
-    int32_t stride = awl_draw_stride( width );
-    Buffer* b = ecalloc( 1, sizeof(Buffer) + (size_t)stride * height );
-    b->stride = stride;
-    b->w = width;
-    b->h = height;
-    wlr_buffer_init( &b->base, &buffer_impl, width, height );
+    Buffer* b = buffercreate( width, height );
+    const int32_t stride = (int32_t)b->stride;
 
     pixman_image_t* pix = awl_draw_image( width, height, b->data, stride );
     if (pix) {

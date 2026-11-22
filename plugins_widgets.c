@@ -7,6 +7,7 @@
 #include "plugins/calpopup.h"
 #include "plugins/sysmon.h"
 #include "plugins/batpopup.h"
+#include "plugins/timerpopup.h"
 #include "plugins/notify.h"
 #include "plugins/notify_menu.h"
 #include "plugins/colors.h"
@@ -40,6 +41,8 @@ static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
 static void clockwidget_hover( widget_t* w );
 static void clockwidget_leave( widget_t* w );
 static void clockwidget_scroll( widget_t* w, uint32_t x, int amount );
+static void clockwidget_click( widget_t* w, uint32_t x, int button );
+static void clockwidget_view( widget_t* w, int32_t x );
 
 static uint32_t pulsewidget_measure( widget_t* w );
 static void pulsewidget_click( widget_t* w, uint32_t x, int button );
@@ -108,6 +111,8 @@ static const widget_t right_widgets[] = {
         .hover_delay_ms = 100,
         .callback_leave = &clockwidget_leave,
         .callback_scroll = &clockwidget_scroll,
+        .callback_click = &clockwidget_click,
+        .callback_view = &clockwidget_view,
         .leave_delay_ms = 20,
         .free = free,
     },
@@ -437,6 +442,7 @@ static uint32_t clockwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = w->plugins;
     // events fetched, or a new day: the calendar popup follows
     awl_calpopup_poll( P->calpopup );
+    awl_timerpopup_poll( P->timerpopup );
     int secs = P->date ? atomic_load( &P->date->secs ) : -1;
     if (secs < 0) {
         strcpy(u->timestr, "--:--");
@@ -536,6 +542,16 @@ struct awl_widgets {
     uint32_t eyes_scaled_bits[eyes_closed_w * eyes_closed_h];
     /** :c:member:`~awl_widgets.eyes_scaled_bits`' size */
     int eyes_scaled_w, eyes_scaled_h;
+    /** the clock's popup a right click opened (the calendar or the timer),
+     * NULL none: as a hover's, :c:member:`~awl_widgets.clock_leave` closes it once the pointer
+     * is off it and the clock it was opened from (only compared) */
+    awl_window_t* clock_popup;
+    /** see :c:member:`~awl_widgets.clock_popup` */
+    const widget_t* clock;
+    /** see :c:member:`~awl_widgets.clock_popup` */
+    awl_timer_t* clock_leave;
+    /** the pointer is on the clock, on the popup; the timer is armed */
+    int clock_on, clock_inside, clock_leaving;
 };
 
 awl_widgets_t* awl_widgets_start( void ) {
@@ -543,6 +559,7 @@ awl_widgets_t* awl_widgets_start( void ) {
 }
 
 void awl_widgets_stop( awl_widgets_t* wd ) {
+    if (wd) awl_host->timer_remove( wd->clock_leave );
     free( wd );
 }
 
@@ -1307,8 +1324,7 @@ static uint32_t ipwidget_measure( widget_t* w ) {
     // in the bar's color for it, what is missing dimmed
     const uint32_t fg = P->config.colors.popup_fg, dim = P->config.colors.popup_dim,
                    hi = color_16bit_to_8bit( s->fg );
-    ipwidget_table_t t;
-    memset( &t, 0, sizeof t );
+    ipwidget_table_t t = {0};
     for (int i=0; i<n && t.nrows < IPWIDGET_ROWS - 1; ++i) {
         const uint32_t c = i == best && (routed || by_nm) ? hi : fg;
         // interface names are at most 15 plain characters, but no control characters here
@@ -1508,8 +1524,40 @@ static int clockwidget_center( widget_t* w ) {
     return (int)(center / w->bar->scale + 0.5f);
 }
 
+/** ms off the clock and its clicked popup before that closes, as the
+ * clock's leave_delay_ms */
+#define CLOCK_LEAVE_MS 20
+
+/* arms the clicked popup's leave if the pointer is off it and the clock,
+ * disarms it if it came back */
+static void clock_leave_check( awl_widgets_t* wd ) {
+    const int off = wd->clock_popup && awl_host->window_monitor( wd->clock_popup ) && !wd->clock_on && !wd->clock_inside;
+    if (off == wd->clock_leaving) return;
+    wd->clock_leaving = off;
+    awl_host->timer_set( wd->clock_leave, off ? CLOCK_LEAVE_MS : 0 );
+}
+
+static void clock_leave_fire( void* data ) {
+    awl_widgets_t* wd = data;
+    wd->clock_leaving = 0;
+    if (wd->clock_popup) awl_host->window_hide( awl_host->srv, wd->clock_popup );
+    wd->clock_popup = NULL;
+}
+
+static void clock_popup_hover( awl_window_t* win, int row, int inside, void* data ) {
+    awl_widgets_t* wd = data;
+    (void)row;
+    if (win != wd->clock_popup) return;
+    wd->clock_inside = inside;
+    clock_leave_check( wd );
+}
+
+/* the calendar, unless a right click opened one of the popups */
 static void clockwidget_hover( widget_t* w ) {
     awl_plugin_data_t* P = w->plugins;
+    awl_widgets_t* wd = P->widgets;
+    if (wd && wd->clock_popup && awl_host->window_monitor( wd->clock_popup )) return;
+    if (wd) wd->clock_popup = NULL;
     awl_calpopup_show( P->calpopup, w, clockwidget_center( w ) );
 }
 
@@ -1524,6 +1572,40 @@ static void clockwidget_scroll( widget_t* w, uint32_t x, int amount ) {
     awl_plugin_data_t* P = w->plugins;
     (void)w; (void)x;
     awl_calpopup_scroll( P->calpopup, amount );
+}
+
+/* A left click closes the calendar and the timer; a right one cycles: the
+ * timer, unless it is open, then the calendar. The press closed a calendar
+ * the hover opened (callback_leave); what the click opens closes as a
+ * hover's would. */
+static void clockwidget_click( widget_t* w, uint32_t x, int button ) {
+    awl_plugin_data_t* P = w->plugins;
+    awl_widgets_t* wd = P->widgets;
+    (void)x;
+    const int timer = awl_timerpopup_shown( P->timerpopup );
+    awl_timerpopup_hide( P->timerpopup );
+    awl_calpopup_hide( P->calpopup );
+    if (wd) wd->clock_popup = NULL;
+    if (button != BTN_RIGHT) return;
+    if (timer) awl_calpopup_show( P->calpopup, w, clockwidget_center( w ) );
+    else awl_timerpopup_show( P->timerpopup, w, clockwidget_center( w ) );
+    if (!wd || !w->popup_window) return;
+    if (!wd->clock_leave && !(wd->clock_leave = awl_host->timer_add( awl_host->srv, clock_leave_fire, wd ))) return;
+    wd->clock_popup = w->popup_window;
+    wd->clock = w;
+    wd->clock_on = 1;
+    wd->clock_inside = 0;
+    awl_host->window_set_hover( wd->clock_popup, clock_popup_hover, wd );
+    clock_leave_check( wd );
+}
+
+/* the clicked popup closes once the pointer has left the clock and it */
+static void clockwidget_view( widget_t* w, int32_t x ) {
+    awl_plugin_data_t* P = w->plugins;
+    awl_widgets_t* wd = P->widgets;
+    if (!wd || !wd->clock_popup || w != wd->clock) return;
+    wd->clock_on = x >= 0;
+    clock_leave_check( wd );
 }
 
 /** how close (per mille) the screen brightness has to come to full or empty
