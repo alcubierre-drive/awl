@@ -15,7 +15,7 @@
 #include "awl_popup.h"
 #include "awl_process.h"
 #include "awl_wallpaper.h"
-#include "tray/awl_tray.h"
+#include "awl_trayapp_env.h"
 #include <limits.h>
 #include <pwd.h>
 #include <stdlib.h>

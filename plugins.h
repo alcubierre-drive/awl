@@ -507,7 +507,7 @@ void awl_config_fill( const awl_plugin_data_t* p, awl_config_t* c );
 /** v logical pixels in physical ones at o's scale (o anything with a ``scale``) */
 #define px( o, v ) ((int)lroundf( (v) * (o)->scale ))
 
-/** whole steps from a scroll, the rest kept in *acc: a wheel notch is one, a
+/** whole steps from a scroll, the rest kept in \*acc: a wheel notch is one, a
  * touchpad's 10 units as on the bar (awl_bar.c's SCROLL_LIMIT) */
 static inline int scroll_steps( double* acc, int32_t value120, double delta ) {
     *acc += value120 ? value120 / 120.0 : delta / 10.0;
@@ -542,7 +542,7 @@ static inline void text_in( pixman_image_t* pix, struct fcft_font* font, int x0,
     awl_host->text_over( pix, font, x0 + x, y0 + b.y, (unsigned)(w < b.w ? w + 1 : b.w), (unsigned)b.h, s, fg );
 }
 
-/** *win, made on first use with painter and the callbacks (scroll NULL for
+/** \*win, made on first use with painter and the callbacks (scroll NULL for
  * none); NULL before awl is set up */
 static inline awl_window_t* popup_window( awl_window_t** win, const awl_window_painter_t* painter,
         void (*click)( awl_window_t*, int, int, uint32_t, void* ),

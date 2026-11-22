@@ -1,5 +1,5 @@
 /* libawltray-env.so: preloaded into a program awl starts with TRAY_ICONS
- * (app_env.c), so that only it, not what it starts in turn, gets the
+ * (awl_trayapp_env.c), so that only it, not what it starts in turn, gets the
  * tray's icon theme. Before anything else in it runs, it takes what awl
  * gave it out of its environment: DCONF_PROFILE, which it keeps for dconf
  * (answering dconf's g_getenv() for it) and replaces by awl's own,

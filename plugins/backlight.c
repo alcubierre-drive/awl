@@ -148,9 +148,8 @@ out:
 
 /** The answer to :c:func:`query_properties`: all of the daemon's
  * properties, read with :c:func:`read_properties`. An error means the
- * daemon went away or hangs; the former is told by
- * :c:func:`on_owner_changed`, which follows, and the latter is no reason to
- * drop the connection. */
+ * daemon went away or hangs; the former is told by :c:func:`gone`, which
+ * follows, and the latter is no reason to drop the connection. */
 static int on_properties( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     (void)ret_error;
     awl_backlight_bus_t* s = userdata;

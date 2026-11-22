@@ -4,7 +4,7 @@
 #include "awl_log.h"
 #include "awl_process.h"
 #include "awl_xwayland.h"
-#include "tray/awl_tray.h"
+#include "awl_trayapp_env.h"
 #include <fcntl.h>
 
 /** vfork(2) and execvpe(3) are glibc/BSD extensions not declared under the

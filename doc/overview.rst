@@ -23,8 +23,8 @@ What lives where
 The file names say which binary a file belongs to: ``awl_*`` (and awl.c,
 awl.h) to ``awl``, where awl.c starts and ends it and each awl_*.c is one of
 its parts (see :doc:`api/awl`), ``plugins_*`` and plugins/ (and plugins.c, plugins.h) to
-``libawlplugins.so``; tray/ is awl's, the icon theme of the programs it
-starts with :c:macro:`TRAY_ICONS`. Every type the library shares with awl is in
+``libawlplugins.so``; awl_trayapp_env_shim.c is ``libawltray-env.so``, preloaded
+into the programs awl starts with :c:macro:`TRAY_ICONS`. Every type the library shares with awl is in
 awl.h; the headers that make up awl's side of the interface (awl.h,
 awl_host.h, awl_plugin_abi.h, awl_draw.h, awl_log.h, awl_opt.h, awl_dict_type.h) are
 included by the libraries too, awl's own types are in awl_core.h.

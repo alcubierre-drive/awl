@@ -25,7 +25,7 @@
 #include "awl_config.h"
 #include "awl_draw.h"
 #include "awl_log.h"
-#include "tray/awl_tray.h"
+#include "awl_trayapp_env.h"
 #include <pthread.h>
 #include <stdatomic.h>
 #include <sys/types.h>
@@ -154,7 +154,7 @@ typedef struct awl_process_t {
         awl_config_t builtin;
     } config;
 
-    /** tray/app_env.c's icon theme for the programs awl starts; main thread */
+    /** awl_trayapp_env.c's icon theme for the programs awl starts; main thread */
     struct {
         /** the config's icon_theme, NULL: none */
         char *theme;

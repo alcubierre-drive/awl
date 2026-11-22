@@ -3,7 +3,7 @@
 /**
  * What awl's core keeps of the tray: the icon theme of the programs awl
  * starts with :c:macro:`TRAY_ICONS` (awl.h), :c:member:`awl_config_t.tray` (awl.h)'s
- * icon_theme (app_env.c, libawltray-env.so from env_shim.c). The bar's tray
+ * icon_theme (awl_trayapp_env.c, libawltray-env.so from awl_trayapp_env_shim.c). The bar's tray
  * widget is the library's (plugins/sni.h). Main thread only.
  */
 

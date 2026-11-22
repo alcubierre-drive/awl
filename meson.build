@@ -126,9 +126,9 @@ version_h = vcs_tag(input: 'version.h.in', output: 'version.h',
   command: ['git', '-C', meson.project_source_root(), 'describe', '--tags', '--dirty'],
   fallback: meson.project_version())
 
-# preloaded into the programs awl starts with TRAY_ICONS (tray/app_env.c,
-# tray/env_shim.c), found next to awl; libc only
-shared_library('awltray-env', 'tray/env_shim.c',
+# preloaded into the programs awl starts with TRAY_ICONS (awl_trayapp_env.c,
+# awl_trayapp_env_shim.c), found next to awl; libc only
+shared_library('awltray-env', 'awl_trayapp_env_shim.c',
   dependencies: cc.find_library('dl', required: false),
   install: true,
 )
@@ -186,7 +186,7 @@ awl = executable('awl',
   'awl_lockscreen.c', 'awl_capture.c', 'awl_spawn.c', 'awl_wallpaper.c', 'awl_log.c',
   'awl_dict.c', 'awl_util.c', 'awl_draw.c', 'awl_plugin_host.c', 'awl_desktop.c',
   'awl_background.c', 'awl_redraw.c', 'awl_sni.c', 'awl_bus.c', 'awl_notifications.c', 'awl_alert.c', 'awl_window.c',
-  'awl_window_draw.c', 'awl_process.c', 'awl_lockhelper.c', 'tray/app_env.c', awl_test_src, awl_lock_src,
+  'awl_window_draw.c', 'awl_process.c', 'awl_lockhelper.c', 'awl_trayapp_env.c', awl_test_src, awl_lock_src,
   protocol_headers, version_h,
   c_args: awl_c_args + awl_test_args + awl_lock_args,
   dependencies: awl_deps,

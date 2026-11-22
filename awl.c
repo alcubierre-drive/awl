@@ -26,7 +26,7 @@
 #endif
 #include "awl_wallpaper.h"
 #include "awl_xwayland.h"
-#include "tray/awl_tray.h"
+#include "awl_trayapp_env.h"
 
 /* awl's start, its main loop and its end: setup() makes the wlroots objects
  * and hooks the modules' handlers up to them, run() starts the backend and

@@ -16,9 +16,9 @@
  * children. libc only; main thread only. */
 
 #define _GNU_SOURCE /* memfd_create() */
-#include "awl_tray.h"
-#include "../awl_log.h"
-#include "../awl_process.h"
+#include "awl_trayapp_env.h"
+#include "awl_log.h"
+#include "awl_process.h"
 
 #include <endian.h>
 #include <errno.h>
