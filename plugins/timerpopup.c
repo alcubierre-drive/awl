@@ -50,7 +50,7 @@ struct awl_timerpopup {
     awl_box_t part[P_COUNT];
 };
 
-static const char* const labels[P_COUNT] = { "Start", "Stop", "‹", NULL, "›" };
+static const char* const labels[P_COUNT] = { "Start", "Stop ↺", "‹", NULL, "›" };
 
 /** s seconds as 4:05 or 1:02:03 */
 static void fmt( char* buf, size_t n, int s ) {
@@ -199,9 +199,10 @@ static void run( awl_timerpopup_t* tp ) {
     redraw( tp );
 }
 
-static void halt( awl_timerpopup_t* tp ) {
+static void halt( awl_timerpopup_t* tp, bool reset ) {
     tp->end = 0;
     awl_host->timer_set( tp->timer, 0 );
+    if (reset) tp->dur = DUR_DEFAULT;
     redraw( tp );
 }
 
@@ -223,10 +224,11 @@ static void step( awl_timerpopup_t* tp, int n ) {
 static void click( awl_window_t* win, int part, int col, uint32_t button, void* data ) {
     awl_timerpopup_t* tp = data;
     (void)win; (void)col;
-    if (button != BTN_LEFT) return;
+    const bool reset = part == P_STOP && button == BTN_RIGHT;
+    if (button != BTN_LEFT && !reset) return;
     switch (part) {
     case P_START: run( tp ); break;
-    case P_STOP: halt( tp ); break;
+    case P_STOP: halt( tp, reset ); break;
     case P_DOWN: step( tp, -1 ); break;
     case P_UP: step( tp, 1 ); break;
     default: break;

@@ -285,7 +285,7 @@ static int32_t configline( const char* key, const awl_dict_val_t* v, void* ctx )
     escape( f, key );
     fputc( '=', f );
     switch (v->kind) {
-    case AWL_DICT_KIND_STR: escape( f, v->str ); break;
+    case AWL_DICT_KIND_STR: fputc('"', f); escape( f, v->str ); fputc('"', f); break;
     case AWL_DICT_KIND_NUM: fprintf( f, "%lld", (long long)v->num ); break;
     case AWL_DICT_KIND_FRAC: fprintf( f, "%g", v->frac ); break;
     case AWL_DICT_KIND_PTR: fprintf( f, "%p", v->ptr ); break;
