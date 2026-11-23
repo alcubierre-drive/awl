@@ -138,6 +138,7 @@ static const awl_config_t awl_config_defaults = {
     .ntags = 9,
     .sloppyfocus = 1,
     .bypass_surface_visibility = 0,
+    .systemd_session = 0,
     .colors = {
         .root           = 0x000000ff,
         .fullscreen     = 0x1a1a1aff,

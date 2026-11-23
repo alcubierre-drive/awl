@@ -117,6 +117,9 @@ cleanup(awl_server_t *srv)
     srv->sni = NULL;
     awl_notifications_stop(srv);
     awl_tray_app_cleanup(srv->proc);
+    /* while their display is still there: the session's services are
+     * told to stop before they lose it */
+    sessionstop(srv->proc);
 
     /* The event loop doesn't run any more, so nothing reads the signalfd:
      * let SIGINT and SIGTERM end awl the usual way again
@@ -254,6 +257,7 @@ run(awl_server_t *srv, char *startup_cmd, int nolock)
     setenv("WAYLAND_DISPLAY", socket, 1);
     /* the rest of awl's environment is the config's (configapply()) */
     environmentimport(srv->proc);
+    sessionstart(srv->proc, srv->cfg->systemd_session);
     /* the icon theme of the programs started with TRAY_ICONS */
     {
         char home[PATH_MAX];

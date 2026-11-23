@@ -447,6 +447,10 @@ typedef struct awl_config_t {
     bool sloppyfocus:1;
     /** idle inhibitors inhibit even while their surface isn't visible */
     bool bypass_surface_visibility:1;
+    /** start systemd's graphical-session.target, for the user services
+     * that belong to a graphical session, and stop it on the way out
+     * (:c:func:`awl_bus_session`); read at the start only */
+    bool systemd_session:1;
     /** the colors awl draws with: the windows', the popups', the menus' */
     awl_colors_t colors;
     /** windows' borders' width */

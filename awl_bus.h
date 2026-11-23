@@ -9,6 +9,8 @@
  * failure doesn't take the other's down. Main thread only.
  */
 
+#include <stdbool.h>
+
 typedef struct sd_bus sd_bus;
 struct wl_event_loop;
 /** a service's session bus connection on awl's loop; opaque */
@@ -44,3 +46,10 @@ void awl_bus_stop( awl_bus_t* b );
  * ``dbus-update-activation-environment --systemd`` does. Blocks for up to a
  * few seconds per call; failures are logged. */
 void awl_bus_import_environment( const char* const* names );
+/** Starts (start) or stops the user unit awl-session.service, which
+ * systemd makes from awl's description, no file: it pulls
+ * graphical-session.target (and graphical-session-pre.target before it)
+ * in, and lets it stop again. Call it after
+ * :c:func:`awl_bus_import_environment`, so the session's services get the
+ * environment. Blocks for up to half a second; failures are logged. */
+void awl_bus_session( bool start );

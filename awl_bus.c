@@ -183,3 +183,33 @@ void awl_bus_import_environment( const char* const* names ) {
               "org.freedesktop.DBus", "UpdateActivationEnvironment", append_env_dict, names );
     sd_bus_flush_close_unref( bus );
 }
+
+void awl_bus_session( bool start ) {
+    sd_bus* bus = NULL;
+    sd_bus_error e = SD_BUS_ERROR_NULL;
+    int r;
+    /* a oneshot that stays active needs no unit file (ExecStart is
+     * required), gone once stopped, even failed; the targets, which refuse a start by name, come with
+     * it as dependencies and stop once nothing needs them. The answer is
+     * waited for: systemd drops a call whose sender is gone. */
+    if ((r = sd_bus_open_user_with_description( &bus, "awl-session" )) >= 0 &&
+        (r = sd_bus_set_method_call_timeout( bus, 500000 )) >= 0)
+        r = start ? sd_bus_call_method( bus, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+                    "org.freedesktop.systemd1.Manager", "StartTransientUnit", &e, NULL,
+                    "ssa(sv)a(sa(sv))", "awl-session.service", "replace", 8,
+                    "Description", "s", "awl session",
+                    "Type", "s", "oneshot",
+                    "RemainAfterExit", "b", 1,
+                    "CollectMode", "s", "inactive-or-failed",
+                    "ExecStart", "a(sasb)", 1, "/bin/true", 1, "true", 0,
+                    "BindsTo", "as", 1, "graphical-session.target",
+                    "Wants", "as", 1, "graphical-session-pre.target",
+                    "After", "as", 1, "graphical-session-pre.target", 0 )
+                  : sd_bus_call_method( bus, "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+                    "org.freedesktop.systemd1.Manager", "StopUnit", &e, NULL,
+                    "ss", "awl-session.service", "replace" );
+    if (r < 0)
+        awl_wrn_printf( "session: %s: %s\n", start ? "start" : "stop", e.message ? e.message : strerror( -r ) );
+    sd_bus_error_free( &e );
+    sd_bus_flush_close_unref( bus );
+}

@@ -221,6 +221,22 @@ environmentimport(awl_process_t *proc)
     awl_bus_import_environment(envimported);
 }
 
+void
+sessionstart(awl_process_t *proc, bool systemd_session)
+{
+    if (!systemd_session || proc->config.sessionstarted) return;
+    proc->config.sessionstarted = 1;
+    awl_bus_session(1);
+}
+
+void
+sessionstop(awl_process_t *proc)
+{
+    if (!proc->config.sessionstarted) return;
+    proc->config.sessionstarted = 0;
+    awl_bus_session(0);
+}
+
 /** :c:member:`cfg->environment <awl_config_t.environment>` into awl's environment */
 static void
 environmentapply(awl_server_t *srv)

@@ -35,6 +35,12 @@ void configuse(awl_server_t *srv);
  * does it again. Blocks for up to a few seconds. What it did is proc's
  * (:c:member:`awl_process_t.config`). */
 void environmentimport(awl_process_t *proc);
+/** With :c:member:`cfg->systemd_session <awl_config_t.systemd_session>`,
+ * starts graphical-session.target (:c:func:`awl_bus_session`), once, after
+ * :c:func:`environmentimport`. Blocks for up to half a second. */
+void sessionstart(awl_process_t *proc, bool systemd_session);
+/** stops it again, if sessionstart() started it */
+void sessionstop(awl_process_t *proc);
 /** wlroots' log level: :c:member:`cfg->wlr_log_level <awl_config_t.wlr_log_level>`, WLR_DEBUG with awl -d; at
  * startup and after every config change */
 void wlrloginit(awl_server_t *srv);

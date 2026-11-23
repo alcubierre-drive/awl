@@ -148,6 +148,9 @@ typedef struct awl_process_t {
         bool envimportstarted:1;
         /** one of them changed since */
         bool envimportdirty:1;
+        /** :c:func:`sessionstart` started the session's unit, for
+         * :c:func:`sessionstop` */
+        bool sessionstarted:1;
         /** builtin is filled */
         bool builtin_filled:1;
         /** :c:func:`builtinconfig`'s, filled on its first call */

@@ -322,6 +322,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     SETLIST(c->environment, environment);
     SETLIST(c->autostart, autostart);
 
+    /* systemd's graphical-session.target, while awl runs */
+    c->systemd_session = 1;
+
     /* the bar */
     c->bar.top = 0; /* the bar at the bottom */
 
