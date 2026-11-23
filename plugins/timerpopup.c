@@ -174,7 +174,7 @@ static void check( awl_timerpopup_t* tp ) {
     fmt( dur, sizeof dur, tp->ran );
     awl_insult( insult, sizeof insult, &tp->seed );
     /* the body has markup; the insults' words have no '<' or '&' */
-    snprintf( body, sizeof body, "<b>%s</b> Your time (%s) is up.", insult, dur );
+    snprintf( body, sizeof body, "<b>%s</b>\nYour time (%s) is up.", insult, dur );
     awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
     n.summary = "Timer";
     n.body = body;
