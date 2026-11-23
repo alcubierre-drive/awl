@@ -142,12 +142,6 @@ struct awl_notify {
     uint64_t icon_serial;
 };
 
-static long long now_ms( void ) {
-    struct timespec t;
-    clock_gettime( CLOCK_MONOTONIC, &t );
-    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
-}
-
 /** id's record in what the server keeps open now, NULL if it closed */
 static const awl_notif_t* record( uint32_t id ) {
     const awl_notif_t* open[MAX_OPEN];
@@ -602,7 +596,7 @@ static void image_timer( void* data ) {
         changed = 1;
     }
     awl_notify_image_free( done );
-    const long long now = now_ms();
+    const long long now = awl_now_ms();
     for (int i = 0; i < ns->n; i++) {
         note_t* n = ns->v[i];
         if (!n->ready && now >= n->ready_by) {
@@ -651,7 +645,7 @@ static void sources( awl_notify_t* ns, note_t* n, const awl_notif_t* r ) {
     const float scale = awl_host->monitor_scale( awl_host->monitor_selected( awl_host->srv ) );
     image_want( ns, n, (int)lroundf( (float)n->look.image_size.v * scale ) );
     if (!n->img_want) n->ready = 1;
-    else if (!n->ready) n->ready_by = now_ms() + IMAGE_WAIT_MS;
+    else if (!n->ready) n->ready_by = awl_now_ms() + IMAGE_WAIT_MS;
 }
 
 /** r's summary into m, in bold, with markup as other servers take it; a

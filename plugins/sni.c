@@ -119,7 +119,7 @@ struct awl_sni_t {
      * may fail and open its menu), so mail never waits for a bar to be
      * drawn (none is, while hidden or locked) */
     awl_timer_t* poll_timer;
-    uint64_t poll_until;
+    int64_t poll_until;
     /** the menus' window, which the mail goes to */
     awl_tray_menu_window_t* menu_window;
 };
@@ -264,12 +264,6 @@ static mail_t* take_mail( awl_sni_t* s ) {
     return m;
 }
 
-static uint64_t now_ms( void ) {
-    struct timespec ts;
-    clock_gettime( CLOCK_MONOTONIC, &ts );
-    return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
-}
-
 /** poll_timer in ms */
 static void poll_arm( awl_sni_t* s, int ms ) {
     if (!s->poll_timer) s->poll_timer = awl_host->timer_add( awl_host->srv, poll_fire, s );
@@ -289,7 +283,7 @@ static void poll_fire( void* data ) {
         }
         free( m );
     }
-    if (awl_tray_menu_window_is_open( s->menu_window ) || now_ms() < s->poll_until) poll_arm( s, POLL_MS );
+    if (awl_tray_menu_window_is_open( s->menu_window ) || awl_now_ms() < s->poll_until) poll_arm( s, POLL_MS );
 }
 
 void sni_main_poll( awl_sni_t* s ) {
@@ -332,7 +326,7 @@ void sni_click( awl_sni_t* s, uint64_t serial, int what, int x, int y, const cha
     request( s, r );
     /* if it fails, its menu opens */
     if (what == AWL_SNI_ACTIVATE) {
-        s->poll_until = now_ms() + ACTIVATE_WAIT_MS;
+        s->poll_until = awl_now_ms() + ACTIVATE_WAIT_MS;
         poll_arm( s, POLL_MS );
     }
 }

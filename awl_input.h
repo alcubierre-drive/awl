@@ -22,8 +22,9 @@ void inputfini(awl_server_t *srv);
 /** frees :c:member:`awl_server_t.input`; once the backend, and with it
  * every device, is gone */
 void inputfree(awl_server_t *srv);
-/** after the config changed: the keymap, key repeat, and the
- * pointers' libinput settings */
+/** after the config changed: the keymap, key repeat, the
+ * pointers' libinput settings, and the idle timer
+ * (:c:member:`awl_config_t.idle_seconds`) */
 void inputconfigure(awl_server_t *srv);
 
 /* the backend's new devices, virtual ones, the seat's selection requests,
@@ -36,5 +37,10 @@ void setsel(struct wl_listener *listener, void *data);
 void createidleinhibitor(struct wl_listener *listener, void *data);
 
 /** whether an idle inhibitor whose surface is visible (any, with
- * bypass_surface_visibility) keeps the outputs on; exclude is going */
+ * :c:member:`~awl_config_t.bypass_surface_visibility`) keeps the outputs on, and holds off
+ * :c:member:`awl_config_t.on_idle`; exclude is going */
 void checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude);
+/** a key or the pointer: for the idle notifier's clients, the
+ * notifications' timeouts (:c:func:`awl_notifications_activity`) and
+ * :c:member:`awl_config_t.idle_seconds` */
+void activity(awl_server_t *srv);

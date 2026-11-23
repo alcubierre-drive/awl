@@ -4,7 +4,8 @@
  * The screen lock, part of awl (awl_lockscreen.c). awl locks with an
  * ext-session-lock client, :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`, started on a lock
  * request (``loginctl lock-session`` and before suspend, through the
- * plugins' logind thread, or the lockscreen action). While the
+ * plugins' logind thread, or the lockscreen action, e.g. on idle through
+ * :c:member:`cfg->on_idle <awl_config_t.on_idle>`). While the
  * session is locked only the locker's surfaces are shown (over a blur,
  * :c:member:`cfg->lock.blur <awl_config_t.lock.blur>`) and get input. A lock covers the screen
  * once every output has shown it; before a suspend, the logind thread waits

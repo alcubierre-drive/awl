@@ -70,7 +70,49 @@ struct awl_input {
         char *xkb[5]; /* rules, model, layout, variant, options */
         int repeat_rate, repeat_delay;
     } applied;
+    /** runs :c:member:`awl_config_t.on_idle` (:c:func:`idlecheck`) */
+    struct wl_event_source *idle_timer;
+    /** the last :c:func:`activity` (CLOCK_MONOTONIC, ms) */
+    int64_t last_activity;
+    /** whether :c:func:`checkidleinhibitor` found an inhibitor, the timer
+     * is armed, :c:member:`awl_config_t.on_idle` ran since the last
+     * :c:func:`activity` */
+    bool idle_inhibited:1, idle_armed:1, idle_done:1;
 };
+
+/** the idle check due :c:member:`awl_config_t.idle_seconds` after the last
+ * :c:func:`activity`; not while inhibited, nor again before the next one once
+ * :c:member:`awl_config_t.on_idle` ran */
+static void
+idlearm(awl_server_t *srv)
+{
+    struct awl_input *in = srv->input;
+    const int64_t ms = (int64_t)(srv->cfg->idle_seconds * 1000.0f);
+    if (!in->idle_timer || in->idle_armed || in->idle_inhibited || in->idle_done || ms <= 0)
+        return;
+    const int64_t left = in->last_activity + ms - awl_now_ms();
+    wl_event_source_timer_update(in->idle_timer, left < 1 ? 1 : left > INT_MAX ? INT_MAX : (int)left);
+    in->idle_armed = 1;
+}
+
+/** :c:member:`awl_config_t.idle_seconds` since the last :c:func:`activity`:
+ * :c:member:`awl_config_t.on_idle` runs; else checks again when that will be */
+static int
+idlecheck(void *data)
+{
+    awl_server_t *srv = data;
+    struct awl_input *in = srv->input;
+    in->idle_armed = 0;
+    if (!in->idle_inhibited && srv->cfg->idle_seconds > 0
+            && awl_now_ms() - in->last_activity >= (int64_t)(srv->cfg->idle_seconds * 1000.0f)) {
+        awl_log_printf("idle: %g s, on_idle runs\n", (double)srv->cfg->idle_seconds);
+        in->idle_done = 1;
+        for (size_t i = 0; i < srv->cfg->on_idle.n; i++)
+            srv->cfg->on_idle.v[i].func(srv, &srv->cfg->on_idle.v[i].arg);
+    }
+    idlearm(srv);
+    return 0;
+}
 
 void
 checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude)
@@ -88,6 +130,21 @@ checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude)
     }
 
     wlr_idle_notifier_v1_set_inhibited(srv->idle_notifier, inhibited);
+    /* like wlroots' notifier: the idle time counts from the inhibitor's end */
+    if (srv->input->idle_inhibited && !inhibited)
+        srv->input->last_activity = awl_now_ms();
+    srv->input->idle_inhibited = inhibited;
+    idlearm(srv);
+}
+
+void
+activity(awl_server_t *srv)
+{
+    wlr_idle_notifier_v1_notify_activity(srv->idle_notifier, srv->seat);
+    awl_notifications_activity(srv);
+    srv->input->last_activity = awl_now_ms();
+    srv->input->idle_done = 0;
+    idlearm(srv);
 }
 
 void
@@ -348,8 +405,7 @@ keypress(struct wl_listener *listener, void *data)
     int handled = 0;
     uint32_t mods = wlr_keyboard_get_modifiers(&group->wlr_group->keyboard);
 
-    wlr_idle_notifier_v1_notify_activity(srv->idle_notifier, srv->seat);
-    awl_notifications_activity(srv);
+    activity(srv);
 
     if (srv->locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
         lockkeystroke(srv);
@@ -540,6 +596,8 @@ inputinit(awl_server_t *srv)
     wl_list_init(&srv->input->devices);
     srv->input->kb_group = createkeyboardgroup(srv);
     wl_list_init(&srv->input->kb_group->destroy.link);
+    srv->input->last_activity = awl_now_ms();
+    srv->input->idle_timer = wl_event_loop_add_timer(srv->event_loop, idlecheck, srv);
 }
 
 void
@@ -547,6 +605,9 @@ inputfini(awl_server_t *srv)
 {
     destroykeyboardgroup(&srv->input->kb_group->destroy, NULL);
     srv->input->kb_group = NULL;
+    if (srv->input->idle_timer)
+        wl_event_source_remove(srv->input->idle_timer);
+    srv->input->idle_timer = NULL;
 }
 
 void
@@ -596,4 +657,5 @@ inputconfigure(awl_server_t *srv)
     wl_list_for_each(d, &srv->input->devices, link)
         if (d->device->type == WLR_INPUT_DEVICE_POINTER)
             configurepointer(srv, wlr_pointer_from_input_device(d->device));
+    idlearm(srv);
 }

@@ -20,6 +20,11 @@ static const char *const locker[] = { AWL_LOCKER, NULL };
 
 static void tagmonf(awl_server_t *srv, const Arg *arg) { AWL_ACTION(tagmon)(srv, arg); AWL_ACTION(focusmon)(srv, arg); }
 
+/* what runs after idle_seconds, if they are set */
+static const IdleAction on_idle[] = {
+    { AWL_ACTION(lockscreen), {0} },
+};
+
 static const Key keys[] = {
     /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */
     /* modifier                  key                 function                      argument */
@@ -138,6 +143,8 @@ static const awl_config_t awl_config_defaults = {
     .ntags = 9,
     .sloppyfocus = 1,
     .bypass_surface_visibility = 0,
+    .idle_seconds = 0, /* never idle */
+    .on_idle = { on_idle, LENGTH(on_idle) },
     .systemd_session = 0,
     .colors = {
         .root           = 0x000000ff,

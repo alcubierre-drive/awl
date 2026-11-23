@@ -104,6 +104,14 @@ typedef struct {
     const Arg arg;
 } Key;
 
+/** An action that runs on idle, :c:member:`awl_config_t.on_idle`. */
+typedef struct {
+    /** what it does, called with :c:member:`~IdleAction.arg` */
+    void (*func)(awl_server_t *, const Arg *);
+    /** :c:member:`~IdleAction.func`'s argument */
+    const Arg arg;
+} IdleAction;
+
 /** A layout, :c:member:`awl_config_t.layouts`. */
 typedef struct {
     const char *symbol;
@@ -447,6 +455,13 @@ typedef struct awl_config_t {
     bool sloppyfocus:1;
     /** idle inhibitors inhibit even while their surface isn't visible */
     bool bypass_surface_visibility:1;
+    /** after that many seconds without a key or the pointer, and without
+     * an idle inhibitor (:c:func:`checkidleinhibitor`), the
+     * :c:member:`~awl_config_t.on_idle` actions run, once until the next
+     * key or motion; 0: never */
+    float idle_seconds;
+    /** what runs after :c:member:`~awl_config_t.idle_seconds`, in order */
+    struct { const IdleAction *v; size_t n; } on_idle;
     /** start systemd's graphical-session.target, for the user services
      * that belong to a graphical session, and stop it on the way out
      * (:c:func:`awl_bus_session`); read at the start only */
@@ -674,6 +689,13 @@ static inline void awl_config_fill_defaults( awl_config_t* c ) {
 #define CHVT(n) { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_XF86Switch_VT_##n, AWL_ACTION(chvt), {.ui = (n)} }
 /** spawn's argument for a shell command */
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
+
+/** CLOCK_MONOTONIC in ms */
+static inline int64_t awl_now_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (int64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
 
 static inline int awl_localtime(char buf[32]) {
     time_t now = time(NULL);

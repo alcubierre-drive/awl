@@ -149,12 +149,6 @@ static void notif_free( notif_t* n ) {
 static int expire( void* data );
 static int idle_check( void* data );
 
-static int64_t now_ms( void ) {
-    struct timespec t;
-    clock_gettime( CLOCK_MONOTONIC, &t );
-    return (int64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
-}
-
 /** f within 0 to 1 (NaN: 0) */
 static float clampf( float f ) {
     return f > 1.0f ? 1.0f : f > 0.0f ? f : 0.0f;
@@ -166,7 +160,7 @@ static void idle_arm( awl_server_t *srv ) {
     const int pause = srv->cfg->notifications.idle_pause;
     if (N->idle_armed || N->paused || pause <= 0 || !N->loop) return;
     if (!N->idle_timer && !(N->idle_timer = wl_event_loop_add_timer( N->loop, idle_check, srv ))) return;
-    int64_t left = N->last_activity + pause - now_ms();
+    int64_t left = N->last_activity + pause - awl_now_ms();
     if (left < 1) left = 1;
     if (left > pause) left = pause;
     wl_event_source_timer_update( N->idle_timer, (int)left );
@@ -190,7 +184,7 @@ static void arm( awl_server_t* srv, notif_t* n ) {
     n->left = 0;
     if (!n->timer) n->timer = wl_event_loop_add_timer( N->loop, expire, n );
     if (n->timer) wl_event_source_timer_update( n->timer, ms );
-    n->deadline = now_ms() + ms;
+    n->deadline = awl_now_ms() + ms;
 }
 
 static void pixels_drop( notif_t* n ) {
@@ -325,7 +319,7 @@ void awl_notifications_idle( awl_server_t *srv ) {
      * idle_giveback of that is given back, the rest counts as seen */
     const float back = clampf( srv->cfg->notifications.idle_giveback ),
                 keep = clampf( srv->cfg->notifications.idle_floor );
-    const int64_t now = now_ms();
+    const int64_t now = awl_now_ms();
     const int64_t away = now - (int64_t)((float)(now - N->last_activity) * back);
     for (int i = 0; i < N->nopen; i++) {
         notif_t* n = N->open[i];
@@ -353,7 +347,7 @@ static int idle_check( void* data ) {
     N->idle_armed = 0;
     if (!N->nopen) return 0;
     const int pause = srv->cfg->notifications.idle_pause;
-    if (pause > 0 && now_ms() - N->last_activity >= pause) awl_notifications_idle(srv);
+    if (pause > 0 && awl_now_ms() - N->last_activity >= pause) awl_notifications_idle(srv);
     else idle_arm(srv);
     return 0;
 }
@@ -361,7 +355,7 @@ static int idle_check( void* data ) {
 void awl_notifications_activity( awl_server_t *srv ) {
     awl_notifs_t* N = srv->notifs;
     if (!N || srv->locked) return;
-    N->last_activity = now_ms();
+    N->last_activity = awl_now_ms();
     if (!N->paused) return;
     awl_vrb_printf( "notifications: active, timeouts resumed\n" );
     N->paused = 0;
@@ -833,7 +827,7 @@ int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void
     N->loop = loop;
     N->changed = changed;
     N->proc = srv->proc;
-    N->last_activity = now_ms();
+    N->last_activity = awl_now_ms();
     if (!(N->conn = awl_bus_start( loop, &ops, srv ))) {
         N->loop = NULL;
         return -1;

@@ -7,7 +7,6 @@
 #include "awl_input.h"
 #include "awl_lockscreen.h"
 #include "awl_log.h"
-#include "awl_notifications.h"
 #include "awl_output.h"
 #include "awl_popup.h"
 
@@ -38,8 +37,7 @@ axisnotify(struct wl_listener *listener, void *data)
     /* This event is forwarded by the cursor when a pointer emits an axis event,
      * for example when you move the scroll wheel. */
     struct wlr_pointer_axis_event *event = data;
-    wlr_idle_notifier_v1_notify_activity(srv->idle_notifier, srv->seat);
-    awl_notifications_activity(srv);
+    activity(srv);
 
     Client* c = NULL;
     awl_window_t *twin;
@@ -97,8 +95,7 @@ buttonpress(struct wl_listener *listener, void *data)
     const Button *b;
     awl_window_t *twin;
 
-    wlr_idle_notifier_v1_notify_activity(srv->idle_notifier, srv->seat);
-    awl_notifications_activity(srv);
+    activity(srv);
 
     /* a grab takes every press and release, before an open menu's grab */
     if (srv->cursor.mode == CurGrab) {
@@ -345,8 +342,7 @@ motionnotify(awl_server_t *srv, uint32_t time, struct wlr_input_device *device, 
         }
 
         wlr_cursor_move(srv->cursor.wlr, device, dx, dy);
-        wlr_idle_notifier_v1_notify_activity(srv->idle_notifier, srv->seat);
-        awl_notifications_activity(srv);
+        activity(srv);
 
         /* Update selmon (even while dragging a window) */
         if (srv->cfg->sloppyfocus)

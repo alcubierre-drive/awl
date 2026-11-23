@@ -51,12 +51,6 @@ struct awl_osd {
     bool wallpaper_due;
 };
 
-static long long now_ms( void ) {
-    struct timespec t;
-    clock_gettime( CLOCK_MONOTONIC, &t );
-    return (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
-}
-
 /** k's value and what goes with it in one number; -1 not known */
 static long long state( awl_osd_t* o, kind_t k ) {
     awl_plugin_data_t* P = o->p;
@@ -217,7 +211,7 @@ static void unasked( awl_osd_t* o, kind_t k, long long now ) {
 
 void awl_osd_redraw( awl_osd_t* o ) {
     if (!o) return;
-    const long long now = now_ms();
+    const long long now = awl_now_ms();
     if (o->guess >= 0) settle( o );
     for (int k = 0; k < OSD_N; k++) {
         watch_t* w = &o->w[k];
@@ -249,7 +243,7 @@ static void quiet( void* data ) {
 
 static void ask( awl_osd_t* o, kind_t k ) {
     watch_t* w = &o->w[k];
-    const long long now = now_ms();
+    const long long now = awl_now_ms();
     if (!o->timer) return;
     /* what it is now isn't news; what it changes to is */
     if (!watching( w, now )) w->shown = state( o, k );
@@ -282,7 +276,7 @@ void awl_osd_brightness( awl_osd_t* o, float delta ) {
     if (g > 1000) g = 1000;
     send( o, OSD_BRIGHTNESS, g, NULL );
     o->guess = g;
-    w->asked = now_ms();
+    w->asked = awl_now_ms();
     w->label = NULL;
     w->shown = g;
     w->due = 0;
