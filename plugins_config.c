@@ -328,6 +328,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     /* the bar */
     c->bar.top = 0; /* the bar at the bottom */
 
+    /* five minutes idle timeout */
+    c->idle_seconds = 60 * 5;
+
     /* the screen lock */
     c->lock.at_start = 1;
     c->lock.logo_scale = 2;
