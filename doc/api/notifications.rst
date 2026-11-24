@@ -34,13 +34,21 @@ back, and each keeps at least idle_floor of its timeout. OSDs
 (:c:enumerator:`AWL_NOTIF_OSD`) can be excluded
 from a timeout pause through :c:member:`awl_config_t.notifications.osd_skips_pause`).
 
-Its connection to the bus, and the tray watcher's, is awl_bus.h's: one each,
+Its connection to the bus, the tray watcher's and the screensaver's, is awl_bus.h's: one each,
 reconnected after a few seconds when lost.
 
 awl_notifications.h
 -------------------
 
 .. c:autodoc:: awl_notifications.h
+
+awl_screensaver.h
+-----------------
+
+The same kind of service for idle: ``org.freedesktop.ScreenSaver``'s Inhibit,
+which holds off :c:member:`awl_config_t.on_idle` like an idle inhibitor.
+
+.. c:autodoc:: awl_screensaver.h
 
 awl_bus.h
 ---------

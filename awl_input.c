@@ -6,6 +6,7 @@
 #include "awl_log.h"
 #include "awl_notifications.h"
 #include "awl_popup.h"
+#include "awl_screensaver.h"
 
 typedef struct {
     struct wl_list link;
@@ -125,6 +126,7 @@ checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude)
     int inhibited = 0, unused_lx, unused_ly;
     struct wlr_idle_inhibitor_v1 *inhibitor;
     Client *c;
+    inhibited = awl_screensaver_inhibited(srv->screensaver);
     wl_list_for_each(c, &srv->clients.list, link)
         inhibited |= c->inhibit_idle && (srv->cfg->bypass_surface_visibility
                 || wlr_scene_node_coords(&c->scene->node, &unused_lx, &unused_ly));

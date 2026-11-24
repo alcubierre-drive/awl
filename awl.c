@@ -20,6 +20,7 @@
 #include "awl_redraw.h"
 #include "awl_sni.h"
 #include "awl_notifications.h"
+#include "awl_screensaver.h"
 #include "awl_spawn.h"
 #ifdef AWL_TEST
 #include "awl_test.h"
@@ -116,6 +117,7 @@ cleanup(awl_server_t *srv)
     awl_sni_watcher_stop(srv->sni);
     srv->sni = NULL;
     awl_notifications_stop(srv);
+    awl_screensaver_stop(srv);
     awl_tray_app_cleanup(srv->proc);
     /* while their display is still there: the session's services are
      * told to stop before they lose it */

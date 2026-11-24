@@ -143,6 +143,7 @@ static const awl_config_t awl_config_defaults = {
     .ntags = 9,
     .sloppyfocus = 1,
     .bypass_surface_visibility = 0,
+    .screensaver_inhibit = 0,
     .idle_seconds = 0, /* never idle */
     .on_idle = { on_idle, LENGTH(on_idle) },
     .systemd_session = 0,

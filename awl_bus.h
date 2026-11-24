@@ -2,7 +2,8 @@
 
 /**
  * A connection to the session bus on awl's main loop, with sd-bus, for
- * the services awl itself provides (awl_sni.h, awl_notifications.h): it
+ * the services awl itself provides (awl_sni.h, awl_notifications.h,
+ * awl_screensaver.h): it
  * connects from the loop, processes the bus whenever its fd or timeout
  * says so, and connects again a few seconds after it is lost or the
  * service failed. Each service has a connection of its own, so one's

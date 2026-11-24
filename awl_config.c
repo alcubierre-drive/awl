@@ -14,6 +14,7 @@
 #include "awl_plugin_host.h"
 #include "awl_popup.h"
 #include "awl_process.h"
+#include "awl_screensaver.h"
 #include "awl_wallpaper.h"
 #include "awl_trayapp_env.h"
 #include <limits.h>
@@ -299,6 +300,7 @@ configapply(awl_server_t *srv)
     environmentapply(srv);
     wlrloginit(srv);
     inputconfigure(srv);
+    awl_screensaver_configure(srv);
     tagsconfigure(srv);
     barconfigure(srv);
     clientsconfigure(srv);

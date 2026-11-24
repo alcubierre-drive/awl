@@ -111,6 +111,7 @@ struct awl_background;
 struct awl_desktop;
 struct awl_sni_watcher;
 struct awl_notifs;
+struct awl_screensaver;
 struct awl_capture;
 
 /** The popups, awl_popup.c's */
@@ -218,6 +219,10 @@ typedef struct awl_server_t {
     /** awl_notifications.c's: the notification server and its history;
      * from :c:func:`awl_notifications_start` to :c:func:`awl_notifications_stop` */
     struct awl_notifs *notifs;
+    /** awl_screensaver.c's: org.freedesktop.ScreenSaver, while
+     * :c:member:`awl_config_t.screensaver_inhibit` says so
+     * (:c:func:`awl_screensaver_configure`) */
+    struct awl_screensaver *screensaver;
     /** awl_capture.c's: the library's pointer grab and its mark, the
      * clipboard's writers; made with the first grab or clipboard, freed by
      * :c:func:`capturefini` */

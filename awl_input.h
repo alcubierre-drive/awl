@@ -37,7 +37,8 @@ void setsel(struct wl_listener *listener, void *data);
 void createidleinhibitor(struct wl_listener *listener, void *data);
 
 /** whether an idle inhibitor, or a :c:type:`Rule` inhibit_idle window, that is visible (any, with
- * :c:member:`~awl_config_t.bypass_surface_visibility`) keeps the outputs on, and holds off
+ * :c:member:`~awl_config_t.bypass_surface_visibility`), or an
+ * org.freedesktop.ScreenSaver cookie (awl_screensaver.h) keeps the outputs on, and holds off
  * :c:member:`awl_config_t.on_idle`; exclude is going */
 void checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude);
 /** a key or the pointer: for the idle notifier's clients, the

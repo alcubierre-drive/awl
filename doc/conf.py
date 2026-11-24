@@ -72,7 +72,7 @@ nitpick_ignore_regex = [
     ('c:identifier', r'(wlr|wl|pixman|fcft|sd|pa|libinput|wuffs_base|xkb)_\w+'),
     # the modules' own state in awl_server_t, defined in .c files the docs
     # leave out
-    ('c:identifier', r'awl_(bars|alerts|input|sni_watcher|notifs|test|capture)'),
+    ('c:identifier', r'awl_(bars|alerts|input|sni_watcher|notifs|screensaver|test|capture)'),
 ]
 
 html_theme = 'sphinx_rtd_theme'

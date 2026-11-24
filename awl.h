@@ -458,6 +458,9 @@ typedef struct awl_config_t {
     bool sloppyfocus:1;
     /** idle inhibitors inhibit even while their surface isn't visible */
     bool bypass_surface_visibility:1;
+    /** org.freedesktop.ScreenSaver's Inhibit on the session bus inhibits
+     * idle, visible or not (awl_screensaver.h) */
+    bool screensaver_inhibit:1;
     /** after that many seconds without a key or the pointer, and without
      * an idle inhibitor (:c:func:`checkidleinhibitor`), the
      * :c:member:`~awl_config_t.on_idle` actions run, once until the next

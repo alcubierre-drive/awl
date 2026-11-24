@@ -329,6 +329,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
 
     /* five minutes idle timeout */
     c->idle_seconds = 60 * 5;
+    /* apps' org.freedesktop.ScreenSaver Inhibit (players, browsers, GTK
+     * apps through the portal) holds it off */
+    c->screensaver_inhibit = 1;
 
     /* the screen lock */
     c->lock.at_start = 1;
