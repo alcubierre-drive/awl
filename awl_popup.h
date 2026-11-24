@@ -100,6 +100,8 @@ void popupslocked(awl_server_t *srv);
 int popuppartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h);
 /** whether the pointer is over win, one of the popups */
 int pointerinpopup(awl_server_t *srv, awl_window_t *win);
+/** whether win is one of the popups and shown */
+int popupshown(awl_server_t *srv, awl_window_t *win);
 /** the topmost popup that takes the pointer at x, y, NULL if none */
 awl_window_t *popupat(awl_server_t *srv, double x, double y);
 /** the popup that has the pointer: :c:func:`popupat` the cursor, unless the

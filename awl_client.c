@@ -108,6 +108,7 @@ applyrules(awl_server_t *srv, Client *c)
                 }
             }
             c->one_minus_alpha = r->one_minus_alpha;
+            c->inhibit_idle |= r->inhibit_idle;
             if (r->blur && !c->blur) attachblur(srv, c);
         }
     }

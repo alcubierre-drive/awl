@@ -60,10 +60,11 @@ struct awl_bars {
      * callback hover_delay_ms after the pointer got there. hover_active is the
      * widget whose hover fired and that has a callback_leave; leave_timer fires
      * that leave_delay_ms after the pointer left both it and its popup (at once
-     * for a delay of 0). The timers are there from barinit() to barfini(). */
+     * for a delay of 0); clicked: a click opened its popup, not the hover.
+     * The timers are there from barinit() to barfini(). */
     struct wl_event_source *hover_timer, *leave_timer;
     widget_t *hover_widget, *hover_active;
-    bool leave_pending;
+    bool leave_pending, clicked;
     /** the widget with a callback_view the pointer is on (:c:member:`widget_t.callback_view`) */
     widget_t *view_widget;
     /** :c:func:`barsdirty`'s redraw, NULL while none is due */
@@ -168,10 +169,14 @@ hovertimeout(void *data)
      * keyboard */
     if (!srv->bars->hover_widget || srv->locked || srv->clients.exclusive_focus || popupkeyboard(srv))
         return 0;
-    if (srv->bars->hover_active && srv->bars->hover_active != srv->bars->hover_widget) {
+    /* its popup is still open */
+    if (srv->bars->hover_active == srv->bars->hover_widget)
+        return 0;
+    if (srv->bars->hover_active) {
         setleavepending(srv->bars, 0);
         leavetimeout(srv->bars);
     }
+    srv->bars->clicked = 0;
     if (srv->bars->hover_widget->callback_leave)
         srv->bars->hover_active = srv->bars->hover_widget;
     srv->bars->hover_widget->callback_hover(srv->bars->hover_widget);
@@ -815,18 +820,30 @@ barbutton(awl_server_t *srv, uint32_t button, unsigned int *click)
         return 0;
     /* hover popups are hover only: a press on the widget closes what
      * its hover opened, or keeps it from opening, until the pointer
-     * leaves and comes back */
+     * leaves and comes back; what a click opened is the click's to close */
     pressed = barwidgetin(srv->out.selmon, srv->cursor.wlr->x, &xrel);
     if (pressed && pressed == srv->bars->hover_widget)
         wl_event_source_timer_update(srv->bars->hover_timer, 0);
     if (srv->bars->hover_active && pressed == srv->bars->hover_active) {
         setleavepending(srv->bars, 0);
-        leavetimeout(srv->bars);
+        if (srv->bars->clicked)
+            srv->bars->hover_active = NULL;
+        else
+            leavetimeout(srv->bars);
     }
     *click = ClkBar;
     if (!pressed || !pressed->callback_click)
         return 0;
     pressed->callback_click(pressed, xrel, button);
+    /* and that closes as a hover's would */
+    if (pressed->callback_leave && popupshown(srv, pressed->popup_window)) {
+        if (srv->bars->hover_active && srv->bars->hover_active != pressed) {
+            setleavepending(srv->bars, 0);
+            leavetimeout(srv->bars);
+        }
+        srv->bars->hover_active = pressed;
+        srv->bars->clicked = 1;
+    }
     return 1;
 }
 

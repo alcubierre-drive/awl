@@ -117,22 +117,21 @@ static void AWL_ACTION( tagmonf )( awl_server_t* srv, const Arg* arg ) {
  * ====================================================================== */
 
 static const Rule rules[] = {
-    /* app_id             title       tags mask     isfloating   monitor w h blur 1-alpha*/
-    // { NULL,               "nomacs_garfield", 0,     1,           -1,   0,   0, 0, 0 },
-    { "python3",          "Figure",   0,            1,           -1,   0,   0, 0, 0 },
-    { "wdisplays",        NULL,       0,            1,           -1,   0,   0, 0, 0 },
+    /* app_id             title       tags mask     isfloating   monitor w h blur 1-alpha inhibit_idle */
+    { "python3",          "Figure",   0,            1,           -1,   0,   0, 0, 0, 0 },
+    { "wdisplays",        NULL,       0,            1,           -1,   0,   0, 0, 0, 0 },
 
-    { "zoom",             NULL,       0,            1,           -1,   0,   0, 0, 0 },
-    { "Zoom",             NULL,       0,            1,           -1,   0,   0, 0, 0 },
+    { "zoom",             NULL,       0,            1,           -1,   0,   0, 0, 0, 1 },
+    { "Zoom",             NULL,       0,            1,           -1,   0,   0, 0, 0, 1 },
 
-    { "org.telegram.desktop",NULL,    1<<7,         0,           -1,   0,   0, 0, 0 },
-    { "signal",           "Signal",   1<<7,         0,           -1,   0,   0, 0, 0 },
-    { "mattermost-desktop","Mattermost Desktop App",1<<7,0,      -1,   0,   0, 0, 0 },
+    { "org.telegram.desktop",NULL,    1<<7,         0,           -1,   0,   0, 0, 0, 0 },
+    { "signal",           "Signal",   1<<7,         0,           -1,   0,   0, 0, 0, 0 },
+    { "mattermost-desktop","Mattermost Desktop App",1<<7,0,      -1,   0,   0, 0, 0, 0 },
 
-    { "org.gnome.Evolution",NULL,     1<<8,         0,           -1,   0,   0, 0, 0 },
-    { "evolution-alarm-notify", NULL, 1<<8,         1,           -1,   0,   0, 0, 0 },
-    { "org.pulseaudio.pavucontrol","Volume Control",0,1,         -1,   0,   0, 0, 0 },
-    // { "kitty",            NULL,       0,            0,           -1,   0,   0, 0, 0 },
+    { "org.gnome.Evolution",NULL,     1<<8,         0,           -1,   0,   0, 0, 0, 0 },
+    { "evolution-alarm-notify", NULL, 1<<8,         1,           -1,   0,   0, 0, 0, 0 },
+    { "org.pulseaudio.pavucontrol","Volume Control",0,1,         -1,   0,   0, 0, 0, 0 },
+    // { "kitty",            NULL,       0,            0,           -1,   0,   0, 0, 0, 0 },
 };
 
 /* layout(s); setlayout/cycle_layout switch between them. After a reload

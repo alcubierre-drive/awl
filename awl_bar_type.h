@@ -60,10 +60,11 @@ struct widget_t {
     /** see :c:member:`~widget_t.callback_hover` */
     uint32_t hover_delay_ms;
     /** called :c:member:`~widget_t.leave_delay_ms` after the pointer has left a widget whose
-     * :c:member:`~widget_t.callback_hover` fired, unless it came back first (0: right away). While
-     * the pointer is inside :c:member:`~widget_t.popup_window` (the popup the hover opened), it
-     * counts as still on the widget. A press on the widget calls it at
-     * once (and cancels a hover not yet fired); hovering fires again only
+     * :c:member:`~widget_t.callback_hover` fired, or whose :c:member:`~widget_t.callback_click`
+     * left :c:member:`~widget_t.popup_window` shown, unless it came back first (0: right away).
+     * While the pointer is inside or beside :c:member:`~widget_t.popup_window` (within its
+     * margin), it counts as still on the widget. A press on the widget calls it at once if the
+     * hover opened the popup (and cancels a hover not yet fired); hovering fires again only
      * after the pointer has left and come back. */
     void (*callback_leave)(widget_t* this);
     /** see :c:member:`~widget_t.callback_leave` */

@@ -169,7 +169,9 @@ typedef struct {
 } EnvVar;
 
 /** A rule for new windows whose app id and title contain id and title (NULL:
- * any), :c:member:`awl_config_t.rules`; every rule that matches counts. */
+ * any), :c:member:`awl_config_t.rules`; every rule that matches counts.
+ * inhibit_idle: the window, while visible, inhibits idle as an idle inhibitor
+ * would (:c:func:`checkidleinhibitor`). */
 typedef struct {
     const char *id;
     const char *title;
@@ -179,6 +181,7 @@ typedef struct {
     int w, h;
     bool blur;
     float one_minus_alpha;
+    bool inhibit_idle;
 } Rule;
 
 /**

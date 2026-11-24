@@ -17,6 +17,12 @@ pointerinpopup(awl_server_t *srv, awl_window_t *win)
     return popupfind(srv, win) && awl_window_contains(win, srv->cursor.wlr->x, srv->cursor.wlr->y);
 }
 
+int
+popupshown(awl_server_t *srv, awl_window_t *win)
+{
+    return popupfind(srv, win) && awl_window_monitor(win);
+}
+
 /** p's look, from cfg->popup and cfg->colors' popup_*; a menu's its own
  * (cfg->colors' menu_*, cfg->popup.menu); p's colors over either (NULL: none) */
 static awl_window_style_t

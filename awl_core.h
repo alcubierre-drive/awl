@@ -157,6 +157,8 @@ struct Client {
     bool isvisible:1;
     bool ismaximized:1;
     bool isontop:1;
+    /** a rule's :c:type:`Rule` inhibit_idle */
+    bool inhibit_idle:1;
     /** waited for :c:macro:`RESIZE_WAIT_MS` since resize_sent, the output was
      * drawn without its answer (logged once) */
     bool resize_late:1;
