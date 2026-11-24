@@ -121,8 +121,8 @@ static const Rule rules[] = {
     { "python3",          "Figure",   0,            1,           -1,   0,   0, 0, 0, 0 },
     { "wdisplays",        NULL,       0,            1,           -1,   0,   0, 0, 0, 0 },
 
-    { "zoom",             NULL,       0,            1,           -1,   0,   0, 0, 0, 1 },
-    { "Zoom",             NULL,       0,            1,           -1,   0,   0, 0, 0, 1 },
+    { "zoom",             NULL,       0,            1,           -1,   0,   0, 0, 0, 0 },
+    { "Zoom",             NULL,       0,            1,           -1,   0,   0, 0, 0, 0 },
 
     { "org.telegram.desktop",NULL,    1<<7,         0,           -1,   0,   0, 0, 0, 0 },
     { "signal",           "Signal",   1<<7,         0,           -1,   0,   0, 0, 0, 0 },
