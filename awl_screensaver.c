@@ -13,7 +13,7 @@
 #define IFACE "org.freedesktop.ScreenSaver"
 
 /** an Inhibit's cookie, until UnInhibit or its caller leaves the bus */
-typedef struct cookie_t {
+typedef struct cookie {
     struct wl_list link;
     awl_screensaver_t* S;
     uint32_t id;
@@ -22,7 +22,7 @@ typedef struct cookie_t {
     char* app;
 } cookie_t;
 
-struct awl_screensaver_t {
+struct awl_screensaver {
     awl_server_t* srv;
     awl_bus_t* conn;
     /** the object at /org/freedesktop/ScreenSaver and at /ScreenSaver */

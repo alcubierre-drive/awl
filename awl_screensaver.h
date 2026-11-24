@@ -16,7 +16,7 @@
 
 typedef struct awl_server_t awl_server_t;
 /** the service's state, :c:member:`awl_server_t.screensaver` */
-typedef struct awl_screensaver_t awl_screensaver_t;
+typedef struct awl_screensaver awl_screensaver_t;
 
 /** Starts or stops :c:member:`awl_server_t.screensaver` as
  * :c:member:`awl_config_t.screensaver_inhibit` says; it connects from the loop. */
