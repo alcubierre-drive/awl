@@ -76,19 +76,19 @@ struct awl_input {
     int64_t last_activity;
     /** whether :c:func:`checkidleinhibitor` found an inhibitor, the timer
      * is armed, :c:member:`awl_config_t.on_idle` ran since the last
-     * :c:func:`activity` */
-    bool idle_inhibited:1, idle_armed:1, idle_done:1;
+     * :c:func:`activity`, the timeout passed while inhibited (logged) */
+    bool idle_inhibited:1, idle_armed:1, idle_done:1, idle_held:1;
 };
 
 /** the idle check due :c:member:`awl_config_t.idle_seconds` after the last
- * :c:func:`activity`; not while inhibited, nor again before the next one once
- * :c:member:`awl_config_t.on_idle` ran */
+ * :c:func:`activity`; not again before the next one once
+ * :c:member:`awl_config_t.on_idle` ran, nor while inhibited once it passed */
 static void
 idlearm(awl_server_t *srv)
 {
     struct awl_input *in = srv->input;
     const int64_t ms = (int64_t)(srv->cfg->idle_seconds * 1000.0f);
-    if (!in->idle_timer || in->idle_armed || in->idle_inhibited || in->idle_done || ms <= 0)
+    if (!in->idle_timer || in->idle_armed || in->idle_held || in->idle_done || ms <= 0)
         return;
     const int64_t left = in->last_activity + ms - awl_now_ms();
     wl_event_source_timer_update(in->idle_timer, left < 1 ? 1 : left > INT_MAX ? INT_MAX : (int)left);
@@ -96,15 +96,20 @@ idlearm(awl_server_t *srv)
 }
 
 /** :c:member:`awl_config_t.idle_seconds` since the last :c:func:`activity`:
- * :c:member:`awl_config_t.on_idle` runs; else checks again when that will be */
+ * :c:member:`awl_config_t.on_idle` runs, or, inhibited, that it doesn't is
+ * logged; else checks again when that will be */
 static int
 idlecheck(void *data)
 {
     awl_server_t *srv = data;
     struct awl_input *in = srv->input;
+    const bool due = srv->cfg->idle_seconds > 0
+            && awl_now_ms() - in->last_activity >= (int64_t)(srv->cfg->idle_seconds * 1000.0f);
     in->idle_armed = 0;
-    if (!in->idle_inhibited && srv->cfg->idle_seconds > 0
-            && awl_now_ms() - in->last_activity >= (int64_t)(srv->cfg->idle_seconds * 1000.0f)) {
+    if (due && in->idle_inhibited) {
+        awl_log_printf("idle: %g s, inhibited, on_idle doesn't run\n", (double)srv->cfg->idle_seconds);
+        in->idle_held = 1;
+    } else if (due) {
         awl_log_printf("idle: %g s, on_idle runs\n", (double)srv->cfg->idle_seconds);
         in->idle_done = 1;
         for (size_t i = 0; i < srv->cfg->on_idle.n; i++)
@@ -135,8 +140,10 @@ checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude)
 
     wlr_idle_notifier_v1_set_inhibited(srv->idle_notifier, inhibited);
     /* like wlroots' notifier: the idle time counts from the inhibitor's end */
-    if (srv->input->idle_inhibited && !inhibited)
+    if (srv->input->idle_inhibited && !inhibited) {
         srv->input->last_activity = awl_now_ms();
+        srv->input->idle_held = 0;
+    }
     srv->input->idle_inhibited = inhibited;
     idlearm(srv);
 }
@@ -147,7 +154,7 @@ activity(awl_server_t *srv)
     wlr_idle_notifier_v1_notify_activity(srv->idle_notifier, srv->seat);
     awl_notifications_activity(srv);
     srv->input->last_activity = awl_now_ms();
-    srv->input->idle_done = 0;
+    srv->input->idle_done = srv->input->idle_held = 0;
     idlearm(srv);
 }
 
@@ -661,5 +668,7 @@ inputconfigure(awl_server_t *srv)
     wl_list_for_each(d, &srv->input->devices, link)
         if (d->device->type == WLR_INPUT_DEVICE_POINTER)
             configurepointer(srv, wlr_pointer_from_input_device(d->device));
+    /* again, for a changed idle_seconds */
+    srv->input->idle_armed = 0;
     idlearm(srv);
 }
