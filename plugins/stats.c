@@ -9,8 +9,8 @@
 #include <fcntl.h>
 
 static float cpu_idle( uint64_t* sizes_table, float* io, float* sys );
-static int getmem( float* mem, float* swp, uint64_t* mem_total, uint64_t* swp_total );
-static void getload( awl_stats_t* st, float* load1 );
+static int get_mem( float* mem, float* swp, uint64_t* mem_total, uint64_t* swp_total );
+static void get_load( awl_stats_t* st, float* load1 );
 
 awl_stats_t* stats_init( int nval_cpu, int nval_mem, int nval_swp ) {
     /*P_awl_log_printf( "starting system monitor" );*/
@@ -47,10 +47,10 @@ void stats_free( awl_stats_t* st ) {
 void stats_update( awl_stats_t* st ) {
     float mem = 0, swp = 0;
     uint64_t mem_total = 0, swp_total = 0;
-    int has_swap = getmem( &mem, &swp, &mem_total, &swp_total );
+    int has_swap = get_mem( &mem, &swp, &mem_total, &swp_total );
     float io = 0, sys = 0, load1 = stats_sample( st->load, atomic_load( &st->samples ), 0 );
     float cpu = 1. - cpu_idle(st->sizes_table, &io, &sys);
-    getload( st, &load1 );
+    get_load( st, &load1 );
     atomic_store( &st->mem_total, mem_total );
     atomic_store( &st->swp_total, swp_total );
     // the slot after the head is the oldest sample; it becomes the newest
@@ -67,7 +67,7 @@ void stats_update( awl_stats_t* st ) {
 
 /* /proc/loadavg: "0.52 0.61 0.70 3/1234 5678"; left as they were if it
  * can't be read */
-static void getload( awl_stats_t* st, float* load1 ) {
+static void get_load( awl_stats_t* st, float* load1 ) {
     char buf[128];
     int fd = open( "/proc/loadavg", O_RDONLY | O_CLOEXEC );
     if (fd < 0) return;
@@ -120,7 +120,7 @@ static float cpu_idle( uint64_t* sizes_table, float* io, float* sys ) {
 }
 
 /* returns whether the system has swap */
-static int getmem( float* mem, float* swp, uint64_t* mem_total_kib, uint64_t* swp_total_kib ) {
+static int get_mem( float* mem, float* swp, uint64_t* mem_total_kib, uint64_t* swp_total_kib ) {
     FILE* f = fopen("/proc/meminfo", "r");
     if (!f) { *mem = *swp = 0.0; return 1; }
     long unsigned mem_total = 0,

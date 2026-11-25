@@ -10,16 +10,16 @@
 #include <sys/types.h>
 
 /** starts cmd with /bin/sh, if not NULL; it is proc's to stop */
-void spawnstartup(awl_process_t *proc, const char *cmd);
+void spawn_startup( awl_process_t *proc, const char *cmd );
 /** starts :c:member:`cfg->autostart <awl_config_t.autostart>`, once at awl's start */
-void autostartall(awl_server_t *srv);
+void autostart_all( awl_server_t *srv );
 /** starts :c:member:`arg->v <Arg.v>`, an argv (:c:macro:`TRAY_ICONS` first: the rest in the tray's icon
  * theme); its pid, -1 if it couldn't */
-pid_t spawn_pid(awl_process_t *proc, const Arg *arg);
+pid_t spawn_pid( awl_process_t *proc, const Arg *arg );
 /** reaps the children that exited (SIGCHLD) */
-int handlesigchld(int signo, void *data);
+int handle_sigchld( int signo, void *data );
 /** Sends SIGTERM to proc's startup command and every autostarted program (each
  * leads its own process group), then waits for them; whatever is still
  * running after CHILD_STOP_MS gets SIGKILL, so a child that ignores SIGTERM
  * can't keep awl from exiting. */
-void stopchildren(awl_process_t *proc);
+void stop_children( awl_process_t *proc );

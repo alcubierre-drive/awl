@@ -106,9 +106,9 @@ static void AWL_ACTION( suspend )( awl_server_t* srv, const Arg* arg ) {
 }
 
 /** sends the window to the monitor :c:member:`arg->i <Arg.i>` over and follows it there */
-static void AWL_ACTION( tagmonf )( awl_server_t* srv, const Arg* arg ) {
-    AWL_ACTION(tagmon)(srv, arg);
-    AWL_ACTION(focusmon)(srv, arg);
+static void AWL_ACTION( move_to_monitor_follow )( awl_server_t* srv, const Arg* arg ) {
+    AWL_ACTION(move_to_monitor)(srv, arg);
+    AWL_ACTION(focus_monitor)(srv, arg);
 }
 
 /* ======================================================================
@@ -119,7 +119,7 @@ static void AWL_ACTION( tagmonf )( awl_server_t* srv, const Arg* arg ) {
  * awl_config_defaults.h (or plugins_config_defaults.h) here, change it, and
  * point the list at it in configure(), e.g. SETLIST(c->keys, keys) or
  * SETLIST(p->widgets, widgets).
- * In bindings, MODKEY is c->modkey. They can call AWL_ACTION(name) of
+ * In bindings, MODKEY is c->mod_key. They can call AWL_ACTION(name) of
  * what AWL_ACTIONS lists (awl_plugin_abi.h) and of the library's actions
  * above (notifyconfig, launcher, backlighttoggle), and functions defined here by
  * their own name; layouts AWL_LAYOUT(name) of what AWL_ARRANGES lists. The
@@ -128,7 +128,7 @@ static void AWL_ACTION( tagmonf )( awl_server_t* srv, const Arg* arg ) {
  * ====================================================================== */
 
 static const Rule rules[] = {
-    /* app_id             title       tags mask     isfloating   monitor w h blur 1-alpha inhibit_idle */
+    /* app_id             title       tags mask     is_floating   monitor w h blur 1-alpha inhibit_idle */
     { "python3",          "Figure",   0,            1,           -1,   0,   0, 0, 0, 0 },
     { "wdisplays",        NULL,       0,            1,           -1,   0,   0, 0, 0, 0 },
 
@@ -145,26 +145,26 @@ static const Rule rules[] = {
     // { "kitty",            NULL,       0,            0,           -1,   0,   0, 0, 0, 0 },
 };
 
-/* layout(s); setlayout/cycle_layout switch between them. After a reload
+/* layout(s); set_layout/cycle_layout switch between them. After a reload
  * every monitor keeps the layout at the same index. */
 static const Layout layouts[] = {
     /* symbol     arrange function */
     { "[|]",      AWL_LAYOUT(tile) },
     { "[·]",      NULL },    /* no layout function means floating behavior */
     { "[M]",      AWL_LAYOUT(monocle) },
-    { "[×]",      AWL_LAYOUT(gaplessgrid) },
-    { "[–]",      AWL_LAYOUT(bstack) },
+    { "[×]",      AWL_LAYOUT(gapless_grid) },
+    { "[–]",      AWL_LAYOUT(bottom_stack) },
 };
 
 /* monitors */
-static const MonitorRule monrules[] = {
-    /* name       mfact  nmaster scale layout       rotate/reflect                x    y  pertag*/
+static const MonitorRule mon_rules[] = {
+    /* name       master_factor  master_count scale layout       rotate/reflect                x    y  per_tag*/
     { "eDP-1",    0.5f,  1,    1.5,    0,           WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1, 0 },
     /* { "HDMI-A-1", 0.5f,  1,      1,    0,           WL_OUTPUT_TRANSFORM_90,       -1,  -1, 0 }, */
     { NULL,       0.5f,  1,      1,    0,           WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1, 0 },
 };
 
-/* output profiles (the outputprofile action): the laptop alone, or docked at
+/* output profiles (the output_profile action): the laptop alone, or docked at
  * WUE with the two Fujitsus, or with the laptop below them as a third */
 #define WUE_LEFT  "Fujitsu Siemens Computers GmbH B24-9 WS YVDJ005432"
 #define WUE_RIGHT "Fujitsu Siemens Computers GmbH B24-9 WS YVDJ004877"
@@ -185,7 +185,7 @@ static const OutputSetting profile_triple[] = {
     { WUE_LEFT,    1,   0,    0,    1,     WL_OUTPUT_TRANSFORM_NORMAL },
     { WUE_RIGHT,   1,   1920, 0,    1,     WL_OUTPUT_TRANSFORM_NORMAL },
 };
-static const OutputProfile outputprofiles[] = {
+static const OutputProfile output_profiles[] = {
     { "laptop", { profile_laptop, LENGTH(profile_laptop) } },
     { "docked", { profile_docked, LENGTH(profile_docked) } },
     { "triple", { profile_triple, LENGTH(profile_triple) } },
@@ -205,7 +205,7 @@ static const EnvVar environment[] = {
 };
 
 /* commands */
-static const char *const termcmd[] = { "kitty", "-d", "$HOME", NULL };
+static const char *const term_cmd[] = { "kitty", "-d", "$HOME", NULL };
 static const char *const launcher_terminal[] = { "kitty", NULL };
 static const char *const hyprcopy[] = { "hyprcopy", NULL };
 static const char *const wdisplays[] = { "wdisplays", NULL };
@@ -227,35 +227,35 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_p,          AWL_ACTION(launcher),         {.i = AWL_LAUNCHER_APPS} },
     { MODKEY,                    XKB_KEY_r,          AWL_ACTION(launcher),         {.i = AWL_LAUNCHER_RUN} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_P,          AWL_ACTION(notifyconfig),     {0} },
-    { MODKEY,                    XKB_KEY_Return,     AWL_ACTION(spawn),            {.v = termcmd} },
+    { MODKEY,                    XKB_KEY_Return,     AWL_ACTION(spawn),            {.v = term_cmd} },
     { MODKEY,                    XKB_KEY_y,          AWL_ACTION(backlightupdate),  {0} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Y,          AWL_ACTION(backlighttoggle),  {0} },
-    { MODKEY,                    XKB_KEY_i,          AWL_ACTION(togglebar),        {0} },
-    { MODKEY,                    XKB_KEY_j,          AWL_ACTION(focusstack),       {.i = +1} },
-    { MODKEY,                    XKB_KEY_k,          AWL_ACTION(focusstack),       {.i = -1} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_J,          AWL_ACTION(movestack),        {.i = +1} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_K,          AWL_ACTION(movestack),        {.i = -1} },
-    /*{ MODKEY,                    XKB_KEY_i,          AWL_ACTION(incnmaster),     {.i = +1} },*/
-    /*{ MODKEY,                    XKB_KEY_d,          AWL_ACTION(incnmaster),     {.i = -1} },*/
-    { MODKEY,                    XKB_KEY_h,          AWL_ACTION(setmfact),         {.f = -0.05f} },
-    { MODKEY,                    XKB_KEY_l,          AWL_ACTION(setmfact),         {.f = +0.05f} },
+    { MODKEY,                    XKB_KEY_i,          AWL_ACTION(toggle_bar),        {0} },
+    { MODKEY,                    XKB_KEY_j,          AWL_ACTION(focus_stack),       {.i = +1} },
+    { MODKEY,                    XKB_KEY_k,          AWL_ACTION(focus_stack),       {.i = -1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_J,          AWL_ACTION(move_stack),        {.i = +1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_K,          AWL_ACTION(move_stack),        {.i = -1} },
+    /*{ MODKEY,                    XKB_KEY_i,          AWL_ACTION(change_master_count),     {.i = +1} },*/
+    /*{ MODKEY,                    XKB_KEY_d,          AWL_ACTION(change_master_count),     {.i = -1} },*/
+    { MODKEY,                    XKB_KEY_h,          AWL_ACTION(set_master_factor),         {.f = -0.05f} },
+    { MODKEY,                    XKB_KEY_l,          AWL_ACTION(set_master_factor),         {.f = +0.05f} },
     { MODKEY,                    XKB_KEY_Tab,        AWL_ACTION(view),             {0} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_C,          AWL_ACTION(killclient),       {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_C,          AWL_ACTION(kill_client),       {0} },
     { MODKEY,                    XKB_KEY_m,          AWL_ACTION(maximize),         {0} },
     { MODKEY,                    XKB_KEY_space,      AWL_ACTION(cycle_layout),     {.i = +1} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,      AWL_ACTION(cycle_layout),     {.i = -1} },
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_space,AWL_ACTION(togglepertag),{0} },
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_space,AWL_ACTION(toggle_per_tag),{0} },
     { MODKEY,                    XKB_KEY_Right,      AWL_ACTION(cycle_view),       {.i = +1} },
     { MODKEY,                    XKB_KEY_Left,       AWL_ACTION(cycle_view),       {.i = -1} },
-    { MODKEY,                    XKB_KEY_f,          AWL_ACTION(togglefullscreen), {0} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_space,      AWL_ACTION(togglefloating),   {0} },
-    { MODKEY,                    XKB_KEY_t,          AWL_ACTION(toggleontop),      {0} },
+    { MODKEY,                    XKB_KEY_f,          AWL_ACTION(toggle_fullscreen), {0} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_space,      AWL_ACTION(toggle_floating),   {0} },
+    { MODKEY,                    XKB_KEY_t,          AWL_ACTION(toggle_on_top),      {0} },
     { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_r,          AWL_ACTION(plugin_restart),   {0} },
     { MODKEY,                    XKB_KEY_w,          AWL_ACTION(wallpaper),        {.i = WallpaperTimerNext} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_W,          AWL_ACTION(wallpaper),        {.i = WallpaperTimerBack} },
-    { MODKEY,                    XKB_KEY_b,          AWL_ACTION(togglebw),         {0} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_B,          AWL_ACTION(changebw),         {.i=+1} },
-    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_B, AWL_ACTION(changebw), {.i=-1} },
+    { MODKEY,                    XKB_KEY_b,          AWL_ACTION(toggle_border),         {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_B,          AWL_ACTION(change_border_width),         {.i=+1} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_B, AWL_ACTION(change_border_width), {.i=-1} },
     { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_S, AWL_ACTION(suspend),  {0} },
 
     { MODKEY,                    XKB_KEY_n,          AWL_ACTION(minimize),         {0} },
@@ -273,31 +273,31 @@ static const Key keys[] = {
     { MODKEY,                    XKB_KEY_d,          AWL_ACTION(spawn),            {.v=wdisplays} },
     { 0,                         XKB_KEY_XF86Display,AWL_ACTION(spawn),            {.v=wdisplays} },
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_A,          AWL_ACTION(spawn),            {.v=btrfs_snap_cpp_ask} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_G,          AWL_ACTION(lockscreen),       {0} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_z,          AWL_ACTION(transluce),        {.i=+1} },
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_Z,AWL_ACTION(transluce), {.i=-1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_G,          AWL_ACTION(lock_screen),       {0} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_z,          AWL_ACTION(change_opacity),        {.i=+1} },
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_Z,AWL_ACTION(change_opacity), {.i=-1} },
 
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_D, AWL_ACTION(outputprofile), {.v="laptop"} },
-    { MODKEY|WLR_MODIFIER_CTRL,     XKB_KEY_d,         AWL_ACTION(outputprofile), {.v="docked"} },
-    { MODKEY|WLR_MODIFIER_SHIFT,    XKB_KEY_D,         AWL_ACTION(outputprofile), {.v="triple"} },
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_D, AWL_ACTION(output_profile), {.v="laptop"} },
+    { MODKEY|WLR_MODIFIER_CTRL,     XKB_KEY_d,         AWL_ACTION(output_profile), {.v="docked"} },
+    { MODKEY|WLR_MODIFIER_SHIFT,    XKB_KEY_D,         AWL_ACTION(output_profile), {.v="triple"} },
     /*{ MODKEY,                    XKB_KEY_0,          AWL_ACTION(view),           {.ui = ~0} },*/
     /*{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_parenright, AWL_ACTION(tag),            {.ui = ~0} },*/
 
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_h,          AWL_ACTION(incnmaster),     {.i = -1} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_l,          AWL_ACTION(incnmaster),     {.i = +1} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_j,          AWL_ACTION(focusmon),       {.i = -1} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_k,          AWL_ACTION(focusmon),       {.i = +1} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_O,          AWL_ACTION(tagmonf),        {.i = -1} },
-    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_O,AWL_ACTION(tagmonf), {.i = +1} },
-    TAGKEYS(          XKB_KEY_1, XKB_KEY_exclam,                     0),
-    TAGKEYS(          XKB_KEY_2, XKB_KEY_quotedbl,                   1),
-    TAGKEYS(          XKB_KEY_3, XKB_KEY_section,                    2),
-    TAGKEYS(          XKB_KEY_4, XKB_KEY_dollar,                     3),
-    TAGKEYS(          XKB_KEY_5, XKB_KEY_percent,                    4),
-    TAGKEYS(          XKB_KEY_6, XKB_KEY_ampersand,                  5),
-    TAGKEYS(          XKB_KEY_7, XKB_KEY_slash,                      6),
-    TAGKEYS(          XKB_KEY_8, XKB_KEY_parenleft,                  7),
-    TAGKEYS(          XKB_KEY_9, XKB_KEY_parenright,                 8),
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_h,          AWL_ACTION(change_master_count),     {.i = -1} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_l,          AWL_ACTION(change_master_count),     {.i = +1} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_j,          AWL_ACTION(focus_monitor),       {.i = -1} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_k,          AWL_ACTION(focus_monitor),       {.i = +1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_O,          AWL_ACTION(move_to_monitor_follow),        {.i = -1} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_O,AWL_ACTION(move_to_monitor_follow), {.i = +1} },
+    TAG_KEYS(          XKB_KEY_1, XKB_KEY_exclam,                     0),
+    TAG_KEYS(          XKB_KEY_2, XKB_KEY_quotedbl,                   1),
+    TAG_KEYS(          XKB_KEY_3, XKB_KEY_section,                    2),
+    TAG_KEYS(          XKB_KEY_4, XKB_KEY_dollar,                     3),
+    TAG_KEYS(          XKB_KEY_5, XKB_KEY_percent,                    4),
+    TAG_KEYS(          XKB_KEY_6, XKB_KEY_ampersand,                  5),
+    TAG_KEYS(          XKB_KEY_7, XKB_KEY_slash,                      6),
+    TAG_KEYS(          XKB_KEY_8, XKB_KEY_parenleft,                  7),
+    TAG_KEYS(          XKB_KEY_9, XKB_KEY_parenright,                 8),
     { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_equal,          AWL_ACTION(quit),       {0} },
 
     /* Ctrl-Alt-Backspace and Ctrl-Alt-Fx used to be handled by X server */
@@ -310,25 +310,23 @@ static const Key keys[] = {
 };
 
 static const Button buttons[] = {
-    { ClkClient,   MODKEY, BTN_LEFT,   AWL_ACTION(moveresize),     {.ui = CurMove} },
-    { ClkClient,   MODKEY, BTN_MIDDLE, AWL_ACTION(togglefloating), {0} },
-    { ClkClient,   MODKEY, BTN_RIGHT,  AWL_ACTION(moveresize),     {.ui = CurResize} },
-    { ClkClient,   MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT, BTN_LEFT, AWL_ACTION(killclient), {.i=1} },
+    { ClkClient,   MODKEY, BTN_LEFT,   AWL_ACTION(move_resize),     {.ui = CurMove} },
+    { ClkClient,   MODKEY, BTN_MIDDLE, AWL_ACTION(toggle_floating), {0} },
+    { ClkClient,   MODKEY, BTN_RIGHT,  AWL_ACTION(move_resize),     {.ui = CurResize} },
+    { ClkClient,   MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT, BTN_LEFT, AWL_ACTION(kill_client), {.i=1} },
 };
 
 /* configure() changes what differs from the defaults; awl_config_defaults.h
  * and plugins_config_defaults.h list every setting with its default. */
-static void
-configure(awl_config_t *c, awl_plugin_config_t *p)
-{
+static void configure( awl_config_t *c, awl_plugin_config_t *p ) {
     /* bindings and lists */
-    c->modkey = WLR_MODIFIER_LOGO;
+    c->mod_key = WLR_MODIFIER_LOGO;
     SETLIST(c->keys, keys);
     SETLIST(c->buttons, buttons);
     SETLIST(c->rules, rules);
     SETLIST(c->layouts, layouts);
-    SETLIST(c->monrules, monrules);
-    SETLIST(c->outputprofiles, outputprofiles);
+    SETLIST(c->mon_rules, mon_rules);
+    SETLIST(c->output_profiles, output_profiles);
     SETLIST(c->environment, environment);
     SETLIST(c->autostart, autostart);
 
@@ -372,7 +370,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     p->launcher.run_prompt = "<b>run $ </b>";
 
     /* appearance */
-    c->borderpx = 2;
+    c->border_px = 2;
     /* borders as a clock: BorderClockFocused (the focused window's),
      * BorderClockScreen (around each screen's window area) or BorderClockOff;
      * screen_empty: BorderClockScreen also on a screen without windows;
@@ -387,7 +385,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     c->colors.border_clock_hour   = molokai_purple;
 
     /* blur */
-    c->blur.windowlist = 0;
+    c->blur.window_list = 0;
 
     /* the tray */
     c->tray.icon_theme = "Papirus-Dark";
@@ -405,9 +403,9 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     c->notifications.activate_urgent = 1;
 
     /* the popups */
-    c->popup.border_width   = c->borderpx;
+    c->popup.border_width   = c->border_px;
     c->popup.font           = "sans:size=";
-    AWL_SET(c->popup.fontsize,       10);
+    AWL_SET(c->popup.font_size,       10);
 
     /* the tray's menus */
     AWL_SET(c->popup.menu.border_width, 2);
@@ -416,7 +414,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
 
     /* the desktop file list */
     c->desktop.font         = "sans:size=";
-    AWL_SET(c->desktop.fontsize,     10);
+    AWL_SET(c->desktop.font_size,     10);
     c->desktop.margin       = 25;
     c->desktop.columns      = 2;
 
@@ -430,7 +428,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
 
     /* the battery's colors by its charge: {at, color}, at 0 to 1,
      * linearly in between */
-    p->colors.battery = (awl_colormap_t)COLORMAP( { 0.1f, molokai_red }, { 0.2f, molokai_orange },
+    p->colors.battery = (awl_colormap_t)COLOR_MAP( { 0.1f, molokai_red }, { 0.2f, molokai_orange },
                                                   { 0.3f, 0xf5efffff } );
 
     /* the launcher (plugins/launcher.h) */

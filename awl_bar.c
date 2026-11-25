@@ -11,27 +11,28 @@
 #include "awl_plugin_host.h"
 #include "awl_popup.h"
 
-static widget_t *barwidgetin(Monitor *m, double cx, unsigned int *xrel);
-static widget_t *barwidgetatx(awl_server_t *srv, Monitor *m, double cx, double cy, unsigned int *xrel);
-static void updateview(struct awl_bars *b, widget_t *w, unsigned int xrel);
-static void setleavepending(struct awl_bars *b, int pending);
-static int leavetimeout(void *data);
-static int hovertimeout(void *data);
+static widget_t *bar_widget_in( Monitor *m, double cx, unsigned int *xrel );
+static widget_t *bar_widget_at_x( awl_server_t *srv, Monitor *m, double cx, double cy, unsigned int *xrel );
+static void update_view( struct awl_bars *b, widget_t *w, unsigned int xrel );
+static void set_leave_pending( struct awl_bars *b, int pending );
+static int leave_timeout( void *data );
+static int hover_timeout( void *data );
 static void widget_wrap_scroll_callback( widget_t* w, uint32_t xrel, double delta, uint32_t mods );
-static bool bar_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy);
-static void buffer_destroy(struct wlr_buffer *wlr_buffer);
-static bool buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer, uint32_t flags,
-        void **data, uint32_t *format, size_t *stride);
-static void buffer_end_data_ptr_access(struct wlr_buffer *buffer);
-static void baroverflow(Monitor *m, uint32_t over);
-static void barview(Monitor *m);
-static void drawbar(awl_server_t *srv, Monitor *m);
-static void redrawidle(void *data);
-static Buffer *newbarbuffer(Monitor *m);
-static Buffer *barbuffer(Monitor *m);
-static int bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *damage);
-static void updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const char *what);
-static void updatefonts(awl_server_t *srv, Monitor *m);
+static bool bar_accepts_input( struct wlr_scene_buffer *buffer, double *sx, double *sy );
+static void buffer_destroy( struct wlr_buffer *wlr_buffer );
+static bool buffer_begin_data_ptr_access( struct wlr_buffer *wlr_buffer, uint32_t flags, void **data, uint32_t *format,
+                                          size_t *stride );
+static void buffer_end_data_ptr_access( struct wlr_buffer *buffer );
+static void bar_overflow( Monitor *m, uint32_t over );
+static void bar_view( Monitor *m );
+static void overlays( widget_t *w, int n, pixman_image_t *pix );
+static void draw_bar( awl_server_t *srv, Monitor *m );
+static void redraw_idle( void *data );
+static Buffer *new_bar_buffer( Monitor *m );
+static Buffer *bar_buffer( Monitor *m );
+static int bar_damage( const Buffer *buf, const Buffer *prev, pixman_region32_t *damage );
+static void update_font( Monitor *m, struct fcft_font **f, const char *font, int size, const char *what );
+static void update_fonts( awl_server_t *srv, Monitor *m );
 
 static const struct wlr_buffer_impl buffer_impl = {
     .destroy = buffer_destroy,
@@ -39,18 +40,18 @@ static const struct wlr_buffer_impl buffer_impl = {
     .end_data_ptr_access = buffer_end_data_ptr_access
 };
 
-/** The bars' state (:c:member:`awl_server_t.bars`), from barinit() to barfree() */
+/** The bars' state (:c:member:`awl_server_t.bars`), from bar_init() to bar_free() */
 struct awl_bars {
     /** What the fonts were set up with, copied, to tell whether a reload
      * changed them */
     struct {
         char *font;
-        int fontsize;
-        char *emojifont;
-        char *popupfont; /* cfg->popup's */
-        int popupfontsize;
-        char *desktopfont; /* cfg->desktop's */
-        int desktopfontsize;
+        int font_size;
+        char *emoji_font;
+        char *popup_font; /* cfg->popup's */
+        int popup_font_size;
+        char *desktop_font; /* cfg->desktop's */
+        int desktop_font_size;
         /* cfg->bar's, -1 before the first */
         int show, top;
     } applied;
@@ -61,13 +62,13 @@ struct awl_bars {
      * widget whose hover fired and that has a callback_leave; leave_timer fires
      * that leave_delay_ms after the pointer left both it and its popup (at once
      * for a delay of 0); clicked: a click opened its popup, not the hover.
-     * The timers are there from barinit() to barfini(). */
+     * The timers are there from bar_init() to bar_fini(). */
     struct wl_event_source *hover_timer, *leave_timer;
     widget_t *hover_widget, *hover_active;
     bool leave_pending, clicked;
     /** the widget with a callback_view the pointer is on (:c:member:`widget_t.callback_view`) */
     widget_t *view_widget;
-    /** :c:func:`barsdirty`'s redraw, NULL while none is due */
+    /** :c:func:`bars_dirty`'s redraw, NULL while none is due */
     struct wl_event_source *redraw_idle;
 };
 
@@ -75,9 +76,7 @@ struct awl_bars {
  * NULL) its x there, from the widget's left edge in buffer pixels. The one
  * place that knows how the bar is laid out: hovering, scrolling and clicks
  * all find their widget here. */
-static widget_t *
-barwidgetin(Monitor *m, double cx, unsigned int *xrel)
-{
+static widget_t *bar_widget_in( Monitor *m, double cx, unsigned int *xrel ) {
     unsigned int xpos = 0;
     awl_bar_t *d = &m->bar;
 
@@ -85,43 +84,33 @@ barwidgetin(Monitor *m, double cx, unsigned int *xrel)
         return NULL;
     unsigned int cursor_x = (unsigned int)((cx - m->m.x) * m->wlr_output->scale);
 #define AT(w) do { if (xrel) *xrel = cursor_x - xpos; return (w); } while (0)
-    for (int i = 0; i < d->n_widgets_left; ++i) {
-        if (cursor_x >= xpos && cursor_x < xpos + d->widgets_left[i].width)
+    for (int i = 0; i < d->n_widgets_left; ++i)
+        if (cursor_x >= (xpos = d->widgets_left[i].x) && cursor_x < xpos + d->widgets_left[i].width)
             AT(&d->widgets_left[i]);
-        xpos += d->widgets_left[i].width;
-    }
-    xpos = d->center_widget_start;
-    if (cursor_x >= xpos && cursor_x < xpos + d->center_widget_space)
+    if (cursor_x >= (xpos = d->center_widget_start) && cursor_x < xpos + d->center_widget_space)
         AT(d->has_center_widget ? &d->center_widget : NULL);
-    xpos += d->center_widget_space;
-    for (int i = d->n_widgets_right - 1; i >= 0; --i) {
-        if (cursor_x >= xpos && cursor_x < xpos + d->widgets_right[i].width)
+    for (int i = 0; i < d->n_widgets_right; ++i)
+        if (cursor_x >= (xpos = d->widgets_right[i].x) && cursor_x < xpos + d->widgets_right[i].width)
             AT(&d->widgets_right[i]);
-        xpos += d->widgets_right[i].width;
-    }
 #undef AT
     return NULL;
 }
 
 /** the bar widget at cx, cy, if m's bar is what is there; ``*xrel`` as for
- * barwidgetin() */
-static widget_t *
-barwidgetatx(awl_server_t *srv, Monitor *m, double cx, double cy, unsigned int *xrel)
-{
+ * bar_widget_in() */
+static widget_t *bar_widget_at_x( awl_server_t *srv, Monitor *m, double cx, double cy, unsigned int *xrel ) {
     struct wlr_scene_node *node;
     struct wlr_scene_buffer *buffer;
 
     if (!m->bar.m || !(node = wlr_scene_node_at(&srv->layers[LyrBottom]->node, cx, cy, NULL, NULL))
             || !(buffer = wlr_scene_buffer_from_node(node)) || buffer != m->scene_buffer)
         return NULL;
-    return barwidgetin(m, cx, xrel);
+    return bar_widget_in(m, cx, xrel);
 }
 
 /** the pointer is on w at xrel (NULL: on no widget): callback_view tells
  * the widget it left -1 first */
-static void
-updateview(struct awl_bars *b, widget_t *w, unsigned int xrel)
-{
+static void update_view( struct awl_bars *b, widget_t *w, unsigned int xrel ) {
     widget_t *left = b->view_widget;
 
     b->view_widget = w && w->callback_view ? w : NULL;
@@ -131,25 +120,21 @@ updateview(struct awl_bars *b, widget_t *w, unsigned int xrel)
         b->view_widget->callback_view(b->view_widget, (int32_t)xrel);
 }
 
-static int leavetimeout(void *data);
+static int leave_timeout( void *data );
 
 /** a leave_delay_ms of 0 calls callback_leave right away */
-static void
-setleavepending(struct awl_bars *b, int pending)
-{
+static void set_leave_pending( struct awl_bars *b, int pending ) {
     if (pending == b->leave_pending)
         return;
     if (pending && !b->hover_active->leave_delay_ms) {
-        leavetimeout(b);
+        leave_timeout(b);
         return;
     }
     b->leave_pending = pending;
     wl_event_source_timer_update(b->leave_timer, pending ? (int)b->hover_active->leave_delay_ms : 0);
 }
 
-static int
-leavetimeout(void *data)
-{
+static int leave_timeout( void *data ) {
     struct awl_bars *b = data;
     widget_t *w = b->hover_active;
 
@@ -160,20 +145,18 @@ leavetimeout(void *data)
     return 0;
 }
 
-static int
-hovertimeout(void *data)
-{
+static int hover_timeout( void *data ) {
     awl_server_t *srv = data;
     /* not while a layer surface or a popup (e.g. a launcher) holds the
      * keyboard */
-    if (!srv->bars->hover_widget || srv->locked || srv->clients.exclusive_focus || popupkeyboard(srv))
+    if (!srv->bars->hover_widget || srv->locked || srv->clients.exclusive_focus || popup_keyboard(srv))
         return 0;
     /* its popup is still open */
     if (srv->bars->hover_active == srv->bars->hover_widget)
         return 0;
     if (srv->bars->hover_active) {
-        setleavepending(srv->bars, 0);
-        leavetimeout(srv->bars);
+        set_leave_pending(srv->bars, 0);
+        leave_timeout(srv->bars);
     }
     srv->bars->clicked = 0;
     if (srv->bars->hover_widget->callback_leave)
@@ -182,9 +165,7 @@ hovertimeout(void *data)
     return 0;
 }
 
-void
-updatehover(awl_server_t *srv, Client *c)
-{
+void update_hover( awl_server_t *srv, Client *c ) {
     widget_t *w = NULL;
     Monitor *m;
     unsigned int xrel = 0;
@@ -192,13 +173,13 @@ updatehover(awl_server_t *srv, Client *c)
     if (!srv->bars->hover_timer)
         return;
     if (!c && !srv->locked && srv->cursor.mode == CurNormal
-            && (m = xytomon(srv, srv->cursor.wlr->x, srv->cursor.wlr->y)))
-        w = barwidgetatx(srv, m, srv->cursor.wlr->x, srv->cursor.wlr->y, &xrel);
-    updateview(srv->bars, w, xrel);
+            && (m = xy_to_mon(srv, srv->cursor.wlr->x, srv->cursor.wlr->y)))
+        w = bar_widget_at_x(srv, m, srv->cursor.wlr->x, srv->cursor.wlr->y, &xrel);
+    update_view(srv->bars, w, xrel);
     if (w && !w->callback_hover)
         w = NULL;
     if (srv->bars->hover_active)
-        setleavepending(srv->bars, w != srv->bars->hover_active && !pointerinpopup(srv, srv->bars->hover_active->popup_window));
+        set_leave_pending(srv->bars, w != srv->bars->hover_active && !pointer_in_popup(srv, srv->bars->hover_active->popup_window));
     if (w == srv->bars->hover_widget)
         return;
     srv->bars->hover_widget = w;
@@ -217,24 +198,18 @@ static void widget_wrap_scroll_callback( widget_t* w, uint32_t xrel, double delt
     }
 }
 
-bool
-bar_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy)
-{
+bool bar_accepts_input( struct wlr_scene_buffer *buffer, double *sx, double *sy ) {
     (void)buffer; (void)sx; (void)sy;
     return true;
 }
 
-void
-buffer_destroy(struct wlr_buffer *wlr_buffer)
-{
+void buffer_destroy( struct wlr_buffer *wlr_buffer ) {
     Buffer *buf = wl_container_of(wlr_buffer, buf, base);
     free(buf);
 }
 
-bool
-buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer, uint32_t flags,
-                             void **data, uint32_t *format, size_t *stride)
-{
+bool buffer_begin_data_ptr_access( struct wlr_buffer *wlr_buffer, uint32_t flags, void **data, uint32_t *format,
+                                   size_t *stride ) {
     Buffer *buf = wl_container_of(wlr_buffer, buf, base);
 
     if (flags & WLR_BUFFER_DATA_PTR_ACCESS_WRITE) return false;
@@ -246,18 +221,14 @@ buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer, uint32_t flags,
     return true;
 }
 
-void
-buffer_end_data_ptr_access(struct wlr_buffer *buffer)
-{
+void buffer_end_data_ptr_access( struct wlr_buffer *buffer ) {
     (void)buffer;
 }
 
 /** Logs it when m's right-hand widgets don't fit beside its left-hand ones
  * (they're then drawn over them, and clicks land up to over pixels right of
  * what's shown), or no longer do so, once per change. */
-static void
-baroverflow(Monitor *m, uint32_t over)
-{
+static void bar_overflow( Monitor *m, uint32_t over ) {
     if (m->bar_over == over)
         return;
     if (over)
@@ -269,12 +240,10 @@ baroverflow(Monitor *m, uint32_t over)
 }
 
 /** what m's widgets need of m, into its :c:type:`awl_bar_t` */
-static void
-barview(Monitor *m)
-{
+static void bar_view( Monitor *m ) {
     awl_bar_t *d = &m->bar;
 
-    memcpy(d->ltsymbol, m->ltsymbol, sizeof(d->ltsymbol));
+    memcpy(d->layout_symbol, m->layout_symbol, sizeof(d->layout_symbol));
     d->output = m->wlr_output->name;
     d->scale = m->wlr_output->scale;
     d->height = m->bar_area.height;
@@ -282,13 +251,17 @@ barview(Monitor *m)
     d->y = m->m.y;
 }
 
-static void
-drawbar(awl_server_t *srv, Monitor *m)
-{
-    if (srv->out.in_cleanupmon) return;
+/** the :c:member:`~widget_t.overlay` of each of the n widgets from w that has one and was drawn */
+static void overlays( widget_t *w, int n, pixman_image_t *pix ) {
+    for (; n-- > 0; ++w)
+        if (w->overlay && w->width) w->overlay( w, pix );
+}
+
+static void draw_bar( awl_server_t *srv, Monitor *m ) {
+    if (srv->out.in_cleanup_mon) return;
     /* nothing of the bar is visible under the lock screen, but every new
      * buffer still damages the output (and the full-screen locked_bg_blur
-     * above it); destroylock() redraws all bars once on unlock */
+     * above it); destroy_lock() redraws all bars once on unlock */
     if (srv->locked) return;
     if (!m) return;
     if (!m->bar.m) return;
@@ -296,57 +269,57 @@ drawbar(awl_server_t *srv, Monitor *m)
     uint32_t occ = 0, urg = 0;
     Client *c;
     Buffer *buf;
-    int oneoff;
+    int one_off;
     pixman_region32_t damage;
 
-    memset( m->bar.tagwindows, 0, sizeof(m->bar.tagwindows) );
-    m->bar.n_tagwindows = 0;
-    barview(m);
+    memset( m->bar.tag_windows, 0, sizeof(m->bar.tag_windows) );
+    m->bar.n_tag_windows = 0;
+    bar_view(m);
 
-    if (!m->showbar)
+    if (!m->show_bar)
         return;
 
     /* fall back to a throwaway buffer if the scene holds both ring slots */
-    if ((oneoff = !(buf = barbuffer(m))))
-        buf = newbarbuffer(m);
+    if ((one_off = !(buf = bar_buffer(m))))
+        buf = new_bar_buffer(m);
     memset(buf->data, 0, buf->stride * buf->h);
 
     awl_bar_prepare_drawing(&m->bar, m->bar_area.width, m->bar_area.height, buf->data, buf->stride);
 
-    Client* ct = focustop(srv, m);
+    Client* ct = focus_top(srv, m);
     wl_list_for_each(c, &srv->clients.list, link) {
         if (c->mon != m)
             continue;
         occ |= c->tags;
-        if (c->isurgent)
+        if (c->is_urgent)
             urg |= c->tags;
-        if ( (c->tags & m->tagset[m->seltags]) && (m->bar.n_tagwindows < (int)LENGTH(m->bar.tagwindows)) ) {
-            strncpy( m->bar.tagwindows[m->bar.n_tagwindows].name, client_get_title(c),
-                    sizeof(m->bar.tagwindows[m->bar.n_tagwindows].name)-1 );
-            m->bar.tagwindows[m->bar.n_tagwindows].floating = c->isfloating;
-            m->bar.tagwindows[m->bar.n_tagwindows].urgent = c->isurgent;
-            m->bar.tagwindows[m->bar.n_tagwindows].fullscreen = c->isfullscreen;
-            m->bar.tagwindows[m->bar.n_tagwindows].visible = c->isvisible;
-            m->bar.tagwindows[m->bar.n_tagwindows].maximized = c->ismaximized;
-            m->bar.tagwindows[m->bar.n_tagwindows].ontop = c->isontop;
-            m->bar.tagwindows[m->bar.n_tagwindows].focused = (c == ct);
-            m->bar.tagwindows[m->bar.n_tagwindows].c = c;
-            m->bar.n_tagwindows++;
+        if ( (c->tags & m->tagset[m->sel_tags]) && (m->bar.n_tag_windows < (int)LENGTH(m->bar.tag_windows)) ) {
+            strncpy( m->bar.tag_windows[m->bar.n_tag_windows].name, client_get_title(c),
+                    sizeof(m->bar.tag_windows[m->bar.n_tag_windows].name)-1 );
+            m->bar.tag_windows[m->bar.n_tag_windows].floating = c->is_floating;
+            m->bar.tag_windows[m->bar.n_tag_windows].urgent = c->is_urgent;
+            m->bar.tag_windows[m->bar.n_tag_windows].fullscreen = c->is_fullscreen;
+            m->bar.tag_windows[m->bar.n_tag_windows].visible = c->is_visible;
+            m->bar.tag_windows[m->bar.n_tag_windows].maximized = c->is_maximized;
+            m->bar.tag_windows[m->bar.n_tag_windows].on_top = c->is_on_top;
+            m->bar.tag_windows[m->bar.n_tag_windows].focused = (c == ct);
+            m->bar.tag_windows[m->bar.n_tag_windows].c = c;
+            m->bar.n_tag_windows++;
         }
     }
     m->bar.occ = occ;
     m->bar.urg = urg;
-    m->bar.sel = m->tagset[m->seltags];
-    m->bar.ntags = TAGCOUNT(srv->cfg);
-    m->bar.selmon = (m == srv->out.selmon);
-    if (wl_list_length(&srv->out.mons) == 1) m->bar.selmon = -1;
-    m->bar.pertag = m->pertag;
+    m->bar.sel = m->tagset[m->sel_tags];
+    m->bar.ntags = TAG_COUNT(srv->cfg);
+    m->bar.sel_mon = (m == srv->out.sel_mon);
+    if (srv->out.nmons == 1) m->bar.sel_mon = -1;
+    m->bar.per_tag = m->per_tag;
 
     for (int ww=0; ww<m->bar.n_widgets_left; ++ww) {
-        if (m->bar.widgets_left[ww].draw)
-            m->bar.widgets_left[ww].width = m->bar.widgets_left[ww].draw(
-                    &m->bar.widgets_left[ww], x, m->bar.pix );
-        x += m->bar.widgets_left[ww].width;
+        widget_t *w = &m->bar.widgets_left[ww];
+        w->x = (uint32_t)x;
+        if (w->draw) w->width = w->draw(w, w->x, m->bar.pix);
+        x += w->width;
     }
     m->bar.center_widget_start = x;
 
@@ -355,17 +328,22 @@ drawbar(awl_server_t *srv, Monitor *m)
         widget_t *w = &m->bar.widgets_right[ww];
         /* width first, so the widget lands at its final position right away */
         w->width = w->measure ? w->measure(w) : 0;
-        x_end = w->width < x_end ? x_end - w->width : 0;
+        w->x = x_end = w->width < x_end ? x_end - w->width : 0;
         if (w->draw && w->width)
             w->draw(w, x_end, m->bar.pix);
     }
 
     m->bar.center_widget_space = x_end > m->bar.center_widget_start ? x_end - m->bar.center_widget_start : 0;
-    baroverflow(m, x_end < m->bar.center_widget_start ? m->bar.center_widget_start - x_end : 0);
+    bar_overflow(m, x_end < m->bar.center_widget_start ? m->bar.center_widget_start - x_end : 0);
     if (m->bar.has_center_widget) {
+        m->bar.center_widget.x = (uint32_t)x;
         if (m->bar.center_widget.draw)
             m->bar.center_widget.width = m->bar.center_widget.draw( &m->bar.center_widget, x, m->bar.pix );
     }
+    /* the overlays, once every widget is drawn */
+    overlays( m->bar.widgets_left, m->bar.n_widgets_left, m->bar.pix );
+    overlays( m->bar.widgets_right, m->bar.n_widgets_right, m->bar.pix );
+    overlays( &m->bar.center_widget, m->bar.has_center_widget, m->bar.pix );
 
     awl_bar_finish_drawing(&m->bar);
     wlr_scene_buffer_set_dest_size(m->scene_buffer,
@@ -381,28 +359,26 @@ drawbar(awl_server_t *srv, Monitor *m)
         wlr_scene_blur_set_size(m->bar_blur, bw, m->bar_area.real_height);
         wlr_scene_node_set_position(&m->bar_blur->node, m->m.x + bx,
             m->m.y + (srv->cfg->bar.top ? 0 : m->m.height - m->bar_area.real_height));
-        wlr_scene_node_set_enabled(&m->bar_blur->node, srv->cfg->blur.windowlist && bw > 0);
+        wlr_scene_node_set_enabled(&m->bar_blur->node, srv->cfg->blur.window_list && bw > 0);
     }
     /* only hand the scene a new buffer if the pixels actually changed, and
      * only damage the output where they did (usually just the clock and the
      * graphs); buf stays unlocked otherwise and is reused next time */
     pixman_region32_init(&damage);
-    if (bardamage(buf, m->bar_shown, &damage)) {
+    if (bar_damage(buf, m->bar_shown, &damage)) {
         wlr_scene_buffer_set_buffer_with_damage(m->scene_buffer, &buf->base,
                 m->bar_shown ? &damage : NULL);
         /* a one-off buffer is gone once the scene has uploaded it */
-        m->bar_shown = oneoff ? NULL : buf;
+        m->bar_shown = one_off ? NULL : buf;
     }
     pixman_region32_fini(&damage);
-    if (oneoff)
+    if (one_off)
         wlr_buffer_drop(&buf->base);
 }
 
-Buffer *
-buffercreate(int width, int height)
-{
+Buffer *buffer_create( int width, int height ) {
     int32_t stride = awl_draw_stride(width);
-    Buffer *buf = ecalloc(1, sizeof(Buffer) + (size_t)stride * height);
+    Buffer *buf = calloc_or_die(1, sizeof(Buffer) + (size_t)stride * height);
     buf->stride = stride;
     buf->w = width;
     buf->h = height;
@@ -410,20 +386,16 @@ buffercreate(int width, int height)
     return buf;
 }
 
-Buffer *
-newbarbuffer(Monitor *m)
-{
-    return buffercreate(m->bar_area.width, m->bar_area.height);
+Buffer *new_bar_buffer( Monitor *m ) {
+    return buffer_create(m->bar_area.width, m->bar_area.height);
 }
 
-Buffer *
-barbuffer(Monitor *m)
-{
+Buffer *bar_buffer( Monitor *m ) {
     /* The scene locks a buffer from set_buffer until it has copied it into a
      * texture on the next rendered frame, then unlocks it again. Any unlocked
-     * slot is therefore free to draw into, except the one shown: drawbar()
+     * slot is therefore free to draw into, except the one shown: draw_bar()
      * compares the new pixels with it. The slots are only dropped in
-     * cleanupmon(). */
+     * cleanup_mon(). */
     for (size_t i = 0; i < LENGTH(m->bar_bufs); i++) {
         Buffer *buf = m->bar_bufs[i];
         if (buf && (buf->base.n_locks || buf == m->bar_shown))
@@ -433,15 +405,13 @@ barbuffer(Monitor *m)
             buf = NULL;
         }
         if (!buf)
-            buf = m->bar_bufs[i] = newbarbuffer(m);
+            buf = m->bar_bufs[i] = new_bar_buffer(m);
         return buf;
     }
     return NULL;
 }
 
-int
-bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *damage)
-{
+int bar_damage( const Buffer *buf, const Buffer *prev, pixman_region32_t *damage ) {
     /* Collects the columns of buf that differ from prev, in BARTILE-pixel
      * steps and over the full bar height, into damage; returns whether
      * anything differs. Without a comparable prev, everything does. */
@@ -482,51 +452,43 @@ bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *damage)
     return any;
 }
 
-void
-drawbars(awl_server_t *srv)
-{
-    if (srv->out.in_cleanupmon) return;
+void draw_bars( awl_server_t *srv ) {
+    if (srv->out.in_cleanup_mon) return;
     Monitor *m = NULL;
 
-    wl_list_for_each(m, &srv->out.mons, link) {
-        if (m->wlr_output->enabled) drawbar(srv, m);
+    FOR_EACH_MON(m, srv) {
+        if (m->wlr_output->enabled) draw_bar(srv, m);
     }
 }
 
-static void
-redrawidle(void *data)
-{
+static void redraw_idle( void *data ) {
     awl_server_t *srv = data;
     (void)data;
     srv->bars->redraw_idle = NULL;
-    drawbars(srv);
+    draw_bars(srv);
 }
 
-void
-barsdirty(awl_server_t *srv)
-{
-    /* hover_timer: between barinit() and barfini() */
+void bars_dirty( awl_server_t *srv ) {
+    /* hover_timer: between bar_init() and bar_fini() */
     if (!srv->bars->redraw_idle && srv->bars->hover_timer)
-        srv->bars->redraw_idle = wl_event_loop_add_idle(srv->event_loop, redrawidle, srv);
+        srv->bars->redraw_idle = wl_event_loop_add_idle(srv->event_loop, redraw_idle, srv);
 }
 
-void togglebar(awl_server_t *srv, const Arg *arg) { (void)arg; togglebar_mon(srv, srv->out.selmon); }
-void togglebar_mon(awl_server_t *srv, Monitor* m) {
+void toggle_bar( awl_server_t *srv, const Arg *arg ) { (void)arg; toggle_bar_mon(srv, srv->out.sel_mon); }
+void toggle_bar_mon( awl_server_t *srv, Monitor* m ) {
     if (!m) return;
-    m->showbar = !m->showbar;
-    wlr_scene_node_set_enabled(&m->scene_buffer->node, m->showbar);
-    /* drawbar() enables it again, if the window list has a width */
-    if (!m->showbar)
+    m->show_bar = !m->show_bar;
+    wlr_scene_node_set_enabled(&m->scene_buffer->node, m->show_bar);
+    /* draw_bar() enables it again, if the window list has a width */
+    if (!m->show_bar)
         wlr_scene_node_set_enabled(&m->bar_blur->node, 0);
-    arrangelayers(srv, m);
+    arrange_layers(srv, m);
 }
 
 /** (re)loads ``*f``, a font of m's other than the bar's, at m's scale: font
  * and size (filled in, :c:func:`awl_config_fill_defaults`); NULL if it doesn't
  * load (what says whose, for the warning) */
-static void
-updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const char *what)
-{
+static void update_font( Monitor *m, struct fcft_font **f, const char *font, int size, const char *what ) {
     awl_process_t *proc = m->srv->proc;
     awl_font_release(proc, *f);
     *f = NULL;
@@ -536,33 +498,27 @@ updatefont(Monitor *m, struct fcft_font **f, const char *font, int size, const c
         awl_wrn_printf("%s font %s not found, using the bar's\n", what, font);
 }
 
-/** (re)loads m's bar's emoji font (:c:member:`awl_bar_t.emojifont`), at the bar's size */
-static void
-updateemojifont(awl_server_t *srv, Monitor *m)
-{
-    awl_font_release(srv->proc, m->bar.emojifont);
-    m->bar.emojifont = NULL;
+/** (re)loads m's bar's emoji font (:c:member:`awl_bar_t.emoji_font`), at the bar's size */
+static void update_emoji_font( awl_server_t *srv, Monitor *m ) {
+    awl_font_release(srv->proc, m->bar.emoji_font);
+    m->bar.emoji_font = NULL;
     if (!srv->cfg->emoji_font)
         return;
-    if (!(m->bar.emojifont = awl_font_get_emoji(srv->proc, srv->cfg->emoji_font, (float)srv->cfg->fontsize,
+    if (!(m->bar.emoji_font = awl_font_get_emoji(srv->proc, srv->cfg->emoji_font, (float)srv->cfg->font_size,
                 m->wlr_output->scale)))
         awl_wrn_printf("emoji font %s not found or not in color, the bar shows text instead\n",
                 srv->cfg->emoji_font);
 }
 
-/** (re)loads m's emoji, popup and desktop fonts (:c:member:`awl_bar_t.emojifont`,
- * :c:member:`Monitor.popupfont`, .desktopfont) */
-static void
-updatefonts(awl_server_t *srv, Monitor *m)
-{
-    updateemojifont(srv, m);
-    updatefont(m, &m->popupfont, srv->cfg->popup.font, srv->cfg->popup.fontsize.v, "popup");
-    updatefont(m, &m->desktopfont, srv->cfg->desktop.font, srv->cfg->desktop.fontsize.v, "desktop");
+/** (re)loads m's emoji, popup and desktop fonts (:c:member:`awl_bar_t.emoji_font`,
+ * :c:member:`Monitor.popup_font`, .desktop_font) */
+static void update_fonts( awl_server_t *srv, Monitor *m ) {
+    update_emoji_font(srv, m);
+    update_font(m, &m->popup_font, srv->cfg->popup.font, srv->cfg->popup.font_size.v, "popup");
+    update_font(m, &m->desktop_font, srv->cfg->desktop.font, srv->cfg->desktop.font_size.v, "desktop");
 }
 
-void
-updatebar(awl_server_t *srv, Monitor *m)
-{
+void update_bar( awl_server_t *srv, Monitor *m ) {
     int rw, rh;
 
     wlr_output_transformed_resolution(m->wlr_output, &rw, &rh);
@@ -570,37 +526,33 @@ updatebar(awl_server_t *srv, Monitor *m)
     m->bar_area.real_width = (int)((float)m->bar_area.width / m->wlr_output->scale);
 
     if (m->bar_area.scale == m->wlr_output->scale && m->bar.m) {
-        barview(m);
+        bar_view(m);
         return;
     }
 
     /* falls back to monospace; keeps the old font if even that fails */
-    awl_bar_set_font(srv->proc, &m->bar, srv->cfg->font, (float)srv->cfg->fontsize, m->wlr_output->scale, 1);
+    awl_bar_set_font(srv->proc, &m->bar, srv->cfg->font, (float)srv->cfg->font_size, m->wlr_output->scale, 1);
 
     m->bar_area.scale = m->wlr_output->scale;
     /* no font at all: an empty bar of a monospace:size=10's height */
-    m->bar.lrpad = m->bar.font ? m->bar.font->height
+    m->bar.lr_pad = m->bar.font ? m->bar.font->height
             : (int)lroundf(AWL_FONT_FALLBACK_SIZE * 2 * m->wlr_output->scale);
-    m->bar_area.height = m->bar.lrpad + 2;
+    m->bar_area.height = m->bar.lr_pad + 2;
     m->bar_area.real_height = (int)((float)m->bar_area.height / m->wlr_output->scale);
-    updatefonts(srv, m);
+    update_fonts(srv, m);
     desktop_fontchanged(srv->desktop, m);
-    popupsupdate(srv, m);
-    barview(m);
+    popups_update(srv, m);
+    bar_view(m);
 }
 
-void
-barinit(awl_server_t *srv)
-{
-    srv->bars = ecalloc(1, sizeof *srv->bars);
+void bar_init( awl_server_t *srv ) {
+    srv->bars = calloc_or_die(1, sizeof *srv->bars);
     srv->bars->applied.show = srv->bars->applied.top = -1;
-    srv->bars->hover_timer = wl_event_loop_add_timer(srv->event_loop, hovertimeout, srv);
-    srv->bars->leave_timer = wl_event_loop_add_timer(srv->event_loop, leavetimeout, srv->bars);
+    srv->bars->hover_timer = wl_event_loop_add_timer(srv->event_loop, hover_timeout, srv);
+    srv->bars->leave_timer = wl_event_loop_add_timer(srv->event_loop, leave_timeout, srv->bars);
 }
 
-void
-barfini(awl_server_t *srv)
-{
+void bar_fini( awl_server_t *srv ) {
     if (srv->bars->redraw_idle) {
         wl_event_source_remove(srv->bars->redraw_idle);
         srv->bars->redraw_idle = NULL;
@@ -618,22 +570,18 @@ barfini(awl_server_t *srv)
     }
 }
 
-void
-barfree(awl_server_t *srv)
-{
+void bar_free( awl_server_t *srv ) {
     if (!srv->bars)
         return;
     free(srv->bars->applied.font);
-    free(srv->bars->applied.emojifont);
-    free(srv->bars->applied.popupfont);
-    free(srv->bars->applied.desktopfont);
+    free(srv->bars->applied.emoji_font);
+    free(srv->bars->applied.popup_font);
+    free(srv->bars->applied.desktop_font);
     free(srv->bars);
     srv->bars = NULL;
 }
 
-void
-baraddmon(awl_server_t *srv, Monitor *m)
-{
+void bar_add_mon( awl_server_t *srv, Monitor *m ) {
     awl_bar_setup(&m->bar, m);
     awl_plugins_bar_widgets(srv->proc, &m->bar);
 
@@ -641,21 +589,19 @@ baraddmon(awl_server_t *srv, Monitor *m)
      * over the bar's area render on top of it -- intentional */
     m->scene_buffer = wlr_scene_buffer_create(srv->layers[LyrBottom], NULL);
     m->scene_buffer->point_accepts_input = bar_accepts_input;
-    /* frosts the window list's translucent entries; drawbar() fits it and
-     * enables it with cfg->blur.windowlist */
+    /* frosts the window list's translucent entries; draw_bar() fits it and
+     * enables it with cfg->blur.window_list */
     m->bar_blur = wlr_scene_blur_create(srv->layers[LyrBottom], 0, 0);
     wlr_scene_node_place_below(&m->bar_blur->node, &m->scene_buffer->node);
     wlr_scene_blur_set_strength(m->bar_blur, srv->cfg->blur.strength);
     wlr_scene_blur_set_alpha(m->bar_blur, srv->cfg->blur.alpha);
 
-    m->showbar = !!srv->cfg->bar.show;
-    updatebar(srv, m);
-    barsdirty(srv);
+    m->show_bar = !!srv->cfg->bar.show;
+    update_bar(srv, m);
+    bars_dirty(srv);
 }
 
-void
-barremovemon(awl_server_t *srv, Monitor *m)
-{
+void bar_remove_mon( awl_server_t *srv, Monitor *m ) {
     /* hover_widget points into m->bar, as may view_widget */
     if (srv->bars->view_widget && (char *)srv->bars->view_widget >= (char *)&m->bar
             && (char *)srv->bars->view_widget < (char *)(&m->bar + 1))
@@ -667,172 +613,160 @@ barremovemon(awl_server_t *srv, Monitor *m)
     }
     if (srv->bars->hover_active && (char *)srv->bars->hover_active >= (char *)&m->bar
             && (char *)srv->bars->hover_active < (char *)(&m->bar + 1)) {
-        setleavepending(srv->bars, 0);
+        set_leave_pending(srv->bars, 0);
         srv->bars->hover_active = NULL;
     }
-    awl_font_release(srv->proc, m->popupfont);
-    m->popupfont = NULL;
-    awl_font_release(srv->proc, m->desktopfont);
-    m->desktopfont = NULL;
+    awl_font_release(srv->proc, m->popup_font);
+    m->popup_font = NULL;
+    awl_font_release(srv->proc, m->desktop_font);
+    m->desktop_font = NULL;
     awl_bar_teardown(srv->proc, &m->bar);
 }
 
-void
-barwidgetsclear(awl_server_t *srv)
-{
+void bar_widgets_clear( awl_server_t *srv ) {
     Monitor *m;
 
     /* a hover popup gets its leave callback while that still exists */
     if (srv->bars->hover_active) {
-        setleavepending(srv->bars, 0);
-        leavetimeout(srv->bars);
+        set_leave_pending(srv->bars, 0);
+        leave_timeout(srv->bars);
     }
     srv->bars->hover_widget = NULL;
     if (srv->bars->hover_timer)
         wl_event_source_timer_update(srv->bars->hover_timer, 0);
     /* it hears that the pointer left, while it still can */
-    updateview(srv->bars, NULL, 0);
-    wl_list_for_each(m, &srv->out.mons, link)
+    update_view(srv->bars, NULL, 0);
+    FOR_EACH_MON(m, srv)
         if (m->bar.m)
             awl_bar_widgets_clear(&m->bar);
 }
 
-void
-barwidgetsattach(awl_server_t *srv)
-{
+void bar_widgets_attach( awl_server_t *srv ) {
     Monitor *m;
 
-    wl_list_for_each(m, &srv->out.mons, link)
+    FOR_EACH_MON(m, srv)
         if (m->bar.m)
             awl_plugins_bar_widgets(srv->proc, &m->bar);
 }
 
-void
-barconfigure(awl_server_t *srv)
-{
+void bar_configure( awl_server_t *srv ) {
     Monitor *m;
 
     /* the bars' font, and with it their height */
     awl_font_retry(srv->proc);
-    if (!streqnull(srv->cfg->font, srv->bars->applied.font) || srv->cfg->fontsize != srv->bars->applied.fontsize) {
+    if (!streq_null(srv->cfg->font, srv->bars->applied.font) || srv->cfg->font_size != srv->bars->applied.font_size) {
         free(srv->bars->applied.font);
-        srv->bars->applied.font = strdupnull(srv->cfg->font);
-        srv->bars->applied.fontsize = srv->cfg->fontsize;
-        wl_list_for_each(m, &srv->out.mons, link) {
+        srv->bars->applied.font = strdup_null(srv->cfg->font);
+        srv->bars->applied.font_size = srv->cfg->font_size;
+        FOR_EACH_MON(m, srv) {
             if (!m->bar.m)
                 continue;
-            m->bar_area.scale = 0; /* updatebar() reloads it */
-            updatebar(srv, m);
-            arrangelayers(srv, m);
+            m->bar_area.scale = 0; /* update_bar() reloads it */
+            update_bar(srv, m);
+            arrange_layers(srv, m);
         }
     }
     /* the bars' place, and whether they're shown: every bar follows a
-     * change (togglebar's state otherwise stays) */
+     * change (toggle_bar's state otherwise stays) */
     if (srv->bars->applied.top >= 0 && !!srv->cfg->bar.top != srv->bars->applied.top)
-        wl_list_for_each(m, &srv->out.mons, link)
+        FOR_EACH_MON(m, srv)
             if (m->bar.m) {
-                arrangelayers(srv, m);
-                popupsupdate(srv, m);
+                arrange_layers(srv, m);
+                popups_update(srv, m);
             }
     srv->bars->applied.top = !!srv->cfg->bar.top;
     if (srv->bars->applied.show >= 0 && !!srv->cfg->bar.show != srv->bars->applied.show)
-        wl_list_for_each(m, &srv->out.mons, link)
-            if (m->bar.m && m->showbar != !!srv->cfg->bar.show)
-                togglebar_mon(srv, m);
+        FOR_EACH_MON(m, srv)
+            if (m->bar.m && m->show_bar != !!srv->cfg->bar.show)
+                toggle_bar_mon(srv, m);
     srv->bars->applied.show = !!srv->cfg->bar.show;
 
-    /* the bars' emoji (updatebar() above reloaded them too, no harm) */
-    if (!streqnull(srv->cfg->emoji_font, srv->bars->applied.emojifont)) {
-        free(srv->bars->applied.emojifont);
-        srv->bars->applied.emojifont = strdupnull(srv->cfg->emoji_font);
-        wl_list_for_each(m, &srv->out.mons, link)
+    /* the bars' emoji (update_bar() above reloaded them too, no harm) */
+    if (!streq_null(srv->cfg->emoji_font, srv->bars->applied.emoji_font)) {
+        free(srv->bars->applied.emoji_font);
+        srv->bars->applied.emoji_font = strdup_null(srv->cfg->emoji_font);
+        FOR_EACH_MON(m, srv)
             if (m->bar.m)
-                updateemojifont(srv, m);
-        barsdirty(srv);
+                update_emoji_font(srv, m);
+        bars_dirty(srv);
     }
-    /* the popups' (updatebar() above reloaded it too, no harm) */
-    if (!streqnull(srv->cfg->popup.font, srv->bars->applied.popupfont)
-            || srv->cfg->popup.fontsize.v != srv->bars->applied.popupfontsize) {
-        free(srv->bars->applied.popupfont);
-        srv->bars->applied.popupfont = strdupnull(srv->cfg->popup.font);
-        srv->bars->applied.popupfontsize = srv->cfg->popup.fontsize.v;
-        wl_list_for_each(m, &srv->out.mons, link) {
+    /* the popups' (update_bar() above reloaded it too, no harm) */
+    if (!streq_null(srv->cfg->popup.font, srv->bars->applied.popup_font)
+            || srv->cfg->popup.font_size.v != srv->bars->applied.popup_font_size) {
+        free(srv->bars->applied.popup_font);
+        srv->bars->applied.popup_font = strdup_null(srv->cfg->popup.font);
+        srv->bars->applied.popup_font_size = srv->cfg->popup.font_size.v;
+        FOR_EACH_MON(m, srv) {
             if (!m->bar.m || !m->bar.font)
                 continue;
-            updatefont(m, &m->popupfont, srv->cfg->popup.font, srv->cfg->popup.fontsize.v, "popup");
-            popupsupdate(srv, m);
+            update_font(m, &m->popup_font, srv->cfg->popup.font, srv->cfg->popup.font_size.v, "popup");
+            popups_update(srv, m);
         }
     }
     /* the desktop file list's, the same way */
-    if (!streqnull(srv->cfg->desktop.font, srv->bars->applied.desktopfont)
-            || srv->cfg->desktop.fontsize.v != srv->bars->applied.desktopfontsize) {
-        free(srv->bars->applied.desktopfont);
-        srv->bars->applied.desktopfont = strdupnull(srv->cfg->desktop.font);
-        srv->bars->applied.desktopfontsize = srv->cfg->desktop.fontsize.v;
-        wl_list_for_each(m, &srv->out.mons, link) {
+    if (!streq_null(srv->cfg->desktop.font, srv->bars->applied.desktop_font)
+            || srv->cfg->desktop.font_size.v != srv->bars->applied.desktop_font_size) {
+        free(srv->bars->applied.desktop_font);
+        srv->bars->applied.desktop_font = strdup_null(srv->cfg->desktop.font);
+        srv->bars->applied.desktop_font_size = srv->cfg->desktop.font_size.v;
+        FOR_EACH_MON(m, srv) {
             if (!m->bar.m || !m->bar.font)
                 continue;
-            updatefont(m, &m->desktopfont, srv->cfg->desktop.font, srv->cfg->desktop.fontsize.v, "desktop");
+            update_font(m, &m->desktop_font, srv->cfg->desktop.font, srv->cfg->desktop.font_size.v, "desktop");
             desktop_fontchanged(srv->desktop, m);
         }
     }
-    wl_list_for_each(m, &srv->out.mons, link) {
+    FOR_EACH_MON(m, srv) {
         wlr_scene_blur_set_strength(m->bar_blur, srv->cfg->blur.strength);
         wlr_scene_blur_set_alpha(m->bar_blur, srv->cfg->blur.alpha);
     }
 }
 
-int
-pointeronbar(awl_server_t *srv)
-{
+int pointer_on_bar( awl_server_t *srv ) {
     struct wlr_scene_node *node;
     struct wlr_scene_buffer *buffer;
 
     return (node = wlr_scene_node_at(&srv->layers[LyrBottom]->node, srv->cursor.wlr->x, srv->cursor.wlr->y, NULL, NULL))
-            && (buffer = wlr_scene_buffer_from_node(node)) && buffer == srv->out.selmon->scene_buffer;
+            && (buffer = wlr_scene_buffer_from_node(node)) && buffer == srv->out.sel_mon->scene_buffer;
 }
 
-int
-baraxis(awl_server_t *srv, double delta, uint32_t mods)
-{
+int bar_axis( awl_server_t *srv, double delta, uint32_t mods ) {
     unsigned int xrel;
     widget_t *w;
 
-    if (!pointeronbar(srv) || !(w = barwidgetin(srv->out.selmon, srv->cursor.wlr->x, &xrel)))
+    if (!pointer_on_bar(srv) || !(w = bar_widget_in(srv->out.sel_mon, srv->cursor.wlr->x, &xrel)))
         return 0;
     widget_wrap_scroll_callback(w, xrel, delta, mods);
     return 1;
 }
 
-int
-barbutton(awl_server_t *srv, uint32_t button, uint32_t mods, unsigned int *click)
-{
+int bar_button( awl_server_t *srv, uint32_t button, uint32_t mods, unsigned int *click ) {
     unsigned int xrel = 0;
 
-    if (!pointeronbar(srv))
+    if (!pointer_on_bar(srv))
         return 0;
     /* hover popups are hover only: a press on the widget closes what
      * its hover opened, or keeps it from opening, until the pointer
      * leaves and comes back; what a click opened is the click's to close */
-    widget_t *pressed = barwidgetin(srv->out.selmon, srv->cursor.wlr->x, &xrel);
+    widget_t *pressed = bar_widget_in(srv->out.sel_mon, srv->cursor.wlr->x, &xrel);
     if (pressed && pressed == srv->bars->hover_widget)
         wl_event_source_timer_update(srv->bars->hover_timer, 0);
     if (srv->bars->hover_active && pressed == srv->bars->hover_active) {
-        setleavepending(srv->bars, 0);
+        set_leave_pending(srv->bars, 0);
         if (srv->bars->clicked)
             srv->bars->hover_active = NULL;
         else
-            leavetimeout(srv->bars);
+            leave_timeout(srv->bars);
     }
     *click = ClkBar;
     if (!pressed || !pressed->callback_click)
         return 0;
     pressed->callback_click(pressed, xrel, button, mods);
     /* and that closes as a hover's would */
-    if (pressed->callback_leave && popupshown(srv, pressed->popup_window)) {
+    if (pressed->callback_leave && popup_shown(srv, pressed->popup_window)) {
         if (srv->bars->hover_active && srv->bars->hover_active != pressed) {
-            setleavepending(srv->bars, 0);
-            leavetimeout(srv->bars);
+            set_leave_pending(srv->bars, 0);
+            leave_timeout(srv->bars);
         }
         srv->bars->hover_active = pressed;
         srv->bars->clicked = 1;
@@ -842,13 +776,13 @@ barbutton(awl_server_t *srv, uint32_t button, uint32_t mods, unsigned int *click
 
 /* awl_bar_t, awl_bar_type.h */
 
-void awl_bar_setup(awl_bar_t *bar, Monitor *m) {
+void awl_bar_setup( awl_bar_t *bar, Monitor *m ) {
     *bar = (awl_bar_t){ .m = m };
     /* the widgets come from libawlplugins.so, see awl_plugin_host.h */
 }
 
-struct fcft_font *awl_bar_set_font(awl_process_t *proc, awl_bar_t *bar, const char *name,
-        float size, float scale, int fallback) {
+struct fcft_font *awl_bar_set_font( awl_process_t *proc, awl_bar_t *bar, const char *name, float size, float scale,
+                                    int fallback ) {
     struct fcft_font *font = fallback ? awl_font_get(proc, name, size, scale)
                                       : awl_font_get_exact(proc, name, size, scale);
     if (!bar || !font) {
@@ -861,14 +795,14 @@ struct fcft_font *awl_bar_set_font(awl_process_t *proc, awl_bar_t *bar, const ch
     return font;
 }
 
-void awl_bar_prepare_drawing(awl_bar_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride) {
+void awl_bar_prepare_drawing( awl_bar_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride ) {
     if (!bar)
         return;
     awl_bar_finish_drawing(bar);
     bar->pix = awl_draw_image(w, h, bits, stride);
 }
 
-void awl_bar_finish_drawing(awl_bar_t *bar) {
+void awl_bar_finish_drawing( awl_bar_t *bar ) {
     if (bar && bar->pix) {
         pixman_image_unref(bar->pix);
         /* awl_bar_teardown() and the next awl_bar_prepare_drawing() unref
@@ -877,17 +811,17 @@ void awl_bar_finish_drawing(awl_bar_t *bar) {
     }
 }
 
-void awl_bar_teardown(awl_process_t *proc, awl_bar_t *bar) {
+void awl_bar_teardown( awl_process_t *proc, awl_bar_t *bar ) {
     if (!bar)
         return;
     awl_bar_finish_drawing(bar);
     awl_font_release(proc, bar->font);
-    awl_font_release(proc, bar->emojifont);
+    awl_font_release(proc, bar->emoji_font);
     awl_bar_widgets_clear(bar);
     *bar = (awl_bar_t){ 0 };
 }
 
-void awl_bar_widgets_clear(awl_bar_t *bar) {
+void awl_bar_widgets_clear( awl_bar_t *bar ) {
     for (int l=0; l<bar->n_widgets_left; ++l)
         if (bar->widgets_left[l].free)
             bar->widgets_left[l].free( bar->widgets_left[l].userdata );

@@ -57,7 +57,7 @@ struct awl_notify_menu {
     /** the rows that fit, the rest behind a last row at more_y saying how
      * many notifications that is (more), if any */
     int shown, more, more_y;
-    int w, rowh, pad, indent, colsp;
+    int w, row_height, pad, indent, column_spacing;
     /** a "Show" button's width */
     int show_w;
     /** where text_at() cuts, 0: the right padding */
@@ -211,7 +211,7 @@ static void fonts_for( awl_notify_menu_t* mn, struct fcft_font* font ) {
 /** what row r has right of its title: its button, a past one's time */
 static int row_extra( awl_notify_menu_t* mn, const row_t* r ) {
     if (!r->can_show) return 0;
-    return mn->colsp + mn->show_w + (r->kind == ROW_PAST ? mn->colsp + (int)awl_host->text_width( mn->font, r->when ) : 0);
+    return mn->column_spacing + mn->show_w + (r->kind == ROW_PAST ? mn->column_spacing + (int)awl_host->text_width( mn->font, r->when ) : 0);
 }
 
 static int measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w, int* h ) {
@@ -221,9 +221,9 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     fonts_for( mn, font );
     const int fh = mn->bold->height > font->height ? mn->bold->height : font->height;
     mn->pad = px( mn, 6 );
-    mn->rowh = fh + 2 * px( mn, 3 );
+    mn->row_height = fh + 2 * px( mn, 3 );
     mn->indent = px( mn, 16 );
-    mn->colsp = px( mn, (float)mn->p->config.popup.column_spacing );
+    mn->column_spacing = px( mn, (float)mn->p->config.popup.column_spacing );
     mn->show_w = (int)awl_host->text_width( font, SHOW ) + 2 * px( mn, 8 );
     const int gap = px( mn, 4 );
 
@@ -233,7 +233,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
         row_t* r = &mn->rows[i];
         if ((r->kind == ROW_TITLE || r->kind == ROW_HISTORY) && i > 0) y += gap;
         r->y = y;
-        r->h = mn->rowh;
+        r->h = mn->row_height;
         y += r->h;
         titles += r->kind == ROW_TITLE || r->kind == ROW_PAST;
     }
@@ -242,11 +242,11 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     if (y > max_h) {
         y = 0;
         mn->shown = 0;
-        while (mn->shown < mn->n && mn->rows[mn->shown].y + mn->rows[mn->shown].h + mn->rowh <= max_h) mn->shown++;
+        while (mn->shown < mn->n && mn->rows[mn->shown].y + mn->rows[mn->shown].h + mn->row_height <= max_h) mn->shown++;
         for (int i = 0; i < mn->shown; i++) titles -= mn->rows[i].kind == ROW_TITLE || mn->rows[i].kind == ROW_PAST;
         mn->more = titles;
         mn->more_y = mn->shown ? mn->rows[mn->shown - 1].y + mn->rows[mn->shown - 1].h : 0;
-        y = mn->more_y + mn->rowh;
+        y = mn->more_y + mn->row_height;
         if (y > max_h) return 0;
     }
 
@@ -270,7 +270,7 @@ static int show_box( awl_notify_menu_t* mn, int i, int* x, int* y, int* w, int* 
     const row_t* r = &mn->rows[i];
     *w = mn->show_w;
     *x = mn->w - mn->pad - *w;
-    if (r->kind == ROW_PAST) *x -= (int)awl_host->text_width( mn->font, r->when ) + mn->colsp;
+    if (r->kind == ROW_PAST) *x -= (int)awl_host->text_width( mn->font, r->when ) + mn->column_spacing;
     *y = r->y + px( mn, 2 );
     *h = r->h - 2 * px( mn, 2 );
     return 1;
@@ -301,8 +301,8 @@ static int part_box( void* data, int part, int* x, int* y, int* w, int* h ) {
 
 /** text in font at x of row r, its line centered in the row, cut at the
  * content's right edge less the padding (or at mn->right) */
-static void text_at( awl_notify_menu_t* mn, pixman_image_t* pix, struct fcft_font* f, int x0, int y0, int x, int y, int h,
-                     const char* text, uint32_t fg ) {
+static void text_at( awl_notify_menu_t* mn, pixman_image_t* pix, struct fcft_font* f, int x0, int y0, int x, int y,
+                     int h, const char* text, uint32_t fg ) {
     const int room = (mn->right ? mn->right : mn->w - mn->pad) - x;
     if (room <= 0) return;
     awl_host->text_over( pix, f, x0 + x, y0 + y + (h - f->height) / 2, (unsigned)room, (unsigned)f->height, text, fg );
@@ -329,7 +329,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
             const char* s = r->kind == ROW_DND ? dnd_text() : mn->past_count;
             const int sw = (int)awl_host->text_width( font, s );
             text_at( mn, pix, font, x0, y0, mn->w - mn->pad - sw, r->y, r->h, s, i == hover ? fg : mc->menu_dim.v );
-            mn->right = mn->w - mn->pad - sw - mn->colsp;
+            mn->right = mn->w - mn->pad - sw - mn->column_spacing;
             if (mn->right > x)
                 text_at( mn, pix, font, x0, y0, x, r->y, r->h, r->kind == ROW_DND ? "Do not disturb" : "Clear history",
                          fg );
@@ -386,7 +386,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         char text[32];
         if (mn->more) snprintf( text, sizeof text, "+%d more", mn->more );
         else snprintf( text, sizeof text, "%s", AWL_WINDOW_ELLIPSIS );
-        text_at( mn, pix, font, x0, y0, mn->pad, mn->more_y, mn->rowh, text, mc->menu_dim.v );
+        text_at( mn, pix, font, x0, y0, mn->pad, mn->more_y, mn->row_height, text, mc->menu_dim.v );
     }
 }
 

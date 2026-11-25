@@ -56,8 +56,8 @@ static void report( void ) {
     fflush( stdout );
 }
 
-static void surface_configure( void* data, struct ext_session_lock_surface_v1* ls, uint32_t serial,
-                               uint32_t w, uint32_t h ) {
+static void surface_configure( void* data, struct ext_session_lock_surface_v1* ls, uint32_t serial, uint32_t w,
+                               uint32_t h ) {
     Output* o = data;
     struct wl_buffer* b = buffer( (int)w, (int)h );
     ext_session_lock_surface_v1_ack_configure( ls, serial );

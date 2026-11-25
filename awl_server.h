@@ -24,43 +24,53 @@
 /** listens to E with L, calling H */
 #define LISTEN(E, L, H)         wl_signal_add((E), ((L)->notify = (H), (L)))
 /** the same with a listener of its own, which H frees */
-#define LISTEN_STATIC(E, H)     do { struct wl_listener *_l = ecalloc(1, sizeof*_l); _l->notify = (H); wl_signal_add((E), _l); } while (0)
+#define LISTEN_STATIC(E, H)     do { struct wl_listener *_l = calloc_or_die(1, sizeof*_l); _l->notify = (H); wl_signal_add((E), _l); } while (0)
+/** loops over srv's monitors, the newest first, with the caller's Monitor \*m */
+#define FOR_EACH_MON(m, srv)    for (Monitor **m##_at = (srv)->out.mons; \
+                                     m##_at < (srv)->out.mons + (srv)->out.nmons && ((m) = *m##_at); m##_at++)
+
+/** how many outputs awl takes at most; one more is left alone (build with
+ * ``-Dc_args=-DAWL_MAX_MONS=n`` for more) */
+#ifndef AWL_MAX_MONS
+#define AWL_MAX_MONS 8
+#endif
 
 /** The monitors, awl_output.c's */
 typedef struct {
-    /** every Monitor, newest first */
-    struct wl_list mons;
+    /** every Monitor, the newest first: mons[0] to mons[nmons - 1] */
+    Monitor *mons[AWL_MAX_MONS];
+    int nmons;
     /** the selected monitor: the focused client's, or the pointer's with
-     * sloppyfocus; NULL while no output is enabled */
-    Monitor *selmon;
+     * sloppy_focus; NULL while no output is enabled */
+    Monitor *sel_mon;
     /** the output layout's box, around every output */
-    struct wlr_box sgeom;
+    struct wlr_box screen_geom;
     struct wlr_output_layout *layout;
     struct wlr_output_manager_v1 *mgr;
-    /** set while a monitor is destroyed (cleanupmon()): no bar is drawn then.
-     * The dying monitor's own bar is safe without it (:c:func:`barremovemon` clears
-     * :c:member:`m->bar.m <awl_bar_t.m>` first, and m is off mons before closemon()); what it still holds
-     * back is the other monitors' redraws while closemon() moves the clients
+    /** set while a monitor is destroyed (cleanup_mon()): no bar is drawn then.
+     * The dying monitor's own bar is safe without it (:c:func:`bar_remove_mon` clears
+     * :c:member:`m->bar.m <awl_bar_t.m>` first, and m is off mons before close_mon()); what it still holds
+     * back is the other monitors' redraws while close_mon() moves the clients
      * over (:c:func:`arrange` and focus changes draw the bars), so they draw once,
-     * afterwards. Dates from a crash fix before :c:func:`barremovemon` existed; to drop
+     * afterwards. Dates from a crash fix before :c:func:`bar_remove_mon` existed; to drop
      * it, test unplugging and replugging a monitor. */
-    bool in_cleanupmon;
+    bool in_cleanup_mon;
 } awl_outputs_t;
 
 /** The clients, awl_client.c's */
 typedef struct {
     /** the managed clients, Client.link: tiling order */
     struct wl_list list;
-    /** the same, Client.flink: focus order, the focused first */
-    struct wl_list fstack;
+    /** the same, Client.focus_link: focus order, the focused first */
+    struct wl_list focus_order;
     /** the layer surface or unmanaged client that holds the keyboard, or NULL */
     void *exclusive_focus;
     /** cfg->colors' border, border_focused and border_urgent, copied: the clients' borders outlive a reload */
     uint32_t borders[BorderLast];
     /** the border width plugins_config.c had, to tell whether a reload
      * changed it */
-    unsigned int applied_borderpx;
-    /** moves the border clock's marks on, every minute (:c:func:`borderclock`) */
+    unsigned int applied_border_px;
+    /** moves the border clock's marks on, every minute (:c:func:`border_clock`) */
     struct wl_event_source *clock_timer;
     /** the border clock's marks' images, the hour's and the minute's: a
      * row each, the fade (:c:member:`awl_config_t.border_clock`) baked in,
@@ -72,9 +82,9 @@ typedef struct {
     /** an :c:enum:`awl_border_clock_mode` */
     int clock_mode;
     /** the border clock may be showing somewhere: it was on at the last
-     * :c:func:`borderclock`, which has nothing to hide while it stays off */
+     * :c:func:`border_clock`, which has nothing to hide while it stays off */
     bool clock_on:1;
-    /** :c:func:`borderclockmode` set :c:member:`~awl_clients_t.clock_mode`, which then
+    /** :c:func:`border_clock_mode` set :c:member:`~awl_clients_t.clock_mode`, which then
      * counts instead of the config's, until a config reload */
     bool clock_mode_set:1;
 } awl_clients_t;
@@ -90,9 +100,9 @@ typedef struct {
     /** what the pointer does, :c:enum:`CursorMode` */
     unsigned int mode;
     /** the client being moved or resized */
-    Client *grabc;
+    Client *grab_client;
     /** where in it the pointer grabbed it, client-relative */
-    int grabcx, grabcy;
+    int grab_cx, grab_cy;
     /** the constraint in effect, or NULL */
     struct wlr_pointer_constraint_v1 *active_constraint;
     /** a press an awl window took swallows its release too */
@@ -119,11 +129,11 @@ typedef struct {
     /** every popup, Popup.link, the newest last (on top) */
     struct wl_list list;
     /** the popups' tree, made with the first one; the persistent ones', made
-     * with the first of them (popupsplace()) */
+     * with the first of them (popups_place()) */
     struct wlr_scene_tree *tree, *persistent_tree;
     /** the popup the pointer is over, if it takes the pointer */
     awl_window_t *hovered;
-    /** the popup that had the keyboard at the last :c:func:`popupsgrabupdate` */
+    /** the popup that had the keyboard at the last :c:func:`popups_grab_update` */
     awl_window_t *keyboard;
 } awl_popups_t;
 
@@ -180,11 +190,11 @@ typedef struct awl_server_t {
     /** The config in effect: the library's (awl's defaults with
      * plugins_config.c's changes), or while none is loaded the defaults. The
      * library's points into it, so it's only good until the next reload;
-     * :c:func:`pluginsdetach` falls back to the defaults. */
+     * :c:func:`plugins_detach` falls back to the defaults. */
     const awl_config_t *cfg;
     /** The config values that can change while awl runs, by name, for awl and the
      * library (:c:member:`awl_host_t.cfg`). Lives from setup() to cleanup(), across reloads. */
-    awl_dict_t *cfgdict;
+    awl_dict_t *cfg_dict;
 
     awl_outputs_t out;
     awl_clients_t clients;
@@ -196,18 +206,18 @@ typedef struct awl_server_t {
     /* The modules' own state: each struct is defined only in its module's
      * .c, which makes it in its init; other modules go through its
      * functions. */
-    /** awl_lockscreen.c's, from :c:func:`lockinit` to :c:func:`awl_lock_fini` */
+    /** awl_lockscreen.c's, from :c:func:`lock_init` to :c:func:`awl_lock_fini` */
     struct awl_lock *lock;
-    /** awl_bar.c's: the hover, the redraw, the fonts in use; from :c:func:`barinit` to :c:func:`barfree` */
+    /** awl_bar.c's: the hover, the redraw, the fonts in use; from :c:func:`bar_init` to :c:func:`bar_free` */
     struct awl_bars *bars;
-    /** awl_wallpaper.c's: the timer and its mode; from :c:func:`wallpaperinit` to wallpaperfini() */
+    /** awl_wallpaper.c's: the timer and its mode; from :c:func:`wallpaper_init` to wallpaper_fini() */
     struct awl_wallpaper *wallpaper;
     /** awl_alert.c's: the alerts' texts and tree; from :c:func:`awl_alert_init` to :c:func:`awl_alert_fini` */
     struct awl_alerts *alerts;
-    /** awl_input.c's: the keyboard group and the devices; from :c:func:`inputinit` to :c:func:`inputfree` */
+    /** awl_input.c's: the keyboard group and the devices; from :c:func:`input_init` to :c:func:`input_free` */
     struct awl_input *input;
     /** awl_config.c's: the library's config, which cfg points to while it's
-     * loaded, and a pending :c:func:`plugin_restart`; from :c:func:`configinit` to configfini() */
+     * loaded, and a pending :c:func:`plugin_restart`; from :c:func:`config_init` to config_fini() */
     struct awl_conf *conf;
     /** awl_background.c's: the wallpaper's images and fade; from
      * :c:func:`background_init` to :c:func:`background_fini` */
@@ -225,11 +235,11 @@ typedef struct awl_server_t {
     struct awl_screensaver *screensaver;
     /** awl_capture.c's: the library's pointer grab and its mark, the
      * clipboard's writers; made with the first grab or clipboard, freed by
-     * :c:func:`capturefini` */
+     * :c:func:`capture_fini` */
     struct awl_capture *capture;
     /** awl_redraw.h's fd's event handler (:c:func:`redraw_fire`) */
     struct wl_event_source *redraw_source;
-    /** setup()'s listeners to the globals above, cleanuplisteners() removes them */
+    /** setup()'s listeners to the globals above, cleanup_listeners() removes them */
     struct {
         struct wl_listener cursor_axis;
         struct wl_listener cursor_button;

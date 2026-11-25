@@ -28,10 +28,12 @@ typedef struct awl_plugin_data_t awl_plugin_data_t;
 /**
  * A part of the bar: the tags, the layout symbol, the task bar, the clock,
  * the graphs... Each bar has its own, made by :c:member:`awl_plugin_api_t.bar_widgets`
- * (plugins_widgets.c); everything but :c:member:`~widget_t.bar` and :c:member:`~widget_t.width` is the library's,
+ * (plugins_widgets.c); everything but :c:member:`~widget_t.bar`, :c:member:`~widget_t.x` and :c:member:`~widget_t.width` is the library's,
  * :c:member:`~widget_t.plugins` its state.
  */
 struct widget_t {
+    /** where awl put it, in bar pixels, set before :c:member:`draw() <widget_t.draw>` */
+    uint32_t x;
     /** what the last draw used, set by awl */
     uint32_t width;
     /**
@@ -45,6 +47,9 @@ struct widget_t {
     uint32_t (*measure)(widget_t* this);
     /** see :c:member:`~widget_t.measure` */
     uint32_t (*draw)(widget_t* this, uint32_t x, pixman_image_t* pix);
+    /** draws over the bar once every widget is drawn and in place: what sticks out of the
+     * widget's cell lands over its neighbours, on either side; NULL if nothing */
+    void (*overlay)(widget_t* this, pixman_image_t* pix);
     /** pointer motion over the widget, x_rel from its left edge (buffer
      * pixels); -1 once it left the widget (for one that isn't, or awl's
      * popups, a client over the bar), and before the plugins detach */
@@ -101,7 +106,7 @@ typedef struct awl_bar_window_t {
     bool visible:1;
     bool maximized:1;
     bool fullscreen:1;
-    bool ontop:1;
+    bool on_top:1;
     Client* c;
 } awl_bar_window_t;
 
@@ -116,7 +121,7 @@ struct awl_bar_t {
     /** its emoji font (:c:member:`awl_config_t.emoji_font`) at the same size and
      * scale, color emoji (:c:func:`awl_font_get_emoji`); NULL if there is none or
      * it doesn't load: then the widgets show text instead of emoji */
-    struct fcft_font *emojifont;
+    struct fcft_font *emoji_font;
 
     widget_t widgets_left[32];
     int n_widgets_left;
@@ -128,29 +133,29 @@ struct awl_bar_t {
     bool has_center_widget;
 
     /** the current tag's windows, the first
-     * :c:member:`~awl_bar_t.n_tagwindows` */
-    awl_bar_window_t tagwindows[128];
-    /** how many :c:member:`~awl_bar_t.tagwindows` are set */
-    int n_tagwindows;
+     * :c:member:`~awl_bar_t.n_tag_windows` */
+    awl_bar_window_t tag_windows[128];
+    /** how many :c:member:`~awl_bar_t.tag_windows` are set */
+    int n_tag_windows;
     /** occ, urg and sel: tag masks of the occupied, urgent and selected
      * tags */
     uint32_t occ, urg, sel;
     /** how many tags there are */
     int ntags;
     /** nonzero on the bar of the selected monitor, -1 if only one monitor exists */
-    int selmon;
-    /** the monitor gives each tag its own layout (:c:member:`Monitor.pertag`) */
-    bool pertag;
-    /** the monitor's layout symbol (Monitor.ltsymbol) */
-    char ltsymbol[16];
+    int sel_mon;
+    /** the monitor gives each tag its own layout (:c:member:`Monitor.per_tag`) */
+    bool per_tag;
+    /** the monitor's layout symbol (Monitor.layout_symbol) */
+    char layout_symbol[16];
     /** its output's name, valid while the bar is; this and the next ones
      * are what the widgets need of the monitor, so they never read it */
     const char *output;
     /** its output's scale */
     float scale;
     /** the bar's height and text padding (left and right together;
-     * :c:func:`updatebar` sets it with the font), buffer pixels */
-    int height, lrpad;
+     * :c:func:`update_bar` sets it with the font), buffer pixels */
+    int height, lr_pad;
     /** where the monitor is in the layout, logical pixels */
     int x, y;
 

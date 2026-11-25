@@ -48,19 +48,19 @@ event loop's next idle round. Then :c:func:`awl_plugins_reload`:
 #. Looks up :c:macro:`AWL_PLUGIN_ENTRY` and calls it with awl's :c:type:`awl_host_t`; the
    library compares :c:macro:`AWL_PLUGIN_ABI` and the struct sizes and returns its
    :c:type:`awl_plugin_api_t`, or NULL.
-#. Calls awl's :c:func:`pluginsdetach`: the hover popup gets its leave callback,
+#. Calls awl's :c:func:`plugins_detach`: the hover popup gets its leave callback,
    every bar's widgets are freed (``awl_draw_widgets_clear()``), and awl falls back
    to its built-in config, since the current one points into the old
    library.
 #. Stops the old library (:c:member:`awl_plugin_api_t.fini`): its threads, and it
-   gives back its popups and timers. :c:func:`pluginsreap` removes what it left
+   gives back its popups and timers. :c:func:`plugins_reap` removes what it left
    of them (with a warning), since their callbacks point into it, and so do
    the ``AWL_TEST_WINDOWS`` popups go. Then it unloads the library, unless a
    thread is stuck in the kernel (see :doc:`threads`): then the old library
    stays mapped for good.
 #. Starts the new library's threads (:c:member:`awl_plugin_api_t.init`).
-#. Calls awl's :c:func:`pluginsattach`: switches to the new library's config and
-   applies what changed (:c:func:`configapply`), gives every bar its widgets
+#. Calls awl's :c:func:`plugins_attach`: switches to the new library's config and
+   applies what changed (:c:func:`config_apply`), gives every bar its widgets
    again and redraws.
 
 The tray widget's host is one of the library's, so it starts afresh with the
@@ -79,18 +79,18 @@ As a sequence, with the library's threads in it:
      participant O as old library
      participant N as new library
      K->>D: plugin_restart()
-     D->>D: idle source: pluginrestart()
+     D->>D: idle source: plugin_restart_idle()
      D->>H: awl_plugins_reload(detach, attach)
-     H->>H: libopen(): memfd copy, dlopen()
+     H->>H: lib_open(): memfd copy, dlopen()
      H->>N: awl_plugin_entry(&host)
      N-->>H: its api, or NULL (ABI or sizes differ)
-     H->>D: pluginsdetach()
+     H->>D: plugins_detach()
      D->>O: hover popup: callback_leave
      D->>O: awl_draw_widgets_clear(): every widget's free()
-     D->>D: cfg = builtinconfig(), layouts moved
+     D->>D: cfg = builtin_config(), layouts moved
      alt the new library loaded
        H->>O: api->fini(): stops its threads, gives back its popups and timers
-       H->>D: pluginsreap(): what it left of them
+       H->>D: plugins_reap(): what it left of them
        alt every thread stopped
          H->>O: dlclose(), close the memfd
        else a thread is stuck
@@ -99,13 +99,13 @@ As a sequence, with the library's threads in it:
        H->>H: api = the new one
      else it didn't
        H->>O: api->fini(), the same library goes on
-       H->>D: pluginsreap()
+       H->>D: plugins_reap()
      end
      H->>N: api->init(paused): starts its threads
-     H->>D: pluginsattach()
-     D->>N: configuse(): api->config(), configapply()
+     H->>D: plugins_attach()
+     D->>N: config_use(): api->config(), config_apply()
      D->>N: bar_widgets() for every bar
-     D->>D: drawbars(), desktop_reloaded()
+     D->>D: draw_bars(), desktop_reloaded()
      D->>D: awl_tray_app_set_theme(cfg->tray->icon_theme)
 
 The library's lifetime
@@ -176,16 +176,16 @@ awl_config_defaults.h holds awl's defaults; awl runs with them while no library 
 loaded, and hands them to the library as :c:member:`awl_host_t.config_defaults`.
 plugin_config_defaults.h holds the library's. The ``CUSTOM`` part of
 plugins_config.c is the configuration: its ``configure(c, p)`` changes what it wants in both: a
-value (``c->borderpx = 2``), a part (``c->popup.font = "sans:size="``,
+value (``c->border_px = 2``), a part (``c->popup.font = "sans:size="``,
 ``p->colors.win_focused = ...``), or a list, pointed at its own array with
 ``SETLIST(c->keys, keys)`` or ``SETLIST(p->widgets, widgets)``. On every
 (re)load awl fills its copy of :c:type:`awl_config_t` through
 :c:member:`awl_plugin_api_t.config`; :c:type:`awl_plugin_config_t` never leaves the library.
 Only the library ever sees it.
 
-In bindings, :c:macro:`MODKEY` stands for ``c->modkey``, whatever it is when the
+In bindings, :c:macro:`MODKEY` stands for ``c->mod_key``, whatever it is when the
 binding is pressed, so changing the modifier needs no new bindings. Monitor
-rules and :c:func:`setlayout` take a layout's index, so awl's default bindings and
+rules and :c:func:`set_layout` take a layout's index, so awl's default bindings and
 rules work with the library's layouts too.
 
 The functions the configuration binds keys to are awl's. A binding names

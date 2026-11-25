@@ -47,18 +47,17 @@ static uint32_t pulsewidget_measure( widget_t* w );
 static void pulsewidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
 static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
 
-static uint32_t sniwidget_measure( widget_t* w );
-static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void sniwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
-static void sniwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
-static void sniwidget_view( widget_t* w, int32_t x );
-static void sniwidget_free( void* userdata );
+static uint32_t sni_widget_measure( widget_t* w );
+static uint32_t sni_widget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
+static void sni_widget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
+static void sni_widget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
+static void sni_widget_view( widget_t* w, int32_t x );
+static void sni_widget_free( void* userdata );
 static uint32_t statuswidget_measure( widget_t* w );
 static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t tempwidget_measure( widget_t* w );
 static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static uint32_t batwidget_measure( widget_t* w );
-static uint32_t batwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void batgroup_hover( widget_t* w );
 static void batgroup_leave( widget_t* w );
 static void sysgroup_hover( widget_t* w );
@@ -68,7 +67,6 @@ static uint32_t dockwidget_measure( widget_t* w );
 static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void dockwidget_free( void* userdata );
 static uint32_t ipwidget_measure( widget_t* w );
-static uint32_t ipwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void ipwidget_hover( widget_t* w );
 static void ipwidget_leave( widget_t* w );
 static void ipwidget_free( void* userdata );
@@ -80,6 +78,7 @@ static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_
 
 static uint32_t notifywidget_measure( widget_t* w );
 static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
+static void notifywidget_overlay( widget_t* w, pixman_image_t* pix );
 static void notifywidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
 static void notifywidget_view( widget_t* w, int32_t x );
 static void notifywidget_hover( widget_t* w );
@@ -116,12 +115,12 @@ static const widget_t right_widgets[] = {
     },
     [AwlWidgetTray] = {
         PAD_DEFAULT,
-        .measure = &sniwidget_measure,
-        .draw = &sniwidget_draw,
-        .callback_click = &sniwidget_click,
-        .callback_scroll = &sniwidget_scroll,
-        .callback_view = &sniwidget_view,
-        .free = &sniwidget_free,
+        .measure = &sni_widget_measure,
+        .draw = &sni_widget_draw,
+        .callback_click = &sni_widget_click,
+        .callback_scroll = &sni_widget_scroll,
+        .callback_view = &sni_widget_view,
+        .free = &sni_widget_free,
     },
     [AwlWidgetVolume] = {
         PAD_DEFAULT,
@@ -156,14 +155,14 @@ static const widget_t right_widgets[] = {
     [AwlWidgetBattery] = {
         PAD_DEFAULT,
         .measure = &batwidget_measure,
-        .draw = &batwidget_draw,
+        .draw = &textsnap_draw,
         BATGROUP_HOVER,
         .free = free,
     },
     [AwlWidgetNetwork] = {
         PAD_DEFAULT,
         .measure = &ipwidget_measure,
-        .draw = &ipwidget_draw,
+        .draw = &textsnap_draw,
         .callback_hover = &ipwidget_hover,
         .hover_delay_ms = 100,
         .callback_leave = &ipwidget_leave,
@@ -182,6 +181,7 @@ static const widget_t right_widgets[] = {
         .pad_left = 0, .pad_right = 0,
         .measure = &notifywidget_measure,
         .draw = &notifywidget_draw,
+        .overlay = &notifywidget_overlay,
         .callback_click = &notifywidget_click,
         .callback_view = &notifywidget_view,
         .callback_hover = &notifywidget_hover,
@@ -241,9 +241,9 @@ void awl_widgets_create( awl_plugin_data_t* p, awl_bar_t* bar ) {
 
 /** one side's padding, pad (a :c:type:`widget_t`'s), in the bar's pixels */
 static int pad_px( const awl_plugin_data_t* P, const widget_t* w, int pad ) {
-    if (pad == AWL_PADDING_FONT) return w->bar->lrpad / 2;
+    if (pad == AWL_PADDING_FONT) return w->bar->lr_pad / 2;
     if (pad == AWL_PADDING_DEFAULT)
-        return (int)lroundf( (float)w->bar->lrpad * P->plugin_config.widgets_padding );
+        return (int)lroundf( (float)w->bar->lr_pad * P->plugin_config.widgets_padding );
     return (int)lroundf( (float)pad * w->bar->scale );
 }
 
@@ -262,7 +262,8 @@ static uint32_t cell_width( const awl_plugin_data_t* P, const widget_t* w, uint3
 }
 
 /** a cell of w around text in font */
-static uint32_t text_cell_width( const awl_plugin_data_t* P, const widget_t* w, struct fcft_font* font, const char* text ) {
+static uint32_t text_cell_width( const awl_plugin_data_t* P, const widget_t* w, struct fcft_font* font,
+                                 const char* text ) {
     return cell_width( P, w, awl_host->text_width( font, text ) );
 }
 
@@ -270,7 +271,7 @@ static uint32_t text_cell_width( const awl_plugin_data_t* P, const widget_t* w, 
  * paddings, cut off with an ellipsis if it doesn't fit. Negative padding
  * puts the text over the neighbours. */
 static void cell_text( const awl_plugin_data_t* P, widget_t* w, pixman_image_t* pix, int x, uint32_t cw,
-        struct fcft_font* font, const char* text, pixman_color_t fg, pixman_color_t bg ) {
+                       struct fcft_font* font, const char* text, pixman_color_t fg, pixman_color_t bg ) {
     int l, r, h = (int)w->bar->height;
     widget_padding( P, w, &l, &r );
     long room = (long)cw - l - r;
@@ -284,7 +285,8 @@ static void cell_text( const awl_plugin_data_t* P, widget_t* w, pixman_image_t* 
 }
 
 /** fills the padding of w's picture cell at x, cw wide, with bg */
-static void cell_pads( const awl_plugin_data_t* P, widget_t* w, pixman_image_t* pix, int x, uint32_t cw, pixman_color_t bg ) {
+static void cell_pads( const awl_plugin_data_t* P, widget_t* w, pixman_image_t* pix, int x, uint32_t cw,
+                       pixman_color_t bg ) {
     int l, r;
     widget_padding( P, w, &l, &r );
     if (l > (int)cw) l = (int)cw;
@@ -312,13 +314,13 @@ static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
             bg_color = alpha_blend_16( bg_color, P->colors.tag_selected );
         cell_text( P, w, pix, x, ww, w->bar->font, num, fg_color, bg_color );
         /* the selected monitor: a mark in the "1"'s corner */
-        if (t == 0 && w->bar->selmon && w->bar->selmon != -1) {
+        if (t == 0 && w->bar->sel_mon && w->bar->sel_mon != -1) {
             int hh = w->bar->height;
             int h = hh / 8;
             if (h < 2) h = 2;
             int w = (ww < hh ? ww : hh)/2;
             if (w < 2) w = 2;
-            pixman_color_t c = P->colors.selmon;
+            pixman_color_t c = P->colors.sel_mon;
             pixman_rectangle16_t rects[] = {
                 { .x=x, .y=hh-h, .width=w, .height=h },
                 { .x=x, .y=hh-w, .width=h, .height=w },
@@ -337,7 +339,7 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
 
     awl_plugin_data_t* P = w->plugins;
 
-    int n_windows = w->bar->n_tagwindows;
+    int n_windows = w->bar->n_tag_windows;
     if (n_windows <= 0) {
         cell_text( P, w, pix, x, space, w->bar->font, "", P->colors.win_fg, (pixman_color_t){0} );
         return 0;
@@ -348,28 +350,28 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
     uint32_t spaces[n_windows];
     for (int wi=0; wi<n_windows; ++wi)
         spaces[wi] = space / n_windows + ((uint32_t)wi < space % n_windows);
-    int nospace = 0;
+    int no_space = 0;
     for (int wi=0; wi<n_windows; ++wi)
         if (spaces[wi] <= 20)
-            nospace = 1;
+            no_space = 1;
 
-    if (nospace) {
+    if (no_space) {
         cell_text( P, w, pix, x, space, w->bar->font, "+++", P->colors.win_fg, P->colors.win_urgent );
         return space;
     }
 
-    awl_bar_window_t* windows = w->bar->tagwindows;
+    awl_bar_window_t* windows = w->bar->tag_windows;
 
     // max, float, top
     for (int wi=0; wi<n_windows; ++wi) {
         /* prefix is at most "[FMT] ", name is a fixed-size NUL-terminated
          * field -- size txt so both always fit */
         char txt[sizeof(windows[wi].name) + 8] = {0};
-        if (windows[wi].floating || windows[wi].maximized || windows[wi].ontop) {
+        if (windows[wi].floating || windows[wi].maximized || windows[wi].on_top) {
             strcat( txt, "[" );
             if (windows[wi].floating) strcat( txt, "F" );
             if (windows[wi].maximized) strcat( txt, "M" );
-            if (windows[wi].ontop) strcat( txt, "T" );
+            if (windows[wi].on_top) strcat( txt, "T" );
             strcat( txt, "] " );
         }
         strcat( txt, windows[wi].name );
@@ -377,8 +379,8 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
                             windows[wi].urgent  ? P->colors.win_urgent :
                             windows[wi].visible ? P->colors.win_bg     :
                                                   P->colors.win_minimized;
-        /* frosted: awl blurs what is behind the window list (drawbar()) */
-        if (P->config.blur.windowlist && !windows[wi].focused && !windows[wi].urgent)
+        /* frosted: awl blurs what is behind the window list (draw_bar()) */
+        if (P->config.blur.window_list && !windows[wi].focused && !windows[wi].urgent)
             bg.alpha = 0x8888;
         cell_text( P, w, pix, x, spaces[wi], w->bar->font, txt, P->colors.win_fg, bg );
         x += spaces[wi];
@@ -386,11 +388,15 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
     return w->bar->center_widget_space;
 }
 
-/** a frame in c around the bar's cell at x, ww wide, an eighth of its height thick */
-static void cell_frame( const widget_t* w, pixman_image_t* pix, uint32_t x, int ww, pixman_color_t c ) {
+/** a frame in c around the bar's cell at x, ww wide, an eighth of its height thick; pad
+ * moves its left side in, or out over the cell before when negative */
+static void cell_frame( const widget_t* w, pixman_image_t* pix, uint32_t x, int ww, int pad, pixman_color_t c ) {
     int hh = w->bar->height;
     int t = hh / 8;
     if (t < 1) t = 1;
+    if (pad < -(int)x) pad = -(int)x;
+    x += pad;
+    ww -= pad;
     pixman_rectangle16_t rects[] = {
         { .x=x,        .y=0,    .width=ww, .height=t },
         { .x=x,        .y=hh-t, .width=ww, .height=t },
@@ -403,9 +409,9 @@ static void cell_frame( const widget_t* w, pixman_image_t* pix, uint32_t x, int 
 static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     awl_plugin_data_t* P = w->plugins;
     int ww = text_cell_width( P, w, w->bar->font, "XXX" );
-    cell_text( P, w, pix, x, ww, w->bar->font, w->bar->ltsymbol, P->colors.bar_fg, P->colors.bar_bg );
+    cell_text( P, w, pix, x, ww, w->bar->font, w->bar->layout_symbol, P->colors.bar_fg, P->colors.bar_bg );
     /* each tag has its own layout: a red frame around the symbol */
-    if (w->bar->pertag) cell_frame( w, pix, x, ww, P->colors.pertag );
+    if (w->bar->per_tag) cell_frame( w, pix, x, ww, 0, P->colors.per_tag );
     return ww;
 }
 
@@ -430,10 +436,8 @@ static uint32_t textsnap_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
 }
 
 typedef struct {
-    char timestr[16];
+    char time_str[16];
     int sec; // -1: unknown
-    /** where :c:member:`draw() <widget_t.draw>` put the widget, in bar pixels */
-    uint32_t x;
 } clockwidget_userdata_t;
 
 static uint32_t clockwidget_measure( widget_t* w ) {
@@ -445,10 +449,10 @@ static uint32_t clockwidget_measure( widget_t* w ) {
     awl_timerpopup_poll( P->timerpopup );
     int secs = P->date ? atomic_load( &P->date->secs ) : -1;
     if (secs < 0) {
-        strcpy(u->timestr, "--:--");
+        strcpy(u->time_str, "--:--");
         u->sec = -1;
     } else {
-        snprintf(u->timestr, sizeof(u->timestr), "%02d:%02d", secs / 3600, secs / 60 % 60);
+        snprintf(u->time_str, sizeof(u->time_str), "%02d:%02d", secs / 3600, secs / 60 % 60);
         u->sec = secs % 60;
     }
     // the time's cell, then the seconds meter
@@ -459,13 +463,11 @@ static uint32_t clockwidget_measure( widget_t* w ) {
 
 static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     awl_plugin_data_t* P = w->plugins;
-    clockwidget_userdata_t* u = w->userdata;
-    u->x = x;
-
+    const clockwidget_userdata_t* u = w->userdata;
     int mw = 3 * w->bar->scale + 0.5f;
     if (mw < 2) mw = 2;
     int ww = w->width - mw;
-    cell_text( P, w, pix, x, ww, w->bar->font, u->timestr, P->colors.bar_fg, P->colors.bar_bg );
+    cell_text( P, w, pix, x, ww, w->bar->font, u->time_str, P->colors.bar_fg, P->colors.bar_bg );
 
     // seconds meter right of the time: empty at :00, full at :59
     int sec = u->sec;
@@ -490,7 +492,7 @@ typedef struct {
 } sni_icon_t;
 
 /** a tray widget: the items it shows, their icons and where they are */
-typedef struct sniwidget_t {
+typedef struct sni_widget_t {
     /** what :c:member:`measure() <widget_t.measure>` saw, :c:member:`draw() <widget_t.draw>` draws */
     awl_sni_snap_t* snap;
     /** snap's items' icons, in its order */
@@ -500,8 +502,6 @@ typedef struct sniwidget_t {
     /** physical pixels: the icons' size, the gap between them, the left
      * padding */
     int px, gap, lpad;
-    /** where :c:member:`draw() <widget_t.draw>` put the widget */
-    uint32_t x;
     /** the icon under the pointer, -1 none */
     int hovered;
     /** whether the pointer is on the widget */
@@ -509,10 +509,10 @@ typedef struct sniwidget_t {
     /** its token for the tooltip (plugins/tray_tooltip.h), 0 none */
     uint32_t tip;
     /** the next in wd's list of sniwidgets, every bar's */
-    struct sniwidget_t* next;
+    struct sni_widget_t* next;
     /** the widgets' shared state, whose list it is in */
     awl_widgets_t* wd;
-} sniwidget_t;
+} sni_widget_t;
 
 /** The closed eyes for manual brightness: icons/eyes_closed.png, made for
  * Noto Color Emoji's 136x128 bitmaps (the box and palette of its 👀), and
@@ -527,7 +527,7 @@ enum eyes_closed_size {
 /** what the widgets share, across bars (plugins.h's :c:func:`awl_widgets_start`) */
 struct awl_widgets {
     /** the tray widgets, every bar's */
-    sniwidget_t* sni;
+    sni_widget_t* sni;
     /** the last tooltip token handed out (plugins/tray_tooltip.h) */
     uint32_t next_tip;
     /** backlight_moons()'s: which side is lit, the brightness last seen and
@@ -552,9 +552,9 @@ void awl_widgets_stop( awl_widgets_t* wd ) {
     free( wd );
 }
 
-static sniwidget_t* sniwidget( awl_widgets_t* wd, widget_t* w ) {
-    sniwidget_t* u = w->userdata;
-    if (!u && (u = w->userdata = calloc( 1, sizeof(sniwidget_t) ))) {
+static sni_widget_t* sni_widget( awl_widgets_t* wd, widget_t* w ) {
+    sni_widget_t* u = w->userdata;
+    if (!u && (u = w->userdata = calloc( 1, sizeof(sni_widget_t) ))) {
         u->hovered = -1;
         u->wd = wd;
         u->next = wd->sni;
@@ -564,7 +564,7 @@ static sniwidget_t* sniwidget( awl_widgets_t* wd, widget_t* w ) {
 }
 
 /** the item's icon at u->px: the one decoded before, if it's still current */
-static pixman_image_t* sniwidget_icon( sniwidget_t* u, const awl_sni_item_t* it, sni_icon_t* old, int nold ) {
+static pixman_image_t* sni_widget_icon( sni_widget_t* u, const awl_sni_item_t* it, sni_icon_t* old, int nold ) {
     for (int i = 0; i < nold; i++)
         if (old[i].serial == it->serial && old[i].img) {
             if (old[i].gen == it->icon_gen && old[i].px == u->px) {
@@ -584,9 +584,9 @@ static pixman_image_t* sniwidget_icon( sniwidget_t* u, const awl_sni_item_t* it,
     return NULL;
 }
 
-static uint32_t sniwidget_measure( widget_t* w ) {
+static uint32_t sni_widget_measure( widget_t* w ) {
     awl_plugin_data_t* P = w->plugins;
-    sniwidget_t* u = P->widgets ? sniwidget( P->widgets, w ) : NULL;
+    sni_widget_t* u = P->widgets ? sni_widget( P->widgets, w ) : NULL;
     if (!P->sni || !u) return 0;
     sni_main_poll( P->sni );
     float scale = w->bar->scale;
@@ -597,7 +597,7 @@ static uint32_t sniwidget_measure( widget_t* w ) {
     u->gap = (int)lroundf( P->config.tray.icon_gap * scale );
     /* the lookups go by the largest bar's of those there are */
     int largest = 0;
-    for (const sniwidget_t* o = P->widgets->sni; o; o = o->next)
+    for (const sni_widget_t* o = P->widgets->sni; o; o = o->next)
         if (o->px > largest) largest = o->px;
     sni_set_icon_px( P->sni, largest );
 
@@ -605,7 +605,7 @@ static uint32_t sniwidget_measure( widget_t* w ) {
     sni_icon_t* icons = snap->n ? calloc( (size_t)snap->n, sizeof(*icons) ) : NULL;
     for (int i = 0; icons && i < snap->n; i++) {
         const awl_sni_item_t* it = &snap->items[i];
-        icons[i] = (sni_icon_t){ it->serial, it->icon_gen, u->px, sniwidget_icon( u, it, u->icons, u->nicons ) };
+        icons[i] = (sni_icon_t){ it->serial, it->icon_gen, u->px, sni_widget_icon( u, it, u->icons, u->nicons ) };
     }
     for (int i = 0; i < u->nicons; i++)
         if (u->icons[i].img) pixman_image_unref( u->icons[i].img );
@@ -621,11 +621,10 @@ static uint32_t sniwidget_measure( widget_t* w ) {
     return cell_width( P, w, (uint32_t)(u->nicons * u->px + (u->nicons - 1) * u->gap) );
 }
 
-static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
+static uint32_t sni_widget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     awl_plugin_data_t* P = w->plugins;
-    sniwidget_t* u = w->userdata;
+    sni_widget_t* u = w->userdata;
     if (!u) return 0;
-    u->x = x;
     int h = (int)w->bar->height;
     pixman_color_t bg = color_8bit_to_16bit( P->plugin_config.colors.tray_bg );
     pixman_image_fill_boxes( PIXMAN_OP_SRC, pix, &bg, 1, &(pixman_box32_t){
@@ -650,7 +649,7 @@ static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
 
 /** the icon at x (from the widget's left edge; the gaps split between
  * their icons), -1 none */
-static int sniwidget_at( const sniwidget_t* u, int32_t x ) {
+static int sni_widget_at( const sni_widget_t* u, int32_t x ) {
     x -= u ? u->lpad - u->gap / 2 : 0;
     if (!u || x < 0 || u->px + u->gap <= 0) return -1;
     int i = x / (u->px + u->gap);
@@ -658,18 +657,18 @@ static int sniwidget_at( const sniwidget_t* u, int32_t x ) {
 }
 
 /** icon i's center, logical pixels from the monitor's left edge */
-static int sniwidget_center( widget_t* w, const sniwidget_t* u, int i ) {
-    return (int)lround( ((int)u->x + u->lpad + i * (u->px + u->gap) + u->px / 2.0) / w->bar->scale );
+static int sni_widget_center( widget_t* w, const sni_widget_t* u, int i ) {
+    return (int)lround( ((int)w->x + u->lpad + i * (u->px + u->gap) + u->px / 2.0) / w->bar->scale );
 }
 
 /** Right: the menu. Left: what the item does when activated, unless it says
  * it is a menu (ItemIsMenu), then its menu too (plugins/sni.c opens it if
  * Activate fails). Middle: SecondaryActivate. An item without a menu draws
  * its own on ContextMenu. With its menu open, any press only closes it. */
-static void sniwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
+static void sni_widget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
-    sniwidget_t* u = w->userdata;
-    int i = sniwidget_at( u, (int32_t)x );
+    sni_widget_t* u = w->userdata;
+    int i = sni_widget_at( u, (int32_t)x );
     (void)mods;
     if (!P->sni || i < 0) return;
     const awl_sni_item_t* it = &u->snap->items[i];
@@ -677,7 +676,7 @@ static void sniwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods 
     u->tip = 0;
     const awl_bar_t* bar = w->bar;
     const char* mon = bar->output;
-    int cx = sniwidget_center( w, u, i );
+    int cx = sni_widget_center( w, u, i );
     if (awl_tray_menu_window_shows( P->tray_menu, it->menu )) {
         awl_tray_menu_window_toggle( P->tray_menu, it->menu, mon, cx );
         return;
@@ -692,20 +691,20 @@ static void sniwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods 
     }
 }
 
-static void sniwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
+static void sni_widget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
-    sniwidget_t* u = w->userdata;
-    int i = sniwidget_at( u, (int32_t)x );
+    sni_widget_t* u = w->userdata;
+    int i = sni_widget_at( u, (int32_t)x );
     (void)mods;
     if (P->sni && i >= 0 && amount) sni_scroll( P->sni, u->snap->items[i].serial, amount, 0 );
 }
 
 /** the tooltip of the icon under the pointer; the menu open stays while
  * the pointer is anywhere on the tray */
-static void sniwidget_view( widget_t* w, int32_t x ) {
+static void sni_widget_view( widget_t* w, int32_t x ) {
     awl_plugin_data_t* P = w->plugins;
     awl_widgets_t* wd = P->widgets;
-    sniwidget_t* u = w->userdata;
+    sni_widget_t* u = w->userdata;
     if (!wd || !u || !u->snap) return;
     int inside = x >= 0;
     if (inside != u->inside) {
@@ -713,7 +712,7 @@ static void sniwidget_view( widget_t* w, int32_t x ) {
         for (int k = 0; k < u->snap->n; k++)
             if (u->snap->items[k].menu) awl_tray_menu_window_pointer( P->tray_menu, u->snap->items[k].menu, inside );
     }
-    int i = inside ? sniwidget_at( u, x ) : -1;
+    int i = inside ? sni_widget_at( u, x ) : -1;
     if (i == u->hovered) return;
     u->hovered = i;
     awl_tray_tooltip_drop( P->tray_tip, u->tip );
@@ -721,15 +720,15 @@ static void sniwidget_view( widget_t* w, int32_t x ) {
     if (i < 0 || !*u->snap->items[i].name) return;
     if (!++wd->next_tip) wd->next_tip = 1;
     u->tip = wd->next_tip;
-    awl_tray_tooltip_show( P->tray_tip, u->tip, w->bar->output, sniwidget_center( w, u, i ),
+    awl_tray_tooltip_show( P->tray_tip, u->tip, w->bar->output, sni_widget_center( w, u, i ),
                            u->snap->items[i].name );
 }
 
-static void sniwidget_free( void* userdata ) {
-    sniwidget_t* u = userdata;
+static void sni_widget_free( void* userdata ) {
+    sni_widget_t* u = userdata;
     if (!u) return;
     awl_widgets_t* wd = u->wd;
-    for (sniwidget_t** p = wd ? &wd->sni : NULL; p && *p; p = &(*p)->next)
+    for (sni_widget_t** p = wd ? &wd->sni : NULL; p && *p; p = &(*p)->next)
         if (*p == u) {
             *p = u->next;
             break;
@@ -830,7 +829,6 @@ static uint32_t pulsewidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix )
 }
 
 typedef struct {
-    uint32_t x; // first: where draw() put it, in bar pixels (widget_x())
     pixman_box32_t fg[AWL_STATS_HIST], bg[AWL_STATS_HIST], io[AWL_STATS_HIST]; // one graph at a time
     int nswp; // the swap samples measure() made room for: 0 without swap
 } statuswidget_userdata_t;
@@ -874,7 +872,6 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     if (!P->stats) return 0;
     statuswidget_userdata_t* u = w->userdata;
     awl_stats_t* st = P->stats;
-    u->x = x;
 
     const int n[3] = { statuswidget_columns( w, st->ncpu ), statuswidget_columns( w, st->nmem ),
                        statuswidget_columns( w, u->nswp ) };
@@ -921,7 +918,6 @@ static uint32_t statuswidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
 /** the readings :c:member:`measure() <widget_t.measure>` saw and their texts' widths, so :c:member:`draw() <widget_t.draw>` renders
  * text of the same width */
 typedef struct {
-    uint32_t x; // first: where draw() put it, in bar pixels (widget_x())
     float temps[16];
     uint32_t widths[16];
 } tempwidget_userdata_t;
@@ -960,16 +956,15 @@ static uint32_t tempwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
     if (!P->temp) return 0;
     const awl_temperature_t* T = P->temp;
     tempwidget_userdata_t* u = w->userdata;
-    u->x = x;
 
     for (int i=0; i<T->f_ntemps; ++i) {
         if (u->temps[i] == AWL_TEMP_NONE) continue;
         char text[128];
         tempwidget_text( T, i, u->temps[i], text, sizeof(text) );
-        pixman_color_t fgcolor = color_8bit_to_16bit(
+        pixman_color_t fg_color = color_8bit_to_16bit(
                 colormap_color( &P->plugin_config.colors.temperature,
                                 (u->temps[i] - T->f_t_min[i]) / (T->f_t_max[i] - T->f_t_min[i]) ) );
-        cell_text( P, w, pix, x, u->widths[i], w->bar->font, text, fgcolor, P->colors.bar_bg );
+        cell_text( P, w, pix, x, u->widths[i], w->bar->font, text, fg_color, P->colors.bar_bg );
         x += u->widths[i];
     }
     return w->width;
@@ -983,12 +978,6 @@ static pixman_color_t batwidget_color( const awl_plugin_data_t* P, float charge,
     return color_8bit_to_16bit( colormap_color( charging ? &k->battery_charging : &k->battery, charge ) );
 }
 
-/** the battery widget: its text, and where :c:member:`draw() <widget_t.draw>` put it, in bar pixels */
-typedef struct {
-    textsnap_t snap; // first: textsnap_draw() reads it
-    uint32_t x;
-} batwidget_userdata_t;
-
 static uint32_t batwidget_measure( widget_t* w ) {
     awl_plugin_data_t* P = w->plugins;
     if (!P->bat) return 0;
@@ -998,7 +987,7 @@ static uint32_t batwidget_measure( widget_t* w ) {
     float charge = atomic_load( &P->bat->charge );
     if (charging < 0) return 0;
 
-    if (!w->userdata) w->userdata = calloc(1, sizeof(batwidget_userdata_t));
+    if (!w->userdata) w->userdata = calloc(1, sizeof(textsnap_t));
     if (!w->userdata) return 0;
     textsnap_t* s = w->userdata;
     snprintf( s->text, sizeof(s->text), "%3.0f%%", charge * 100.0 );
@@ -1007,7 +996,7 @@ static uint32_t batwidget_measure( widget_t* w ) {
     return textsnap_width( P, w );
 }
 
-/* Emoji are drawn in the bar's emoji font (awl_bar_t.emojifont, color
+/* Emoji are drawn in the bar's emoji font (awl_bar_t.emoji_font, color
  * emoji); without one, the widgets show text instead. Icons from the icon
  * theme (`awl_notify_bar_icon()`) replace either where configured. */
 
@@ -1058,20 +1047,18 @@ typedef struct {
     int lead;
     struct fcft_font* font;
     pixman_color_t fg, bg;
-    /** where :c:member:`draw() <widget_t.draw>` put the widget, in bar pixels */
-    uint32_t x;
 } docksnap_t;
 
 /** part as the config's icon names at px, else glyph (in the emoji font),
  * else text; nothing at all without any */
-static void dockpart_set( const awl_plugin_data_t* P, widget_t* w, dockpart_t* part, const char* names, int px, const char* glyph,
-                          const char* text ) {
+static void dockpart_set( const awl_plugin_data_t* P, widget_t* w, dockpart_t* part, const char* names, int px,
+                          const char* glyph, const char* text ) {
     docksnap_t* s = w->userdata;
     int symbolic;
     pixman_image_t* icon = names ? awl_notify_bar_icon( P->notify, names, px, &symbolic ) : NULL;
     bar_icon_keep( &part->icon, icon );
     part->symbolic = icon ? symbolic : 0;
-    part->text = icon ? "" : w->bar->emojifont ? glyph : text;
+    part->text = icon ? "" : w->bar->emoji_font ? glyph : text;
     part->w = icon ? (uint32_t)pixman_image_get_width( icon ) : awl_host->text_width( s->font, part->text );
 }
 
@@ -1118,7 +1105,7 @@ static uint32_t dockwidget_measure( widget_t* w ) {
     const awl_plugin_config_t* pc = &P->plugin_config;
     s->fg = P->colors.bar_fg;
     s->bg = P->colors.bar_bg;
-    s->font = w->bar->emojifont ? w->bar->emojifont : w->bar->font;
+    s->font = w->bar->emoji_font ? w->bar->emoji_font : w->bar->font;
     const int px = bar_icon_px( P, w );
     if (docked < 0) dockpart_set( P, w, &s->part[0], NULL, px, "", "" );
     else if (docked) dockpart_set( P, w, &s->part[0], pc->battery.icons.docked, px, "🖥️", "DOCK" );
@@ -1148,7 +1135,6 @@ static uint32_t dockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) 
     awl_plugin_data_t* P = w->plugins;
     docksnap_t* s = w->userdata;
     if (!s) return 0;
-    s->x = x;
     int l, r, h = (int)w->bar->height;
     widget_padding( P, w, &l, &r );
     awl_host->text( pix, s->font, x, -2, w->width, h, 0, "", s->fg, s->bg );
@@ -1172,25 +1158,11 @@ static void dockwidget_free( void* userdata ) {
     free( s );
 }
 
-static uint32_t batwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
-    batwidget_userdata_t* u = w->userdata;
-    if (u) u->x = x;
-    return textsnap_draw( w, x, pix );
-}
-
-/** where w was drawn, in bar pixels: x0 to x1; 0 if it wasn't (yet) or
- * it isn't one of the widgets that keep that (dock, battery, graphs,
- * temperature) */
+/** where w was drawn, in bar pixels: x0 to x1; 0 if it wasn't (yet) */
 static int widget_span( const widget_t* w, uint32_t* x0, uint32_t* x1 ) {
-    if (!w->userdata || !w->width) return 0;
-    uint32_t x;
-    if (w->measure == &dockwidget_measure) x = ((const docksnap_t*)w->userdata)->x;
-    else if (w->measure == &batwidget_measure) x = ((const batwidget_userdata_t*)w->userdata)->x;
-    else if (w->measure == &statuswidget_measure) x = ((const statuswidget_userdata_t*)w->userdata)->x;
-    else if (w->measure == &tempwidget_measure) x = ((const tempwidget_userdata_t*)w->userdata)->x;
-    else return 0;
-    *x0 = x;
-    *x1 = x + w->width;
+    if (!w->width) return 0;
+    *x0 = w->x;
+    *x1 = w->x + w->width;
     return 1;
 }
 
@@ -1268,9 +1240,7 @@ typedef struct {
     int widths[IPWIDGET_COLS];
     /** the same: the columns, the rows painted above an ellipsis row (if
      * cut), the font's height, the spacing */
-    int ncols, shown, cut, fh, colsp, rowsp;
-    /** where :c:member:`draw() <widget_t.draw>` put the widget, in bar pixels */
-    uint32_t x;
+    int ncols, shown, cut, fh, column_spacing, row_spacing;
     /** the root, for the popup's painter: :c:member:`measure() <widget_t.measure>` sets it */
     const awl_plugin_data_t* p;
 } ipwidget_userdata_t;
@@ -1350,24 +1320,18 @@ static uint32_t ipwidget_measure( widget_t* w ) {
     return textsnap_width( P, w );
 }
 
-static uint32_t ipwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
-    ipwidget_userdata_t* u = w->userdata;
-    if (u) u->x = x;
-    return textsnap_draw( w, x, pix );
-}
-
 /* the popup's painter (awl_window_draw.h): the table laid out like a text
  * window's, columns as wide as their widest cell, rows that do not fit
  * ending in an ellipsis row, the last columns cut to max_w */
-static int ipwidget_window_measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h,
-                                    int* w, int* h ) {
+static int ipwidget_window_measure( void* data, struct fcft_font* font, float scale, int max_w, int max_h, int* w,
+                                    int* h ) {
     ipwidget_userdata_t* u = data;
     const ipwidget_table_t* t = &u->table;
     if (!font || t->nrows < 1) return 0;
     u->fh = font->height;
-    u->colsp = (int)lroundf( u->p->config.popup.column_spacing * scale );
-    u->rowsp = (int)lroundf( u->p->config.popup.row_spacing * scale );
-    const int fit = (max_h + u->rowsp) / (u->fh + u->rowsp);
+    u->column_spacing = (int)lroundf( u->p->config.popup.column_spacing * scale );
+    u->row_spacing = (int)lroundf( u->p->config.popup.row_spacing * scale );
+    const int fit = (max_h + u->row_spacing) / (u->fh + u->row_spacing);
     if (fit < 1) return 0;
     u->cut = t->nrows > fit;
     u->shown = u->cut ? fit - 1 : t->nrows;
@@ -1388,7 +1352,7 @@ static int ipwidget_window_measure( void* data, struct fcft_font* font, float sc
     }
     if (u->ncols < 1) return 0;
 
-    int width = (u->ncols - 1) * u->colsp;
+    int width = (u->ncols - 1) * u->column_spacing;
     for (int c=0; c<u->ncols; ++c) width += u->widths[c];
     // wider than allowed: cut from the last column on
     for (int c=u->ncols-1; c>=0 && width > max_w; --c) {
@@ -1399,26 +1363,26 @@ static int ipwidget_window_measure( void* data, struct fcft_font* font, float sc
     if (width > max_w) width = max_w;
     const int rows = u->shown + u->cut;
     *w = width;
-    *h = rows * u->fh + (rows - 1) * u->rowsp;
+    *h = rows * u->fh + (rows - 1) * u->row_spacing;
     return width > 0;
 }
 
-static void ipwidget_window_paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale,
-                                   int x0, int y0, int hover ) {
+static void ipwidget_window_paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
+                                   int hover ) {
     (void)scale; (void)hover;
     const ipwidget_userdata_t* u = data;
     const ipwidget_table_t* t = &u->table;
     for (int r=0; r<u->shown; ++r) {
-        int x = x0, y = y0 + r * (u->fh + u->rowsp);
+        int x = x0, y = y0 + r * (u->fh + u->row_spacing);
         for (int c=0; c<u->ncols; ++c) {
             const ipwidget_cell_t* cell = &t->cell[r][c];
             if (*cell->text && u->widths[c] > 0)
                 awl_host->text_over( pix, font, x, y, (unsigned)u->widths[c], (unsigned)u->fh, cell->text, cell->fg );
-            x += u->widths[c] + u->colsp;
+            x += u->widths[c] + u->column_spacing;
         }
     }
     if (u->cut && u->widths[0] > 0)
-        awl_host->text_over( pix, font, x0, y0 + u->shown * (u->fh + u->rowsp), (unsigned)u->widths[0],
+        awl_host->text_over( pix, font, x0, y0 + u->shown * (u->fh + u->row_spacing), (unsigned)u->widths[0],
                              (unsigned)u->fh, AWL_WINDOW_ELLIPSIS, u->p->config.colors.popup_fg );
 }
 
@@ -1434,7 +1398,7 @@ static void ipwidget_hover( widget_t* w ) {
         w->popup_window = u->win = awl_host->window_create( awl_host->srv );
         awl_host->window_set_painter( awl_host->srv, u->win, &painter, u );
     }
-    float center = (float)u->x + (float)w->width / 2.0f;
+    float center = (float)w->x + (float)w->width / 2.0f;
     awl_host->window_show( awl_host->srv, u->win, w->bar->m, (int)(center / w->bar->scale + 0.5f) );
 }
 
@@ -1461,7 +1425,7 @@ static void tagwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods 
     (void)mods;
     switch (button) {
         case BTN_LEFT: awl_host->actions->view( awl_host->srv, &(Arg){.ui = (1 << t)} ); break;
-        case BTN_RIGHT: awl_host->actions->toggleview( awl_host->srv, &(Arg){.ui = (1 << t)} ); break;
+        case BTN_RIGHT: awl_host->actions->toggle_view( awl_host->srv, &(Arg){.ui = (1 << t)} ); break;
         case BTN_MIDDLE: awl_host->actions->view( awl_host->srv, &(Arg){.ui = ~0} ); break;
         default: break;
     }
@@ -1478,23 +1442,23 @@ static void layoutwidget_click( widget_t* w, uint32_t x, int button, uint32_t mo
 
 static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     (void)w; (void)x; (void)mods;
-    awl_host->actions->focusstack( awl_host->srv, &(Arg){.i=amount} );
+    awl_host->actions->focus_stack( awl_host->srv, &(Arg){.i=amount} );
 }
 static void taskbarwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     (void)button; (void)mods;
-    if (w->bar->n_tagwindows <= 0) return;
-    awl_bar_window_t* windows = w->bar->tagwindows;
-    int win_idx = (double)x / (double)w->width * (double)w->bar->n_tagwindows;
-    if (win_idx >= w->bar->n_tagwindows || win_idx < 0) return;
+    if (w->bar->n_tag_windows <= 0) return;
+    awl_bar_window_t* windows = w->bar->tag_windows;
+    int win_idx = (double)x / (double)w->width * (double)w->bar->n_tag_windows;
+    if (win_idx >= w->bar->n_tag_windows || win_idx < 0) return;
 
     Client* c = windows[win_idx].c;
     // a minimized window comes back, an unfocused one gets the focus, the
     // focused one is minimized; client_set_visible() arranges
     if (!windows[win_idx].visible) {
         awl_host->client_set_visible(awl_host->srv, c, 1);
-        awl_host->focusclient(awl_host->srv, c, 1);
+        awl_host->focus_client(awl_host->srv, c, 1);
     } else if (!windows[win_idx].focused) {
-        awl_host->focusclient(awl_host->srv, c, 1);
+        awl_host->focus_client(awl_host->srv, c, 1);
         awl_host->client_set_visible(awl_host->srv, c, 1);
     } else {
         awl_host->client_set_visible(awl_host->srv, c, 0);
@@ -1518,8 +1482,7 @@ static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mo
  * monitor's left edge (kept on the monitor, so at the right end it sits
  * against the right edge) */
 static int clockwidget_center( widget_t* w ) {
-    clockwidget_userdata_t* u = w->userdata;
-    float center = (float)(u ? u->x : 0) + (float)w->width / 2.0f;
+    float center = (float)w->x + (float)w->width / 2.0f;
     return (int)(center / w->bar->scale + 0.5f);
 }
 
@@ -1631,7 +1594,7 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
     const int screen = atomic_load( &P->backlight->screen );
     s->text.fg = enabled ? P->colors.bar_fg : P->colors.warning;
     s->text.bg = P->colors.bar_bg;
-    struct fcft_font* ef = w->bar->emojifont;
+    struct fcft_font* ef = w->bar->emoji_font;
     if (!ef) {
         s->mode = NULL;
         strcpy( s->text.text, enabled ? "BR" : "DK" );
@@ -1659,11 +1622,11 @@ static uint32_t backlightwidget_measure( widget_t* w ) {
 /** Composites the one-glyph string ``text`` into dst at alpha (0..1), placed
  * as :c:func:`awl_draw_text` would place it with x being the pen position;
  * ADD, so two calls with alphas adding up to one crossfade two glyphs. */
-static void backlight_glyph( pixman_image_t* dst, struct fcft_font* font,
-        const char* text, int x, int ty, double alpha ) {
+static void backlight_glyph( pixman_image_t* dst, struct fcft_font* font, const char* text, int x, int ty,
+                             double alpha ) {
     uint32_t cp = 0;
     if (!*text || alpha <= 0.0) return;
-    utf8decode( text, &cp );
+    utf8_decode( text, &cp );
     const struct fcft_glyph* g = fcft_rasterize_char_utf32( font, cp, FCFT_SUBPIXEL_NONE );
     if (!g || pixman_image_get_format( g->pix ) != PIXMAN_a8r8g8b8) return;
     pixman_color_t a = { .alpha = (uint16_t)(alpha * 0xffff + 0.5) };
@@ -1778,7 +1741,7 @@ static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* p
     awl_plugin_data_t* P = w->plugins;
     backlightsnap_t* s = w->userdata;
     if (!s) return 0;
-    struct fcft_font* font = w->bar->emojifont;
+    struct fcft_font* font = w->bar->emoji_font;
     if (!s->mode || !font) return textsnap_draw( w, x, pix );
     // the cell's background, the moon after the left padding, the gap, then
     // the mode; over the background, so a negative padding overlaps
@@ -1840,7 +1803,7 @@ typedef struct {
     const char* bell;
     struct fcft_font* bell_font;
     bool open;
-    uint32_t bell_w, dot, x;
+    uint32_t bell_w, dot;
     /* the bell from the icon theme, a reference of our own; NULL: the
      * glyph */
     pixman_image_t* icon;
@@ -1869,8 +1832,8 @@ static uint32_t notifywidget_measure( widget_t* w ) {
     int bx, by, bw, bh;
     if (s->tip && awl_host->window_box( awl_host->srv, s->tip, &bx, &by, &bw, &bh )) notifywidget_tiptext( P->notify, s );
     bar_icon_keep( &s->icon, awl_notify_bell( P->notify, bar_icon_px( P, w ), dnd, &s->symbolic ) );
-    s->bell_font = w->bar->emojifont ? w->bar->emojifont : w->bar->font;
-    s->bell = w->bar->emojifont ? (dnd ? "🔕" : "🔔") : (dnd ? "Z" : "N");
+    s->bell_font = w->bar->emoji_font ? w->bar->emoji_font : w->bar->font;
+    s->bell = w->bar->emoji_font ? (dnd ? "🔕" : "🔔") : (dnd ? "Z" : "N");
     s->bell_w = s->icon ? (uint32_t)pixman_image_get_width( s->icon ) : awl_host->text_width( s->bell_font, s->bell );
     s->dot = (uint32_t)lroundf( 6.0f * w->bar->scale );
     /* the dot sticks out of the bell by half its size, always: the width
@@ -1884,7 +1847,6 @@ static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     if (!s) return 0;
     int h = (int)w->bar->height, l, r;
     widget_padding( P, w, &l, &r );
-    s->x = x;
     awl_host->text( pix, w->bar->font, x, -2, w->width, h, 0, "", P->colors.bar_fg, P->colors.bar_bg );
     /* the dot at the bell's top: the icon's, or the glyph's line, centered
      * as text() centers it */
@@ -1901,9 +1863,15 @@ static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
         const float dx = (float)x + (float)l + (float)s->bell_w + d / 2.0f - d;
         awl_fill_shape( pix, dx, top > 0 ? top : 0, d, d, d / 2.0f, 0, color_16bit_to_8bit( P->colors.bad ) );
     }
-    /* the idle inhibitors are ignored (Shift+left click) */
-    if (awl_host->idle_inhibit_ignored( awl_host->srv )) cell_frame( w, pix, x, (int)w->width, P->colors.bad );
     return w->width;
+}
+
+/** the idle inhibitors are ignored (Shift+left click): a frame half a dot out on the left, as far
+ * from the bell as on the right, where the dot sticks out; over the neighbour, so drawn last */
+static void notifywidget_overlay( widget_t* w, pixman_image_t* pix ) {
+    const notifysnap_t* s = w->userdata;
+    if (s && awl_host->idle_inhibit_ignored( awl_host->srv ))
+        cell_frame( w, pix, w->x, (int)w->width, -(int)s->dot / 2, w->plugins->colors.bad );
 }
 
 static void notifywidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
@@ -1913,7 +1881,7 @@ static void notifywidget_click( widget_t* w, uint32_t x, int button, uint32_t mo
     if (button == BTN_LEFT && mods & WLR_MODIFIER_SHIFT) {
         awl_idle_inhibit_toggle( P );
     } else if (button == BTN_RIGHT && s) {
-        float center = (float)s->x + (float)w->width / 2.0f;
+        float center = (float)w->x + (float)w->width / 2.0f;
         awl_notify_menu_toggle( awl_notify_menu( P->notify ), w->bar->m, (int)(center / w->bar->scale + 0.5f) );
     } else if (button == BTN_LEFT) {
         awl_notify_set_dnd( P->notify, !awl_notify_dnd() );
@@ -1937,7 +1905,7 @@ static void notifywidget_hover( widget_t* w ) {
     if (!s->tip) w->popup_window = s->tip = awl_host->window_create( awl_host->srv );
     if (!s->tip) return;
     notifywidget_tiptext( P->notify, s );
-    float center = (float)s->x + (float)w->width / 2.0f;
+    float center = (float)w->x + (float)w->width / 2.0f;
     awl_host->window_show( awl_host->srv, s->tip, w->bar->m, (int)(center / w->bar->scale + 0.5f) );
 }
 

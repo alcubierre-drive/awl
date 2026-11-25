@@ -1,4 +1,4 @@
-/* hang: a window that stops answering, for rendermon()'s wait for a resize
+/* hang: a window that stops answering, for render_mon()'s wait for a resize
  * (RESIZE_WAIT_MS, awl_core.h). An xdg toplevel filled with one colour,
  * answering every configure with a buffer of its size, until SIGUSR1 (or
  * SECONDS after it was first drawn): then it hangs, alive but reading
@@ -89,8 +89,7 @@ static void surface_configure( void* data, struct xdg_surface* s, uint32_t seria
 }
 static const struct xdg_surface_listener surface_listener = { surface_configure };
 
-static void toplevel_configure( void* data, struct xdg_toplevel* t, int32_t w, int32_t h,
-        struct wl_array* states ) {
+static void toplevel_configure( void* data, struct xdg_toplevel* t, int32_t w, int32_t h, struct wl_array* states ) {
     (void)data; (void)t; (void)states;
     if (w > 0) width = w;
     if (h > 0) height = h;

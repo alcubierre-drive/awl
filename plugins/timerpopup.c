@@ -107,8 +107,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     return W > 0;
 }
 
-static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
-                   int hover ) {
+static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     awl_timerpopup_t* tp = data;
     (void)scale;
     const awl_colors_t* c = &tp->p->config.colors;
@@ -236,8 +235,8 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
 }
 
 /** anywhere on it: up lengthens, down shortens */
-static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta,
-                    int32_t value120, void* data ) {
+static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta, int32_t value120,
+                    void* data ) {
     awl_timerpopup_t* tp = data;
     (void)win; (void)part; (void)col;
     if (orientation != 0) return;

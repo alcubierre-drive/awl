@@ -78,7 +78,7 @@ static bool accepts_input( struct wlr_scene_buffer* buffer, double* sx, double* 
 }
 
 void awl_alert_init( awl_server_t *srv ) {
-    srv->alerts = ecalloc( 1, sizeof *srv->alerts );
+    srv->alerts = calloc_or_die( 1, sizeof *srv->alerts );
     srv->alerts->tree = wlr_scene_tree_create( &srv->scene->tree );
 }
 
@@ -92,7 +92,7 @@ void awl_alert_addmon( awl_server_t* srv, Monitor* m ) {
 
 void awl_alert_configure( awl_server_t *srv ) {
     Monitor* m;
-    wl_list_for_each( m, &srv->out.mons, link ) {
+    FOR_EACH_MON( m, srv ) {
         if (!m->alert) continue;
         wlr_scene_buffer_set_opacity( m->alert, srv->cfg->alert.opacity );
         m->alert_version = (unsigned int)-1;
@@ -109,7 +109,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
     struct fcft_font* font;
     pixman_image_t* pix;
 
-    if (!m->alert) /* createmon() arranges before it makes it */
+    if (!m->alert) /* create_mon() arranges before it makes it */
         return;
     if (m->alert_version == srv->alerts->version && m->alert_scale == s
             && wlr_box_equal( &m->alert_area, &m->w ))
@@ -124,7 +124,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
     }
 
     /* the font only while drawing; the registry keeps it loaded */
-    if (!(font = awl_font_get( srv->proc, srv->cfg->font, srv->cfg->fontsize * srv->cfg->alert.font_scale, s ))) {
+    if (!(font = awl_font_get( srv->proc, srv->cfg->font, srv->cfg->font_size * srv->cfg->alert.font_scale, s ))) {
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
         return;
     }
@@ -139,7 +139,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
         return;
     }
 
-    Buffer* buf = buffercreate( w, h );
+    Buffer* buf = buffer_create( w, h );
     if ((pix = awl_draw_image( w, h, buf->data, buf->stride ))) {
         awl_draw_text( pix, font, 0, 0, w, h, pad, text, fg, bg );
         pixman_image_unref( pix );
@@ -157,7 +157,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
 
 void awl_alert_draw_all( awl_server_t *srv ) {
     Monitor* m;
-    wl_list_for_each( m, &srv->out.mons, link )
+    FOR_EACH_MON( m, srv )
         awl_alert_draw( srv, m );
 }
 

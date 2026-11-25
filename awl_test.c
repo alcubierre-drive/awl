@@ -17,32 +17,30 @@
 #include <wlr/backend/wayland.h>
 #include <wlr/interfaces/wlr_output.h>
 
-/** AWL_TEST_WINDOWS' state, from testinit() until the display is destroyed */
+/** AWL_TEST_WINDOWS' state, from test_init() until the display is destroyed */
 struct awl_test {
     awl_server_t *srv;
     /** the display's destroy signal: frees this */
     struct wl_listener destroy;
     /** the FIFO */
     int fd;
-    /** the popups by number, see testwincmd(); only destroy N destroys
-     * one (a plugin reload leaves them, :c:func:`popupsreap`) */
+    /** the popups by number, see test_win_cmd(); only destroy N destroys
+     * one (a plugin reload leaves them, :c:func:`popups_reap`) */
     awl_window_t *wins[8];
-    /** what testwincmd()'s dump reports as clicks and scrolls */
+    /** what test_win_cmd()'s dump reports as clicks and scrolls */
     char clicks[2048];
     /** the bad commands so far */
     int errors;
-    /** testwincmd()'s, off the stack */
+    /** test_win_cmd()'s, off the stack */
     const awl_notif_t *notifs[256];
     const awl_notif_past_t *past[100];
-    /** the FIFO's incomplete line, testwinctl()'s */
+    /** the FIFO's incomplete line, test_win_ctl()'s */
     char buf[4096];
     size_t len;
 };
 
 /** win's slot in T->wins, -1 if none */
-static int
-testslot(struct awl_test *T, awl_window_t *win)
-{
+static int test_slot( struct awl_test *T, awl_window_t *win ) {
     for (int i = 0; i < (int)LENGTH(T->wins); i++)
         if (T->wins[i] == win)
             return i;
@@ -50,9 +48,7 @@ testslot(struct awl_test *T, awl_window_t *win)
 }
 
 /** the headless outputs' size: AWL_TEST_SIZE's (WxH), else wlroots' 1280x720 */
-static void
-testsize(unsigned int *w, unsigned int *h)
-{
+static void test_size( unsigned int *w, unsigned int *h ) {
     const char *s = getenv("AWL_TEST_SIZE");
     *w = 1280, *h = 720;
     if (s && sscanf(s, "%ux%u", w, h) == 2 && *w > 0 && *h > 0)
@@ -60,66 +56,52 @@ testsize(unsigned int *w, unsigned int *h)
     *w = 1280, *h = 720;
 }
 
-static void
-testoutputadd_backend(struct wlr_backend *b, void *data)
-{
+static void test_output_add_backend( struct wlr_backend *b, void *data ) {
     unsigned int w, h;
     (void)data;
-    testsize(&w, &h);
+    test_size(&w, &h);
     if (wlr_backend_is_headless(b))
         wlr_headless_add_output(b, w, h);
     else if (wlr_backend_is_wl(b))
         wlr_wl_output_create(b);
 }
 
-/** the AWL_TEST_OUTPUTS hooks, see :c:func:`testinit` */
-static int
-testoutputadd(int signo, void *data)
-{
+/** the AWL_TEST_OUTPUTS hooks, see :c:func:`test_init` */
+static int test_output_add( int signo, void *data ) {
     awl_server_t *srv = data;
     (void)signo;
-    wlr_multi_for_each_backend(srv->backend, testoutputadd_backend, NULL);
+    wlr_multi_for_each_backend(srv->backend, test_output_add_backend, NULL);
     return 0;
 }
 
-static int
-testoutputremove(int signo, void *data)
-{
+static int test_output_remove( int signo, void *data ) {
     awl_server_t *srv = data;
     (void)signo;
-    /* the newest monitor, createmon() inserts at the head; never the last one */
-    if (wl_list_length(&srv->out.mons) > 1) {
-        Monitor *m = wl_container_of(srv->out.mons.next, m, link);
-        wlr_output_destroy(m->wlr_output);
-    }
+    /* the newest monitor, create_mon() inserts at the head; never the last one */
+    if (srv->out.nmons > 1)
+        wlr_output_destroy(srv->out.mons[0]->wlr_output);
     return 0;
 }
 
 /** input N on: N's click callback, data is the test's state */
-static void
-testwinclick(awl_window_t *win, int row, int col, uint32_t button, void *data)
-{
+static void test_win_click( awl_window_t *win, int row, int col, uint32_t button, void *data ) {
     struct awl_test *T = data;
     size_t len = strlen(T->clicks);
     snprintf(T->clicks + len, sizeof(T->clicks) - len, "click %d %d %d %u\n",
-            testslot(T, win), row, col, button);
+            test_slot(T, win), row, col, button);
 }
 
 /** scroll N on: N's scroll callback, data is the test's state */
-static void
-testwinscroll(awl_window_t *win, int row, int col, uint32_t orientation, double delta,
-        int32_t value120, void *data)
-{
+static void test_win_scroll( awl_window_t *win, int row, int col, uint32_t orientation, double delta, int32_t value120,
+                           void *data ) {
     struct awl_test *T = data;
     size_t len = strlen(T->clicks);
     snprintf(T->clicks + len, sizeof(T->clicks) - len, "scroll %d %d %d %u %d %d\n",
-            testslot(T, win), row, col, orientation, value120, delta > 0 ? 1 : delta < 0 ? -1 : 0);
+            test_slot(T, win), row, col, orientation, value120, delta > 0 ? 1 : delta < 0 ? -1 : 0);
 }
 
 /** what grab on's callbacks append to clicks (the test's state is data) */
-static void
-testappend(struct awl_test *T, const char *fmt, ...)
-{
+static void test_append( struct awl_test *T, const char *fmt, ... ) {
     size_t len = strlen(T->clicks);
     va_list ap;
     va_start(ap, fmt);
@@ -127,35 +109,25 @@ testappend(struct awl_test *T, const char *fmt, ...)
     va_end(ap);
 }
 
-static void
-testgrabmotion(double x, double y, void *data)
-{
-    testappend(data, "gmotion %.0f %.0f\n", x, y);
+static void test_grab_motion( double x, double y, void *data ) {
+    test_append(data, "gmotion %.0f %.0f\n", x, y);
 }
 
-static void
-testgrabbutton(uint32_t button, int pressed, uint32_t mods, void *data)
-{
-    testappend(data, "gbutton %u %d %u\n", button, pressed, mods);
+static void test_grab_button( uint32_t button, int pressed, uint32_t mods, void *data ) {
+    test_append(data, "gbutton %u %d %u\n", button, pressed, mods);
 }
 
-static int
-testgrabkey(uint32_t sym, uint32_t mods, void *data)
-{
-    testappend(data, "gkey %u %u\n", sym, mods);
+static int test_grab_key( uint32_t sym, uint32_t mods, void *data ) {
+    test_append(data, "gkey %u %u\n", sym, mods);
     return 1;
 }
 
-static void
-testgrabcancel(void *data)
-{
-    testappend(data, "gcancel\n");
+static void test_grab_cancel( void *data ) {
+    test_append(data, "gcancel\n");
 }
 
 /** capture's image as a PAM (RGB_ALPHA, premultiplied as it is) at path */
-static int
-testpam(pixman_image_t *img, const char *path)
-{
+static int test_pam( pixman_image_t *img, const char *path ) {
     int w = pixman_image_get_width(img), h = pixman_image_get_height(img);
     int stride = pixman_image_get_stride(img);
     const unsigned char *bits = (const unsigned char *)pixman_image_get_data(img);
@@ -175,9 +147,7 @@ testpam(pixman_image_t *img, const char *path)
 }
 
 /** \n, \t and \\ in s, in place */
-static void
-testunescape(char *s)
-{
+static void test_unescape( char *s ) {
     char *o = s;
     for (; *s; s++) {
         if (*s == '\\' && s[1]) {
@@ -195,19 +165,19 @@ testunescape(char *s)
  * name, X logical pixels from its left edge, TEXT the rest of the line with
  * \n, \t and \\ escapes:
  *
- *   show N MON X TEXT      its text, then :c:func:`popupshow`, creating N first if
+ *   show N MON X TEXT      its text, then :c:func:`popup_show`, creating N first if
  *                          it is empty
  *   toggle N MON X TEXT    the same, but hides it if it is shown on MON
  *   update N TEXT          its text, if it is shown
  *   hide N | destroy N | hideall
  *   input N on|off         N takes the pointer, its presses are recorded
  *   scroll N on|off        N takes the pointer, its scrolling is recorded
- *   persist N on|off       N is persistent (:c:func:`popupsetpersistent`)
+ *   persist N on|off       N is persistent (:c:func:`popup_set_persistent`)
  *   lock 1|0               what locking the screen does to the popups (sets
  *                          :c:member:`awl_server_t.locked` without a locker: test only)
  *   locker                 a lock request, as ``loginctl lock-session``
  *                          (:c:func:`awl_lock_request`): the configured locker
- *   restart                the plugin_restart action (:c:func:`pluginsreap`
+ *   restart                the plugin_restart action (:c:func:`plugins_reap`
  *                          destroys them all)
  *   nclose ID REASON       the notification server's host calls, as the
  *   ninvoke ID KEY [TOKEN]   library makes them (awl_notifications.h)
@@ -221,19 +191,19 @@ testunescape(char *s)
  *   nsend URGENCY TIMEOUT LINES WIDTH TAG|- SUMMARY\tBODY
  *                          awl's own (:c:func:`awl_notifications_send`), its look's
  *                          max_lines and width
- *   grab on|off            a screenshot's grab (:c:func:`grabstart`, :c:func:`grabend`):
+ *   grab on|off            a screenshot's grab (:c:func:`grab_start`, :c:func:`grab_end`):
  *                          what it gets goes to dump, as gmotion X Y,
  *                          gbutton BUTTON PRESSED MODS, gkey SYM MODS, gcancel
- *   mark X Y W H [DIM FRAME FW]  :c:func:`grabmark`; W 0 shades everything,
+ *   mark X Y W H [DIM FRAME FW]  :c:func:`grab_mark`; W 0 shades everything,
  *                          mark - takes it down; colors 0xRRGGBBAA
- *   hit X Y                the client and monitor there (:c:func:`clientat`,
- *                          :c:func:`monitorat`) to dump, as hit CX CY CW CH MX MY
+ *   hit X Y                the client and monitor there (:c:func:`client_at`,
+ *                          :c:func:`monitor_at`) to dump, as hit CX CY CW CH MX MY
  *                          MW MH (- for none's), with the focused client's
  *                          box (focused X Y W H or focused -) and every
  *                          monitor's (layout X Y W H)
  *   capture X Y W H SCALE PATH  :c:func:`capture` into PATH as a PAM, RGB_ALPHA;
  *                          SCALE 0: the highest
- *   clip MIME TEXT         :c:func:`clipboardset`: TEXT as MIME's; @PATH:
+ *   clip MIME TEXT         :c:func:`clipboard_set`: TEXT as MIME's; @PATH:
  *                          the file PATH's bytes (64 MiB at most)
  *   dump PATH              writes PATH.tmp, then renames it to PATH:
  *                            mon NAME X Y W H WX WY WW WH SCALE ENABLED
@@ -265,16 +235,14 @@ testunescape(char *s)
  *                            past SEQ ID REASON SUMMARY (the history,
  *                              newest first)
  *                            pasts COUNT (how many it keeps)
- *                            persistent LAYER VISIBLE (:c:func:`popuppersistentlayer`:
+ *                            persistent LAYER VISIBLE (:c:func:`popup_persistent_layer`:
  *                              overlay, top or -; whether in sight)
  *                            margin PX (cfg->popup.margin)
  *                            errors COUNT (lines rejected so far)
  */
-static void
-testwincmd(struct awl_test *T, char *line)
-{
+static void test_win_cmd( struct awl_test *T, char *line ) {
     awl_server_t *srv = T->srv;
-    char cmd[16] = "", mon[64] = "", tmp[PATH_MAX], onoff[4] = "";
+    char cmd[16] = "", mon[64] = "", tmp[PATH_MAX], on_off[4] = "";
     double cx, cy;
     int n = -1, x = 0, off = 0, args = 0;
     Monitor *m = NULL, *it;
@@ -300,8 +268,8 @@ testwincmd(struct awl_test *T, char *line)
         if (sscanf(line, "%d%n", &n, &args) != 1)
             goto bad;
     } else if (!strcmp(cmd, "input") || !strcmp(cmd, "scroll") || !strcmp(cmd, "persist")) {
-        if (sscanf(line, "%d %3s%n", &n, onoff, &args) != 2
-                || (strcmp(onoff, "on") && strcmp(onoff, "off")))
+        if (sscanf(line, "%d %3s%n", &n, on_off, &args) != 2
+                || (strcmp(on_off, "on") && strcmp(on_off, "off")))
             goto bad;
     }
     if (n != -1 && (n < 0 || n >= (int)LENGTH(T->wins)))
@@ -309,21 +277,21 @@ testwincmd(struct awl_test *T, char *line)
     line += args;
     if (*line == ' ')
         line++;
-    testunescape(line);
+    test_unescape(line);
 
     if (toggle || !strcmp(cmd, "show")) {
-        wl_list_for_each(it, &srv->out.mons, link)
+        FOR_EACH_MON(it, srv)
             if (!strcmp(it->wlr_output->name, mon))
                 m = it;
         if (!m)
             goto bad;
         if (!T->wins[n])
-            T->wins[n] = popupnew(srv, 0);
+            T->wins[n] = popup_new(srv, 0);
         if (toggle && awl_window_monitor(T->wins[n]) == m) {
             awl_window_hide(T->wins[n]);
         } else {
             awl_window_set_text(srv, T->wins[n], line);
-            popupshow(srv, T->wins[n], m, x);
+            popup_show(srv, T->wins[n], m, x);
         }
     } else if (!strcmp(cmd, "update")) {
         if (awl_window_monitor(T->wins[n]))
@@ -331,34 +299,34 @@ testwincmd(struct awl_test *T, char *line)
     } else if (!strcmp(cmd, "hide")) {
         awl_window_hide(T->wins[n]);
     } else if (!strcmp(cmd, "destroy")) {
-        popupdestroy(srv, T->wins[n]);
+        popup_destroy(srv, T->wins[n]);
         T->wins[n] = NULL;
     } else if (!strcmp(cmd, "input")) {
         if (!T->wins[n])
             goto bad;
-        awl_window_set_click(srv, T->wins[n], strcmp(onoff, "on") ? NULL : testwinclick, T);
+        awl_window_set_click(srv, T->wins[n], strcmp(on_off, "on") ? NULL : test_win_click, T);
     } else if (!strcmp(cmd, "scroll")) {
         if (!T->wins[n])
             goto bad;
-        awl_window_set_scroll(srv, T->wins[n], strcmp(onoff, "on") ? NULL : testwinscroll, T);
+        awl_window_set_scroll(srv, T->wins[n], strcmp(on_off, "on") ? NULL : test_win_scroll, T);
     } else if (!strcmp(cmd, "persist")) {
         if (!T->wins[n])
             goto bad;
-        popupsetpersistent(srv, T->wins[n], !strcmp(onoff, "on"));
+        popup_set_persistent(srv, T->wins[n], !strcmp(on_off, "on"));
     } else if (!strcmp(cmd, "lock")) {
         /* as awl_lockscreen.c does, without a locker */
         if (sscanf(line, "%d", &x) != 1)
             goto bad;
         if (x) {
-            popupshideall(srv);
-            grabcancel(srv);
+            popups_hide_all(srv);
+            grab_cancel(srv);
         }
         srv->locked = !!x;
-        popupslocked(srv);
+        popups_locked(srv);
     } else if (!strcmp(cmd, "locker")) {
         awl_lock_request(srv->proc);
     } else if (!strcmp(cmd, "hideall")) {
-        popupshideall(srv);
+        popups_hide_all(srv);
     } else if (!strcmp(cmd, "restart")) {
         plugin_restart(srv, NULL);
     } else if (!strcmp(cmd, "nclose") || !strcmp(cmd, "nhold")) {
@@ -408,14 +376,14 @@ testwincmd(struct awl_test *T, char *line)
         awl_notifications_invoke(srv, id, key, *token ? token : NULL);
     } else if (!strcmp(cmd, "grab")) {
         static const awl_grab_t grab = {
-            .motion = testgrabmotion, .button = testgrabbutton,
-            .key = testgrabkey, .cancel = testgrabcancel,
+            .motion = test_grab_motion, .button = test_grab_button,
+            .key = test_grab_key, .cancel = test_grab_cancel,
         };
         if (!strcmp(line, "on")) {
-            if (!grabstart(srv, &grab, T, NULL))
+            if (!grab_start(srv, &grab, T, NULL))
                 goto bad;
         } else if (!strcmp(line, "off")) {
-            grabend(srv);
+            grab_end(srv);
         } else {
             goto bad;
         }
@@ -424,33 +392,33 @@ testwincmd(struct awl_test *T, char *line)
         unsigned int dim = 0x00000080, frame = 0xffffffff;
         int fw = 2;
         if (!strcmp(line, "-")) {
-            grabmark(srv, NULL, 0, 0, 0);
+            grab_mark(srv, NULL, 0, 0, 0);
         } else {
             if (sscanf(line, "%d %d %d %d %x %x %d", &b.x, &b.y, &b.w, &b.h, &dim, &frame, &fw) < 4)
                 goto bad;
-            grabmark(srv, &b, dim, frame, fw);
+            grab_mark(srv, &b, dim, frame, fw);
         }
     } else if (!strcmp(cmd, "hit")) {
         awl_box_t cb, mb;
         double hx, hy;
         if (sscanf(line, "%lf %lf", &hx, &hy) != 2)
             goto bad;
-        Client *c = clientat(srv, hx, hy);
-        m = monitorat(srv, hx, hy);
-        if (clientbox(srv, c, 1, &cb))
-            testappend(T, "hit %d %d %d %d", cb.x, cb.y, cb.w, cb.h);
+        Client *c = client_at(srv, hx, hy);
+        m = monitor_at(srv, hx, hy);
+        if (client_box(srv, c, 1, &cb))
+            test_append(T, "hit %d %d %d %d", cb.x, cb.y, cb.w, cb.h);
         else
-            testappend(T, "hit - - - -");
-        if (monitorbox(srv, m, &mb))
-            testappend(T, " %d %d %d %d\n", mb.x, mb.y, mb.w, mb.h);
+            test_append(T, "hit - - - -");
+        if (monitor_box(srv, m, &mb))
+            test_append(T, " %d %d %d %d\n", mb.x, mb.y, mb.w, mb.h);
         else
-            testappend(T, " - - - -\n");
-        if (clientbox(srv, clientfocused(srv), 1, &cb))
-            testappend(T, "focused %d %d %d %d\n", cb.x, cb.y, cb.w, cb.h);
+            test_append(T, " - - - -\n");
+        if (client_box(srv, client_focused(srv), 1, &cb))
+            test_append(T, "focused %d %d %d %d\n", cb.x, cb.y, cb.w, cb.h);
         else
-            testappend(T, "focused -\n");
-        if (monitorbox(srv, NULL, &mb))
-            testappend(T, "layout %d %d %d %d\n", mb.x, mb.y, mb.w, mb.h);
+            test_append(T, "focused -\n");
+        if (monitor_box(srv, NULL, &mb))
+            test_append(T, "layout %d %d %d %d\n", mb.x, mb.y, mb.w, mb.h);
     } else if (!strcmp(cmd, "capture")) {
         awl_box_t b;
         float scale;
@@ -459,7 +427,7 @@ testwincmd(struct awl_test *T, char *line)
             goto bad;
         if (!(img = capture(srv, &b, scale)))
             goto bad;
-        x = testpam(img, line + args);
+        x = test_pam(img, line + args);
         pixman_image_unref(img);
         if (!x)
             goto bad;
@@ -471,11 +439,11 @@ testwincmd(struct awl_test *T, char *line)
         if (line[args] == '@') {
             if (!(f = fopen(line + args + 1, "r")))
                 goto bad;
-            bytes = ecalloc(1, 64 << 20);
+            bytes = calloc_or_die(1, 64 << 20);
             len = fread(bytes, 1, 64 << 20, f);
             fclose(f);
         }
-        x = clipboardset(srv, key, bytes ? bytes : line + args, bytes ? len : strlen(line + args));
+        x = clipboard_set(srv, key, bytes ? bytes : line + args, bytes ? len : strlen(line + args));
         free(bytes);
         if (!x)
             goto bad;
@@ -483,7 +451,7 @@ testwincmd(struct awl_test *T, char *line)
         snprintf(tmp, sizeof(tmp), "%s.tmp", line);
         if (!(f = fopen(tmp, "w")))
             goto bad;
-        wl_list_for_each(it, &srv->out.mons, link)
+        FOR_EACH_MON(it, srv)
             fprintf(f, "mon %s %d %d %d %d %d %d %d %d %g %d\n", it->wlr_output->name,
                     it->m.x, it->m.y, it->m.width, it->m.height,
                     it->w.x, it->w.y, it->w.width, it->w.height,
@@ -495,7 +463,7 @@ testwincmd(struct awl_test *T, char *line)
             m = awl_window_monitor(T->wins[n]);
             fprintf(f, "win %d %s %d %d %d %d %d %d %d\n", n, m ? m->wlr_output->name : "-",
                     box.x, box.y, box.width, box.height, x, awl_window_hover_row(T->wins[n]),
-                    popuppersistent(srv, T->wins[n]));
+                    popup_persistent(srv, T->wins[n]));
             for (int r = 0; x && r < 8 && awl_window_cell_center(T->wins[n], r, 0, &cx, &cy); r++)
                 for (int c = 0; awl_window_cell_center(T->wins[n], r, c, &cx, &cy); c++)
                     fprintf(f, "cell %d %d %d %.0f %.0f\n", n, r, c, cx, cy);
@@ -519,21 +487,19 @@ testwincmd(struct awl_test *T, char *line)
             n++;
         }
         /* barwidgetat()'s layout of the right-hand widgets */
-        wl_list_for_each(it, &srv->out.mons, link) {
+        FOR_EACH_MON(it, srv) {
             awl_bar_t *d = &it->bar;
             if (!d->m || !it->scene_buffer || !it->wlr_output->enabled)
                 continue;
             wlr_scene_node_coords(&it->scene_buffer->node, &bx, &by);
-            unsigned int xpos = d->center_widget_start + d->center_widget_space;
             for (i = d->n_widgets_right - 1; i >= 0; --i) {
-                x = it->m.x + (int)((xpos + d->widgets_right[i].width / 2) / it->wlr_output->scale);
+                x = it->m.x + (int)((d->widgets_right[i].x + d->widgets_right[i].width / 2) / it->wlr_output->scale);
                 if (d->widgets_right[i].callback_hover && d->widgets_right[i].width)
                     fprintf(f, "hover %s %d %d\n", it->wlr_output->name, x,
                             by + it->bar_area.real_height / 2);
                 if (d->widgets_right[i].width)
                     fprintf(f, "widget %s %d %d %d\n", it->wlr_output->name, i, x,
                             by + it->bar_area.real_height / 2);
-                xpos += d->widgets_right[i].width;
             }
         }
         int nn = awl_notifications_list(srv, T->notifs, LENGTH(T->notifs));
@@ -554,7 +520,7 @@ testwincmd(struct awl_test *T, char *line)
             fprintf(f, "past %llu %u %d %s\n", (unsigned long long)T->past[i]->seq, T->past[i]->id,
                     T->past[i]->reason, T->past[i]->summary);
         fprintf(f, "pasts %d\n", nn);
-        i = popuppersistentlayer(srv, &x);
+        i = popup_persistent_layer(srv, &x);
         fprintf(f, "persistent %s %d\n", i == LyrOverlay ? "overlay" : i == LyrTop ? "top" : "-", x);
         fprintf(f, "margin %d\n", srv->cfg->popup.margin);
         fprintf(f, "errors %d\n", T->errors);
@@ -570,9 +536,7 @@ bad:
 }
 
 /** AWL_TEST_WINDOWS' FIFO is readable: runs its complete lines */
-static int
-testwinctl(int fd, uint32_t mask, void *data)
-{
+static int test_win_ctl( int fd, uint32_t mask, void *data ) {
     struct awl_test *T = data;
     char *line, *nl;
     ssize_t r;
@@ -583,7 +547,7 @@ testwinctl(int fd, uint32_t mask, void *data)
         T->buf[T->len] = 0;
         for (line = T->buf; (nl = strchr(line, '\n')); line = nl + 1) {
             *nl = 0;
-            testwincmd(T, line);
+            test_win_cmd(T, line);
         }
         T->len -= (size_t)(line - T->buf);
         memmove(T->buf, line, T->len);
@@ -594,9 +558,7 @@ testwinctl(int fd, uint32_t mask, void *data)
 }
 
 /** the display is gone, and with it the FIFO's event source */
-static void
-testdestroy(struct wl_listener *listener, void *data)
-{
+static void test_destroy( struct wl_listener *listener, void *data ) {
     struct awl_test *T = wl_container_of(listener, T, destroy);
     (void)data;
     wl_list_remove(&T->destroy.link);
@@ -604,31 +566,29 @@ testdestroy(struct wl_listener *listener, void *data)
     free(T);
 }
 
-void
-testinit(awl_server_t *srv)
-{
+void test_init( awl_server_t *srv ) {
     /* for testing (test/live.sh): SIGUSR1 adds an output, SIGUSR2 removes
      * the newest one; headless and nested (wayland) backends only */
     if (getenv("AWL_TEST_OUTPUTS")) {
-        wl_event_loop_add_signal(srv->event_loop, SIGUSR1, testoutputadd, srv);
-        wl_event_loop_add_signal(srv->event_loop, SIGUSR2, testoutputremove, srv);
+        wl_event_loop_add_signal(srv->event_loop, SIGUSR1, test_output_add, srv);
+        wl_event_loop_add_signal(srv->event_loop, SIGUSR2, test_output_remove, srv);
         /* AWL_TEST_OUTPUTS=N: N headless outputs of AWL_TEST_SIZE to
          * start with (WLR_HEADLESS_OUTPUTS' are always 1280x720); the
          * backend announces them when it starts */
         int n = atoi(getenv("AWL_TEST_OUTPUTS"));
         for (int i = 0; i < n && i < 16; i++)
-            wlr_multi_for_each_backend(srv->backend, testoutputadd_backend, NULL);
+            wlr_multi_for_each_backend(srv->backend, test_output_add_backend, NULL);
     }
     /* for testing (test/live.sh's win, test/windows.sh): a FIFO of commands
-     * for the text popups, see testwincmd(); O_RDWR, so it never reads EOF
+     * for the text popups, see test_win_cmd(); O_RDWR, so it never reads EOF
      * while no writer has it open */
     if (getenv("AWL_TEST_WINDOWS")) {
-        struct awl_test *T = ecalloc(1, sizeof *T);
+        struct awl_test *T = calloc_or_die(1, sizeof *T);
         T->srv = srv;
         if ((T->fd = open(getenv("AWL_TEST_WINDOWS"), O_RDWR | O_NONBLOCK | O_CLOEXEC)) < 0)
             die("AWL_TEST_WINDOWS %s:", getenv("AWL_TEST_WINDOWS"));
-        wl_event_loop_add_fd(srv->event_loop, T->fd, WL_EVENT_READABLE, testwinctl, T);
-        T->destroy.notify = testdestroy;
+        wl_event_loop_add_fd(srv->event_loop, T->fd, WL_EVENT_READABLE, test_win_ctl, T);
+        T->destroy.notify = test_destroy;
         wl_display_add_destroy_listener(srv->dpy, &T->destroy);
     }
 }

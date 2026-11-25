@@ -77,7 +77,7 @@ typedef union {
 typedef struct {
     /** where it was, a :c:enum:`ClickRegion` */
     unsigned int click;
-    /** WLR_MODIFIER_*, :c:macro:`MODKEY` for :c:member:`awl_config_t.modkey` */
+    /** WLR_MODIFIER_*, :c:macro:`MODKEY` for :c:member:`awl_config_t.mod_key` */
     unsigned int mod;
     /** a BTN_* */
     unsigned int button;
@@ -94,7 +94,7 @@ typedef struct Client Client;
 
 /** A key binding, :c:member:`awl_config_t.keys`. */
 typedef struct {
-    /** WLR_MODIFIER_*, :c:macro:`MODKEY` for :c:member:`awl_config_t.modkey` */
+    /** WLR_MODIFIER_*, :c:macro:`MODKEY` for :c:member:`awl_config_t.mod_key` */
     uint32_t mod;
     /** the key, an XKB_KEY_* */
     xkb_keysym_t keysym;
@@ -120,11 +120,11 @@ typedef struct {
 } Layout;
 
 /** A rule for outputs whose name contains name (NULL: any),
- * :c:member:`awl_config_t.monrules`; the first that matches counts. */
+ * :c:member:`awl_config_t.mon_rules`; the first that matches counts. */
 typedef struct {
     const char *name;
-    float mfact;
-    int nmaster;
+    float master_factor;
+    int master_count;
     float scale;
     /** the index of its layout in :c:member:`awl_config_t.layouts` (out of range: 0) */
     int layout;
@@ -132,8 +132,8 @@ typedef struct {
     /** its position; -1, -1 places it automatically (other negative values
      * trouble Xwayland clients) */
     int x, y;
-    /** whether each tag gets its own layout (see togglepertag); 0 if left out */
-    bool pertag;
+    /** whether each tag gets its own layout (see toggle_per_tag); 0 if left out */
+    bool per_tag;
 } MonitorRule;
 
 /** An output's part in an :c:type:`OutputProfile`: the first one whose match is
@@ -152,8 +152,8 @@ typedef struct {
     enum wl_output_transform rr;
 } OutputSetting;
 
-/** A layout of the outputs, :c:member:`awl_config_t.outputprofiles`, which the
- * outputprofile action applies by name (its .v). Outputs none of its
+/** A layout of the outputs, :c:member:`awl_config_t.output_profiles`, which the
+ * output_profile action applies by name (its .v). Outputs none of its
  * settings match stay as they are. It is refused (a notification says why)
  * while an output it turns on isn't there, or if it would leave no output
  * on: outputs are sometimes found only a while after they are plugged in. */
@@ -171,12 +171,12 @@ typedef struct {
 /** A rule for new windows whose app id and title contain id and title (NULL:
  * any), :c:member:`awl_config_t.rules`; every rule that matches counts.
  * inhibit_idle: the window, while visible, inhibits idle as an idle inhibitor
- * would (:c:func:`checkidleinhibitor`). */
+ * would (:c:func:`check_idle_inhibitor`). */
 typedef struct {
     const char *id;
     const char *title;
     uint32_t tags;
-    bool isfloating;
+    bool is_floating;
     short monitor;
     int w, h;
     bool blur;
@@ -213,7 +213,7 @@ typedef struct awl_image_t {
  * :c:func:`awl_window_set_painter`: instead of text and cells, parts the painter
  * numbers itself. Everything in physical pixels, positions from the content's
  * top left (inside the border and the padding). Main thread; font is the
- * popups' of the monitor the window is on (:c:member:`Monitor.popupfont`, else the
+ * popups' of the monitor the window is on (:c:member:`Monitor.popup_font`, else the
  * bar's), at that monitor's scale, never NULL.
  */
 typedef struct awl_window_painter_t {
@@ -241,7 +241,7 @@ enum awl_border_clock_mode {
     BorderClockFocused,
     /** on each screen's window area's edge (``m->w``, the
      * screen without the bar and the layer surfaces' exclusive zones),
-     * :c:member:`~awl_config_t.borderpx` wide, right above the tiled
+     * :c:member:`~awl_config_t.border_px` wide, right above the tiled
      * windows' borders; with no window shown there only if
      * :c:member:`~awl_config_t.border_clock.screen_empty` */
     BorderClockScreen,
@@ -327,10 +327,10 @@ typedef struct awl_popup_config_t {
     /** between a text popup's columns and rows */
     int column_spacing, row_spacing;
     /** the font, as :c:member:`awl_config_t.font` (its size appended to it:
-     * :c:member:`~awl_popup_config_t.fontsize`); NULL: the bar's */
+     * :c:member:`~awl_popup_config_t.font_size`); NULL: the bar's */
     const char *font;
     /** the font's size; unset: the bar's */
-    awl_opt_int_t fontsize;
+    awl_opt_int_t font_size;
     /** the clock's calendar's event list, which scrolls beyond the
      * maximum (0: none) */
     struct {
@@ -367,10 +367,10 @@ typedef struct awl_tray_config_t {
  * blurred like the popups (:c:member:`awl_config_t.blur`) */
 typedef struct awl_desktop_config_t {
     /** the font, as :c:member:`awl_config_t.font` (its size appended to it:
-     * :c:member:`~awl_desktop_config_t.fontsize`); NULL: the bar's */
+     * :c:member:`~awl_desktop_config_t.font_size`); NULL: the bar's */
     const char *font;
     /** the font's size; unset: the bar's */
-    awl_opt_int_t fontsize;
+    awl_opt_int_t font_size;
     /** the alpha of hidden files' names (the colors are :c:type:`awl_plugin_colors_t`'s
      * desktop_*) */
     uint8_t hidden_alpha;
@@ -386,7 +386,7 @@ typedef struct awl_desktop_config_t {
 /** :c:member:`awl_config_t.wallpaper`: the wallpaper action ({.i = WallpaperNext, ...,
  * see :c:enum:`WallpaperMode`}) shows one of dir's ``*.png`` files, scaled to cover
  * each monitor; so does a timer every interval seconds, going where mode
- * says (the wallpapermode action cycles it) */
+ * says (the wallpaper_mode action cycles it) */
 typedef struct awl_wallpaper_config_t {
     /** relative to ``$HOME`` unless absolute; NULL: no wallpaper. The config
      * dictionary's ``wallpaper_dir`` starts as awl's default's; the
@@ -397,11 +397,11 @@ typedef struct awl_wallpaper_config_t {
     unsigned int fade_ms;
     /** seconds between the timer's changes, 0: none */
     unsigned int interval;
-    /** what the timer switches to, until the wallpapermode action */
+    /** what the timer switches to, until the wallpaper_mode action */
     WallpaperMode mode;
 } awl_wallpaper_config_t;
 
-/** in a binding's mod: :c:member:`awl_config_t.modkey`, whatever it is when the
+/** in a binding's mod: :c:member:`awl_config_t.mod_key`, whatever it is when the
  * binding is pressed */
 #define MODKEY (1u << 31)
 
@@ -421,7 +421,7 @@ typedef struct awl_wallpaper_config_t {
  */
 typedef struct awl_config_t {
     /** what :c:macro:`MODKEY` in a binding stands for, a WLR_MODIFIER_* */
-    uint32_t modkey;
+    uint32_t mod_key;
     /** a list is v[0] to v[n - 1]; set one to an array with :c:macro:`SETLIST() <SETLIST>` */
     struct { const Key *v; size_t n; } keys;
     /** clicks on the bar go to its widgets, on the bare desktop to the
@@ -432,37 +432,35 @@ typedef struct awl_config_t {
     /** the window rules: every one that matches a new window applies, in
      * order */
     struct { const Rule *v; size_t n; } rules;
-    /** at least one; :c:member:`MonitorRule.layout` and setlayout take an index into
+    /** at least one; :c:member:`MonitorRule.layout` and set_layout take an index into
      * them. After a reload every monitor keeps the layout at its index. */
     struct { const Layout *v; size_t n; } layouts;
     /** the output rules: the first one that matches a new output applies */
-    struct { const MonitorRule *v; size_t n; } monrules;
-    /** the outputprofile action's layouts */
-    struct { const OutputProfile *v; size_t n; } outputprofiles;
+    struct { const MonitorRule *v; size_t n; } mon_rules;
+    /** the output_profile action's layouts */
+    struct { const OutputProfile *v; size_t n; } output_profiles;
     /** awl's environment, which what it starts inherits: set at the start
      * and on every reload; a variable a reload drops goes back to what it
      * was before awl changed it. Of these, DISPLAY, WAYLAND_DISPLAY and
      * XDG_CURRENT_DESKTOP also go to systemd's and the session bus'
-     * environment: at the start, and again on a reload that changes one.
-     * GRIM_DEFAULT_DIR, unless it is here, is the config dictionary's
-     * desktop_dir. */
+     * environment: at the start, and again on a reload that changes one. */
     struct { const EnvVar *v; size_t n; } environment;
 
-    /** the bar: whether new outputs show it (togglebar hides and shows
+    /** the bar: whether new outputs show it (toggle_bar hides and shows
      * it; a reload that changes this shows or hides every bar), and
      * whether at the top or at the bottom */
     struct { bool show:1, top:1; } bar;
     /** how many tags there are, 1 to 31; the bar shows their numbers */
     int ntags;
     /** focus follows the pointer */
-    bool sloppyfocus:1;
+    bool sloppy_focus:1;
     /** idle inhibitors inhibit even while their surface isn't visible */
     bool bypass_surface_visibility:1;
     /** org.freedesktop.ScreenSaver's Inhibit on the session bus inhibits
      * idle, visible or not (awl_screensaver.h) */
     bool screensaver_inhibit:1;
     /** after that many seconds without a key or the pointer, and without
-     * an idle inhibitor (:c:func:`checkidleinhibitor`), the
+     * an idle inhibitor (:c:func:`check_idle_inhibitor`), the
      * :c:member:`~awl_config_t.on_idle` actions run, once until the next
      * key or motion; 0: never */
     float idle_seconds;
@@ -475,7 +473,7 @@ typedef struct awl_config_t {
     /** the colors awl draws with: the windows', the popups', the menus' */
     awl_colors_t colors;
     /** windows' borders' width */
-    unsigned int borderpx;
+    unsigned int border_px;
     /** borders as a clock: where a clock's hands from a rectangle's middle
      * would cross its edge, a mark of the border's width in
      * :c:member:`awl_colors_t.border_clock_hour` and
@@ -498,11 +496,11 @@ typedef struct awl_config_t {
         /** minimum update time (milliseconds) */
         int min_update_time_ms;
     } border_clock;
-    /** the bar's font, its size (:c:member:`~awl_config_t.fontsize`) appended to it */
+    /** the bar's font, its size (:c:member:`~awl_config_t.font_size`) appended to it */
     const char *font;
     /** the bar's font's size */
-    int fontsize;
-    /** the bar's emoji, at fontsize: a color font, so the widgets' emoji
+    int font_size;
+    /** the bar's emoji, at font_size: a color font, so the widgets' emoji
      * don't come from whatever text font has them in black and white
      * (fontconfig's generic "emoji" is Noto Color Emoji or the like); NULL,
      * or one that isn't in color: text instead of emoji */
@@ -511,13 +509,13 @@ typedef struct awl_config_t {
      * (the notifications', the launcher's, the menus'), the desktop file
      * list's and the lock screen's; popups: whether to blur behind the
      * popups, the menus (:c:member:`awl_popup_config_t.menu` may differ) and the
-     * desktop file list; windowlist: the bar's
+     * desktop file list; window_list: the bar's
      * window list shows inactive and minimized windows translucent over a
      * blur, the focused one opaque */
     struct {
         float strength, alpha;
         bool popups:1;
-        bool windowlist:1;
+        bool window_list:1;
     } blur;
     /** the keymap (rules, model, layout, variant, options; NULL: the
      * default) and the key repeat */
@@ -560,7 +558,7 @@ typedef struct awl_config_t {
     struct {
         /** an ext-session-lock client (argv, NULL terminated), started on
          * logind's Lock (loginctl lock-session), before suspend and by the
-         * lockscreen action; argv[0] :c:macro:`AWL_LOCKER` is awl's own,
+         * lock_screen action; argv[0] :c:macro:`AWL_LOCKER` is awl's own,
          * awlock (awl_lockscreen.h), which takes no arguments: the rest of
          * this struct and :c:type:`awl_colors_t`'s lock_* configure it */
         const char *const *locker;
@@ -625,7 +623,7 @@ typedef struct awl_config_t {
          * return, 0 to 1 */
         float idle_floor;
         /** a click on a notification (its ActivationToken,
-         * :c:func:`activationtoken`) only makes the client's window urgent,
+         * :c:func:`activation_token`) only makes the client's window urgent,
          * like any other client's xdg-activation, instead of showing and
          * focusing it */
         bool activate_urgent:1;
@@ -646,12 +644,12 @@ static inline void awl_config_fill_defaults( awl_config_t* c ) {
     AWL_FILL( k->menu_highlight_fg, k->menu_fg.v );
     AWL_FILL( k->menu_dim, k->popup_dim );
     if (!c->popup.font) c->popup.font = c->font;
-    AWL_FILL( c->popup.fontsize, c->fontsize );
+    AWL_FILL( c->popup.font_size, c->font_size );
     AWL_FILL( c->popup.menu.border_width, c->popup.border_width );
     AWL_FILL( c->popup.menu.radius, c->popup.radius );
     AWL_FILL( c->popup.menu.blur, c->blur.popups );
     if (!c->desktop.font) c->desktop.font = c->font;
-    AWL_FILL( c->desktop.fontsize, c->fontsize );
+    AWL_FILL( c->desktop.font_size, c->font_size );
     if (c->border_clock.hour_len <= 0) c->border_clock.hour_len = 24;
     if (c->border_clock.minute_len <= 0) c->border_clock.minute_len = 12;
     if (c->border_clock.min_update_time_ms <= 0) c->border_clock.min_update_time_ms = 15000;
@@ -685,25 +683,25 @@ static inline void awl_config_fill_defaults( awl_config_t* c ) {
 #endif
 /** sets the list l (:c:member:`awl_config_t.keys` & co.) to the array a */
 #define SETLIST(l, a)           ((l).v = (a), (l).n = LENGTH(a))
-/** the four bindings of tag TAG: view, toggleview, tag, toggletag */
-#define TAGKEYS(KEY,SKEY,TAG) \
+/** the four bindings of tag TAG: view, toggle_view, tag, toggle_tag */
+#define TAG_KEYS(KEY,SKEY,TAG) \
     { MODKEY,                    KEY,            AWL_ACTION(view),            {.ui = 1ul << TAG} }, \
-    { MODKEY|WLR_MODIFIER_CTRL,  KEY,            AWL_ACTION(toggleview),      {.ui = 1ul << TAG} }, \
+    { MODKEY|WLR_MODIFIER_CTRL,  KEY,            AWL_ACTION(toggle_view),      {.ui = 1ul << TAG} }, \
     { MODKEY|WLR_MODIFIER_SHIFT, SKEY,           AWL_ACTION(tag),             {.ui = 1ul << TAG} }, \
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,AWL_ACTION(toggletag), {.ui = 1ul << TAG} }
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,AWL_ACTION(toggle_tag), {.ui = 1ul << TAG} }
 /** Ctrl-Alt-Fn: to VT n */
-#define CHVT(n) { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_XF86Switch_VT_##n, AWL_ACTION(chvt), {.ui = (n)} }
+#define CHVT(n) { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_XF86Switch_VT_##n, AWL_ACTION(switch_vt), {.ui = (n)} }
 /** spawn's argument for a shell command */
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 
 /** CLOCK_MONOTONIC in ms */
-static inline int64_t awl_now_ms(void) {
+static inline int64_t awl_now_ms( void ) {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (int64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
 }
 
-static inline int awl_localtime(char buf[32]) {
+static inline int awl_localtime( char buf[32] ) {
     time_t now = time(NULL);
     struct tm tm;
     if (!localtime_r(&now, &tm) || !strftime(buf, 32, "%y/%m/%d-%H:%M:%S", &tm))

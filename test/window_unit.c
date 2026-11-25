@@ -49,9 +49,9 @@ static void test_layout( void ) {
     CHECK( awl_window_layout( &L, "a\tbb\nccc\td", &style, font, 1, 10000, 10000 ) );
     CHECK( L.ncols == 2 && L.nrows == 2 && !L.cut );
     CHECK( L.widths[0] == gw( "ccc" ) && L.widths[1] == gw( "bb" ) );
-    CHECK( L.x0 == 6 && L.y0 == 6 && L.colsp == AWL_WINDOW_COLUMN_SPACING && L.rowsp == AWL_WINDOW_ROW_SPACING );
-    CHECK( L.width == 2 * L.x0 + L.colsp + gw( "ccc" ) + gw( "bb" ) );
-    CHECK( L.height == 2 * L.y0 + 2 * fh + L.rowsp );
+    CHECK( L.x0 == 6 && L.y0 == 6 && L.column_spacing == AWL_WINDOW_COLUMN_SPACING && L.row_spacing == AWL_WINDOW_ROW_SPACING );
+    CHECK( L.width == 2 * L.x0 + L.column_spacing + gw( "ccc" ) + gw( "bb" ) );
+    CHECK( L.height == 2 * L.y0 + 2 * fh + L.row_spacing );
 
     /* a blank box, one row high */
     CHECK( awl_window_layout( &L, "", &style, font, 1, 10000, 10000 ) );
@@ -65,9 +65,9 @@ static void test_layout( void ) {
 
     /* scale: spacing, border and padding scale, the font is the caller's */
     CHECK( awl_window_layout( &L, "a\tb", &style, font, 2, 10000, 10000 ) );
-    CHECK( L.x0 == 12 && L.colsp == 2 * AWL_WINDOW_COLUMN_SPACING && L.border_width == 4 && L.radius == 16 );
+    CHECK( L.x0 == 12 && L.column_spacing == 2 * AWL_WINDOW_COLUMN_SPACING && L.border_width == 4 && L.radius == 16 );
     CHECK( awl_window_layout( &L, "a\tb", &style, font, 1.25f, 10000, 10000 ) );
-    CHECK( L.x0 == 8 && L.colsp == 15 && L.border_width == 3 );
+    CHECK( L.x0 == 8 && L.column_spacing == 15 && L.border_width == 3 );
 }
 
 static void test_cut( void ) {
@@ -80,7 +80,7 @@ static void test_cut( void ) {
     CHECK( awl_window_layout( &L, wide, &style, font, 1, 200, 10000 ) );
     CHECK( L.width == 200 && L.widths[0] == 200 - 2 * L.x0 );
     CHECK( awl_window_layout( &L, "first\tsecond column, long", &style, font, 1, 100, 10000 ) );
-    CHECK( L.width == 100 && L.widths[0] == gw( "first" ) && L.widths[1] == 100 - 2 * L.x0 - L.colsp - gw( "first" ) );
+    CHECK( L.width == 100 && L.widths[0] == gw( "first" ) && L.widths[1] == 100 - 2 * L.x0 - L.column_spacing - gw( "first" ) );
 
     /* exactly n rows fit into max_h */
     const int n = 10, max_h = 2 * 6 + n * fh + (n - 1) * AWL_WINDOW_ROW_SPACING;
@@ -90,7 +90,7 @@ static void test_cut( void ) {
     free( t );
     t = rows( n + 1 );
     CHECK( awl_window_layout( &L, t, &style, font, 1, 10000, max_h ) );
-    CHECK( L.cut && L.nrows == n && L.maxrows == n - 1 && L.height == max_h );
+    CHECK( L.cut && L.nrows == n && L.max_rows == n - 1 && L.height == max_h );
     free( t );
     t = rows( 1000 );
     CHECK( awl_window_layout( &L, t, &style, font, 1, 10000, max_h ) );
@@ -101,7 +101,7 @@ static void test_cut( void ) {
     /* one row fits: only the ellipsis */
     t = rows( 5 );
     CHECK( awl_window_layout( &L, t, &style, font, 1, 10000, 2 * 6 + fh ) );
-    CHECK( L.cut && L.nrows == 1 && L.maxrows == 0 && L.widths[0] == gw( AWL_WINDOW_ELLIPSIS ) );
+    CHECK( L.cut && L.nrows == 1 && L.max_rows == 0 && L.widths[0] == gw( AWL_WINDOW_ELLIPSIS ) );
     free( t );
     /* not even one */
     CHECK( !awl_window_layout( &L, "x", &style, font, 1, 10000, 2 * 6 + fh - 1 ) );
@@ -165,7 +165,7 @@ static void ref_shape( pixman_image_t* pix, float x, float y, float w, float h, 
 }
 
 /* the largest difference of a channel between a and b, n pixels */
-static int maxdiff( const uint32_t* a, const uint32_t* b, size_t n ) {
+static int max_diff( const uint32_t* a, const uint32_t* b, size_t n ) {
     int m = 0;
     for (size_t i = 0; i < n; i++)
         for (int s = 0; s < 32; s += 8) {
@@ -195,7 +195,7 @@ static void test_runs( void ) {
         memset( b, 0x5a, sizeof b );
         awl_window_paint_frame( &L, &st, a, stride );
         ref_frame( b, stride, frames[i].w, frames[i].h, (float)frames[i].bw, frames[i].r, st.bg, st.border );
-        int d = maxdiff( a, b, W * H );
+        int d = max_diff( a, b, W * H );
         if (d > worst) worst = d;
     }
     CHECK( worst == 0 );
@@ -215,7 +215,7 @@ static void test_runs( void ) {
         ref_shape( pb, shapes[i].x, shapes[i].y, shapes[i].w, shapes[i].h, shapes[i].r, shapes[i].t, 0xc08040b0 );
         pixman_image_unref( pa );
         pixman_image_unref( pb );
-        int d = maxdiff( a, b, W * H );
+        int d = max_diff( a, b, W * H );
         if (d > worst) worst = d;
     }
     CHECK( worst == 0 );
@@ -243,7 +243,7 @@ static void test_paint( void ) {
     CHECK( lit > 20 );                                                   /* "Hello" */
     lit = 0;
     for (int y = L.y0; y < L.height - L.y0; y++)
-        for (int x = L.x0 + L.widths[0]; x < L.x0 + L.widths[0] + L.colsp; x++)
+        for (int x = L.x0 + L.widths[0]; x < L.x0 + L.widths[0] + L.column_spacing; x++)
             lit += (pixel( data, stride, x, y ) & 0xff) > 0x80;
     CHECK( lit == 0 );                                                   /* between the columns */
     free( data );
@@ -255,7 +255,7 @@ static void test_paint( void ) {
     data = calloc( (size_t)L.height, (size_t)stride );
     awl_window_paint( &L, t, &style, font, -1, data, stride );
     lit = 0;
-    int y0 = L.y0 + 2 * (fh + L.rowsp);
+    int y0 = L.y0 + 2 * (fh + L.row_spacing);
     for (int y = y0; y < y0 + fh; y++)
         for (int x = L.x0; x < L.x0 + L.widths[0]; x++)
             lit += (pixel( data, stride, x, y ) & 0xff) > 0x80;
@@ -271,7 +271,7 @@ static void test_input( void ) {
 
     CHECK( awl_window_layout( &L, "a\tbb\nccc\td", &style, font, 1, 10000, 10000 ) );
     CHECK( awl_window_cell_at( &L, L.x0, L.y0, &r, &c ) && r == 0 && c == 0 );
-    CHECK( awl_window_cell_at( &L, L.x0 + L.widths[0] + L.colsp, L.y0, &r, &c ) && r == 0 && c == 1 );
+    CHECK( awl_window_cell_at( &L, L.x0 + L.widths[0] + L.column_spacing, L.y0, &r, &c ) && r == 0 && c == 1 );
     /* the gaps count to the cell before them */
     CHECK( awl_window_cell_at( &L, L.x0 + L.widths[0] + 1, L.y0 + L.fh, &r, &c ) && r == 0 && c == 0 );
     CHECK( awl_window_cell_at( &L, L.width - L.x0 - 1, L.height - L.y0 - 1, &r, &c ) && r == 1 && c == 1 );
@@ -301,7 +301,7 @@ static void test_input( void ) {
     /* the ellipsis row */
     char* t = rows( 50 );
     CHECK( awl_window_layout( &L, t, &style, font, 1, 10000, 2 * 6 + 3 * fh + 2 * AWL_WINDOW_ROW_SPACING ) );
-    CHECK( awl_window_cell_at( &L, L.x0, L.height - L.y0 - 1, &r, &c ) && r == L.maxrows && r == 2 );
+    CHECK( awl_window_cell_at( &L, L.x0, L.height - L.y0 - 1, &r, &c ) && r == L.max_rows && r == 2 );
     free( t );
 
     /* the highlight covers its row, in the padding too, and nothing else */

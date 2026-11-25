@@ -8,7 +8,7 @@
  *
  * The images live in their own scene tree right below :c:enumerator:`LyrBg`, so
  * background layer surfaces still go over them; it's not part of
- * ``layers[]``, so :c:func:`xytonode` and clicks go right through them.
+ * ``layers[]``, so :c:func:`xy_to_node` and clicks go right through them.
  */
 
 #include "awl_core.h"

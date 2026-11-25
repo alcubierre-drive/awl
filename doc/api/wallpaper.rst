@@ -4,7 +4,7 @@ The wallpaper
 The library's thread picks and decodes the next wallpaper
 (plugins/wallpaper.c), awl takes the decoded image on the main thread and
 shows it, fading from the previous one (awl_background.c). The modes the
-:c:func:`wallpaper` and :c:func:`wallpapermode` actions take are :c:enum:`WallpaperMode`, the
+:c:func:`wallpaper` and :c:func:`wallpaper_mode` actions take are :c:enum:`WallpaperMode`, the
 settings :c:type:`awl_wallpaper_config_t`, the images :c:type:`awl_image_t`; all are in
 :doc:`awl.h <awl>`. When the
 wallpaper changes, and to which, is awl_wallpaper.c's.

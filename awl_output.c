@@ -13,43 +13,43 @@
 #include "awl_notifications.h"
 #include "awl_popup.h"
 
-static void cleanupmon(struct wl_listener *listener, void *data);
-static void closemon(awl_server_t *srv, Monitor *m);
-static void outputmgrapplyortest(awl_server_t *srv, struct wlr_output_configuration_v1 *config, int test);
-static void rendermon(struct wl_listener *listener, void *data);
-static void requestmonstate(struct wl_listener *listener, void *data);
-static void outputsupdate(awl_server_t *srv);
+static void cleanup_mon( struct wl_listener *listener, void *data );
+static void close_mon( awl_server_t *srv, Monitor *m );
+static void output_mgr_apply_or_test( awl_server_t *srv, struct wlr_output_configuration_v1 *config, int test );
+static void render_mon( struct wl_listener *listener, void *data );
+static void request_mon_state( struct wl_listener *listener, void *data );
+static void outputs_update( awl_server_t *srv );
 
 
-void
-cleanupmon(struct wl_listener *listener, void *data)
-{
+void cleanup_mon( struct wl_listener *listener, void *data ) {
     Monitor *m = wl_container_of(listener, m, destroy);
     awl_server_t *srv = m->srv;
     LayerSurface *l, *tmp;
     (void)data;
 
-    srv->out.in_cleanupmon = 1;
+    srv->out.in_cleanup_mon = 1;
 
     /* m->layers[i] are intentionally not unlinked */
     for (size_t i = 0; i < LENGTH(m->layers); i++) {
         wl_list_for_each_safe(l, tmp, &m->layers[i], link)
             wlr_layer_surface_v1_destroy(l->layer_surface);
     }
-    /* closemon() below checks m->bar.m to decide whether to touch the bar */
-    barremovemon(srv, m);
+    /* close_mon() below checks m->bar.m to decide whether to touch the bar */
+    bar_remove_mon(srv, m);
 
     wl_list_remove(&m->destroy.link);
     wl_list_remove(&m->frame.link);
-    wl_list_remove(&m->link);
+    for (int i = 0; i < srv->out.nmons; i++)
+        if (srv->out.mons[i] == m)
+            memmove(&srv->out.mons[i], &srv->out.mons[i + 1], (size_t)(--srv->out.nmons - i) * sizeof(m));
     wl_list_remove(&m->request_state.link);
     if (m->lock_surface)
-        destroylocksurface(&m->destroy_lock_surface, NULL);
+        destroy_lock_surface(&m->destroy_lock_surface, NULL);
     m->wlr_output->data = NULL;
     wlr_output_layout_remove(srv->out.layout, m->wlr_output);
     wlr_scene_output_destroy(m->scene_output);
 
-    closemon(srv, m);
+    close_mon(srv, m);
     wlr_scene_node_destroy(&m->fullscreen_bg->node);
     for (int i = 0; i < 4; i++)
         if (m->clock[i / 2][i % 2])
@@ -58,58 +58,49 @@ cleanupmon(struct wl_listener *listener, void *data)
     wlr_scene_node_destroy(&m->scene_buffer->node);
     desktop_removemon(srv->desktop, m);
     background_removemon(srv->background, m);
-    popupsremovemon(srv, m);
+    popups_remove_mon(srv, m);
     wlr_scene_node_destroy(&m->alert->node);
     for (size_t i = 0; i < LENGTH(m->bar_bufs); i++)
         if (m->bar_bufs[i])
             wlr_buffer_drop(&m->bar_bufs[i]->base);
     free(m);
-    srv->out.in_cleanupmon = 0;
+    srv->out.in_cleanup_mon = 0;
 }
 
-void
-closemon(awl_server_t *srv, Monitor *m)
-{
-    if (m && m->bar.m && m->showbar) { togglebar_mon(srv, m); m->closedbar=1; }
-    /* update selmon if needed and
+void close_mon( awl_server_t *srv, Monitor *m ) {
+    if (m && m->bar.m && m->show_bar) { toggle_bar_mon(srv, m); m->closed_bar=1; }
+    /* update sel_mon if needed and
      * move closed monitor's clients to the focused one */
     Client *c;
-    int i = 0, nmons = wl_list_length(&srv->out.mons);
-    if (!nmons) {
-        srv->out.selmon = NULL;
-    } else if (m == srv->out.selmon) {
-        do /* don't switch to disabled mons */
-            srv->out.selmon = wl_container_of(srv->out.mons.next, srv->out.selmon, link);
-        while (!srv->out.selmon->wlr_output->enabled && i++ < nmons);
-
-        if (!srv->out.selmon->wlr_output->enabled)
-            srv->out.selmon = NULL;
-    }
+    if (m == srv->out.sel_mon || !srv->out.nmons)
+        srv->out.sel_mon = next_mon(srv, 0); /* the first enabled one, or NULL */
 
     wl_list_for_each(c, &srv->clients.list, link) {
-        if (c->isfloating && c->geom.x > m->m.width)
+        if (c->is_floating && c->geom.x > m->m.width)
             resize(srv, c, (struct wlr_box){.x = c->geom.x - m->w.width, .y = c->geom.y,
                     .width = c->geom.width, .height = c->geom.height}, 0);
         if (c->mon == m)
-            setmon(srv, c, srv->out.selmon, c->tags);
+            set_mon(srv, c, srv->out.sel_mon, c->tags);
     }
-    focusclient(srv, focustop(srv, srv->out.selmon), 1);
-    barsdirty(srv);
+    focus_client(srv, focus_top(srv, srv->out.sel_mon), 1);
+    bars_dirty(srv);
 }
 
-void
-createmon(struct wl_listener *listener, void *data)
-{
+void create_mon( struct wl_listener *listener, void *data ) {
     awl_server_t *srv = wl_container_of(listener, srv, listen.new_output);
     /* This event is raised by the backend when a new output (aka a display or
      * monitor) becomes available. */
     struct wlr_output *wlr_output = data;
     struct wlr_output_state state;
 
+    if (srv->out.nmons == AWL_MAX_MONS) {
+        awl_wrn_printf("output %s: awl takes %d outputs at most, left alone\n", wlr_output->name, AWL_MAX_MONS);
+        return;
+    }
     if (!wlr_output_init_render(wlr_output, srv->alloc, srv->renderer))
         return;
 
-    Monitor *m = wlr_output->data = ecalloc(1, sizeof(*m));
+    Monitor *m = wlr_output->data = calloc_or_die(1, sizeof(*m));
     m->srv = srv;
     m->wlr_output = wlr_output;
 
@@ -121,28 +112,28 @@ createmon(struct wl_listener *listener, void *data)
     m->tagset[0] = m->tagset[1] = 1;
     /* if no rule matches */
     m->m.x = m->m.y = -1;
-    m->ptlt[0].mfact = 0.55f;
-    m->ptlt[0].nmaster = 1;
-    m->ptlt[0].lt[0] = m->ptlt[0].lt[1] = &srv->cfg->layouts.v[0];
-    for (const MonitorRule *r = srv->cfg->monrules.v; r < srv->cfg->monrules.v + srv->cfg->monrules.n; r++) {
+    m->tag_layouts[0].master_factor = 0.55f;
+    m->tag_layouts[0].master_count = 1;
+    m->tag_layouts[0].lt[0] = m->tag_layouts[0].lt[1] = &srv->cfg->layouts.v[0];
+    for (const MonitorRule *r = srv->cfg->mon_rules.v; r < srv->cfg->mon_rules.v + srv->cfg->mon_rules.n; r++) {
         if (!r->name || strstr(wlr_output->name, r->name)) {
             m->m.x = r->x;
             m->m.y = r->y;
-            m->ptlt[0].mfact = r->mfact;
-            m->ptlt[0].nmaster = r->nmaster;
+            m->tag_layouts[0].master_factor = r->master_factor;
+            m->tag_layouts[0].master_count = r->master_count;
             size_t li = r->layout > 0 && (size_t)r->layout < srv->cfg->layouts.n ? (size_t)r->layout : 0;
-            m->ptlt[0].lt[0] = &srv->cfg->layouts.v[li];
-            m->ptlt[0].lt[1] = &srv->cfg->layouts.v[srv->cfg->layouts.n > 1 && li != 1];
-            m->pertag = !!r->pertag;
+            m->tag_layouts[0].lt[0] = &srv->cfg->layouts.v[li];
+            m->tag_layouts[0].lt[1] = &srv->cfg->layouts.v[srv->cfg->layouts.n > 1 && li != 1];
+            m->per_tag = !!r->per_tag;
             wlr_output_state_set_scale(&state, r->scale);
             wlr_output_state_set_transform(&state, r->rr);
             break;
         }
     }
     /* every view starts with the monitor's layout */
-    for (size_t i = 1; i < LENGTH(m->ptlt); i++)
-        m->ptlt[i] = m->ptlt[0];
-    strncpy(m->ltsymbol, sellayout(m)->symbol, LENGTH(m->ltsymbol)-1);
+    for (size_t i = 1; i < LENGTH(m->tag_layouts); i++)
+        m->tag_layouts[i] = m->tag_layouts[0];
+    strncpy(m->layout_symbol, selected_layout(m)->symbol, LENGTH(m->layout_symbol)-1);
 
     /* The mode is a tuple of (width, height, refresh rate), and each
      * monitor supports only a specific set of modes. We just pick the
@@ -151,20 +142,21 @@ createmon(struct wl_listener *listener, void *data)
     wlr_output_state_set_mode(&state, wlr_output_preferred_mode(wlr_output));
 
     /* Set up event listeners */
-    LISTEN(&wlr_output->events.frame, &m->frame, rendermon);
-    LISTEN(&wlr_output->events.destroy, &m->destroy, cleanupmon);
-    LISTEN(&wlr_output->events.request_state, &m->request_state, requestmonstate);
+    LISTEN(&wlr_output->events.frame, &m->frame, render_mon);
+    LISTEN(&wlr_output->events.destroy, &m->destroy, cleanup_mon);
+    LISTEN(&wlr_output->events.request_state, &m->request_state, request_mon_state);
 
     wlr_output_state_set_enabled(&state, 1);
     wlr_output_commit_state(wlr_output, &state);
     wlr_output_state_finish(&state);
 
-    baraddmon(srv, m);
+    bar_add_mon(srv, m);
     desktop_addmon(srv->desktop, m);
     background_addmon(srv->background, m);
     awl_alert_addmon(srv, m);
 
-    wl_list_insert(&srv->out.mons, &m->link);
+    memmove(&srv->out.mons[1], &srv->out.mons[0], (size_t)srv->out.nmons++ * sizeof(m));
+    srv->out.mons[0] = m;
 
     /* The xdg-protocol specifies:
      *
@@ -174,7 +166,7 @@ createmon(struct wl_listener *listener, void *data)
      * visible below the fullscreened surface.
      *
      */
-    /* outputsupdate() will resize and set correct position */
+    /* outputs_update() will resize and set correct position */
     m->fullscreen_bg = wlr_scene_rect_create(srv->layers[LyrFS], 0, 0, (float[4])RGBA(srv->cfg->colors.fullscreen));
     wlr_scene_node_set_enabled(&m->fullscreen_bg->node, 0);
 
@@ -192,85 +184,61 @@ createmon(struct wl_listener *listener, void *data)
 
 }
 
-Monitor *
-monitornamed(awl_server_t *srv, const char *name)
-{
+Monitor *monitor_named( awl_server_t *srv, const char *name ) {
     Monitor *m;
     if (name)
-        wl_list_for_each(m, &srv->out.mons, link)
+        FOR_EACH_MON(m, srv)
             if (!strcmp(m->wlr_output->name, name))
                 return m;
     return NULL;
 }
 
-Monitor *
-monitorselected(awl_server_t *srv)
-{
-    return srv->out.selmon;
+Monitor *monitor_selected( awl_server_t *srv ) {
+    return srv->out.sel_mon;
 }
 
-float
-monitorscale(Monitor *m)
-{
+float monitor_scale( Monitor *m ) {
     return m && m->wlr_output ? m->wlr_output->scale : 1;
 }
 
-Monitor *
-nextmon(awl_server_t *srv, int add) {
-    int i = 0, i_sel = 1;
-
-    int nmons = wl_list_length(&srv->out.mons);
-    Monitor* pmons[MAX(nmons,1)];
-
-    Monitor* m = NULL;
-    wl_list_for_each(m, &srv->out.mons, link) {
-        if (m->wlr_output->enabled) {
-            pmons[i] = m;
-            if (m == srv->out.selmon) i_sel = i;
-            i++;
-        }
+Monitor *next_mon( awl_server_t *srv, int add ) {
+    Monitor *on[AWL_MAX_MONS], *m;
+    int n = 0, sel = 0;
+    FOR_EACH_MON(m, srv) {
+        if (m == srv->out.sel_mon) sel = n;
+        if (m->wlr_output->enabled) on[n++] = m;
     }
-
-    if (!i) return NULL;
-    return pmons[(i_sel + add + i)%i];
+    return n ? on[((sel + add) % n + n) % n] : NULL;
 }
 
-void
-setselmon(awl_server_t *srv, Monitor *m)
-{
-    /* the bars mark the selected monitor (awl_bar_t.selmon) */
-    if (m == srv->out.selmon)
+void set_sel_mon( awl_server_t *srv, Monitor *m ) {
+    /* the bars mark the selected monitor (awl_bar_t.sel_mon) */
+    if (m == srv->out.sel_mon)
         return;
-    srv->out.selmon = m;
-    barsdirty(srv);
+    srv->out.sel_mon = m;
+    bars_dirty(srv);
 }
 
-void
-focusmon(awl_server_t *srv, const Arg *arg)
-{
-    Monitor *m = nextmon(srv, arg->i);
-    /* nextmon() returns NULL when no monitor is enabled -- keep selmon as it
+void focus_monitor( awl_server_t *srv, const Arg *arg ) {
+    Monitor *m = next_mon(srv, arg->i);
+    /* next_mon() returns NULL when no monitor is enabled -- keep sel_mon as it
      * is rather than handing NULL to everything that dereferences it */
     if (!m)
         return;
-    focusclient(srv, focustop(srv, srv->out.selmon = m), 1);
+    focus_client(srv, focus_top(srv, srv->out.sel_mon = m), 1);
 }
 
-void
-outputmgrapply(struct wl_listener *listener, void *data)
-{
+void output_mgr_apply( struct wl_listener *listener, void *data ) {
     awl_server_t *srv = wl_container_of(listener, srv, listen.output_mgr_apply);
     struct wlr_output_configuration_v1 *config = data;
-    outputmgrapplyortest(srv, config, 0);
+    output_mgr_apply_or_test(srv, config, 0);
 }
 
-void
-outputmgrapplyortest(awl_server_t *srv, struct wlr_output_configuration_v1 *config, int test)
-{
+void output_mgr_apply_or_test( awl_server_t *srv, struct wlr_output_configuration_v1 *config, int test ) {
     /*
      * Called when a client such as wlr-randr requests a change in output
      * configuration. This is only one way that the layout can be changed,
-     * so any Monitor information should be updated by outputsupdate() after an
+     * so any Monitor information should be updated by outputs_update() after an
      * output_layout.change event, not here.
      */
     struct wlr_output_configuration_head_v1 *config_head;
@@ -324,62 +292,52 @@ apply_or_test:
     wlr_output_configuration_v1_destroy(config);
 
     /* https://codeberg.org/dwl/dwl/issues/577 */
-    outputsupdate(srv);
+    outputs_update(srv);
 }
 
-void
-outputmgrtest(struct wl_listener *listener, void *data)
-{
+void output_mgr_test( struct wl_listener *listener, void *data ) {
     awl_server_t *srv = wl_container_of(listener, srv, listen.output_mgr_test);
     struct wlr_output_configuration_v1 *config = data;
-    outputmgrapplyortest(srv, config, 1);
+    output_mgr_apply_or_test(srv, config, 1);
 }
 
-static int
-outputmatches(struct wlr_output *o, const char *match)
-{
+static int output_matches( struct wlr_output *o, const char *match ) {
     return match && (strstr(o->name, match)
             || (o->description && strstr(o->description, match)));
 }
 
 /** the first of p's settings that matches o, NULL if none */
-static const OutputSetting *
-profilesetting(const OutputProfile *p, struct wlr_output *o)
-{
+static const OutputSetting *profile_setting( const OutputProfile *p, struct wlr_output *o ) {
     for (const OutputSetting *s = p->outputs.v; s < p->outputs.v + p->outputs.n; s++)
-        if (outputmatches(o, s->match))
+        if (output_matches(o, s->match))
             return s;
     return NULL;
 }
 
-static void
-profilerefused(awl_server_t *srv, const char *name, const char *why, const char *what)
-{
+static void profile_refused( awl_server_t *srv, const char *name, const char *why, const char *what ) {
     char body[256];
     awl_notif_send_t n = AWL_NOTIF_SEND_INIT;
     snprintf(body, sizeof(body), why, what);
-    awl_wrn_printf("outputprofile %s: %s\n", name ? name : "(none)", body);
+    awl_wrn_printf("output_profile %s: %s\n", name ? name : "(none)", body);
     n.summary = "Output profile not applied";
     n.body = body;
     n.tag = "awl-outputprofile";
     awl_notifications_send(srv, &n);
 }
 
-/** The outputprofile action: applies the :c:type:`OutputProfile` named arg->v. */
-void
-outputprofile(awl_server_t *srv, const Arg *arg)
-{
+/** The output_profile action: applies the :c:type:`OutputProfile` named arg->v. */
+void output_profile( awl_server_t *srv, const Arg *arg ) {
     const char *name = arg->v;
     const OutputProfile *p = NULL;
     const OutputSetting *s;
     Monitor *m;
     int on = 0;
 
-    for (size_t i = 0; name && i < srv->cfg->outputprofiles.n; i++)
-        if (srv->cfg->outputprofiles.v[i].name && !strcmp(srv->cfg->outputprofiles.v[i].name, name))
-            p = &srv->cfg->outputprofiles.v[i];
+    for (size_t i = 0; name && i < srv->cfg->output_profiles.n; i++)
+        if (srv->cfg->output_profiles.v[i].name && !strcmp(srv->cfg->output_profiles.v[i].name, name))
+            p = &srv->cfg->output_profiles.v[i];
     if (!p) {
-        profilerefused(srv, name, "there is no profile \"%s\"", name ? name : "");
+        profile_refused(srv, name, "there is no profile \"%s\"", name ? name : "");
         return;
     }
     /* everything it turns on has to be there */
@@ -387,38 +345,38 @@ outputprofile(awl_server_t *srv, const Arg *arg)
         if (!s->on)
             continue;
         int found = 0;
-        wl_list_for_each(m, &srv->out.mons, link)
-            found |= outputmatches(m->wlr_output, s->match);
+        FOR_EACH_MON(m, srv)
+            found |= output_matches(m->wlr_output, s->match);
         if (!found) {
-            profilerefused(srv, name, "no output matches \"%s\"", s->match ? s->match : "");
+            profile_refused(srv, name, "no output matches \"%s\"", s->match ? s->match : "");
             return;
         }
     }
-    wl_list_for_each(m, &srv->out.mons, link) {
-        s = profilesetting(p, m->wlr_output);
+    FOR_EACH_MON(m, srv) {
+        s = profile_setting(p, m->wlr_output);
         on += s ? s->on : m->wlr_output->enabled || m->asleep;
     }
     if (!on) {
-        profilerefused(srv, name, "%s", "it would turn every output off");
+        profile_refused(srv, name, "%s", "it would turn every output off");
         return;
     }
 
     /* the ones going off first: they free what the others may need */
-    wl_list_for_each(m, &srv->out.mons, link) {
+    FOR_EACH_MON(m, srv) {
         struct wlr_output_state state;
-        if (!(s = profilesetting(p, m->wlr_output)) || s->on)
+        if (!(s = profile_setting(p, m->wlr_output)) || s->on)
             continue;
         m->asleep = 0;
         wlr_output_state_init(&state);
         wlr_output_state_set_enabled(&state, 0);
         if (!wlr_output_commit_state(m->wlr_output, &state))
-            awl_wrn_printf("outputprofile %s: can't turn %s off\n", name, m->wlr_output->name);
+            awl_wrn_printf("output_profile %s: can't turn %s off\n", name, m->wlr_output->name);
         wlr_output_state_finish(&state);
     }
-    wl_list_for_each(m, &srv->out.mons, link) {
+    FOR_EACH_MON(m, srv) {
         struct wlr_output_state state;
         struct wlr_output_layout_output *lo;
-        if (!(s = profilesetting(p, m->wlr_output)) || !s->on)
+        if (!(s = profile_setting(p, m->wlr_output)) || !s->on)
             continue;
         m->asleep = 0;
         wlr_output_state_init(&state);
@@ -429,7 +387,7 @@ outputprofile(awl_server_t *srv, const Arg *arg)
             wlr_output_state_set_scale(&state, s->scale);
         wlr_output_state_set_transform(&state, s->rr);
         if (!wlr_output_commit_state(m->wlr_output, &state)) {
-            awl_wrn_printf("outputprofile %s: can't turn %s on\n", name, m->wlr_output->name);
+            awl_wrn_printf("output_profile %s: can't turn %s on\n", name, m->wlr_output->name);
         } else if (!(lo = wlr_output_layout_get(srv->out.layout, m->wlr_output))
                 || lo->x != s->x || lo->y != s->y) {
             /* moves it if it is in the layout already */
@@ -437,12 +395,10 @@ outputprofile(awl_server_t *srv, const Arg *arg)
         }
         wlr_output_state_finish(&state);
     }
-    outputsupdate(srv);
+    outputs_update(srv);
 }
 
-void
-powermgrsetmode(struct wl_listener *listener, void *data)
-{
+void power_mgr_set_mode( struct wl_listener *listener, void *data ) {
     struct wlr_output_power_v1_set_mode_event *event = data;
     struct wlr_output_state state = {0};
     Monitor *m = event->output->data;
@@ -456,14 +412,12 @@ powermgrsetmode(struct wl_listener *listener, void *data)
     wlr_output_commit_state(m->wlr_output, &state);
 
     m->asleep = !event->mode;
-    outputsupdate(m->srv);
+    outputs_update(m->srv);
 }
 
 /** whether c has kept its resize unanswered for :c:macro:`RESIZE_WAIT_MS`
  * by now; logs it the first time */
-static int
-resizelate(Client *c, const struct timespec *now)
-{
+static int resize_late( Client *c, const struct timespec *now ) {
     int64_t ms = (int64_t)now->tv_sec * 1000 + now->tv_nsec / 1000000;
     if (ms - c->resize_sent < RESIZE_WAIT_MS)
         return 0;
@@ -475,9 +429,7 @@ resizelate(Client *c, const struct timespec *now)
     return 1;
 }
 
-void
-rendermon(struct wl_listener *listener, void *data)
-{
+void render_mon( struct wl_listener *listener, void *data ) {
     /* This function is called every time an output is ready to display a frame,
      * generally at the output's refresh rate (e.g. 60Hz). */
     Monitor *m = wl_container_of(listener, m, frame);
@@ -491,19 +443,19 @@ rendermon(struct wl_listener *listener, void *data)
     /* Render if no XDG clients have an outstanding resize and are visible on
      * this monitor, or one has kept us waiting for RESIZE_WAIT_MS. */
     wl_list_for_each(c, &srv->clients.list, link) {
-        if (c->resize && !c->isfloating && client_is_rendered_on_mon(c, m) && !client_is_stopped(c)
-                && !resizelate(c, &now))
+        if (c->resize && !c->is_floating && client_is_rendered_on_mon(c, m) && !client_is_stopped(c)
+                && !resize_late(c, &now))
             goto skip;
     }
 
     /* make clients transparent before the commit; they change it back again otherwise */
     wl_list_for_each(c, &srv->clients.list, link) {
         if (c->scene_surface && c->one_minus_alpha != 0) {
-            wlr_scene_node_for_each_buffer(&c->scene_surface->node, scenebuffersetopacity, c);
+            wlr_scene_node_for_each_buffer(&c->scene_surface->node, scene_buffer_set_opacity, c);
         }
     }
     if (wlr_scene_output_commit(m->scene_output, NULL))
-        lockshown(srv, m);
+        lock_shown(srv, m);
 
 skip:
     /* Let clients know a frame has been rendered */
@@ -511,26 +463,20 @@ skip:
     wlr_output_state_finish(&pending);
 }
 
-void
-requestmonstate(struct wl_listener *listener, void *data)
-{
+void request_mon_state( struct wl_listener *listener, void *data ) {
     Monitor *m = wl_container_of(listener, m, request_state);
     struct wlr_output_event_request_state *event = data;
     wlr_output_commit_state(event->output, event->state);
-    outputsupdate(m->srv);
+    outputs_update(m->srv);
 }
 
-void
-updatemons(struct wl_listener *listener, void *data)
-{
+void update_mons( struct wl_listener *listener, void *data ) {
     awl_server_t *srv = wl_container_of(listener, srv, listen.layout_change);
     (void)data;
-    outputsupdate(srv);
+    outputs_update(srv);
 }
 
-static void
-outputsupdate(awl_server_t *srv)
-{
+static void outputs_update( awl_server_t *srv ) {
     /*
      * Called whenever the output layout changes: adding or removing a
      * monitor, changing an output's mode or position, etc. This is where
@@ -544,7 +490,7 @@ outputsupdate(awl_server_t *srv)
     Monitor *m;
 
     /* First remove from the layout the disabled monitors */
-    wl_list_for_each(m, &srv->out.mons, link) {
+    FOR_EACH_MON(m, srv) {
         if (m->wlr_output->enabled || m->asleep)
             continue;
         struct wlr_output_configuration_head_v1 *config_head
@@ -552,30 +498,30 @@ outputsupdate(awl_server_t *srv)
         config_head->state.enabled = 0;
         /* Remove this output from the layout to avoid cursor enter inside it */
         wlr_output_layout_remove(srv->out.layout, m->wlr_output);
-        closemon(srv, m);
+        close_mon(srv, m);
         m->m = m->w = (struct wlr_box){0};
         desktop_update(srv->desktop, m);
         background_update(srv->background, m);
         awl_alert_draw(srv, m);
-        popupsupdate(srv, m);
+        popups_update(srv, m);
     }
     /* Insert outputs that need to */
-    wl_list_for_each(m, &srv->out.mons, link) {
+    FOR_EACH_MON(m, srv) {
         if (m->wlr_output->enabled
                 && !wlr_output_layout_get(srv->out.layout, m->wlr_output))
             wlr_output_layout_add_auto(srv->out.layout, m->wlr_output);
     }
 
     /* Now that we update the output layout we can get its box */
-    wlr_output_layout_get_box(srv->out.layout, NULL, &srv->out.sgeom);
+    wlr_output_layout_get_box(srv->out.layout, NULL, &srv->out.screen_geom);
 
-    wlr_scene_node_set_position(&srv->root_bg->node, srv->out.sgeom.x, srv->out.sgeom.y);
-    wlr_scene_rect_set_size(srv->root_bg, srv->out.sgeom.width, srv->out.sgeom.height);
+    wlr_scene_node_set_position(&srv->root_bg->node, srv->out.screen_geom.x, srv->out.screen_geom.y);
+    wlr_scene_rect_set_size(srv->root_bg, srv->out.screen_geom.width, srv->out.screen_geom.height);
 
     /* Make sure the clients are hidden when awl is locked */
-    lockresize(srv);
+    lock_resize(srv);
 
-    wl_list_for_each(m, &srv->out.mons, link) {
+    FOR_EACH_MON(m, srv) {
         if (!m->wlr_output->enabled)
             continue;
         struct wlr_output_configuration_head_v1 *config_head
@@ -596,11 +542,11 @@ outputsupdate(awl_server_t *srv)
         }
 
         /* Calculate the effective monitor geometry to use for clients */
-        arrangelayers(srv, m);
+        arrange_layers(srv, m);
         /* Don't move clients to the left output when plugging monitors */
         arrange(srv, m);
         /* make sure fullscreen clients have the right size */
-        if ((c = focustop(srv, m)) && c->isfullscreen)
+        if ((c = focus_top(srv, m)) && c->is_fullscreen)
             resize(srv, c, m->m, 0);
 
         /* Try to re-set the gamma LUT when updating monitors,
@@ -610,34 +556,34 @@ outputsupdate(awl_server_t *srv)
         config_head->state.x = m->m.x;
         config_head->state.y = m->m.y;
 
-        if (!srv->out.selmon) {
-            srv->out.selmon = m;
+        if (!srv->out.sel_mon) {
+            srv->out.sel_mon = m;
         }
     }
 
-    if (srv->out.selmon && srv->out.selmon->wlr_output->enabled) {
+    if (srv->out.sel_mon && srv->out.sel_mon->wlr_output->enabled) {
         wl_list_for_each(c, &srv->clients.list, link) {
             if (!c->mon && client_surface(c)->mapped)
-                setmon(srv, c, srv->out.selmon, c->tags);
+                set_mon(srv, c, srv->out.sel_mon, c->tags);
         }
-        focusclient(srv, focustop(srv, srv->out.selmon), 1);
-        if (srv->out.selmon->lock_surface) {
-            client_notify_enter(srv, srv->out.selmon->lock_surface->surface,
+        focus_client(srv, focus_top(srv, srv->out.sel_mon), 1);
+        if (srv->out.sel_mon->lock_surface) {
+            client_notify_enter(srv, srv->out.sel_mon->lock_surface->surface,
                     wlr_seat_get_keyboard(srv->seat));
-            client_activate_surface(srv->out.selmon->lock_surface->surface, 1);
+            client_activate_surface(srv->out.sel_mon->lock_surface->surface, 1);
         }
     }
 
-    wl_list_for_each(m, &srv->out.mons, link) {
+    FOR_EACH_MON(m, srv) {
         if (!m->wlr_output->enabled) continue;
-        if (m->closedbar) {
-            m->showbar = 0;
-            m->closedbar = 0;
-            togglebar_mon(srv, m);
+        if (m->closed_bar) {
+            m->show_bar = 0;
+            m->closed_bar = 0;
+            toggle_bar_mon(srv, m);
         }
-        updatebar(srv, m);
+        update_bar(srv, m);
     }
-    barsdirty(srv);
+    bars_dirty(srv);
 
     /* wlr_cursor keeps the cursor image's position in each output's own
      * coordinates and only recomputes them when the cursor moves (or leaves
@@ -647,12 +593,10 @@ outputsupdate(awl_server_t *srv)
     wlr_cursor_move(srv->cursor.wlr, NULL, 0, 0);
 
     wlr_output_manager_v1_set_configuration(srv->out.mgr, config);
-    updatepluginpause(srv);
+    update_plugin_pause(srv);
 }
 
-Monitor *
-xytomon(awl_server_t *srv, double x, double y)
-{
+Monitor *xy_to_mon( awl_server_t *srv, double x, double y ) {
     struct wlr_output *o = wlr_output_layout_output_at(srv->out.layout, x, y);
     return o ? o->data : NULL;
 }

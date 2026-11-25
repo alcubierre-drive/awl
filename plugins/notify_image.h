@@ -54,8 +54,8 @@ awl_notify_images_t* awl_notify_image_new( const char* icon_theme );
 /** Asks for the first image of the sources (NULL and "" for none) at px
  * pixels, for notification id's serial. Returns 0 if it can't (no thread,
  * no memory, no source): nothing will come of it then. */
-int awl_notify_image_want( awl_notify_images_t* h, uint32_t id, uint64_t serial, int px, const char* image_path, const char* app_icon,
-                           const char* desktop_entry );
+int awl_notify_image_want( awl_notify_images_t* h, uint32_t id, uint64_t serial, int px, const char* image_path,
+                           const char* app_icon, const char* desktop_entry );
 /** what is done since the last call, a list, oldest first; NULL none */
 awl_notify_image_t* awl_notify_image_take( awl_notify_images_t* h );
 /** Asks for the first of names (the config's: icon names or paths, ";"

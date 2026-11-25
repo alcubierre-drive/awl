@@ -27,7 +27,7 @@
 #                           as much as they don't fit; LIVE_SIZE's default
 #                           has room.
 #   live.sh win [CMD]       a command for awl's text popups (AWL_TEST_WINDOWS,
-#                           see testwincmd() in awl_test.c), e.g. win show 0
+#                           see test_win_cmd() in awl_test.c), e.g. win show 0
 #                           HEADLESS-1 640 'a\tb\nc'; then prints their state
 #   live.sh run CMD...      any client, with WAYLAND_DISPLAY etc. set, on
 #                           the test session's bus

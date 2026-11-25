@@ -230,8 +230,7 @@ static const level_t* child_of( awl_tray_menu_window_t* mw, const level_t* L ) {
     return k + 1 < mw->depth ? &mw->lv[k + 1] : NULL;
 }
 
-static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
-                   int hover ) {
+static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     level_t* L = data;
     awl_tray_menu_window_t* mw = L->mw;
     const awl_colors_t* k = &mw->p->config.colors;

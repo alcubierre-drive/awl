@@ -101,7 +101,7 @@ enum SceneLayer {
 
 typedef struct Buffer Buffer;
 
-/** how long ``rendermon()`` (awl_output.c) holds back frames for a window's answer to a
+/** how long ``render_mon()`` (awl_output.c) holds back frames for a window's answer to a
  * resize, in ms; a window that doesn't answer (a hung client) would freeze
  * the output otherwise */
 #define RESIZE_WAIT_MS 100
@@ -116,7 +116,7 @@ struct Client {
     /** for its listeners, which only get the client */
     awl_server_t *srv;
     struct wlr_scene_rect *border[4]; /* top, bottom, left, right */
-    /** the border clock's hour and minute marks (:c:func:`borderclock`),
+    /** the border clock's hour and minute marks (:c:func:`border_clock`),
      * over the border, each in two pieces: before a corner, after it (the
      * second hidden unless the mark goes round one); NULL for unmanaged
      * clients */
@@ -125,7 +125,7 @@ struct Client {
     float one_minus_alpha;
     struct wlr_scene_tree *scene_surface;
     struct wl_list link;
-    struct wl_list flink;
+    struct wl_list focus_link;
     union {
         struct wlr_xdg_surface *xdg;
         struct wlr_xwayland_surface *xwayland;
@@ -151,12 +151,12 @@ struct Client {
 #endif
     unsigned int bw;
     uint32_t tags;
-    bool isfloating:1;
-    bool isurgent:1;
-    bool isfullscreen:1;
-    bool isvisible:1;
-    bool ismaximized:1;
-    bool isontop:1;
+    bool is_floating:1;
+    bool is_urgent:1;
+    bool is_fullscreen:1;
+    bool is_visible:1;
+    bool is_maximized:1;
+    bool is_on_top:1;
     /** a rule's :c:type:`Rule` inhibit_idle */
     bool inhibit_idle:1;
     /** waited for :c:macro:`RESIZE_WAIT_MS` since resize_sent, the output was
@@ -165,42 +165,41 @@ struct Client {
     /** configure serial of a pending resize; 0 for none */
     uint32_t resize;
     /** when the oldest unanswered resize went out, in ms (CLOCK_MONOTONIC):
-     * ``rendermon()`` waits for it only :c:macro:`RESIZE_WAIT_MS` */
+     * ``render_mon()`` waits for it only :c:macro:`RESIZE_WAIT_MS` */
     int64_t resize_sent;
 };
 
-/** a view's layout and its settings, :c:member:`Monitor.ptlt` */
+/** a view's layout and its settings, :c:member:`Monitor.tag_layouts` */
 struct PertagLayout {
-    /** the selected layout lt[sellt] and the previous one (:c:func:`setlayout`) */
+    /** the selected layout lt[sel_layout_index] and the previous one (:c:func:`set_layout`) */
     const Layout *lt[2];
     /** which of :c:member:`~PertagLayout.lt` is selected */
-    unsigned int sellt;
-    /** master area share (:c:func:`setmfact`) */
-    float mfact;
-    /** number of master clients (incnmaster()) */
-    int nmaster;
+    unsigned int sel_layout_index;
+    /** master area share (:c:func:`set_master_factor`) */
+    float master_factor;
+    /** number of master clients (change_master_count()) */
+    int master_count;
 };
 
 /** An output, with its bar. */
 struct Monitor {
-    struct wl_list link;
     /** for its listeners, which only get the monitor */
     awl_server_t *srv;
     struct wlr_output *wlr_output;
     struct wlr_scene_output *scene_output;
     struct wlr_scene_buffer *scene_buffer; /* bar buffer */
     struct wlr_scene_blur *bar_blur; /* behind the bar's window list */
-    Buffer *bar_bufs[2]; /* bar render targets, reused; see barbuffer() */
+    Buffer *bar_bufs[2]; /* bar render targets, reused; see bar_buffer() */
     Buffer *bar_shown; /* the slot scene_buffer shows, NULL if unknown */
-    uint32_t bar_over; /* how far the bar's widgets overflow it, see baroverflow() */
-    struct wlr_scene_rect *fullscreen_bg; /* See createmon() for info */
+    uint32_t bar_over; /* how far the bar's widgets overflow it, see bar_overflow() */
+    struct wlr_scene_rect *fullscreen_bg; /* See create_mon() for info */
     struct wl_listener frame;
     struct wl_listener destroy;
     struct wl_listener request_state;
     /** its lock surface is gone */
     struct wl_listener destroy_lock_surface;
     /** its lock surface has its first buffer: the pointer enters it if it is
-     * over it (:c:func:`maplocksurface`) */
+     * over it (:c:func:`map_lock_surface`) */
     struct wl_listener map_lock_surface;
     struct wlr_session_lock_surface_v1 *lock_surface;
     /** the alert on this output (:c:func:`awl_alert_draw`) */
@@ -213,7 +212,7 @@ struct Monitor {
     /** the window area (w) it was drawn for */
     struct wlr_box alert_area;
     /** the border clock's hour and minute marks in
-     * :c:enumerator:`BorderClockScreen` mode (:c:func:`borderclock`), on
+     * :c:enumerator:`BorderClockScreen` mode (:c:func:`border_clock`), on
      * top of the tiled windows' layer, in two pieces each like
      * :c:member:`Client.clock`; NULL until then */
     struct wlr_scene_buffer *clock[2][2];
@@ -227,33 +226,33 @@ struct Monitor {
     /** its layer surfaces by layer, background to overlay
      * (LayerSurface.link) */
     struct wl_list layers[4];
-    unsigned int seltags;
+    unsigned int sel_tags;
     uint32_t tagset[2];
     bool gamma_lut_changed:1;
-    bool showbar:1;
-    bool closedbar:1;
-    /** whether each view keeps its own layout and its settings in ptlt[]
-     * (:c:member:`MonitorRule.pertag`, togglepertag); if not, all share ptlt[0] */
-    bool pertag:1;
-    /** a frame showing the lock went out since it began (:c:func:`lockcovered`) */
+    bool show_bar:1;
+    bool closed_bar:1;
+    /** whether each view keeps its own layout and its settings in tag_layouts[]
+     * (:c:member:`MonitorRule.per_tag`, toggle_per_tag); if not, all share tag_layouts[0] */
+    bool per_tag:1;
+    /** a frame showing the lock went out since it began (:c:func:`lock_covered`) */
     bool lock_shown:1;
     /** a power management client (wlr-output-power-management) turned it off */
     bool asleep:1;
-    char ltsymbol[16];
-    /** the layouts and their settings, read through :c:func:`monlt`: with pertag,
+    char layout_symbol[16];
+    /** the layouts and their settings, read through :c:func:`mon_tag_layout`: with per_tag,
      * [1+t] for tag t viewed alone and [0] for views of several tags;
      * without, [0] for all views */
-    struct PertagLayout ptlt[32];
+    struct PertagLayout tag_layouts[32];
     /** the bar: its font, its widgets and what they show; bar.m is NULL
-     * before createmon() sets it up and after cleanupmon() */
+     * before create_mon() sets it up and after cleanup_mon() */
     awl_bar_t bar;
     /** the popups' font at this monitor's scale (awl_window.h,
-     * cfg->popup.font and .fontsize), from the font registry; NULL while
+     * cfg->popup.font and .font_size), from the font registry; NULL while
      * it isn't found, then they use the bar's */
-    struct fcft_font *popupfont;
+    struct fcft_font *popup_font;
     /** the desktop file list's (awl_desktop.h, cfg->desktop.font and
-     * .fontsize), the same way */
-    struct fcft_font *desktopfont;
+     * .font_size), the same way */
+    struct fcft_font *desktop_font;
 };
 
 /** A layer-shell surface: panels, notifications, the launcher. */

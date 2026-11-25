@@ -135,12 +135,12 @@ picks up whatever they published.
        direction LR
        loop["Wayland event loop"] --> fire["redraw_fire()"]
        fire --> hook["awl_plugins_redraw():<br/>the library's redraw"]
-       fire --> bars["drawbars()"]
+       fire --> bars["draw_bars()"]
        fire --> panels["desktop_update_all()"]
-       fire --> wp["wallpapertake()"]
-       loop --> lockfire["lockfire()"]
-       lockfire --> lockscreen["lockscreen()"]
-       lockfire --> logindupdate["logindupdate():<br/>the alert"]
+       fire --> wp["wallpaper_take()"]
+       loop --> lock_fire["lock_fire()"]
+       lock_fire --> lock_screen["lock_screen()"]
+       lock_fire --> logind_update["logind_update():<br/>the alert"]
      end
 
      lib -. "awl_host->redraw_request(srv)" .-> redraw
@@ -225,7 +225,7 @@ every output off):
    sequenceDiagram
      participant M as main thread
      participant P as poller thread
-     M->>M: updatepluginpause()
+     M->>M: update_plugin_pause()
      M->>P: awl_plugins_set_paused(1)<br/>poller_set_paused(): paused = 1, wake
      P->>P: wake_callback(): sync_paused()<br/>frees the tick
      Note over P: only battery and IP events<br/>still wake it, without redraws
@@ -264,7 +264,7 @@ the same way, through the backlight-tooler daemon's ``Adjust()`` and its
      M->>M: awl_osd_redraw(): within 1.5 s of the ask,<br/>the state differs from shown
      M->>M: awl_notify_send(): tag "osd-volume",<br/>AWL_NOTIF_OSD, replaces the last one
      M->>M: notifications_changed(): the window
-     M->>M: drawbars(): the widget's new number
+     M->>M: draw_bars(): the widget's new number
      Note over M: no change within 150 ms (at the cap, say):<br/>the quiet timer sends the state as it is
 
 Presses faster than PulseAudio answers add up in ``volume_delta``; each
@@ -294,7 +294,7 @@ all of them end on.
      W->>W: decode() the PNG (Wuffs)
      W->>W: pending = image<br/>(frees one not taken yet)
      W-->>M: awl_host->redraw_request(srv)
-     M->>M: redraw_fire(): wallpapertake()
+     M->>M: redraw_fire(): wallpaper_take()
      M->>M: awl_wallpaper_take(): pending = NULL
      M->>M: background_set(): fade in
      Note over M: settled while done == asked:<br/>then plugins.c tells "x/N"
@@ -309,7 +309,7 @@ The desktop scanner
      participant S as desktop thread
      S->>S: inotify on desktop_dir<br/>(retried every 5 s while missing)
      Note over S: an event: wait 50 ms for more,<br/>500 ms at most
-     S->>S: findfiles(): the list
+     S->>S: find_files(): the list
      S->>S: pending = copy, if it changed
      S-->>M: awl_host->redraw_request(srv)
      M->>M: desktop_update_all()
@@ -323,7 +323,7 @@ The logind thread holds a delay inhibitor whenever the config's
 :c:member:`lock.on_suspend <awl_config_t.lock.on_suspend>` is set, so logind sends ``PrepareForSleep(true)`` and then
 waits, up to its ``InhibitDelayMaxSec`` (5 s by default), for the inhibitor's
 fd to be closed. "Covered" means every enabled output has shown a frame with
-the locker's surface (:c:func:`lockcovered`), or :c:macro:`LOCK_COVER_MS` passed.
+the locker's surface (:c:func:`lock_covered`), or :c:macro:`LOCK_COVER_MS` passed.
 
 .. mermaid::
 
@@ -336,11 +336,11 @@ the locker's surface (:c:func:`lockcovered`), or :c:macro:`LOCK_COVER_MS` passed
      L-->>T: inhibitor fd
      L->>T: PrepareForSleep(true)
      T-->>M: awl_host->lock_request()
-     M->>M: lockfire(): lockscreen()
+     M->>M: lock_fire(): lock_screen()
      M->>K: spawn cfg->lock.locker
      K->>M: ext-session-lock: lock, surfaces
-     M->>M: locksession(), then rendermon():<br/>a frame with its surface on every output
-     M->>T: lockcovered(): session_covered(1), wake
+     M->>M: lock_session(), then render_mon():<br/>a frame with its surface on every output
+     M->>T: lock_covered(): session_covered(1), wake
      T->>L: close(inhibitor fd), SetLockedHint(true)
      Note over L: suspends
      L->>T: PrepareForSleep(false)

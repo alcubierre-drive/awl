@@ -10,7 +10,7 @@ for spawns, a launcher test.
 | kind     | where                                                   | today                     |
 |----------|---------------------------------------------------------|---------------------------|
 | alert    | awl_alert.c `notify()` (core, critical)                 | `AWL_NOTIF_SEND_INIT`     |
-| output   | awl_output.c `profilerefused()` (core)                  | `AWL_NOTIF_SEND_INIT`     |
+| output   | awl_output.c `profile_refused()` (core)                  | `AWL_NOTIF_SEND_INIT`     |
 | info     | plugins.c `awl_notify()`: wallpaper shown/timer, plugins_desktop_panel.c (desktop files, wallpaper info) | `AWL_NOTIF_SEND_INIT` |
 | config   | plugins.c `awl_notify_config()`                         | `max_lines = -1` only     |
 | osd      | plugins/osd.c `send()`                                  | `awl_plugin_config_t.osd` |

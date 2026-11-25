@@ -56,17 +56,17 @@ typedef struct cal_backend cal_backend_t;
 /** A backend that has loaded nothing yet; NULL only without memory. log
  * (may be NULL) gets why queries fail, once per cause, and the calendars
  * that can't be opened. */
-cal_backend_t *cal_backend_open(cal_log_cb log);
+cal_backend_t *cal_backend_open( cal_log_cb log );
 /** Calls cb for every occurrence between start and end in the enabled
  * calendars selected in gnome-calendar/evolution. Blocks for D-Bus; from one
  * thread at a time. Connections stay open for the next query. */
-cal_status_t cal_backend_query(cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data);
+cal_status_t cal_backend_query( cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data );
 /** Cancels the running query and every later one; any thread. */
-void cal_backend_cancel(cal_backend_t *b);
+void cal_backend_cancel( cal_backend_t *b );
 /** Drops the connections and frees b, NULL is fine; not while a query runs.
  * The library stays loaded. */
-void cal_backend_close(cal_backend_t *b);
-const char *cal_status_str(cal_status_t s);
+void cal_backend_close( cal_backend_t *b );
+const char *cal_status_str( cal_status_t s );
 
 #ifdef __cplusplus
 }

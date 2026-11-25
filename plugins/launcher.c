@@ -202,7 +202,7 @@ static void counts_load( const indexer_t* x, const char* name, counts_t* c ) {
 }
 
 /** mkdir -p of path's directory */
-static void mkdirs( char* path ) {
+static void make_dirs( char* path ) {
     for (char* p = path + 1; *p; p++) {
         if (*p != '/') continue;
         *p = '\0';
@@ -217,7 +217,7 @@ static void counts_save( const indexer_t* x, const char* name, const counts_t* c
     if (!x->state_home) return;
     counts_path( x, name, path, sizeof path );
     snprintf( tmp, sizeof tmp, "%s.tmp", path );
-    mkdirs( tmp );
+    make_dirs( tmp );
     FILE* f = fopen( tmp, "we" );
     if (!f) {
         awl_err_printf( "launcher: can't write %s: %s\n", tmp, strerror( errno ) );
@@ -305,12 +305,12 @@ static void scan_dir( scan_t* s, const char* dir, const char* prefix, int depth 
         if (de->d_name[0] == '.') continue;
         if (snprintf( path, sizeof path, "%s/%s", dir, de->d_name ) >= (int)sizeof path) continue;
         const size_t len = strlen( de->d_name );
-        int isdir = de->d_type == DT_DIR;
+        int is_dir = de->d_type == DT_DIR;
         if (de->d_type == DT_UNKNOWN || de->d_type == DT_LNK) {
             struct stat st;
-            isdir = !stat( path, &st ) && S_ISDIR( st.st_mode );
+            is_dir = !stat( path, &st ) && S_ISDIR( st.st_mode );
         }
-        if (isdir) {
+        if (is_dir) {
             if (depth < MAX_DEPTH && snprintf( id, sizeof id, "%s%s-", prefix, de->d_name ) < (int)sizeof id)
                 scan_dir( s, path, id, depth + 1 );
         } else if (len > 8 && !strcmp( de->d_name + len - 8, ".desktop" ) &&
@@ -765,7 +765,8 @@ static int prompt_ready( awl_launcher_t* la, struct fcft_font* font ) {
 /** draws the prompt (into pix; NULL: only measures) at x in a line h high at
  * y, cut at right, its runs on font's baseline in their styles; returns its
  * width */
-static int prompt_draw( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h, uint32_t fg ) {
+static int prompt_draw( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h,
+                        uint32_t fg ) {
     if (!prompt_ready( la, font )) return 0;
     const int x0 = x, base = y + (h - font->height) / 2 + font->ascent;
     for (unsigned i = 0; i < la->pm.m.nruns; i++) {
@@ -1077,7 +1078,8 @@ static int text_marked( pixman_image_t* pix, struct fcft_font* font, const char*
 /** the prompt and the query from x to right in a line h high at y, the
  * query's tail if it is too long, and the cursor after it (in the query's
  * color) */
-static void paint_query( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x, int right, int y, int h ) {
+static void paint_query( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x, int right, int y,
+                         int h ) {
     const uint32_t fg = COLORS->launcher_query.v;
     x += prompt_draw( la, pix, font, x, right, y, h, COLORS->launcher_prompt.v );
     const int cursor_w = px( la, 1.5f ) > 1 ? px( la, 1.5f ) : 1;
@@ -1108,8 +1110,8 @@ static int marks( awl_fuzzy_tables_t* tb, const awl_fuzzy_query_t* fq, const cha
     return fq->n && awl_fuzzy_match( tb, fq, text, NULL, NULL, pos ) ? fq->n : 0;
 }
 
-static void paint_bar( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x0, int y0, uint32_t fg, uint32_t dim,
-                       uint32_t match ) {
+static void paint_bar( awl_launcher_t* la, pixman_image_t* pix, struct fcft_font* font, int x0, int y0, uint32_t fg,
+                       uint32_t dim, uint32_t match ) {
     const awl_popup_config_t* pc = &la->p->config.popup;
     paint_query( la, pix, font, x0 + la->pad, x0 + la->input_w - la->pad, y0, la->h );
     if (!la->nres) {
@@ -1477,15 +1479,11 @@ awl_launcher_t* awl_launcher_start( awl_plugin_data_t* p ) {
         return NULL;
     }
     indexer_t* x = calloc( 1, sizeof(*x) );
-    awl_dict_val_t v;
     if (!x) return la;
     pthread_mutex_init( &x->lock, NULL );
     const char* theme = la->p->config.tray.icon_theme;
     x->icon_theme = theme ? strdup( theme ) : NULL;
-    AWL_HOST_CFG_LOCK( awl_host );
-    if (AWL_HOST_CFG_GET( awl_host, "state_home", &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR)
-        x->state_home = strdup( v.str );
-    AWL_HOST_CFG_UNLOCK( awl_host );
+    x->state_home = AWL_HOST_CFG_STRDUP( awl_host, "state_home" );
     if (awl_thread_start( &x->thread, "launcher", indexer, x )) {
         free( x->icon_theme );
         free( x->state_home );

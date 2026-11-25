@@ -33,7 +33,7 @@ static const struct {
  * reads (NULL if not there) */
 typedef struct {
     int tag;
-    bool close:1, selfclose:1;
+    bool close:1, self_close:1;
     const char *color, *alt;
     size_t colorlen, altlen;
 } tag_t;
@@ -68,7 +68,7 @@ static int space( int c ) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
-static int hexval( int c ) {
+static int hex_value( int c ) {
     return digit( c ) ? c - '0' : lower( c ) >= 'a' && lower( c ) <= 'f' ? lower( c ) - 'a' + 10 : -1;
 }
 
@@ -84,7 +84,7 @@ int awl_markup_color( const char* s, size_t len, uint32_t* color ) {
     uint32_t c = 0;
     if (!s || len < 1 || s[0] != '#' || (len != 4 && len != 7 && len != 9)) return 0;
     for (size_t i = 1; i < len; i++) {
-        int v = hexval( (unsigned char)s[i] );
+        int v = hex_value( (unsigned char)s[i] );
         if (v < 0) return 0;
         c = c << 4 | (uint32_t)v;
     }
@@ -97,7 +97,7 @@ int awl_markup_color( const char* s, size_t len, uint32_t* color ) {
 }
 
 /** cp as UTF-8 into out; its length */
-static int utf8encode( uint32_t cp, char* out ) {
+static int utf8_encode( uint32_t cp, char* out ) {
     if (cp < 0x80) {
         out[0] = (char)cp;
         return 1;
@@ -140,13 +140,13 @@ static size_t entity( const char* s, size_t n, char* out, int* outlen ) {
         size_t i = hex ? 3 : 2;
         if (i >= end) return 0;
         for (; i < end; i++) {
-            int v = hex ? hexval( (unsigned char)s[i] ) : digit( (unsigned char)s[i] ) ? s[i] - '0' : -1;
+            int v = hex ? hex_value( (unsigned char)s[i] ) : digit( (unsigned char)s[i] ) ? s[i] - '0' : -1;
             if (v < 0 || cp > 0x10ffff) return 0;
             cp = cp * (hex ? 16 : 10) + (uint32_t)v;
         }
         /* no NUL, no surrogates, nothing past Unicode */
         if (!cp || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) return 0;
-        *outlen = utf8encode( cp, out );
+        *outlen = utf8_encode( cp, out );
         return end + 1;
     }
     for (size_t k = 0; k < sizeof( named_ents ) / sizeof( named_ents[0] ); k++)
@@ -238,7 +238,7 @@ static size_t tag( const char* s, size_t n, tag_t* t ) {
         if (i >= n) return 0;
         if (s[i] == '>') return i + 1;
         if (s[i] == '/' && i + 1 < n && s[i + 1] == '>' && !t->close) {
-            t->selfclose = 1;
+            t->self_close = 1;
             return i + 2;
         }
         /* attributes only after a space, and not in a close tag */
@@ -306,7 +306,7 @@ static void apply( parser_t* P, const tag_t* t ) {
         if (t->alt) emit_text( P, t->alt, t->altlen, 1, style, color );
         return;
     }
-    if (t->selfclose || P->depth == AWL_MARKUP_DEPTH) return;
+    if (t->self_close || P->depth == AWL_MARKUP_DEPTH) return;
     style |= tags[t->tag].style;
     if (awl_markup_color( t->color, t->colorlen, &color )) style |= AWL_MARKUP_COLOR;
     P->stack[P->depth++] = (frame_t){ .tag = t->tag, .style = style, .color = color };

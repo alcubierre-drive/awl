@@ -148,8 +148,8 @@ static int method_register_host( sd_bus_message* m, void* userdata, sd_bus_error
     return sd_bus_reply_method_return( m, NULL );
 }
 
-static int prop_items( sd_bus* bus, const char* path, const char* iface, const char* prop,
-                       sd_bus_message* reply, void* userdata, sd_bus_error* ret_error ) {
+static int prop_items( sd_bus* bus, const char* path, const char* iface, const char* prop, sd_bus_message* reply,
+                       void* userdata, sd_bus_error* ret_error ) {
     awl_sni_watcher_t* w = userdata;
     (void)bus; (void)path; (void)iface; (void)prop; (void)ret_error;
     int r = sd_bus_message_open_container( reply, 'a', "s" );
@@ -158,14 +158,14 @@ static int prop_items( sd_bus* bus, const char* path, const char* iface, const c
     return r < 0 ? r : sd_bus_message_close_container( reply );
 }
 
-static int prop_true( sd_bus* bus, const char* path, const char* iface, const char* prop,
-                      sd_bus_message* reply, void* userdata, sd_bus_error* ret_error ) {
+static int prop_true( sd_bus* bus, const char* path, const char* iface, const char* prop, sd_bus_message* reply,
+                      void* userdata, sd_bus_error* ret_error ) {
     (void)bus; (void)path; (void)iface; (void)prop; (void)userdata; (void)ret_error;
     return sd_bus_message_append( reply, "b", 1 );
 }
 
-static int prop_version( sd_bus* bus, const char* path, const char* iface, const char* prop,
-                         sd_bus_message* reply, void* userdata, sd_bus_error* ret_error ) {
+static int prop_version( sd_bus* bus, const char* path, const char* iface, const char* prop, sd_bus_message* reply,
+                         void* userdata, sd_bus_error* ret_error ) {
     (void)bus; (void)path; (void)iface; (void)prop; (void)userdata; (void)ret_error;
     return sd_bus_message_append( reply, "i", 0 );
 }

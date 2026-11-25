@@ -76,25 +76,25 @@ static int pick( int cur, int n ) {
     return i >= cur ? i + 1 : i;
 }
 
-static int ispng( const Filename* f ) {
+static int is_png( const Filename* f ) {
     size_t n = strlen( f->name );
-    return !f->isdir && n > 4 && !strcasecmp( f->name + n - 4, ".png" );
+    return !f->is_dir && n > 4 && !strcasecmp( f->name + n - 4, ".png" );
 }
 
-static int readindex( void ) {
+static int read_index( void ) {
     awl_dict_val_t v;
     if (AWL_HOST_CFG_GET( awl_host, index_key, &v ) != AWL_DICT_OK
             || v.kind != AWL_DICT_KIND_NUM) return 0;
     return (int)(v.num % INT_MAX); /* change() wraps it into the list */
 }
 
-static void writeindex( int i ) {
+static void write_index( int i ) {
     AWL_HOST_CFG_SET( awl_host, index_key, AWL_DICT_NUM( i ) );
 }
 
 /** at awl's start, when the dictionary has no index yet: the one the
  * persistent file has */
-static void loadindex( Changer* c ) {
+static void load_index( Changer* c ) {
     awl_dict_val_t v;
     int64_t i;
     if (AWL_HOST_CFG_GET( awl_host, index_key, &v ) == AWL_DICT_OK
@@ -110,7 +110,7 @@ static void loadindex( Changer* c ) {
 
 /** when the thread stops (a reload, or awl quitting): the index into the
  * persistent file, if it changed */
-static void saveindex( Changer* c ) {
+static void save_index( Changer* c ) {
     awl_dict_val_t v;
     if (AWL_HOST_CFG_GET( awl_host, index_key, &v ) != AWL_DICT_OK
             || v.kind != AWL_DICT_KIND_NUM || v.num == c->saved) return;
@@ -119,7 +119,7 @@ static void saveindex( Changer* c ) {
 
 /** lets the decoder see the next part of the file; 0 if there is none or
  * the thread is to quit */
-static int feedmore( Changer* c, wuffs_base__io_buffer* src ) {
+static int feed_more( Changer* c, wuffs_base__io_buffer* src ) {
     if (src->meta.closed || atomic_load( &c->thread.quit )) return 0;
     size_t left = src->data.len - src->meta.wi;
     src->meta.wi += left < feed ? left : feed;
@@ -160,11 +160,11 @@ static awl_image_t* decode( Changer* c, const char* path ) {
     wuffs_png__decoder__set_quirk( dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, 1 );
 
     src.meta.wi = 0;
-    feedmore( c, &src );
+    feed_more( c, &src );
 
     wuffs_base__image_config ic;
     do s = wuffs_png__decoder__decode_image_config( dec, &ic, &src );
-    while (s.repr == wuffs_base__suspension__short_read && feedmore( c, &src ));
+    while (s.repr == wuffs_base__suspension__short_read && feed_more( c, &src ));
     if (!wuffs_base__status__is_ok( &s )) { err = wuffs_base__status__message( &s ); goto out; }
 
     w = wuffs_base__pixel_config__width( &ic.pixcfg );
@@ -190,7 +190,7 @@ static awl_image_t* decode( Changer* c, const char* path ) {
     if (!work) { err = "out of memory"; goto out; }
     do s = wuffs_png__decoder__decode_frame( dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC,
                                              wuffs_base__make_slice_u8( work, wlen ), NULL );
-    while (s.repr == wuffs_base__suspension__short_read && feedmore( c, &src ));
+    while (s.repr == wuffs_base__suspension__short_read && feed_more( c, &src ));
     if (!wuffs_base__status__is_ok( &s )) err = wuffs_base__status__message( &s );
     else awl_vrb_printf( "wallpaper: decoded PNG %s (%lld bytes): %ux%u\n", path, (long long)st.st_size, w, h );
 
@@ -214,15 +214,15 @@ out:
  * order: random or steps, then back. */
 static void change( Changer* c, int steps, int random, int back, unsigned asked ) {
     int png[NFILES], n = 0, i;
-    findfiles( &c->files, c->dir );
+    find_files( &c->files, c->dir );
     for (i = 0; i < c->files.n_files; i++)
-        if (ispng( &c->files.files[i] )) png[n++] = i;
+        if (is_png( &c->files.files[i] )) png[n++] = i;
     if (!n) {
         awl_wrn_printf( "wallpaper: no *.png in %s\n", c->dir );
         return;
     }
 
-    int prev = (readindex() % n + n) % n;
+    int prev = (read_index() % n + n) % n;
     if (!random) {
         i = ((prev + steps) % n + n) % n;
     } else {
@@ -241,7 +241,7 @@ static void change( Changer* c, int steps, int random, int back, unsigned asked 
     /* nothing left to go back to: stay; the list may have shrunk since */
     for (; back > 0 && c->nhistory; back--)
         i = c->history[--c->nhistory] % n;
-    if (i != prev) writeindex( i );
+    if (i != prev) write_index( i );
     atomic_store( &c->where, pack( i, n, pick( i, n ) ) );
     atomic_store( &c->done, asked );
 
@@ -259,7 +259,7 @@ static void* changer( void* data ) {
     struct pollfd fd = { .fd = c->thread.wake_fd, .events = POLLIN };
     int current = 1; /* at first, the one the dictionary names */
 
-    loadindex( c );
+    load_index( c );
     awl_persistent_load_str( mode_key );
     while (1) {
         /* before the requests themselves: it may include fewer, never more */
@@ -276,7 +276,7 @@ static void* changer( void* data ) {
         }
         if (awl_thread_woken( &c->thread )) break;
     }
-    saveindex( c );
+    save_index( c );
     awl_persistent_save_str( mode_key );
     return NULL;
 }
@@ -284,13 +284,7 @@ static void* changer( void* data ) {
 awl_wallpaper_thread_t* awl_wallpaper_start( void ) {
     Changer* n = calloc( 1, sizeof(*n) );
     if (!n) return NULL;
-    /* the string is the dictionary's until it's unlocked */
-    awl_dict_val_t dir;
-    AWL_HOST_CFG_LOCK( awl_host );
-    if (AWL_HOST_CFG_GET( awl_host, dir_key, &dir ) == AWL_DICT_OK
-            && dir.kind == AWL_DICT_KIND_STR)
-        snprintf( n->dir, sizeof(n->dir), "%s", dir.str );
-    AWL_HOST_CFG_UNLOCK( awl_host );
+    AWL_HOST_CFG_STRNCPY( awl_host, dir_key, n->dir, sizeof(n->dir) );
     if (!n->dir[0]) { /* the config's dir is NULL: no wallpaper */
         free( n );
         return NULL;

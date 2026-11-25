@@ -46,8 +46,8 @@ static void awl_plugin_start( awl_plugin_data_t* p ) {
     // the EC and costs ~2ms per read, so it is only the fallback
     if (temp_find_hwmon( "coretemp", "Package id", p->temp->f_files[p->temp->f_ntemps],
                          sizeof(p->temp->f_files[0]) )) {
-        p->temp->f_t_max[p->temp->f_ntemps] = pc->temperature.coretemp.max;
-        p->temp->f_t_min[p->temp->f_ntemps] = pc->temperature.coretemp.min;
+        p->temp->f_t_max[p->temp->f_ntemps] = pc->temperature.core_temp.max;
+        p->temp->f_t_min[p->temp->f_ntemps] = pc->temperature.core_temp.min;
     } else {
         strcpy( p->temp->f_files[p->temp->f_ntemps], "/sys/class/thermal/thermal_zone0/temp" );
         p->temp->f_t_max[p->temp->f_ntemps] = pc->temperature.thermal_zone.max;
@@ -100,7 +100,7 @@ static int awl_tray_stop( awl_plugin_data_t* p ) {
     /* the tray's popups and timers, main thread's; they only queue to sni
      * under its lock, so they go even if it is stuck. A menu open queues
      * its "closed", which sni_free() still sends. sni's poll timer goes
-     * with pluginsreap() if sni stays. */
+     * with plugins_reap() if sni stays. */
     awl_tray_menu_window_fini( p->tray_menu );
     awl_tray_tooltip_fini( p->tray_tip );
     if (stuck)
@@ -232,13 +232,8 @@ void awl_notify( const char* title, const char* body ) {
 }
 
 char* awl_cfg_strdup( const char* key ) {
-    awl_dict_val_t v;
-    char* s = NULL;
-    /* the string is the dictionary's until it's unlocked */
-    AWL_HOST_CFG_LOCK( awl_host );
-    if (AWL_HOST_CFG_GET( awl_host, key, &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR && v.str && *v.str)
-        s = strdup( v.str );
-    AWL_HOST_CFG_UNLOCK( awl_host );
+    char* s = AWL_HOST_CFG_STRDUP( awl_host, key );
+    if (s && !*s) { free( s ); s = NULL; }
     return s;
 }
 
@@ -269,7 +264,7 @@ static void escape( FILE* f, const char* s ) {
 
 /** one entry's line; under the dictionary's lock (:c:func:`awl_dict_iter`), so its
  * strings stay valid */
-static int32_t configline( const char* key, const awl_dict_val_t* v, void* ctx ) {
+static int32_t config_line( const char* key, const awl_dict_val_t* v, void* ctx ) {
     ConfigLines* cl = ctx;
     if (cl->n == cl->cap) {
         size_t cap = cl->cap ? 2 * cl->cap : 16;
@@ -306,7 +301,7 @@ static int32_t configline( const char* key, const awl_dict_val_t* v, void* ctx )
     return AWL_DICT_OK;
 }
 
-static int cmpline( const void* a, const void* b ) {
+static int compare_lines( const void* a, const void* b ) {
     return strcmp( *(char* const*)a, *(char* const*)b );
 }
 
@@ -339,15 +334,15 @@ void awl_brightness_adjust( awl_plugin_data_t* p, float delta ) {
 }
 
 void awl_idle_inhibit_toggle( awl_plugin_data_t* p ) {
-    awl_host->actions->toggleidleinhibit( awl_host->srv, &(Arg){ 0 } );
+    awl_host->actions->toggle_idle_inhibit( awl_host->srv, &(Arg){ 0 } );
     if (p) awl_osd_idle_inhibit( p->osd, !awl_host->idle_inhibit_ignored( awl_host->srv ) );
 }
 
 void awl_notify_config( void ) {
     ConfigLines cl = { 0 };
     /* holds the lock throughout; nothing waits under it but malloc() */
-    int32_t r = awl_host->cfg.s_iter( awl_host->cfg.s, configline, &cl );
-    qsort( cl.lines, cl.n, sizeof(*cl.lines), cmpline );
+    int32_t r = awl_host->cfg.s_iter( awl_host->cfg.s, config_line, &cl );
+    qsort( cl.lines, cl.n, sizeof(*cl.lines), compare_lines );
 
     char* body = NULL;
     size_t len;
@@ -382,7 +377,7 @@ static awl_image_t* api_wallpaper_take( void ) {
     return img;
 }
 
-/** the wallpaper timer's mode changed (wallpapermode); awl set the config
+/** the wallpaper timer's mode changed (wallpaper_mode); awl set the config
  * dictionary's "wallpaper_mode" before, which the OSD reads */
 static void api_wallpaper_mode( WallpaperMode mode ) {
     (void)mode;
@@ -402,15 +397,15 @@ static uint64_t api_desktop_version( void ) {
     return plugin_data ? awl_desktop_version( plugin_data->desktop ) : 0;
 }
 
-static void api_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int r, float scale,
-                                 int* x, int* y, int* w, int* h ) {
+static void api_desktop_measure( struct fcft_font* font, int avail_w, int avail_h, int r, float scale, int* x, int* y,
+                                 int* w, int* h ) {
     *x = *y = *w = *h = 0;
     if (plugin_data && plugin_data->desktop)
         awl_desktop_measure( plugin_data->desktop, font, avail_w, avail_h, r, scale, x, y, w, h );
 }
 
-static void api_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride,
-                              int w, int h, int r, float scale ) {
+static void api_desktop_draw( pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride, int w, int h,
+                              int r, float scale ) {
     if (plugin_data && plugin_data->desktop)
         awl_desktop_draw( plugin_data->desktop, pix, font, data, stride, w, h, r, scale );
 }
@@ -455,8 +450,7 @@ static const awl_plugin_api_t api = {
 /** what awl looks up (:c:macro:`AWL_PLUGIN_ENTRY`): keeps host as
  * :c:var:`awl_host` and returns the library's table; NULL if awl was built
  * from other headers (the ABI or a shared struct's size differs) */
-__attribute__((visibility("default")))
-const awl_plugin_api_t* awl_plugin_entry( const awl_host_t* host ) {
+__attribute__((visibility("default"))) const awl_plugin_api_t* awl_plugin_entry( const awl_host_t* host ) {
     if (!host || host->abi != AWL_PLUGIN_ABI ||
         host->sizeof_host != sizeof(awl_host_t) ||
         host->sizeof_draw != sizeof(awl_bar_t) ||

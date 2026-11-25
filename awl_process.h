@@ -80,10 +80,10 @@ typedef struct awl_process_t {
     struct {
         /** the startup command (``-s``), -1: none */
         pid_t startup;
-        /** :c:member:`cfg->autostart <awl_config_t.autostart>`'s, the first :c:member:`~awl_process_t.spawn.nautostarted` */
+        /** :c:member:`cfg->autostart <awl_config_t.autostart>`'s, the first :c:member:`~awl_process_t.spawn.n_autostarted` */
         pid_t autostarted[256];
         /** how many autostarted are set */
-        int nautostarted;
+        int n_autostarted;
     } spawn;
 
     /** awl_lockhelper.c's helper, awlock's parent; main thread (fork()ed
@@ -101,7 +101,7 @@ typedef struct awl_process_t {
 
     /** awl_lockscreen.c's lock requests and the logind thread's state: the
      * eventfd that wakes the main loop, and what it finds when it does
-     * (:c:func:`lockfire`); requests before then coalesce into one. Any thread */
+     * (:c:func:`lock_fire`); requests before then coalesce into one. Any thread */
     struct {
         _Atomic int fd;
         atomic_int requested;
@@ -126,7 +126,7 @@ typedef struct awl_process_t {
         awl_host_t host;
         /** dlopen()'s, NULL: none loaded */
         void *handle;
-        /** the memfd it was loaded from, see :c:func:`libopen` */
+        /** the memfd it was loaded from, see :c:func:`lib_open` */
         int handle_fd;
         const awl_plugin_api_t *api;
         bool paused:1, covered:1;
@@ -141,19 +141,19 @@ typedef struct awl_process_t {
         /** each variable the config's environment changed, with its value
          * from before (NULL: unset), to go back to once the config drops
          * it; kept for awl's life */
-        struct { char *name, *orig; } *envsaved;
-        size_t nenvsaved;
-        /** :c:func:`environmentimport` ran: from then on changes to its variables
+        struct { char *name, *orig; } *env_saved;
+        size_t n_env_saved;
+        /** :c:func:`environment_import` ran: from then on changes to its variables
          * go to systemd's and the bus' environment too */
-        bool envimportstarted:1;
+        bool env_import_started:1;
         /** one of them changed since */
-        bool envimportdirty:1;
-        /** :c:func:`sessionstart` started the session's unit, for
-         * :c:func:`sessionstop` */
-        bool sessionstarted:1;
+        bool env_import_dirty:1;
+        /** :c:func:`session_start` started the session's unit, for
+         * :c:func:`session_stop` */
+        bool session_started:1;
         /** builtin is filled */
         bool builtin_filled:1;
-        /** :c:func:`builtinconfig`'s, filled on its first call */
+        /** :c:func:`builtin_config`'s, filled on its first call */
         awl_config_t builtin;
     } config;
 
@@ -176,4 +176,4 @@ typedef struct awl_process_t {
 
 /** proc as a process starts: nothing open, nothing made (awl_process.c);
  * once, before anything uses it */
-void awl_process_init(awl_process_t *proc);
+void awl_process_init( awl_process_t *proc );

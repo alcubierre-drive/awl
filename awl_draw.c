@@ -19,7 +19,7 @@
 /** proc's i-th oldest entry */
 #define SLOT(proc, i) (&(proc)->fonts.ring[((proc)->fonts.head + (i)) % AWL_FONT_SLOTS])
 
-int awl_draw_init(awl_process_t *proc) {
+int awl_draw_init( awl_process_t *proc ) {
     if (!proc->fonts.fcft_ready)
         proc->fonts.fcft_ready = fcft_init(FCFT_LOG_COLORIZE_AUTO, 0, FCFT_LOG_CLASS_ERROR);
     return proc->fonts.fcft_ready;
@@ -27,14 +27,14 @@ int awl_draw_init(awl_process_t *proc) {
 
 /** name with size appended (after its "...size=", else as ":size=") into
  * spec; 0 if it doesn't fit */
-static int font_spec(char spec[static AWL_FONT_SPEC_MAX], const char *name, float size) {
+static int font_spec( char spec[static AWL_FONT_SPEC_MAX], const char *name, float size ) {
     size_t n = strlen(name);
     const char *sep = n && name[n - 1] == '=' ? "" : ":size=";
     int len = snprintf(spec, AWL_FONT_SPEC_MAX, "%s%s%.0f", name, sep, size);
     return len > 0 && len < AWL_FONT_SPEC_MAX;
 }
 
-static void entry_clear(awl_font_slot_t *e) {
+static void entry_clear( awl_font_slot_t *e ) {
     if (e->font)
         fcft_destroy(e->font);
     *e = (awl_font_slot_t){0};
@@ -42,7 +42,7 @@ static void entry_clear(awl_font_slot_t *e) {
 
 /** a slot for a new entry, cleared: a free one, else the oldest one not in
  * use (those in use before it move to the end); NULL if all are in use */
-static awl_font_slot_t *slot_take(awl_process_t *proc) {
+static awl_font_slot_t *slot_take( awl_process_t *proc ) {
     if (proc->fonts.count < AWL_FONT_SLOTS)
         return SLOT(proc, proc->fonts.count++);
     for (unsigned i = 0; i < AWL_FONT_SLOTS; i++) {
@@ -62,7 +62,7 @@ static awl_font_slot_t *slot_take(awl_process_t *proc) {
 /** spec with dpi (attrs' "dpi=..." up to its first ':') in style from the
  * registry, loading it if new or to be retried; NULL if it doesn't load (now
  * or before). emoji: in emoji presentation. Takes a reference on success. */
-static struct fcft_font *entry_lookup(awl_process_t *proc, const char *spec, const char *dpi, int emoji, int style) {
+static struct fcft_font *entry_lookup( awl_process_t *proc, const char *spec, const char *dpi, int emoji, int style ) {
     char attrs[sizeof(((awl_font_slot_t *)0)->attrs)];
     awl_font_slot_t *e = NULL;
     const char *names[1];
@@ -104,7 +104,7 @@ static struct fcft_font *entry_lookup(awl_process_t *proc, const char *spec, con
 }
 
 /** name at size and scale from the registry, as entry_lookup() */
-static struct fcft_font *font_lookup(awl_process_t *proc, const char *name, float size, float scale, int emoji) {
+static struct fcft_font *font_lookup( awl_process_t *proc, const char *name, float size, float scale, int emoji ) {
     char spec[AWL_FONT_SPEC_MAX], dpi[16];
 
     if (!name || !*name)
@@ -118,7 +118,7 @@ static struct fcft_font *font_lookup(awl_process_t *proc, const char *name, floa
 }
 
 /** font's entry in the registry, NULL if it isn't the registry's */
-static awl_font_slot_t *font_entry(awl_process_t *proc, const struct fcft_font *font) {
+static awl_font_slot_t *font_entry( awl_process_t *proc, const struct fcft_font *font ) {
     for (unsigned i = 0; font && i < proc->fonts.count; i++)
         if (SLOT(proc, i)->font == font)
             return SLOT(proc, i);
@@ -126,16 +126,16 @@ static awl_font_slot_t *font_entry(awl_process_t *proc, const struct fcft_font *
 }
 
 /** a size or scale fcft can take: finite, positive, not absurd */
-static float font_sane(float v, float dflt, float max) {
+static float font_sane( float v, float dflt, float max ) {
     return isfinite(v) && v > 0 ? (v > max ? max : v) : dflt;
 }
 
-struct fcft_font *awl_font_get_exact(awl_process_t *proc, const char *name, float size, float scale) {
+struct fcft_font *awl_font_get_exact( awl_process_t *proc, const char *name, float size, float scale ) {
     return font_lookup(proc, name, font_sane(size, AWL_FONT_FALLBACK_SIZE, 200),
             font_sane(scale, 1, 16), 0);
 }
 
-struct fcft_font *awl_font_get_emoji(awl_process_t *proc, const char *name, float size, float scale) {
+struct fcft_font *awl_font_get_emoji( awl_process_t *proc, const char *name, float size, float scale ) {
     /* emoji presentation: text-default emoji like U+1F5A5 🖥 are drawn per
      * code point, without their U+FE0F, so by default fcft would go for a
      * monochrome fallback font that has them */
@@ -150,7 +150,7 @@ struct fcft_font *awl_font_get_emoji(awl_process_t *proc, const char *name, floa
     return NULL;
 }
 
-struct fcft_font *awl_font_get(awl_process_t *proc, const char *name, float size, float scale) {
+struct fcft_font *awl_font_get( awl_process_t *proc, const char *name, float size, float scale ) {
     struct fcft_font *font;
 
     size = font_sane(size, AWL_FONT_FALLBACK_SIZE, 200);
@@ -169,7 +169,7 @@ struct fcft_font *awl_font_get(awl_process_t *proc, const char *name, float size
     return NULL;
 }
 
-struct fcft_font *awl_font_style(awl_process_t *proc, struct fcft_font *font, int style) {
+struct fcft_font *awl_font_style( awl_process_t *proc, struct fcft_font *font, int style ) {
     awl_font_slot_t *e = font_entry(proc, font);
     struct fcft_font *styled;
     char spec[AWL_FONT_SPEC_MAX], dpi[sizeof(e->attrs)];
@@ -194,7 +194,7 @@ struct fcft_font *awl_font_style(awl_process_t *proc, struct fcft_font *font, in
     return font;
 }
 
-void awl_font_release(awl_process_t *proc, struct fcft_font *font) {
+void awl_font_release( awl_process_t *proc, struct fcft_font *font ) {
     awl_font_slot_t *e = font_entry(proc, font);
 
     if (!font)
@@ -207,12 +207,12 @@ void awl_font_release(awl_process_t *proc, struct fcft_font *font) {
         awl_wrn_printf("font %s released once too often\n", e->spec);
 }
 
-void awl_font_retry(awl_process_t *proc) {
+void awl_font_retry( awl_process_t *proc ) {
     for (unsigned i = 0; i < proc->fonts.count; i++)
         SLOT(proc, i)->failed = 0;
 }
 
-pixman_image_t *awl_draw_image(unsigned int w, unsigned int h, uint32_t *bits, int stride) {
+pixman_image_t *awl_draw_image( unsigned int w, unsigned int h, uint32_t *bits, int stride ) {
     pixman_region32_t clip;
     pixman_image_t *pix = pixman_image_create_bits_no_clear(PIXMAN_a8r8g8b8, w, h, bits, stride);
 
@@ -224,7 +224,7 @@ pixman_image_t *awl_draw_image(unsigned int w, unsigned int h, uint32_t *bits, i
     return pix;
 }
 
-static void rect_color(pixman_image_t *pix, int x, int y, unsigned int w, unsigned int h, uint32_t color) {
+static void rect_color( pixman_image_t *pix, int x, int y, unsigned int w, unsigned int h, uint32_t color ) {
     /* the image is premultiplied ARGB, color is not */
     pixman_color_t clr = color_8bit_to_16bit(color);
     clr.red = (uint32_t)clr.red * clr.alpha / 0xffff;
@@ -235,12 +235,12 @@ static void rect_color(pixman_image_t *pix, int x, int y, unsigned int w, unsign
 }
 
 /* width of `text` in pixels, kerning included */
-static unsigned int text_width(struct fcft_font *font, const char *text) {
+static unsigned int text_width( struct fcft_font *font, const char *text ) {
     uint32_t cp = 0, last_cp = 0;
     long x = 0;
 
     while (*text) {
-        text += utf8decode(text, &cp);
+        text += utf8_decode(text, &cp);
         const struct fcft_glyph *glyph = fcft_rasterize_char_utf32(font, cp, FCFT_SUBPIXEL_DEFAULT);
         if (!glyph)
             continue;
@@ -254,11 +254,10 @@ static unsigned int text_width(struct fcft_font *font, const char *text) {
 }
 
 /* fill: the box gets bg first, else the text goes over what is there */
-static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
-        unsigned int w, unsigned int h, unsigned int lpad, const char *text,
-        uint32_t fg, uint32_t bg, int fill) {
+static int text_color( pixman_image_t *pix, struct fcft_font *font, int x, int y, unsigned int w, unsigned int h,
+                       unsigned int lpad, const char *text, uint32_t fg, uint32_t bg, int fill ) {
     uint32_t cp = 0, last_cp = 0;
-    int noellipsis = 0;
+    int no_ellipsis = 0;
     int fcft_subpixel_mode = FCFT_SUBPIXEL_DEFAULT;
 
     if (!pix || !w || !text || !font)
@@ -286,11 +285,11 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
     int ty = y + (h - font->height) / 2 + font->ascent;
 
     while (*text) {
-        int utf8charlen = utf8decode(text, &cp);
+        int utf8_char_len = utf8_decode(text, &cp);
 
         const struct fcft_glyph *glyph = fcft_rasterize_char_utf32(font, cp, fcft_subpixel_mode);
         if (!glyph) {
-            text += utf8charlen;
+            text += utf8_char_len;
             continue;
         }
 
@@ -300,10 +299,10 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
         last_cp = cp;
 
         /* draw ellipsis if remaining text doesn't fit */
-        if (!noellipsis && x_kern + glyph->advance.x + eg->advance.x > w && text[utf8charlen] != '\0') {
+        if (!no_ellipsis && x_kern + glyph->advance.x + eg->advance.x > w && text[utf8_char_len] != '\0') {
             /* none if the rest fits whole, not merely narrower than "…" */
             if ((long)text_width(font, text) + x_kern <= (long)w) {
-                noellipsis = 1;
+                no_ellipsis = 1;
             } else {
                 w -= eg->advance.x;
                 pixman_image_composite32(
@@ -327,7 +326,7 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
                 PIXMAN_OP_OVER, fg_pix, glyph->pix, pix, 0, 0, 0, 0,
                 x + glyph->x, ty - glyph->y, glyph->width, glyph->height);
 
-        text += utf8charlen;
+        text += utf8_char_len;
         x += glyph->advance.x;
         /* the kerning too, as text_width() counts it: else a negative one
          * (e.g. "PA") leaves too little for the last glyph */
@@ -339,25 +338,24 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
     return x + w;
 }
 
-int awl_draw_text(pixman_image_t *pix, struct fcft_font *font, int x, int y,
-        unsigned int w, unsigned int h, unsigned int lpad, const char *text,
-        pixman_color_t fg, pixman_color_t bg) {
+int awl_draw_text( pixman_image_t *pix, struct fcft_font *font, int x, int y, unsigned int w, unsigned int h,
+                   unsigned int lpad, const char *text, pixman_color_t fg, pixman_color_t bg ) {
     return text_color(pix, font, x, y, w, h, lpad, text,
             color_16bit_to_8bit(fg), color_16bit_to_8bit(bg), 1);
 }
 
-int awl_draw_text_over(pixman_image_t *pix, struct fcft_font *font, int x, int y,
-        unsigned int w, unsigned int h, const char *text, uint32_t fg) {
+int awl_draw_text_over( pixman_image_t *pix, struct fcft_font *font, int x, int y, unsigned int w, unsigned int h,
+                        const char *text, uint32_t fg ) {
     return text_color(pix, font, x, y, w, h, 0, text, fg, 0, 0);
 }
 
-unsigned int awl_draw_text_width(struct fcft_font *font, const char *text) {
+unsigned int awl_draw_text_width( struct fcft_font *font, const char *text ) {
     if (!font || !text)
         return 0;
     return text_width(font, text);
 }
 
-void awl_draw_fini(awl_process_t *proc) {
+void awl_draw_fini( awl_process_t *proc ) {
     int left = 0;
 
     for (unsigned i = 0; i < proc->fonts.count; i++) {

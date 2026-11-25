@@ -20,7 +20,7 @@
 #define MAX_STRLEN_ZONES 32
 
 /* on id == NULL return local time */
-static int gettime_tz(const char* id, const char* format, char out[], size_t nout);
+static int get_time_tz( const char* id, const char* format, char out[], size_t nout );
 
 /* the parts: the buttons, the event list (only scrolls) and the 6 x 7 days */
 enum {
@@ -120,7 +120,7 @@ static int touches( const awl_cal_event_t* e, time_t d0, time_t d1 ) {
 
 /* ---- drawing ---- */
 
-static void strtime( awl_calpopup_t* cp, char* buf, size_t n, const char* fmt, time_t t ) {
+static void str_time( awl_calpopup_t* cp, char* buf, size_t n, const char* fmt, time_t t ) {
     struct tm tm;
     localtime_r( &t, &tm );
     size_t len = cp->loc ? strftime_l( buf, n, fmt, &tm, cp->loc ) : strftime( buf, n, fmt, &tm );
@@ -133,17 +133,17 @@ static void fit_font( awl_calpopup_t* cp, struct fcft_font* font ) {
     char buf[64];
     cp->widest_day = cp->widest_month = cp->widest_wday = 0;
     for (int d = 1; d <= 366; d++) { /* 2024 is a leap year */
-        strtime( cp, buf, sizeof buf, "%A, %e %B", awl_calendar_day_start( 2024, 0, d ) );
+        str_time( cp, buf, sizeof buf, "%A, %e %B", awl_calendar_day_start( 2024, 0, d ) );
         int w = (int)awl_host->text_width( font, buf );
         if (w > cp->widest_day) cp->widest_day = w;
     }
     for (int m = 0; m < 12; m++) {
-        strtime( cp, buf, sizeof buf, "%B", awl_calendar_day_start( 2024, m, 1 ) );
+        str_time( cp, buf, sizeof buf, "%B", awl_calendar_day_start( 2024, m, 1 ) );
         int w = (int)awl_host->text_width( font, buf );
         if (w > cp->widest_month) cp->widest_month = w;
     }
     for (int d = 0; d < 7; d++) { /* 2024-01-07 is a Sunday */
-        strtime( cp, buf, sizeof buf, "%a", awl_calendar_day_start( 2024, 0, 7 + d ) );
+        str_time( cp, buf, sizeof buf, "%a", awl_calendar_day_start( 2024, 0, 7 + d ) );
         int w = (int)awl_host->text_width( font, buf );
         if (w > cp->widest_wday) cp->widest_wday = w;
     }
@@ -201,9 +201,9 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     /* as wide as the widest of the rows */
     int W = 8 * cell_w;
     int head = 4 * arrow_w + month_w + year_w + gap;
-    int dayrow = 2 * arrow_w + day_w + gap + today_w + (app ? gap + evo_w : 0);
+    int day_row = 2 * arrow_w + day_w + gap + today_w + (app ? gap + evo_w : 0);
     if (head > W) W = head;
-    if (dayrow > W) W = dayrow;
+    if (day_row > W) W = day_row;
     int n = 0;
     const awl_cal_event_t** ev = cp->plain ? NULL : day_events( cp, &n );
     cp->dot_w = fh / 2;
@@ -230,17 +230,17 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
 
     /* the TZs */
     const char* zfmt = pc->calendar.zone_format;
-    char tLoc[MAX_STRLEN_ZONES] = {0}; gettime_tz(NULL, zfmt, tLoc, sizeof tLoc);
+    char tLoc[MAX_STRLEN_ZONES] = {0}; get_time_tz(NULL, zfmt, tLoc, sizeof tLoc);
     cp->n_zones = 0;
     for (int z=0; z<MIN(pc->calendar.n_zones, AWL_PLUGINS_MAX_N_ZONES); ++z) {
         char tId[MAX_STRLEN_ZONES] = {0};
-        int err = gettime_tz(pc->calendar.zones[z].zone, zfmt, tId, sizeof tId);
+        int err = get_time_tz(pc->calendar.zones[z].zone, zfmt, tId, sizeof tId);
         if (err) continue;
         if (strcmp(tLoc, tId)) {
             const char* id = pc->calendar.zones[z].id ? pc->calendar.zones[z].id : "";
             strncpy(cp->zones[cp->n_zones][0], id, MAX_STRLEN_ZONES - 1);
             cp->zones[cp->n_zones][0][MAX_STRLEN_ZONES - 1] = '\0';
-            strcpy(cp->zones[cp->n_zones][1], tId); /* gettime_tz() terminated it */
+            strcpy(cp->zones[cp->n_zones][1], tId); /* get_time_tz() terminated it */
             cp->zone_row[cp->n_zones] = (awl_box_t){ 0, y, W, bh };
             y += bh + px( cp, 2 );
             cp->n_zones++;
@@ -305,8 +305,7 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
     return 1;
 }
 
-static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
-                   int hover ) {
+static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     awl_calpopup_t* cp = data;
     const awl_colors_t* c = &cp->p->config.colors;
     const awl_plugin_colors_t* pc = &cp->p->plugin_config.colors;
@@ -332,7 +331,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     /* the heading */
     time_t first = awl_calendar_day_start( cp->year, cp->month, 1 );
     text_in( pix, font, x0, y0, cp->part[P_MPREV], "‹", c->popup_fg, 1 );
-    strtime( cp, buf, sizeof buf, "%B", first );
+    str_time( cp, buf, sizeof buf, "%B", first );
     text_in( pix, font, x0, y0, cp->month_label, buf, c->popup_fg, 1 );
     text_in( pix, font, x0, y0, cp->part[P_MNEXT], "›", c->popup_fg, 1 );
     text_in( pix, font, x0, y0, cp->part[P_YPREV], "‹", c->popup_fg, 1 );
@@ -346,7 +345,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     localtime_r( &first, &t );
     const int offset = (t.tm_wday - ws + 7) % 7;
     for (int col = 0; col < 7; col++) {
-        strtime( cp, buf, sizeof buf, "%a", awl_calendar_day_start( 2024, 0, 7 + (ws + col) % 7 ) );
+        str_time( cp, buf, sizeof buf, "%a", awl_calendar_day_start( 2024, 0, 7 + (ws + col) % 7 ) );
         awl_box_t b = { cp->part[P_DAY0 + col].x, cp->names_y, cw, cp->cell_h };
         text_in( pix, font, x0, y0, b, buf, c->popup_dim, 1 );
     }
@@ -359,7 +358,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         localtime_r( &d0, &t );
         if (i % 7 == 0) {
             /* ISO week number, of the week's Thursday */
-            strtime( cp, buf, sizeof buf, "%V", awl_calendar_day_start( cp->year, cp->month, i - offset + 1 + thursday ) );
+            str_time( cp, buf, sizeof buf, "%V", awl_calendar_day_start( cp->year, cp->month, i - offset + 1 + thursday ) );
             awl_box_t wb = { b.x - cw, b.y, cw, b.h };
             text_in( pix, font, x0, y0, wb, buf[0] == '0' ? buf + 1 : buf, c->popup_dim, 1 );
         }
@@ -382,7 +381,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
 
     /* the day */
     text_in( pix, font, x0, y0, cp->part[P_DPREV], "‹", c->popup_fg, 1 );
-    strtime( cp, buf, sizeof buf, "%A, %e %B", awl_calendar_day_start( cp->year, cp->month, cp->day ) );
+    str_time( cp, buf, sizeof buf, "%A, %e %B", awl_calendar_day_start( cp->year, cp->month, cp->day ) );
     text_in( pix, font, x0, y0, cp->day_label, buf, c->popup_fg, 1 );
     text_in( pix, font, x0, y0, cp->part[P_DNEXT], "›", c->popup_fg, 1 );
     text_in( pix, font, x0, y0, cp->part[P_TODAY], "Today", c->popup_fg, 1 );
@@ -408,8 +407,8 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         if (e->all_day) snprintf( buf, sizeof buf, "all day" );
         else {
             char a[16], b[16];
-            strtime( cp, a, sizeof a, "%H:%M", e->start );
-            strtime( cp, b, sizeof b, "%H:%M", e->end );
+            str_time( cp, a, sizeof a, "%H:%M", e->start );
+            str_time( cp, b, sizeof b, "%H:%M", e->end );
             snprintf( buf, sizeof buf, "%s–%s", a, b );
         }
         awl_host->text_over( pix, font, x, y, (unsigned)cp->time_w + 1, (unsigned)cp->row_h, buf, c->popup_fg );
@@ -503,8 +502,8 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
 }
 
 /** over a list longer than shown, rows, else months */
-static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta,
-                    int32_t value120, void* data ) {
+static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta, int32_t value120,
+                    void* data ) {
     awl_calpopup_t* cp = data;
     (void)win; (void)col;
     if (orientation != 0) return;
@@ -609,7 +608,7 @@ void awl_calpopup_poll( awl_calpopup_t* cp ) {
     if (changed && cp->win && awl_host->window_monitor( cp->win )) redraw( cp );
 }
 
-static int gettime_tz(const char* id, const char* format, char out[], size_t nout) {
+static int get_time_tz( const char* id, const char* format, char out[], size_t nout ) {
     if (!format || !*format || !nout) return 1;
     GTimeZone *tz = id ? g_time_zone_new_identifier(id) : g_time_zone_new_local();
     if (!tz) return 1;

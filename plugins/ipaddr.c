@@ -293,8 +293,8 @@ int ip_update( awl_ipaddr_t* ip ) {
     return changed;
 }
 
-int ip_snapshot( awl_ipaddr_t* ip, awl_ipaddr_entry_t entry[AWL_IP_MAX], int* best, int* routed,
-                 int* by_nm, int* connectivity ) {
+int ip_snapshot( awl_ipaddr_t* ip, awl_ipaddr_entry_t entry[AWL_IP_MAX], int* best, int* routed, int* by_nm,
+                 int* connectivity ) {
     pthread_mutex_lock( &ip->lock );
     int n = ip->n_addr;
     memcpy( entry, ip->entry, sizeof ip->entry );

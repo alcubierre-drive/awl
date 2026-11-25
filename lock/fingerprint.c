@@ -39,12 +39,12 @@ struct fingerprint {
     struct loop_timer *retry;
 };
 
-static void verify_start(struct fingerprint *fp);
-static void find_reader(void *data);
+static void verify_start( struct fingerprint *fp );
+static void find_reader( void *data );
 
 // a wrong finger shows as wrong, as a wrong password does, unless a
 // password is being checked
-static void show_wrong(struct awlock_state *state) {
+static void show_wrong( struct awlock_state *state ) {
     if (state->auth_state == AUTH_STATE_VALIDATING) {
         return;
     }
@@ -53,7 +53,7 @@ static void show_wrong(struct awlock_state *state) {
     schedule_auth_idle(state);
 }
 
-static void retry_later(struct fingerprint *fp, void (*callback)(void *data)) {
+static void retry_later( struct fingerprint *fp, void (*callback)(void *data) ) {
     loop_remove_timer(fp->retry);
     unsigned retry_ms = fp->state->args.fingerprint_retry_ms;
     retry_ms = retry_ms < FPRINT_RETRY_MS_CAP_LOWER ? FPRINT_RETRY_MS_CAP_LOWER : retry_ms;
@@ -62,8 +62,8 @@ static void retry_later(struct fingerprint *fp, void (*callback)(void *data)) {
 }
 
 // a method of the reader, answered by reply
-static void call_device(struct fingerprint *fp, const char *method,
-        sd_bus_message_handler_t reply, const char *types, const char *arg) {
+static void call_device( struct fingerprint *fp, const char *method, sd_bus_message_handler_t reply, const char *types,
+                         const char *arg ) {
     int r = sd_bus_call_method_async(fp->bus, NULL, FPRINT, fp->device,
         FPRINT_DEVICE, method, reply, fp, types, arg);
     if (r < 0) {
@@ -71,37 +71,37 @@ static void call_device(struct fingerprint *fp, const char *method,
     }
 }
 
-static const char *error_name(sd_bus_message *m) {
+static const char *error_name( sd_bus_message *m ) {
     const sd_bus_error *e = sd_bus_message_get_error(m);
     return e ? e->name : NULL;
 }
 
-static void log_error(const char *what, sd_bus_message *m) {
+static void log_error( const char *what, sd_bus_message *m ) {
     const sd_bus_error *e = sd_bus_message_get_error(m);
     awl_err_printf("awlock: Fingerprint: %s: %s\n", what,
         e && e->message ? e->message : "failed");
 }
 
-static int verify_stopped(sd_bus_message *m, void *data, sd_bus_error *err) {
+static int verify_stopped( sd_bus_message *m, void *data, sd_bus_error *err ) {
     (void)m; (void)err;
     // an error too: it wasn't verifying any more, start again anyway
     verify_start(data);
     return 0;
 }
 
-static void restart(struct fingerprint *fp) {
+static void restart( struct fingerprint *fp ) {
     fp->verifying = false;
     call_device(fp, "VerifyStop", verify_stopped, "", NULL);
 }
 
 // restart() and claim() from a retry_later() timer
-static void restart_timer(void *data) {
+static void restart_timer( void *data ) {
     struct fingerprint *fp = data;
     fp->retry = NULL;
     restart(fp);
 }
 
-static int verify_started(sd_bus_message *m, void *data, sd_bus_error *err) {
+static int verify_started( sd_bus_message *m, void *data, sd_bus_error *err ) {
     struct fingerprint *fp = data;
     (void)err;
     if (sd_bus_message_is_method_error(m, NULL)) {
@@ -114,14 +114,14 @@ static int verify_started(sd_bus_message *m, void *data, sd_bus_error *err) {
     return 0;
 }
 
-static void verify_start(struct fingerprint *fp) {
+static void verify_start( struct fingerprint *fp ) {
     fp->verifying = false;
     call_device(fp, "VerifyStart", verify_started, "s", "any");
 }
 
-static void claim_timer(void *data);
+static void claim_timer( void *data );
 
-static int claimed(sd_bus_message *m, void *data, sd_bus_error *err) {
+static int claimed( sd_bus_message *m, void *data, sd_bus_error *err ) {
     struct fingerprint *fp = data;
     (void)err;
     if (sd_bus_message_is_method_error(m, NULL)) {
@@ -139,17 +139,17 @@ static int claimed(sd_bus_message *m, void *data, sd_bus_error *err) {
     return 0;
 }
 
-static void claim(struct fingerprint *fp) {
+static void claim( struct fingerprint *fp ) {
     call_device(fp, "Claim", claimed, "s", ""); // "": this user
 }
 
-static void claim_timer(void *data) {
+static void claim_timer( void *data ) {
     struct fingerprint *fp = data;
     fp->retry = NULL;
     claim(fp);
 }
 
-static int verify_status(sd_bus_message *m, void *data, sd_bus_error *err) {
+static int verify_status( sd_bus_message *m, void *data, sd_bus_error *err ) {
     struct fingerprint *fp = data;
     const char *result;
     int done;
@@ -178,7 +178,7 @@ static int verify_status(sd_bus_message *m, void *data, sd_bus_error *err) {
     return 0;
 }
 
-static int got_device(sd_bus_message *m, void *data, sd_bus_error *err) {
+static int got_device( sd_bus_message *m, void *data, sd_bus_error *err ) {
     struct fingerprint *fp = data;
     const char *path;
     (void)err;
@@ -210,7 +210,7 @@ static int got_device(sd_bus_message *m, void *data, sd_bus_error *err) {
 }
 
 // GetDefaultDevice: at the start, and from a timer after a disconnect
-static void find_reader(void *data) {
+static void find_reader( void *data ) {
     struct fingerprint *fp = data;
     fp->retry = NULL;
     int r = sd_bus_call_method_async(fp->bus, NULL, FPRINT, FPRINT_MANAGER_PATH,
@@ -220,7 +220,7 @@ static void find_reader(void *data) {
     }
 }
 
-static void bus_in(void *data) {
+static void bus_in( void *data ) {
     struct fingerprint *fp = data;
     int r;
     while ((r = sd_bus_process(fp->bus, NULL)) > 0) {
@@ -233,7 +233,7 @@ static void bus_in(void *data) {
     }
 }
 
-struct fingerprint *fingerprint_start(struct awlock_state *state) {
+struct fingerprint *fingerprint_start( struct awlock_state *state ) {
     struct fingerprint *fp = calloc(1, sizeof(*fp));
     if (!fp) {
         return NULL;
@@ -255,7 +255,7 @@ struct fingerprint *fingerprint_start(struct awlock_state *state) {
     return fp;
 }
 
-void fingerprint_stop(struct fingerprint *fp) {
+void fingerprint_stop( struct fingerprint *fp ) {
     if (!fp) {
         return;
     }

@@ -482,8 +482,7 @@ static int paths_done( sd_bus_message* m, void* data, sd_bus_error* ret_error ) 
 
 /* ---- the menus ---- */
 
-sni_menu_t* sni_menu_new( awl_sni_t* s, sd_bus* bus, const char* bus_name, const char* path,
-                          const char* theme_path ) {
+sni_menu_t* sni_menu_new( awl_sni_t* s, sd_bus* bus, const char* bus_name, const char* path, const char* theme_path ) {
     sni_menu_t* menu = calloc( 1, sizeof(*menu) );
     if (!menu) return NULL;
     sni_menus_t* menus = sni_menus( s );

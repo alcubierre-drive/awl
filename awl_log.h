@@ -3,7 +3,7 @@
 /**
  * awl's logging: every message goes to stderr as ``[awl:level] message`` (the
  * prefix colored if stderr is a terminal) and, uncolored, to the log file
- * (``-l``, by default :c:macro:`AWL_LOGFILE`). Messages above the log level (:c:func:`awl_log_set_level`; ``-d``
+ * (``-l``, by default :c:macro:`AWL_LOG_FILE`). Messages above the log level (:c:func:`awl_log_set_level`; ``-d``
  * raises it to verbose) are dropped. Any thread may log; each message is one
  * ``write()`` per output. The printf functions take no
  * :c:type:`awl_process_t`: they are called from anywhere, any thread, so
@@ -14,7 +14,7 @@
  * ``AWL_HOSTED``) reaches awl only through its host table, so there
  * :c:func:`awl_dbg_printf` is a macro for :c:member:`awl_host_t.log` (awl_host.h), which is
  * awl's :c:func:`awl_dbg_printf`. wlroots' messages come here too (awl.c's
- * wlrlog(), as "wlr: ").
+ * wlr_log_sink(), as "wlr: ").
  */
 
 #ifdef __cplusplus
@@ -36,9 +36,9 @@ typedef enum {
 } awl_loglevel_t;
 
 #ifndef AWL_HOSTED
-#ifndef AWL_LOGFILE
+#ifndef AWL_LOG_FILE
 /** the log file without ``-l``; ``-DAWL_LOGFILE=...`` changes it */
-#define AWL_LOGFILE "/tmp/awl.log"
+#define AWL_LOG_FILE "/tmp/awl.log"
 #endif
 
 /* awl_process.h's: the log's state is awl_process_t.log */
@@ -55,8 +55,7 @@ void awl_log_set_level( awl_process_t* proc, awl_loglevel_t loglevel );
 awl_loglevel_t awl_log_level( const awl_process_t* proc );
 
 /** prints fmt with the prefix of loglevel; fmt ends in its own newline */
-void awl_dbg_printf( awl_loglevel_t loglevel, const char* fmt, ... )
-    __attribute__(( format( printf, 2, 3 ) ));
+void awl_dbg_printf( awl_loglevel_t loglevel, const char* fmt, ... ) __attribute__(( format( printf, 2, 3 ) ));
 /** :c:func:`awl_dbg_printf` with a va_list */
 void awl_dbg_vprintf( awl_loglevel_t loglevel, const char* fmt, va_list ap );
 #else

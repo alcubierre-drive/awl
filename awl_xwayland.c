@@ -8,18 +8,16 @@
 #include "awl_output.h"
 
 #ifdef XWAYLAND
-static void activatex11(struct wl_listener *listener, void *data);
-static void associatex11(struct wl_listener *listener, void *data);
-static void configurex11(struct wl_listener *listener, void *data);
-static void createnotifyx11(struct wl_listener *listener, void *data);
-static void dissociatex11(struct wl_listener *listener, void *data);
-static void sethints(struct wl_listener *listener, void *data);
-static void xwaylandready(struct wl_listener *listener, void *data);
+static void activate_x11( struct wl_listener *listener, void *data );
+static void associate_x11( struct wl_listener *listener, void *data );
+static void configure_x11( struct wl_listener *listener, void *data );
+static void create_notify_x11( struct wl_listener *listener, void *data );
+static void dissociate_x11( struct wl_listener *listener, void *data );
+static void set_hints( struct wl_listener *listener, void *data );
+static void xwayland_ready( struct wl_listener *listener, void *data );
 
 
-void
-activatex11(struct wl_listener *listener, void *data)
-{
+void activate_x11( struct wl_listener *listener, void *data ) {
     Client *c = wl_container_of(listener, c, activate);
     (void)data;
 
@@ -28,19 +26,15 @@ activatex11(struct wl_listener *listener, void *data)
         wlr_xwayland_surface_activate(c->surface.xwayland, 1);
 }
 
-void
-associatex11(struct wl_listener *listener, void *data)
-{
+void associate_x11( struct wl_listener *listener, void *data ) {
     Client *c = wl_container_of(listener, c, associate);
     (void)data;
 
-    LISTEN(&client_surface(c)->events.map, &c->map, mapnotify);
-    LISTEN(&client_surface(c)->events.unmap, &c->unmap, unmapnotify);
+    LISTEN(&client_surface(c)->events.map, &c->map, map_notify);
+    LISTEN(&client_surface(c)->events.unmap, &c->unmap, unmap_notify);
 }
 
-void
-configurex11(struct wl_listener *listener, void *data)
-{
+void configure_x11( struct wl_listener *listener, void *data ) {
     Client *c = wl_container_of(listener, c, configure);
     awl_server_t *srv = c->srv;
     struct wlr_xwayland_surface_configure_event *event = data;
@@ -55,7 +49,7 @@ configurex11(struct wl_listener *listener, void *data)
                 event->x, event->y, event->width, event->height);
         return;
     }
-    if ((c->isfloating && c != srv->cursor.grabc) || !sellayout(c->mon)->arrange) {
+    if ((c->is_floating && c != srv->cursor.grab_client) || !selected_layout(c->mon)->arrange) {
         resize(srv, c, (struct wlr_box){.x = event->x - c->bw,
                 .y = event->y - c->bw, .width = event->width + c->bw * 2,
                 .height = event->height + c->bw * 2}, 0);
@@ -64,60 +58,52 @@ configurex11(struct wl_listener *listener, void *data)
     }
 }
 
-void
-createnotifyx11(struct wl_listener *listener, void *data)
-{
+void create_notify_x11( struct wl_listener *listener, void *data ) {
     awl_server_t *srv = wl_container_of(listener, srv, listen.new_xwayland_surface);
     struct wlr_xwayland_surface *xsurface = data;
 
     /* Allocate a Client for this surface */
-    Client *c = xsurface->data = ecalloc(1, sizeof(*c));
+    Client *c = xsurface->data = calloc_or_die(1, sizeof(*c));
     c->srv = srv;
     c->surface.xwayland = xsurface;
     c->type = X11;
-    c->bw = client_is_unmanaged(c) ? 0 : srv->cfg->borderpx;
-    c->isvisible = 1;
+    c->bw = client_is_unmanaged(c) ? 0 : srv->cfg->border_px;
+    c->is_visible = 1;
 
     /* Listen to the various events it can emit */
-    LISTEN(&xsurface->events.associate, &c->associate, associatex11);
-    LISTEN(&xsurface->events.destroy, &c->destroy, destroynotify);
-    LISTEN(&xsurface->events.dissociate, &c->dissociate, dissociatex11);
-    LISTEN(&xsurface->events.request_activate, &c->activate, activatex11);
-    LISTEN(&xsurface->events.request_configure, &c->configure, configurex11);
-    LISTEN(&xsurface->events.request_fullscreen, &c->fullscreen, fullscreennotify);
-    LISTEN(&xsurface->events.set_hints, &c->set_hints, sethints);
-    LISTEN(&xsurface->events.set_title, &c->set_title, updatetitle);
+    LISTEN(&xsurface->events.associate, &c->associate, associate_x11);
+    LISTEN(&xsurface->events.destroy, &c->destroy, destroy_notify);
+    LISTEN(&xsurface->events.dissociate, &c->dissociate, dissociate_x11);
+    LISTEN(&xsurface->events.request_activate, &c->activate, activate_x11);
+    LISTEN(&xsurface->events.request_configure, &c->configure, configure_x11);
+    LISTEN(&xsurface->events.request_fullscreen, &c->fullscreen, fullscreen_notify);
+    LISTEN(&xsurface->events.set_hints, &c->set_hints, set_hints);
+    LISTEN(&xsurface->events.set_title, &c->set_title, update_title);
 }
 
-void
-dissociatex11(struct wl_listener *listener, void *data)
-{
+void dissociate_x11( struct wl_listener *listener, void *data ) {
     Client *c = wl_container_of(listener, c, dissociate);
     (void)data;
     wl_list_remove(&c->map.link);
     wl_list_remove(&c->unmap.link);
 }
 
-void
-sethints(struct wl_listener *listener, void *data)
-{
+void set_hints( struct wl_listener *listener, void *data ) {
     Client *c = wl_container_of(listener, c, set_hints);
     awl_server_t *srv = c->srv;
     struct wlr_surface *surface = client_surface(c);
     (void)data;
-    if (c == focustop(srv, srv->out.selmon) || !c->surface.xwayland->hints)
+    if (c == focus_top(srv, srv->out.sel_mon) || !c->surface.xwayland->hints)
         return;
 
-    c->isurgent = xcb_icccm_wm_hints_get_urgency(c->surface.xwayland->hints);
-    barsdirty(srv);
+    c->is_urgent = xcb_icccm_wm_hints_get_urgency(c->surface.xwayland->hints);
+    bars_dirty(srv);
 
-    if (c->isurgent && surface && surface->mapped)
+    if (c->is_urgent && surface && surface->mapped)
         client_set_border_color(c, (float[])RGBA(srv->clients.borders[BorderUrg]));
 }
 
-void
-xwaylandready(struct wl_listener *listener, void *data)
-{
+void xwayland_ready( struct wl_listener *listener, void *data ) {
     awl_server_t *srv = wl_container_of(listener, srv, listen.xwayland_ready);
     struct wlr_xcursor *xcursor;
     (void)data;
@@ -131,16 +117,14 @@ xwaylandready(struct wl_listener *listener, void *data)
                 xcursor->images[0]->hotspot_x, xcursor->images[0]->hotspot_y);
 }
 
-void
-xwaylandinit(awl_server_t *srv)
-{
+void xwayland_init( awl_server_t *srv ) {
     /*
      * Initialise the XWayland X server.
      * It will be started when the first X client is started.
      */
     if ((srv->xwayland = wlr_xwayland_create(srv->dpy, srv->compositor, 1))) {
-        LISTEN(&srv->xwayland->events.ready, &srv->listen.xwayland_ready, xwaylandready);
-        LISTEN(&srv->xwayland->events.new_surface, &srv->listen.new_xwayland_surface, createnotifyx11);
+        LISTEN(&srv->xwayland->events.ready, &srv->listen.xwayland_ready, xwayland_ready);
+        LISTEN(&srv->xwayland->events.new_surface, &srv->listen.new_xwayland_surface, create_notify_x11);
 
         setenv("DISPLAY", srv->xwayland->display_name, 1);
     } else {
@@ -148,10 +132,8 @@ xwaylandinit(awl_server_t *srv)
     }
 }
 
-void
-xwaylandfini(awl_server_t *srv)
-{
-    /* Only registered in xwaylandinit() if wlr_xwayland_create() succeeded;
+void xwayland_fini( awl_server_t *srv ) {
+    /* Only registered in xwayland_init() if wlr_xwayland_create() succeeded;
      * removing an unregistered listener dereferences its NULL link. */
     if (srv->xwayland) {
         wl_list_remove(&srv->listen.new_xwayland_surface.link);

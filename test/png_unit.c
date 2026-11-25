@@ -109,7 +109,7 @@ static uint32_t rnd( void ) {
 }
 
 /** p premultiplied by alpha a, from straight r, g, b */
-static uint32_t premul( unsigned a, unsigned r, unsigned g, unsigned b ) {
+static uint32_t premultiply( unsigned a, unsigned r, unsigned g, unsigned b ) {
     return a << 24 | ((r * a + 127) / 255) << 16 | ((g * a + 127) / 255) << 8 | (b * a + 127) / 255;
 }
 
@@ -186,7 +186,7 @@ int main( void ) {
         uint32_t* px = malloc( (size_t)w * h * 4 );
         for (int i = 0; i < w * h; i++) {
             uint32_t r = rnd();
-            px[i] = premul( i % 7 == 0 ? 0 : i % 7 == 1 ? 255 : r >> 24, r & 0xff, (r >> 8) & 0xff, (r >> 16) & 0xff );
+            px[i] = premultiply( i % 7 == 0 ? 0 : i % 7 == 1 ? 255 : r >> 24, r & 0xff, (r >> 8) & 0xff, (r >> 16) & 0xff );
         }
         CHECK( roundtrip( "alpha", px, w, h, w * 4, &type ) && type == 6 );
         free( px );

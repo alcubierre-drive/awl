@@ -2,8 +2,7 @@
 
 #include <string.h>
 
-void awl_process_init(awl_process_t *proc)
-{
+void awl_process_init( awl_process_t *proc ) {
     memset(proc, 0, sizeof *proc);
     proc->log.level = awl_loglevel_log;
     proc->log.fd = -1;

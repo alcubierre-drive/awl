@@ -70,4 +70,5 @@ void awl_fuzzy_query( awl_fuzzy_query_t* q, const char* text );
  * of q's characters, the byte offset in text of the character it matched,
  * -1 for one that is an error (wrong or extra); a swapped pair matched
  * both. */
-int awl_fuzzy_match( awl_fuzzy_tables_t* tb, const awl_fuzzy_query_t* q, const char* text, int* score, int* errors, int* pos );
+int awl_fuzzy_match( awl_fuzzy_tables_t* tb, const awl_fuzzy_query_t* q, const char* text, int* score, int* errors,
+                     int* pos );

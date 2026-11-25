@@ -48,6 +48,6 @@ typedef struct awlock_config_t {
  * awl's level); cfg its configuration; wayland_fd its connection to awl
  * (a socket ``wl_client_create()`` took the other end of); its exit
  * status */
-int awlock_main(const awlock_config_t *cfg, int wayland_fd);
+int awlock_main( const awlock_config_t *cfg, int wayland_fd );
 
 #endif

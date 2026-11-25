@@ -15,19 +15,17 @@
  * (plugin monitors, GPU driver threads) are running, since fork() alone
  * risks inheriting a lock one of those threads held at the moment of the
  * fork -- see :c:func:`spawn_pid`. */
-extern pid_t vfork(void);
-extern int execvpe(const char *file, char *const argv[], char *const envp[]);
+extern pid_t vfork( void );
+extern int execvpe( const char *file, char *const argv[], char *const envp[] );
 
 /** how long awl waits on exit for its children */
 #define CHILD_STOP_MS 3000
 
-static void autostart(awl_process_t *proc, const char *const *argv);
-static void unblocksignals(void);
+static void autostart( awl_process_t *proc, const char *const *argv );
+static void unblock_signals( void );
 
 
-int
-handlesigchld(int signo, void *data)
-{
+int handle_sigchld( int signo, void *data ) {
     awl_server_t *srv = data;
     siginfo_t in;
     (void)signo;
@@ -39,14 +37,12 @@ handlesigchld(int signo, void *data)
             break;
 #endif
         waitpid(in.si_pid, NULL, 0);
-        lockerexited(srv, in.si_pid);
+        locker_exited(srv, in.si_pid);
     }
     return 0;
 }
 
-pid_t
-spawn_pid(awl_process_t *proc, const Arg *arg)
-{
+pid_t spawn_pid( awl_process_t *proc, const Arg *arg ) {
     char **argv = (char **)arg->v, **envp = NULL;
     const awl_tray_app_env_t *tray = NULL;
     /* TRAY_ICONS first: the rest, with awl_tray_app_env()'s variables (the
@@ -54,7 +50,7 @@ spawn_pid(awl_process_t *proc, const Arg *arg)
     if (argv[0] && !strcmp(argv[0], TRAY_ICONS)) {
         if (!*++argv)
             return -1;
-        if ((tray = awl_tray_app_env(proc)) && !(envp = envwith(tray->env))) {
+        if ((tray = awl_tray_app_env(proc)) && !(envp = env_with(tray->env))) {
             awl_err_printf("%s: out of memory, starting it in the desktop's icon theme\n", argv[0]);
             tray = NULL;
         }
@@ -65,7 +61,7 @@ spawn_pid(awl_process_t *proc, const Arg *arg)
     if (pid < 0) {
         awl_err_printf("vfork failed: %s\n", strerror(errno));
     } else if (pid == 0) {
-        unblocksignals();
+        unblock_signals();
         close(STDIN_FILENO);
         dup2(STDERR_FILENO, STDOUT_FILENO);
         setsid();
@@ -84,15 +80,13 @@ spawn_pid(awl_process_t *proc, const Arg *arg)
     return pid < 0 ? -1 : pid;
 }
 
-void spawn(awl_server_t *srv, const Arg *arg) { spawn_pid(srv->proc, arg); }
+void spawn( awl_server_t *srv, const Arg *arg ) { spawn_pid(srv->proc, arg); }
 
 /** spawns argv and remembers it, so it is stopped when awl exits; refuses to
  * start it at all if there is no room left to remember it */
-void
-autostart(awl_process_t *proc, const char *const *argv)
-{
+void autostart( awl_process_t *proc, const char *const *argv ) {
     pid_t pid;
-    if (proc->spawn.nautostarted >= (int)LENGTH(proc->spawn.autostarted)) {
+    if (proc->spawn.n_autostarted >= (int)LENGTH(proc->spawn.autostarted)) {
         awl_wrn_printf("autostart: more than %d programs, not starting %s\n",
                 (int)LENGTH(proc->spawn.autostarted),
                 argv[0] && !strcmp(argv[0], TRAY_ICONS) && argv[1] ? argv[1] : argv[0]);
@@ -100,23 +94,21 @@ autostart(awl_process_t *proc, const char *const *argv)
     }
     /* a failed spawn returns -1; never let that reach kill()/waitpid() */
     if ((pid = spawn_pid(proc, &(const Arg){.v=argv})) > 0)
-        proc->spawn.autostarted[proc->spawn.nautostarted++] = pid;
+        proc->spawn.autostarted[proc->spawn.n_autostarted++] = pid;
 }
 
-void
-stopchildren(awl_process_t *proc)
-{
+void stop_children( awl_process_t *proc ) {
     pid_t pids[LENGTH(proc->spawn.autostarted) + 1];
     struct timespec tick = {0, 20 * 1000 * 1000};
     int n = 0;
 
     if (proc->spawn.startup > 0)
         pids[n++] = proc->spawn.startup;
-    for (int i = 0; i < proc->spawn.nautostarted; i++)
+    for (int i = 0; i < proc->spawn.n_autostarted; i++)
         if (proc->spawn.autostarted[i] > 0)
             pids[n++] = proc->spawn.autostarted[i];
     proc->spawn.startup = -1;
-    proc->spawn.nautostarted = 0;
+    proc->spawn.n_autostarted = 0;
 
     for (int i = 0; i < n; i++)
         kill(-pids[i], SIGTERM);
@@ -125,7 +117,7 @@ stopchildren(awl_process_t *proc)
         for (int i = 0; i < n; i++) {
             if (!pids[i])
                 continue;
-            /* ECHILD: handlesigchld() already reaped it */
+            /* ECHILD: handle_sigchld() already reaped it */
             pid_t r = waitpid(pids[i], NULL, WNOHANG);
             if (r == pids[i] || (r < 0 && errno == ECHILD))
                 pids[i] = 0;
@@ -148,18 +140,14 @@ stopchildren(awl_process_t *proc)
 
 /** For a (v)forked child before exec, which would keep setup()'s signal mask
  * and ignored SIGPIPE. Both are the child's own even after ``vfork()``. */
-void
-unblocksignals(void)
-{
+void unblock_signals( void ) {
     sigset_t none;
     sigemptyset(&none);
     sigprocmask(SIG_SETMASK, &none, NULL);
     signal(SIGPIPE, SIG_DFL);
 }
 
-void
-spawnstartup(awl_process_t *proc, const char *cmd)
-{
+void spawn_startup( awl_process_t *proc, const char *cmd ) {
     /* Uses vfork(), not fork(): by this point setup() has already started the
      * plugin/GPU driver threads, so a plain fork() risks inheriting a lock
      * (e.g. malloc's arena lock) held by one of those threads at the moment
@@ -169,7 +157,7 @@ spawnstartup(awl_process_t *proc, const char *cmd)
     if ((proc->spawn.startup = vfork()) < 0)
         die("startup: vfork:");
     if (proc->spawn.startup == 0) {
-        unblocksignals();
+        unblock_signals();
         close(STDIN_FILENO);
         setsid();
         execl("/bin/sh", "/bin/sh", "-c", cmd, NULL);
@@ -178,9 +166,7 @@ spawnstartup(awl_process_t *proc, const char *cmd)
     }
 }
 
-void
-autostartall(awl_server_t *srv)
-{
+void autostart_all( awl_server_t *srv ) {
     for (size_t i = 0; i < srv->cfg->autostart.n; ++i) {
         if (!srv->cfg->autostart.v[i][0]) continue; /* { NULL }: an empty entry */
         autostart(srv->proc, srv->cfg->autostart.v[i]);

@@ -132,7 +132,7 @@ struct cal_backend {
 
 /* b's functions, once: the handle stays (RTLD_NODELETE, never dlclose()d),
  * so another backend's dlopen() finds it loaded */
-static cal_status_t load(cal_backend_t *b) {
+static cal_status_t load( cal_backend_t *b ) {
     static const char *const sonames[] = {
         "libecal-2.0.so.3", "libecal-2.0.so.2", "libecal-2.0.so.1", "libecal-2.0.so",
     };
@@ -169,8 +169,8 @@ static cal_status_t load(cal_backend_t *b) {
     return b->load_status;
 }
 
-static void logmsg(cal_backend_t *b, int warn, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
-static void logmsg(cal_backend_t *b, int warn, const char *fmt, ...) {
+static void log_msg( cal_backend_t *b, int warn, const char *fmt, ... ) __attribute__((format(printf, 3, 4)));
+static void log_msg( cal_backend_t *b, int warn, const char *fmt, ... ) {
     if (!b->log) return;
     char msg[512];
     va_list ap;
@@ -182,21 +182,21 @@ static void logmsg(cal_backend_t *b, int warn, const char *fmt, ...) {
 
 /* s, logging msg once for each new cause; a missing library isn't worth a
  * warning */
-static cal_status_t fail(cal_backend_t *b, cal_status_t s, const char *msg) {
+static cal_status_t fail( cal_backend_t *b, cal_status_t s, const char *msg ) {
     if (s == CAL_ERR_CANCELLED) return s;
-    if (s != b->reported) logmsg(b, s != CAL_ERR_NOLIB, "%s", msg);
+    if (s != b->reported) log_msg(b, s != CAL_ERR_NOLIB, "%s", msg);
     b->reported = s;
     return s;
 }
 
-static int is_cancelled(cal_backend_t *b) {
+static int is_cancelled( cal_backend_t *b ) {
     pthread_mutex_lock(&b->lock);
     int c = b->cancelled;
     pthread_mutex_unlock(&b->lock);
     return c;
 }
 
-static void drop_client(cal_backend_t *b, struct client *c) {
+static void drop_client( cal_backend_t *b, struct client *c ) {
     if (c->client) b->S.g_object_unref(c->client);
     free(c->uid);
     free(c->color);
@@ -204,7 +204,7 @@ static void drop_client(cal_backend_t *b, struct client *c) {
 
 /* Connects to every enabled calendar that is also shown in gnome-calendar/
  * evolution ("selected"), and drops the clients whose source went away. */
-static void sync_clients(cal_backend_t *b) {
+static void sync_clients( cal_backend_t *b ) {
     for (size_t i = 0; i < b->nclients; i++) b->clients[i].seen = 0;
     GList *sources = b->S.e_source_registry_list_enabled(b->registry, E_SOURCE_EXTENSION_CALENDAR);
     for (GList *l = sources; l; l = l->next) {
@@ -242,7 +242,7 @@ static void sync_clients(cal_backend_t *b) {
                                                       (uint32_t)-1, b->cancel, &err);
         if (!client) {
             if (!is_cancelled(b))
-                logmsg(b, 1, "cannot open %s: %s", b->S.e_source_get_display_name(src),
+                log_msg(b, 1, "cannot open %s: %s", b->S.e_source_get_display_name(src),
                       err ? err->message : "?");
             if (err) b->S.g_error_free(err);
             continue;
@@ -263,7 +263,7 @@ static void sync_clients(cal_backend_t *b) {
 /* Instance time -> local time_t. Timed instances carry their own zone, so
  * convert to the system zone and let mktime() do the rest (floating times
  * are local already); all-day instances only have a date. */
-static time_t local_time(const cal_backend_t *b, ICalTime *t) {
+static time_t local_time( const cal_backend_t *b, ICalTime *t ) {
     struct tm tm = {0};
     ICalTime *lt = NULL;
     if (!b->S.i_cal_time_is_date(t)) {
@@ -287,8 +287,8 @@ struct instance_ctx {
     void *data;
 };
 
-static gboolean on_instance(ICalComponent *comp, ICalTime *start, ICalTime *end, void *data,
-                            GCancellable *cancellable, GError **error) {
+static gboolean on_instance( ICalComponent *comp, ICalTime *start, ICalTime *end, void *data, GCancellable *cancellable,
+                             GError **error ) {
     (void)cancellable, (void)error;
     struct instance_ctx *ctx = data;
     const cal_backend_t *b = ctx->b;
@@ -307,7 +307,7 @@ static gboolean on_instance(ICalComponent *comp, ICalTime *start, ICalTime *end,
     return 1;
 }
 
-cal_backend_t *cal_backend_open(cal_log_cb log) {
+cal_backend_t *cal_backend_open( cal_log_cb log ) {
     cal_backend_t *b = calloc(1, sizeof(*b));
     if (!b) return NULL;
     b->log = log;
@@ -315,9 +315,9 @@ cal_backend_t *cal_backend_open(cal_log_cb log) {
     return b;
 }
 
-static cal_status_t query(cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data);
+static cal_status_t query( cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data );
 
-cal_status_t cal_backend_query(cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data) {
+cal_status_t cal_backend_query( cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data ) {
     cal_status_t s = load(b);
     if (s != CAL_OK) return fail(b, s, b->load_error);
     if (!b->ctx) b->ctx = b->S.g_main_context_new();
@@ -329,7 +329,7 @@ cal_status_t cal_backend_query(cal_backend_t *b, time_t start, time_t end, cal_e
     return s;
 }
 
-static cal_status_t query(cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data) {
+static cal_status_t query( cal_backend_t *b, time_t start, time_t end, cal_event_cb cb, void *data ) {
     pthread_mutex_lock(&b->lock);
     if (!b->cancel) {
         b->cancel = b->S.g_cancellable_new();
@@ -366,14 +366,14 @@ static cal_status_t query(cal_backend_t *b, time_t start, time_t end, cal_event_
     return CAL_OK;
 }
 
-void cal_backend_cancel(cal_backend_t *b) {
+void cal_backend_cancel( cal_backend_t *b ) {
     pthread_mutex_lock(&b->lock);
     b->cancelled = 1;
     if (b->cancel) b->S.g_cancellable_cancel(b->cancel);
     pthread_mutex_unlock(&b->lock);
 }
 
-void cal_backend_close(cal_backend_t *b) {
+void cal_backend_close( cal_backend_t *b ) {
     if (!b) return;
     /* anything here means the library is loaded; what the objects leave
      * behind in their context goes with it */
@@ -391,7 +391,7 @@ void cal_backend_close(cal_backend_t *b) {
     free(b);
 }
 
-const char *cal_status_str(cal_status_t s) {
+const char *cal_status_str( cal_status_t s ) {
     switch (s) {
     case CAL_OK: return "ok";
     case CAL_ERR_NOLIB: return "no libecal";

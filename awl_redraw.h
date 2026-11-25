@@ -5,7 +5,7 @@
  * and redraws the bars once per wakeup; anything that changes what the bar
  * shows calls :c:func:`awl_redraw_request`, the plugin threads as
  * :c:member:`awl_host->redraw_request() <awl_host_t.redraw_request>`. A change on awl's main thread that only
- * the bars show takes :c:func:`barsdirty` (awl_bar.h) instead, which redraws them
+ * the bars show takes :c:func:`bars_dirty` (awl_bar.h) instead, which redraws them
  * before the loop waits again. Requests made before the
  * main loop gets around to it coalesce into a single redraw. The eventfd is
  * :c:member:`awl_process_t.redraw_fd`, proc's.

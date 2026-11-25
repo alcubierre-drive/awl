@@ -14,6 +14,6 @@
  * the event loop), and AWL_TEST_OUTPUTS=N adds N outputs to start with.
  * Headless ones are AWL_TEST_SIZE (WxH) large, else 1280x720.
  * With AWL_TEST_WINDOWS, a FIFO of commands for the text
- * popups, see testwincmd(), its state freed with the display. After the
+ * popups, see test_win_cmd(), its state freed with the display. After the
  * backend is made. */
-void testinit(awl_server_t *srv);
+void test_init( awl_server_t *srv );

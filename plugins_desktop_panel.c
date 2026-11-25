@@ -85,24 +85,19 @@ static const char file_mode_key[] = "desktop_file_mode";
 
 /** dp->show and dp->hidden from the dictionary; unchanged if it has no
  * mode; main thread */
-static void readmode( awl_desktop_panel_t* dp ) {
-    awl_dict_val_t v;
-    /* the string is the dictionary's until it's unlocked */
-    AWL_HOST_CFG_LOCK( awl_host );
-    if (AWL_HOST_CFG_GET( awl_host, file_mode_key, &v ) == AWL_DICT_OK
-            && v.kind == AWL_DICT_KIND_STR) {
-        if (!strcmp( v.str, "off" )) {
-            dp->show = 0;
-        } else if (!strcmp( v.str, "on" ) || !strcmp( v.str, "all" )) {
-            dp->show = 1;
-            dp->hidden = v.str[0] == 'a';
-        }
+static void read_mode( awl_desktop_panel_t* dp ) {
+    char mode[8] = "";
+    AWL_HOST_CFG_STRNCPY( awl_host, file_mode_key, mode, sizeof(mode) );
+    if (!strcmp( mode, "off" )) {
+        dp->show = 0;
+    } else if (!strcmp( mode, "on" ) || !strcmp( mode, "all" )) {
+        dp->show = 1;
+        dp->hidden = mode[0] == 'a';
     }
-    AWL_HOST_CFG_UNLOCK( awl_host );
 }
 
 /** the dictionary's mode from dp->show and dp->hidden; main thread */
-static void writemode( awl_desktop_panel_t* dp ) {
+static void write_mode( awl_desktop_panel_t* dp ) {
     const char* mode = !dp->show ? "off" : dp->hidden ? "all" : "on";
     AWL_HOST_CFG_SET( awl_host, file_mode_key, AWL_DICT_STR( mode ) );
 }
@@ -127,9 +122,9 @@ static void* scanner( void* data ) {
             watch = inotify_add_watch( ifd, sc->path,
                     IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB |
                     IN_DELETE_SELF | IN_MOVE_SELF | IN_ONLYDIR );
-        /* the first result goes out even if it's empty, which findfiles()
+        /* the first result goes out even if it's empty, which find_files()
          * doesn't count as a change */
-        unsent |= findfiles( &sc->files, sc->path );
+        unsent |= find_files( &sc->files, sc->path );
         if (unsent) {
             DesktopFiles* copy = malloc( sizeof(*copy) );
             if (copy) {
@@ -179,17 +174,11 @@ awl_desktop_panel_t* awl_desktop_start( awl_plugin_data_t* p ) {
     dp->p = p;
     dp->show = 1;
     dp->version = 1;
-    readmode( dp );
+    read_mode( dp );
 
     Scanner* n = calloc( 1, sizeof(*n) );
     if (!n) return dp;
-    /* the string is the dictionary's until it's unlocked */
-    awl_dict_val_t dir;
-    AWL_HOST_CFG_LOCK( awl_host );
-    if (AWL_HOST_CFG_GET( awl_host, "desktop_dir", &dir ) == AWL_DICT_OK
-            && dir.kind == AWL_DICT_KIND_STR)
-        snprintf( n->path, sizeof(n->path), "%s", dir.str );
-    AWL_HOST_CFG_UNLOCK( awl_host );
+    AWL_HOST_CFG_STRNCPY( awl_host, "desktop_dir", n->path, sizeof(n->path) );
     if (!n->path[0]) {
         awl_wrn_printf( "desktop: no desktop_dir in the config dictionary\n" );
         free( n );
@@ -234,7 +223,7 @@ uint64_t awl_desktop_version( awl_desktop_panel_t* dp ) {
         }
         free( f );
         if (changed || !dp->scanned) dp->version++;
-        if (!dp->scanned) readmode( dp ); /* the scanner may have loaded one */
+        if (!dp->scanned) read_mode( dp ); /* the scanner may have loaded one */
         dp->scanned = 1;
     }
     /* nothing until the first scan, rather than a wrong "(empty)" */
@@ -242,11 +231,11 @@ uint64_t awl_desktop_version( awl_desktop_panel_t* dp ) {
 }
 
 static int visible( awl_desktop_panel_t* dp, const Filename* f ) {
-    return dp->hidden || !f->ishidden;
+    return dp->hidden || !f->is_hidden;
 }
 
 static void label( const Filename* f, char* out, size_t n ) {
-    snprintf( out, n, "%s%s", f->name, f->isdir ? "/" : "" );
+    snprintf( out, n, "%s%s", f->name, f->is_dir ? "/" : "" );
 }
 
 /** c at opacity a; pixman takes text colors premultiplied */
@@ -258,8 +247,8 @@ static uint32_t fade( uint32_t c, uint32_t a ) {
 }
 
 static uint32_t color( const awl_desktop_panel_t* dp, const Filename* f ) {
-    uint32_t c = f->isbroken ? COLORS->desktop_broken : f->isdir ? COLORS->desktop_dir : COLORS->desktop_file;
-    return f->ishidden ? fade( c, DESK->hidden_alpha ) : c;
+    uint32_t c = f->is_broken ? COLORS->desktop_broken : f->is_dir ? COLORS->desktop_dir : COLORS->desktop_file;
+    return f->is_hidden ? fade( c, DESK->hidden_alpha ) : c;
 }
 
 /** "… N more" if the i-th shown stands for those that don't fit, else NULL */
@@ -267,8 +256,8 @@ static const char* more_of( const PanelLayout* l, int i ) {
     return i == l->more_at[0] ? l->more[0] : i == l->more_at[1] ? l->more[1] : NULL;
 }
 
-void awl_desktop_measure( awl_desktop_panel_t* dp, struct fcft_font* font, int avail_w, int avail_h, int radius, float s,
-                          int* x, int* y, int* w, int* h ) {
+void awl_desktop_measure( awl_desktop_panel_t* dp, struct fcft_font* font, int avail_w, int avail_h, int radius,
+                          float s, int* x, int* y, int* w, int* h ) {
     PanelLayout* l = &dp->lay;
     const int fh = font->height,
               margin = (int)lroundf( DESK->margin * s ),
@@ -281,13 +270,13 @@ void awl_desktop_measure( awl_desktop_panel_t* dp, struct fcft_font* font, int a
     const int max_rows = MAX( 1, (avail_h - 2 * l->pad) / l->row_h ),
               max_col_w = MAX( 1, (avail_w - 2 * l->pad - (cols - 1) * l->gap) / cols );
 
-    /* the visible ones: the files, then the folders (findfiles()' order) */
+    /* the visible ones: the files, then the folders (find_files()' order) */
     int vis[NFILES], k[2] = { 0, 0 };
     l->n = 0;
     for (int i = 0; i < dp->n_files; i++)
         if (visible( dp, &dp->files[i] )) {
             vis[l->n++] = i;
-            k[dp->files[i].isdir]++;
+            k[dp->files[i].is_dir]++;
         }
 
     /* each section's rows; if both don't fit, the folders keep at least
@@ -375,8 +364,7 @@ static void panel_under( uint32_t* data, int stride, int w, int h, float r, uint
     }
 }
 
-static void text( pixman_image_t* pix, struct fcft_font* font, int x, int y, int w, int h,
-                  const char* s, uint32_t fg ) {
+static void text( pixman_image_t* pix, struct fcft_font* font, int x, int y, int w, int h, const char* s, uint32_t fg ) {
     awl_host->text( pix, font, x, y, w, h, 0, s, color_8bit_to_16bit( fg ), color_8bit_to_16bit( 0 ) );
 }
 
@@ -438,13 +426,13 @@ int awl_desktop_click( awl_desktop_panel_t* dp, int button, uint32_t mods ) {
             dp->show = 1;
             break;
         case BTN_RIGHT:
-            awl_host->actions->wallpapermode( awl_host->srv, &(Arg){ .i = +1 } );
+            awl_host->actions->wallpaper_mode( awl_host->srv, &(Arg){ .i = +1 } );
             return 1;
         default:
             return 0;
         }
         dp->version++;
-        writemode( dp );
+        write_mode( dp );
         rescan( dp );
         notify_toggle( dp, show, hidden );
         return 1;

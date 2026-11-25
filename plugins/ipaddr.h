@@ -59,7 +59,7 @@ int ip_update( awl_ipaddr_t* ip );
  * :c:func:`ip_update`. */
 int ip_dispatch( awl_ipaddr_t* ip );
 /** A copy of the output fields, taken under the lock; returns n_addr. */
-int ip_snapshot( awl_ipaddr_t* ip, awl_ipaddr_entry_t entry[AWL_IP_MAX], int* best, int* routed,
-                 int* by_nm, int* connectivity );
+int ip_snapshot( awl_ipaddr_t* ip, awl_ipaddr_entry_t entry[AWL_IP_MAX], int* best, int* routed, int* by_nm,
+                 int* connectivity );
 /** closes and frees ip; NULL is fine */
 void ip_free( awl_ipaddr_t* ip );

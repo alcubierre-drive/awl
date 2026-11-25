@@ -28,8 +28,8 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .tag_occupied   = 0xfd971faa, /* molokai_orange, two thirds */
         .tag_urgent     = 0xf92672aa, /* molokai_red */
         .tag_selected   = 0xae81ffaa, /* molokai_purple */
-        .selmon         = molokai_blue,
-        .pertag         = molokai_red,
+        .sel_mon         = molokai_blue,
+        .per_tag         = molokai_red,
         .win_bg         = 0x42375aff,
         .win_focused    = 0x7359a5ff,
         .win_urgent     = molokai_red,
@@ -46,12 +46,12 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .bad            = molokai_red,
         /* the color maps' stops: {at, color}, at 0 to 1, linearly in
          * between */
-        .temperature    = COLORMAP( {0.00, 0x66d9efffu}, {0.25, 0x9ff1faffu},
+        .temperature    = COLOR_MAP( {0.00, 0x66d9efffu}, {0.25, 0x9ff1faffu},
                                     {0.50, 0xffffffffu}, {0.75, 0xffa6baffu},
                                     {1.00, 0xf92672ffu} ),
-        .battery        = COLORMAP( { 0.15f, molokai_red }, { 0.25f, molokai_orange },
+        .battery        = COLOR_MAP( { 0.15f, molokai_red }, { 0.25f, molokai_orange },
                                     { 0.3f, 0xf5efffff /* bar_fg */ } ),
-        .battery_charging = COLORMAP( { 0, molokai_green }, { 0.9f, molokai_blue } ),
+        .battery_charging = COLOR_MAP( { 0, molokai_green }, { 0.9f, molokai_blue } ),
         .tray_bg        = 0x859394ff,
 
         .calendar_today    = 0xb6ec52ff,
@@ -74,7 +74,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
     },
     .temperature = {
         /* idles around 50, throttles at TjMax (110) */
-        .coretemp = { 50, 100 },
+        .core_temp = { 50, 100 },
         .thermal_zone = { 40, 90 },
     },
     .battery = {

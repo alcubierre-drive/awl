@@ -28,7 +28,7 @@
 
 /** :c:member:`awl_host_t.timer_add() <awl_host_t.timer_add>`'s timers,
  * ``link`` in :c:member:`awl_process_t.plugins`' timers: the plugins',
- * reaped after they stop (:c:func:`pluginsreap`) */
+ * reaped after they stop (:c:func:`plugins_reap`) */
 struct awl_timer {
     struct wl_event_source* source;
     void (*fn)( void* data );
@@ -45,7 +45,7 @@ static int timer_fire( void* data ) {
 /** a timer on the main loop that calls fn( data ), unarmed */
 static awl_timer_t* timer_add( awl_server_t* srv, void (*fn)( void* data ), void* data ) {
     if (!srv->event_loop || !fn) return NULL;
-    awl_timer_t* t = ecalloc( 1, sizeof(*t) );
+    awl_timer_t* t = calloc_or_die( 1, sizeof(*t) );
     t->fn = fn;
     t->data = data;
     t->source = wl_event_loop_add_timer( srv->event_loop, timer_fire, t );
@@ -68,15 +68,15 @@ static void timer_remove( awl_timer_t* t ) {
 
 /** :c:member:`awl_host_t.notif_invoke`: with a token of awl's, so the client may
  * bring its window up */
-static void notifinvoke( awl_server_t* srv, uint32_t id, const char* key ) {
-    awl_notifications_invoke( srv, id, key, activationtoken(srv) );
+static void notif_invoke( awl_server_t* srv, uint32_t id, const char* key ) {
+    awl_notifications_invoke( srv, id, key, activation_token(srv) );
 }
 
 /** after the library's fini, before it is unloaded: destroys the popups and
  * timers it left (warning about them), whose callbacks point into it */
-static void pluginsreap( awl_server_t *srv ) {
+static void plugins_reap( awl_server_t *srv ) {
     awl_timer_t *t, *tmp;
-    int np = popupsreap(srv), nt = 0, ng = grabreap(srv);
+    int np = popups_reap(srv), nt = 0, ng = grab_reap(srv);
     wl_list_for_each_safe( t, tmp, &srv->proc->plugins.timers, link ) {
         nt++;
         timer_remove( t );
@@ -139,6 +139,8 @@ static const awl_host_t host_template = {
         .s_iter = &awl_dict_iter,
         .s_lock = &awl_dict_lock,
         .s_unlock = &awl_dict_unlock,
+        .s_strdup = &awl_dict_strdup,
+        .s_strncpy = &awl_dict_strncpy,
     },
 
     .text = awl_draw_text,
@@ -147,43 +149,43 @@ static const awl_host_t host_template = {
     .font_style = host_font_style,
     .font_release = host_font_release,
 
-    .config_defaults = configdefaults,
+    .config_defaults = config_defaults,
     .actions = &awl_actions,
     .arranges = &awl_arranges,
-    .focusclient = focusclient,
-    .client_set_visible = clientsetvisible,
+    .focus_client = focus_client,
+    .client_set_visible = client_set_visible,
     .arrange = arrange,
-    .monitor_named = monitornamed,
-    .monitor_selected = monitorselected,
-    .monitor_scale = monitorscale,
-    .idle_inhibit_ignored = idleinhibitignored,
+    .monitor_named = monitor_named,
+    .monitor_selected = monitor_selected,
+    .monitor_scale = monitor_scale,
+    .idle_inhibit_ignored = idle_inhibit_ignored,
 
-    .window_create = popupcreate,
-    .window_destroy = popupdestroy,
-    .window_set_menu_style = popupsetmenustyle,
-    .window_set_persistent = popupsetpersistent,
-    .window_set_colors = popupsetcolors,
-    .window_set_border_width = popupsetborderwidth,
-    .window_room = popuproom,
-    .window_box = popupbox,
+    .window_create = popup_create,
+    .window_destroy = popup_destroy,
+    .window_set_menu_style = popup_set_menu_style,
+    .window_set_persistent = popup_set_persistent,
+    .window_set_colors = popup_set_colors,
+    .window_set_border_width = popup_set_border_width,
+    .window_room = popup_room,
+    .window_box = popup_box,
     .window_set_text = awl_window_set_text,
     .window_set_painter = awl_window_set_painter,
     .window_redraw = awl_window_redraw,
-    .window_show = popupshow,
-    .window_show_beside = popupshowbeside,
-    .window_show_at = popupshowat,
-    .window_hide = popuphide,
+    .window_show = popup_show,
+    .window_show_beside = popup_show_beside,
+    .window_show_at = popup_show_at,
+    .window_hide = popup_hide,
     .window_monitor = awl_window_monitor,
-    .window_part_box = popuppartbox,
+    .window_part_box = popup_part_box,
     .window_set_click = awl_window_set_click,
     .window_set_scroll = awl_window_set_scroll,
     .window_set_hover = awl_window_set_hover,
     .window_set_hidden = awl_window_set_hidden,
-    .window_set_key = popupsetkey,
+    .window_set_key = popup_set_key,
 
     .notif_list = awl_notifications_list,
     .notif_close = awl_notifications_close,
-    .notif_invoke = notifinvoke,
+    .notif_invoke = notif_invoke,
     .notif_hold = awl_notifications_hold,
     .notif_send = awl_notifications_send,
     .notif_history = awl_notifications_history,
@@ -194,20 +196,20 @@ static const awl_host_t host_template = {
     .timer_set = timer_set,
     .timer_remove = timer_remove,
 
-    .grab_start = grabstart,
-    .grab_end = grabend,
-    .grab_mark = grabmark,
-    .client_at = clientat,
-    .client_focused = clientfocused,
-    .client_box = clientbox,
-    .monitor_at = monitorat,
-    .monitor_box = monitorbox,
+    .grab_start = grab_start,
+    .grab_end = grab_end,
+    .grab_mark = grab_mark,
+    .client_at = client_at,
+    .client_focused = client_focused,
+    .client_box = client_box,
+    .monitor_at = monitor_at,
+    .monitor_box = monitor_box,
     .capture = capture,
-    .clipboard_set = clipboardset,
+    .clipboard_set = clipboard_set,
 };
 
 /** $AWL_PLUGINS, or libawlplugins.so next to the awl binary */
-static int libpath( char* out, size_t n ) {
+static int lib_path( char* out, size_t n ) {
     const char* env = getenv( "AWL_PLUGINS" );
     if (env && *env)
         return snprintf( out, n, "%s", env ) < (int)n ? 0 : -1;
@@ -250,9 +252,9 @@ out:
  * one's fd number, i.e. its /proc/PID/fd/N, is the next memfd's. It is
  * /proc/PID, not /proc/self: a debugger reads the library's symbols from the
  * name the loader has, and its own /proc/self is a different process. */
-static const awl_plugin_api_t* libopen( awl_process_t* proc, void** out, int* out_fd ) {
-    char path[PATH_MAX], fdpath[64];
-    if (libpath( path, sizeof(path) )) {
+static const awl_plugin_api_t* lib_open( awl_process_t* proc, void** out, int* out_fd ) {
+    char path[PATH_MAX], fd_path[64];
+    if (lib_path( path, sizeof(path) )) {
         awl_err_printf( "plugins: can't determine the library path\n" );
         return NULL;
     }
@@ -262,8 +264,8 @@ static const awl_plugin_api_t* libopen( awl_process_t* proc, void** out, int* ou
         awl_err_printf( "plugins: can't read %s: %s\n", path, strerror( errno ) );
         return NULL;
     }
-    snprintf( fdpath, sizeof(fdpath), "/proc/%d/fd/%d", (int)getpid(), fd );
-    void* h = dlopen( fdpath, RTLD_NOW | RTLD_LOCAL );
+    snprintf( fd_path, sizeof(fd_path), "/proc/%d/fd/%d", (int)getpid(), fd );
+    void* h = dlopen( fd_path, RTLD_NOW | RTLD_LOCAL );
     if (!h) {
         awl_err_printf( "plugins: %s: %s\n", path, dlerror() );
         close( fd );
@@ -294,7 +296,7 @@ int awl_plugins_load( awl_server_t* srv, int p, awl_dict_t* cfg ) {
     proc->plugins.host.srv = srv;
     proc->plugins.paused = p;
     proc->plugins.host.cfg.s = cfg;
-    if (!(proc->plugins.api = libopen( proc, &proc->plugins.handle, &proc->plugins.handle_fd )))
+    if (!(proc->plugins.api = lib_open( proc, &proc->plugins.handle, &proc->plugins.handle_fd )))
         return -1;
     awl_log_printf( "plugins: setting up\n" );
     proc->plugins.api->init( proc->plugins.paused );
@@ -303,14 +305,14 @@ int awl_plugins_load( awl_server_t* srv, int p, awl_dict_t* cfg ) {
     return 0;
 }
 
-/** stops the plugins and removes what they left (:c:func:`pluginsreap`); unloads
+/** stops the plugins and removes what they left (:c:func:`plugins_reap`); unloads
  * the library unless a thread of it is still running, which would then
  * crash */
 static void stop( awl_server_t* srv, void* h, int fd ) {
     awl_process_t* proc = srv->proc;
     awl_log_printf( "plugins: tearing down\n" );
     int stuck = proc->plugins.api && proc->plugins.api->fini();
-    pluginsreap(srv);
+    plugins_reap(srv);
     if (stuck) {
         awl_wrn_printf( "plugins: a plugin thread is stuck, keeping its library loaded\n" );
         return;
@@ -325,7 +327,7 @@ int awl_plugins_reload( awl_server_t* srv, void (*detach)( awl_server_t* srv ), 
     awl_log_printf( "plugins: reloading\n" );
     void* h = NULL;
     int fd = -1;
-    const awl_plugin_api_t* next = libopen( proc, &h, &fd );
+    const awl_plugin_api_t* next = lib_open( proc, &h, &fd );
 
     // nothing may point into the old library past this
     detach( srv );
@@ -337,7 +339,7 @@ int awl_plugins_reload( awl_server_t* srv, void (*detach)( awl_server_t* srv ), 
     } else if (proc->plugins.api) {
         awl_wrn_printf( "plugins: no new library, restarting the old one in place\n" );
         proc->plugins.api->fini(); // restart in place; a stuck thread stays stuck either way
-        pluginsreap(srv);
+        plugins_reap(srv);
         awl_log_printf( "plugins: torn down, the library stays loaded\n" );
     }
     if (proc->plugins.api) {

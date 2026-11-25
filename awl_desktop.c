@@ -37,7 +37,7 @@ struct awl_desktop {
 };
 
 awl_desktop_t* desktop_init( struct wlr_scene_tree* tree, const desktop_style_t* cfg ) {
-    awl_desktop_t* desk = ecalloc( 1, sizeof(*desk) );
+    awl_desktop_t* desk = calloc_or_die( 1, sizeof(*desk) );
     desk->tree = tree;
     desk->cfg = *cfg;
     wl_list_init( &desk->views );
@@ -84,7 +84,7 @@ void desktop_configure( awl_desktop_t* desk, const desktop_style_t* cfg ) {
 }
 
 void desktop_addmon( awl_desktop_t* desk, Monitor* m ) {
-    DesktopView* v = ecalloc( 1, sizeof(*v) );
+    DesktopView* v = calloc_or_die( 1, sizeof(*v) );
     v->m = m;
     v->tree = wlr_scene_tree_create( desk->tree );
     v->buffer = wlr_scene_buffer_create( v->tree, NULL );
@@ -102,9 +102,9 @@ void desktop_removemon( awl_desktop_t* desk, Monitor* m ) {
     free( v );
 }
 
-/** what m's panel draws in: :c:member:`Monitor.desktopfont`, else the bar's; NULL if none */
+/** what m's panel draws in: :c:member:`Monitor.desktop_font`, else the bar's; NULL if none */
 static struct fcft_font* font_of( Monitor* m ) {
-    return m->desktopfont ? m->desktopfont : m->bar.font;
+    return m->desktop_font ? m->desktop_font : m->bar.font;
 }
 
 /** returns whether there is anything to show */
@@ -118,7 +118,7 @@ static int draw( awl_desktop_t* desk, DesktopView* v, const awl_plugin_api_t* ap
                           &x, &y, &width, &height );
     if (width <= 0 || height <= 0) return 0;
 
-    Buffer* b = buffercreate( width, height );
+    Buffer* b = buffer_create( width, height );
     const int32_t stride = (int32_t)b->stride;
 
     pixman_image_t* pix = awl_draw_image( width, height, b->data, stride );

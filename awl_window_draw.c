@@ -26,8 +26,7 @@ static uint32_t frame_pixel( const float b[4], const float g[4], float kb, float
  * the inner edge's straight parts every pixel is bg whole (both shapes
  * cover it), so only the band along the edges and the corners take the
  * coverage, the rest is one value. */
-static void draw_frame( uint32_t* data, size_t stride, int w, int h, float bw, float r,
-                        uint32_t bg, uint32_t border ) {
+static void draw_frame( uint32_t* data, size_t stride, int w, int h, float bw, float r, uint32_t bg, uint32_t border ) {
     float b[4], g[4];
     unpack( bg, g );
     unpack( border, b );
@@ -84,7 +83,7 @@ static void measure_cell( void* data, int row, int col, const char* s, size_t n 
     cells_t* C = data;
     awl_window_layout_t* L = C->L;
     char buf[1024];
-    if (row >= L->maxrows) return;
+    if (row >= L->max_rows) return;
     if (n >= sizeof buf) n = sizeof buf - 1;
     memcpy( buf, s, n );
     buf[n] = 0;
@@ -98,25 +97,25 @@ static void draw_cell( void* data, int row, int col, const char* s, size_t n ) {
     cells_t* C = data;
     const awl_window_layout_t* L = C->cL;
     char buf[1024];
-    if (!n || row >= L->maxrows) return;
+    if (!n || row >= L->max_rows) return;
     if (n >= sizeof buf) n = sizeof buf - 1;
     memcpy( buf, s, n );
     buf[n] = 0;
     int x = L->x0;
-    for (int c = 0; c < col; c++) x += L->widths[c] + L->colsp;
+    for (int c = 0; c < col; c++) x += L->widths[c] + L->column_spacing;
     int h = C->font->height;
-    awl_draw_text_over( C->pix, C->font, x, L->y0 + row * (h + L->rowsp), (unsigned)L->widths[col], (unsigned)h,
+    awl_draw_text_over( C->pix, C->font, x, L->y0 + row * (h + L->row_spacing), (unsigned)L->widths[col], (unsigned)h,
                         buf, C->fg );
 }
 
 int awl_window_layout( awl_window_layout_t* L, const char* text, const awl_window_style_t* style,
                        struct fcft_font* font, float s, int max_w, int max_h ) {
-    *L = (awl_window_layout_t){ .maxrows = INT_MAX };
+    *L = (awl_window_layout_t){ .max_rows = INT_MAX };
     if (!font) return 0;
     if (!text) text = "";
     const int fh = L->fh = font->height;
-    L->colsp = (int)lroundf( fmaxf( (float)style->column_spacing, 0 ) * s );
-    L->rowsp = (int)lroundf( fmaxf( (float)style->row_spacing, 0 ) * s );
+    L->column_spacing = (int)lroundf( fmaxf( (float)style->column_spacing, 0 ) * s );
+    L->row_spacing = (int)lroundf( fmaxf( (float)style->row_spacing, 0 ) * s );
     L->border_width = (int)lroundf( fmaxf( (float)style->border_width, 0 ) * s );
     L->radius = fmaxf( (float)style->radius, 0 ) * s;
     L->x0 = L->y0 = awl_window_inset( style, s );
@@ -124,10 +123,10 @@ int awl_window_layout( awl_window_layout_t* L, const char* text, const awl_windo
     /* taller than allowed: the rows that fit, the last of them an ellipsis */
     int rows = 1;
     for (const char* p = text; *p; p++) rows += *p == '\n';
-    const int fit = (max_h - 2 * L->y0 + L->rowsp) / (fh + L->rowsp);
+    const int fit = (max_h - 2 * L->y0 + L->row_spacing) / (fh + L->row_spacing);
     if (fit < 1) return 0;
     L->cut = rows > fit;
-    if (L->cut) L->maxrows = fit - 1;
+    if (L->cut) L->max_rows = fit - 1;
     cells_t C = { .L = L, .font = font };
     each_cell( text, measure_cell, &C );
     if (L->cut) {
@@ -137,9 +136,9 @@ int awl_window_layout( awl_window_layout_t* L, const char* text, const awl_windo
         L->nrows = fit;
     }
 
-    int width = 2 * L->x0 + (L->ncols - 1) * L->colsp;
+    int width = 2 * L->x0 + (L->ncols - 1) * L->column_spacing;
     for (int c = 0; c < L->ncols; c++) width += L->widths[c];
-    int height = 2 * L->y0 + L->nrows * fh + (L->nrows - 1) * L->rowsp;
+    int height = 2 * L->y0 + L->nrows * fh + (L->nrows - 1) * L->row_spacing;
     /* wider than allowed: the last column is cut off */
     if (width > max_w) {
         L->widths[L->ncols - 1] -= width - max_w;
@@ -157,8 +156,8 @@ int awl_window_inset( const awl_window_style_t* style, float s ) {
            (int)lroundf( fmaxf( (float)style->padding, 0 ) * s );
 }
 
-int awl_window_layout_frame( awl_window_layout_t* L, const awl_window_style_t* style, float s,
-                             int content_w, int content_h ) {
+int awl_window_layout_frame( awl_window_layout_t* L, const awl_window_style_t* style, float s, int content_w,
+                             int content_h ) {
     *L = (awl_window_layout_t){ 0 };
     if (content_w <= 0 || content_h <= 0) return 0;
     L->border_width = (int)lroundf( fmaxf( (float)style->border_width, 0 ) * s );
@@ -169,15 +168,14 @@ int awl_window_layout_frame( awl_window_layout_t* L, const awl_window_style_t* s
     return 1;
 }
 
-void awl_window_paint_frame( const awl_window_layout_t* L, const awl_window_style_t* style,
-                             uint32_t* data, int32_t stride ) {
+void awl_window_paint_frame( const awl_window_layout_t* L, const awl_window_style_t* style, uint32_t* data,
+                             int32_t stride ) {
     draw_frame( data, (size_t)stride, L->width, L->height, (float)L->border_width, L->radius,
                 style->bg, style->border );
 }
 
 /** c over the w x h box at x, y of data, clipped to the image */
-static void blend_rect( uint32_t* data, int32_t stride, int iw, int ih, int x, int y, int w, int h,
-                        uint32_t c ) {
+static void blend_rect( uint32_t* data, int32_t stride, int iw, int ih, int x, int y, int w, int h, uint32_t c ) {
     float f[4];
     unpack( c, f );
     for (int yy = y < 0 ? 0 : y; yy < y + h && yy < ih; yy++) {
@@ -198,19 +196,19 @@ static void blend_rect( uint32_t* data, int32_t stride, int iw, int ih, int x, i
 int awl_window_cell_box( const awl_window_layout_t* L, int row, int col, int* x, int* y, int* w, int* h ) {
     if (row < 0 || row >= L->nrows || col < 0 || col >= L->ncols) return 0;
     *x = L->x0;
-    for (int c = 0; c < col; c++) *x += L->widths[c] + L->colsp;
-    *w = L->widths[col] + (col < L->ncols - 1 ? L->colsp : 0);
-    *y = L->y0 + row * (L->fh + L->rowsp);
-    *h = L->fh + (row < L->nrows - 1 ? L->rowsp : 0);
+    for (int c = 0; c < col; c++) *x += L->widths[c] + L->column_spacing;
+    *w = L->widths[col] + (col < L->ncols - 1 ? L->column_spacing : 0);
+    *y = L->y0 + row * (L->fh + L->row_spacing);
+    *h = L->fh + (row < L->nrows - 1 ? L->row_spacing : 0);
     return 1;
 }
 
 int awl_window_cell_at( const awl_window_layout_t* L, int px, int py, int* row, int* col ) {
     *row = *col = -1;
     if (px < L->x0 || py < L->y0 || px >= L->width - L->x0 || py >= L->height - L->y0) return 0;
-    int r = (py - L->y0) / (L->fh + L->rowsp), c = 0, x = L->x0;
+    int r = (py - L->y0) / (L->fh + L->row_spacing), c = 0, x = L->x0;
     if (r >= L->nrows) return 0;
-    while (c < L->ncols - 1 && px >= x + L->widths[c] + L->colsp) x += L->widths[c++] + L->colsp;
+    while (c < L->ncols - 1 && px >= x + L->widths[c] + L->column_spacing) x += L->widths[c++] + L->column_spacing;
     *row = r;
     *col = c;
     return 1;
@@ -226,15 +224,15 @@ void awl_window_paint( const awl_window_layout_t* L, const char* text, const awl
      * half the row gap above and below */
     if (awl_window_cell_box( L, highlight_row, 0, &hx, &hy, &hw, &hh )) {
         const int inset = (L->border_width + L->x0) / 2;
-        blend_rect( data, stride, L->width, L->height, inset, hy - L->rowsp / 2, L->width - 2 * inset,
-                    L->fh + L->rowsp, style->highlight );
+        blend_rect( data, stride, L->width, L->height, inset, hy - L->row_spacing / 2, L->width - 2 * inset,
+                    L->fh + L->row_spacing, style->highlight );
     }
     pixman_image_t* pix = font ? awl_draw_image( (unsigned)L->width, (unsigned)L->height, data, stride ) : NULL;
     if (!pix) return;
     cells_t C = { .cL = L, .pix = pix, .font = font, .fg = style->fg };
     each_cell( text, draw_cell, &C );
     if (L->cut)
-        awl_draw_text_over( pix, font, L->x0, L->y0 + L->maxrows * (font->height + L->rowsp),
+        awl_draw_text_over( pix, font, L->x0, L->y0 + L->max_rows * (font->height + L->row_spacing),
                             (unsigned)L->widths[0], (unsigned)font->height, AWL_WINDOW_ELLIPSIS, style->fg );
     pixman_image_unref( pix );
 }
@@ -244,8 +242,8 @@ int awl_window_margin( int margin, int extent ) {
     return margin < extent / 4 ? margin : extent / 4;
 }
 
-void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
-                       int center_x, int top, int margin, int* x, int* y ) {
+void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh, int center_x, int top, int margin,
+                       int* x, int* y ) {
     int mx = awl_window_margin( margin, mon_w ), my = awl_window_margin( margin, area_h );
     /* what fits beside, and between the area's edge and the window */
     if (mx > (mon_w - lw) / 2) mx = lw < mon_w ? (mon_w - lw) / 2 : 0;
@@ -257,8 +255,8 @@ void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int
     *y = top ? area_y + my : area_y + area_h - lh - my;
 }
 
-void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
-                              int ax, int ay, int aw, int left, int margin, int* x, int* y ) {
+void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh, int ax, int ay, int aw,
+                              int left, int margin, int* x, int* y ) {
     int mx = awl_window_margin( margin, mon_w ), my = awl_window_margin( margin, area_h );
     if (mx > (mon_w - lw) / 2) mx = lw < mon_w ? (mon_w - lw) / 2 : 0;
     if (my > (area_h - lh) / 2) my = lh < area_h ? (area_h - lh) / 2 : 0;
@@ -276,8 +274,8 @@ void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int 
     if (*y < area_y + my) *y = area_y + my;
 }
 
-void awl_window_place_at( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
-                          int at, int dx, int dy, int margin, int* x, int* y ) {
+void awl_window_place_at( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh, int at, int dx, int dy,
+                          int margin, int* x, int* y ) {
     const int mx = awl_window_margin( margin, mon_w ), my = awl_window_margin( margin, area_h );
     int px, py;
     switch (at) {

@@ -47,8 +47,7 @@ static void image_destroy( struct wlr_buffer* wb ) {
     free( i );
 }
 
-static bool image_begin( struct wlr_buffer* wb, uint32_t flags, void** data,
-                         uint32_t* format, size_t* stride ) {
+static bool image_begin( struct wlr_buffer* wb, uint32_t flags, void** data, uint32_t* format, size_t* stride ) {
     Image* i = wl_container_of( wb, i, base );
     if (flags & WLR_BUFFER_DATA_PTR_ACCESS_WRITE) return false;
     *data = i->img->data;
@@ -117,7 +116,7 @@ static int fade_step( void* data ) {
 }
 
 awl_background_t* background_init( struct wlr_scene_tree* tree, struct wl_event_loop* loop ) {
-    awl_background_t* bg = ecalloc( 1, sizeof(*bg) );
+    awl_background_t* bg = calloc_or_die( 1, sizeof(*bg) );
     bg->tree = tree;
     wl_list_init( &bg->views );
     bg->fade_timer = wl_event_loop_add_timer( loop, fade_step, bg );
@@ -133,7 +132,7 @@ void background_fini( awl_background_t* bg ) {
 
 void background_set( awl_background_t* bg, awl_image_t* img, unsigned int fade_ms ) {
     BackgroundView* v;
-    Image* i = ecalloc( 1, sizeof(*i) );
+    Image* i = calloc_or_die( 1, sizeof(*i) );
     i->img = img;
     wlr_buffer_init( &i->base, &image_impl, img->width, img->height );
 
@@ -167,7 +166,7 @@ void background_set( awl_background_t* bg, awl_image_t* img, unsigned int fade_m
 }
 
 void background_addmon( awl_background_t* bg, Monitor* m ) {
-    BackgroundView* v = ecalloc( 1, sizeof(*v) );
+    BackgroundView* v = calloc_or_die( 1, sizeof(*v) );
     v->m = m;
     wl_list_insert( &bg->views, &v->link );
     background_update( bg, m );

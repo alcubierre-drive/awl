@@ -384,8 +384,8 @@ static char* copy_src( const char* s ) {
     return s && *s ? strdup( s ) : NULL;
 }
 
-int awl_notify_image_want( awl_notify_images_t* h, uint32_t id, uint64_t serial, int px, const char* image_path, const char* app_icon,
-                           const char* desktop_entry ) {
+int awl_notify_image_want( awl_notify_images_t* h, uint32_t id, uint64_t serial, int px, const char* image_path,
+                           const char* app_icon, const char* desktop_entry ) {
     const char* src[3] = { image_path, app_icon, desktop_entry };
     int any = 0;
     for (int i = 0; i < 3; i++) any |= src[i] && *src[i];

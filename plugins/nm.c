@@ -67,8 +67,7 @@ static int reply_ok( sd_bus_message* m, awl_nm_t* s ) {
     return 0;
 }
 
-static void get( awl_nm_t* s, const char* path, const char* iface, const char* prop,
-                 sd_bus_message_handler_t cb ) {
+static void get( awl_nm_t* s, const char* path, const char* iface, const char* prop, sd_bus_message_handler_t cb ) {
     s->pending = sd_bus_slot_unref( s->pending );
     if (sd_bus_call_method_async( s->bus, &s->pending, NM_NAME, path, "org.freedesktop.DBus.Properties",
                                   prop ? "Get" : "GetAll", cb, s, prop ? "ss" : "s", iface, prop ) < 0)

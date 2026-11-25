@@ -46,7 +46,7 @@ typedef struct awl_window_layout_t {
     /** rows in the image, the ellipsis row included */
     int nrows;
     /** the text's rows painted, the ones above the ellipsis if cut */
-    int maxrows;
+    int max_rows;
     /** the text has more rows than fit: the last row is an ellipsis */
     int cut;
     /** the border's width */
@@ -55,7 +55,7 @@ typedef struct awl_window_layout_t {
     float radius;
     /** the first cell's top left, the spacing between columns and between
      * rows */
-    int x0, y0, colsp, rowsp;
+    int x0, y0, column_spacing, row_spacing;
     /** the font's height, a row's */
     int fh;
 } awl_window_layout_t;
@@ -76,8 +76,8 @@ void awl_window_paint( const awl_window_layout_t* L, const char* text, const awl
 /** Lays out a painted window (:c:type:`awl_window_painter_t`): its frame around
  * content_w x content_h pixels at scale, the content at :c:member:`L->x0 <awl_window_layout_t.x0>`, :c:member:`L->y0 <awl_window_layout_t.y0>`; no
  * cells. Returns whether there is anything to show. */
-int awl_window_layout_frame( awl_window_layout_t* L, const awl_window_style_t* style, float scale,
-                             int content_w, int content_h );
+int awl_window_layout_frame( awl_window_layout_t* L, const awl_window_style_t* style, float scale, int content_w,
+                             int content_h );
 
 /** the border's width plus the padding at scale, physical pixels: how far
  * the content is from each edge of the image */
@@ -85,12 +85,12 @@ int awl_window_inset( const awl_window_style_t* style, float scale );
 
 /** Paints only L's frame (background and border) into data, as
  * :c:func:`awl_window_paint` does before the text. */
-void awl_window_paint_frame( const awl_window_layout_t* L, const awl_window_style_t* style,
-                             uint32_t* data, int32_t stride );
+void awl_window_paint_frame( const awl_window_layout_t* L, const awl_window_style_t* style, uint32_t* data,
+                             int32_t stride );
 
 /** The cell at px, py (pixels from the image's top left) into ``*row`` and ``*col``:
  * the gap after a row or column counts to it, the ellipsis row is row
- * :c:member:`L->maxrows <awl_window_layout_t.maxrows>`. Outside the text (the frame, the padding) both are -1, and it
+ * :c:member:`L->max_rows <awl_window_layout_t.max_rows>`. Outside the text (the frame, the padding) both are -1, and it
  * returns 0. */
 int awl_window_cell_at( const awl_window_layout_t* L, int px, int py, int* row, int* col );
 
@@ -110,8 +110,8 @@ int awl_window_margin( int margin, int extent );
  * from the monitor's sides and the area's edge. Less of the margin where
  * the window would not fit with it, none where it does not fit at all: then
  * at the monitor's left edge, the area's top or bottom edge. */
-void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
-                       int center_x, int top, int margin, int* x, int* y );
+void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh, int center_x, int top, int margin,
+                       int* x, int* y );
 
 /** Where a lw x lh window (logical pixels) goes beside the box ax, ay, aw
  * wide (layout coordinates; a submenu's beside the menu, at the row that
@@ -120,13 +120,13 @@ void awl_window_place( int mon_x, int mon_w, int area_y, int area_h, int lw, int
  * side, else on the other side if it fits there, else on the side with more
  * room, as far from the box as the monitor allows. Its top at ay, but
  * within the window area area_y, area_h as for :c:func:`awl_window_place`. */
-void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
-                              int ax, int ay, int aw, int left, int margin, int* x, int* y );
+void awl_window_place_beside( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh, int ax, int ay, int aw,
+                              int left, int margin, int* x, int* y );
 
 /** Where a lw x lh window (logical pixels) goes at spot at (an
  * AWL_WINDOW_AT_*) of the window area: the monitor at mon_x, mon_w across,
  * area_y, area_h down (layout coordinates), :c:func:`awl_window_margin` of margin
  * away from the edges it is at, then moved by dx, dy, but kept within the
  * monitor and the area (at its top left where it doesn't fit). */
-void awl_window_place_at( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh,
-                          int at, int dx, int dy, int margin, int* x, int* y );
+void awl_window_place_at( int mon_x, int mon_w, int area_y, int area_h, int lw, int lh, int at, int dx, int dy,
+                          int margin, int* x, int* y );

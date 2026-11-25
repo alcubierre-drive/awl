@@ -2,7 +2,7 @@
 
 hawkmoth (0.22) documents ``struct { ... } blur;`` inside a struct as an
 anonymous struct of its own (a named one, ``struct PertagLayout { ... }
-ptlt[32];``, as that struct): the comment above it, and the members in it,
+tag_layouts[32];``, as that struct): the comment above it, and the members in it,
 end up under ``@anonymous_<hash>``, and ``blur`` isn't a member at all. awl's
 configs are full of these, so this documents ``blur`` as a member with that
 comment (of type ``struct [anonymous]``) and the members in it as
@@ -24,7 +24,7 @@ _recursive_parse = parser._recursive_parse
 def _declared_with(field, record):
     """whether field is declared with record's type"""
     t = field._cc.type.get_canonical()
-    # struct { ... } ptlt[32]: the element's
+    # struct { ... } tag_layouts[32]: the element's
     while t.kind in (TypeKind.CONSTANTARRAY, TypeKind.INCOMPLETEARRAY):
         t = t.element_type.get_canonical()
     decl = t.get_declaration()
@@ -53,7 +53,7 @@ def _members(errors, record, nest, prefix):
     out = []
     kids = list(record.get_children())
     def inline(i, c):
-        # struct { ... } blur; struct PertagLayout { ... } ptlt[32];
+        # struct { ... } blur; struct PertagLayout { ... } tag_layouts[32];
         return c.kind in RECORDS and (c._cc.is_anonymous() or
                                       (i + 1 < len(kids) and _declared_with(kids[i + 1], c)))
 

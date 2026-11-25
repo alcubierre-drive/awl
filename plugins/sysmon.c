@@ -54,7 +54,7 @@ struct awl_sysmon {
     int filled, tfilled;
     float cpu[N], io[N], sys[N], load[N], mem[N], swp[N];
     /** cpu + io, the CPU graph's top */
-    float cpuio[N];
+    float cpu_io[N];
     float temp[NSENSORS][N];
     int ntemps;
     float tmin[NSENSORS], tmax[NSENSORS];
@@ -104,7 +104,7 @@ static void snap( awl_sysmon_t* sm ) {
             sm->load[a] = stats_sample( m->load, samples, a );
             sm->mem[a] = stats_sample( m->mem, samples, a );
             sm->swp[a] = stats_sample( m->swp, samples, a );
-            sm->cpuio[a] = sm->cpu[a] + sm->io[a];
+            sm->cpu_io[a] = sm->cpu[a] + sm->io[a];
         }
         sm->mem_total = atomic_load( &m->mem_total );
         sm->swp_total = atomic_load( &m->swp_total );
@@ -373,8 +373,8 @@ static int measure( void* data, struct fcft_font* font, float scale, int max_w, 
 
 /** text in the box x, y, w, sm->bh (offset by x0, y0): align 0 left, 1
  * centered, 2 right; cut with an ellipsis if wider */
-static void text_at( awl_sysmon_t* sm, pixman_image_t* pix, struct fcft_font* font, int x0, int y0, int x, int y, int w, const char* s,
-                     uint32_t fg, int align ) {
+static void text_at( awl_sysmon_t* sm, pixman_image_t* pix, struct fcft_font* font, int x0, int y0, int x, int y, int w,
+                     const char* s, uint32_t fg, int align ) {
     if (!*s || w <= 0) return;
     int tw = (int)awl_host->text_width( font, s );
     if (tw < w) x += align == 1 ? (w - tw) / 2 : align == 2 ? w - tw : 0;
@@ -431,8 +431,8 @@ static int column_nodes( awl_sysmon_t* sm, int c, double* xs ) {
  * (0xRRGGBBAA). Each pixel gets each segment by the area of it that it
  * covers, in one write: segments drawn one over the other would let the
  * background through where they meet. */
-static void column( awl_sysmon_t* sm, pixman_image_t* pix, int x, int gy, int nn, const double* xs, double top[][3], int n,
-                    const uint32_t* c ) {
+static void column( awl_sysmon_t* sm, pixman_image_t* pix, int x, int gy, int nn, const double* xs, double top[][3],
+                    int n, const uint32_t* c ) {
     uint32_t* data = pixman_image_get_data( pix );
     const int stride = pixman_image_get_stride( pix ) / 4;
     const int iw = pixman_image_get_width( pix ), ih = pixman_image_get_height( pix );
@@ -519,7 +519,7 @@ static void graph( awl_sysmon_t* sm, pixman_image_t* pix, int x0, int y0, const 
                 top[j][0] = t * g;
                 top[j][1] = v * g;
                 t = v;
-                curve_at( sm, sm->cpuio, sm->filled, xs[j], &t );
+                curve_at( sm, sm->cpu_io, sm->filled, xs[j], &t );
                 top[j][2] = t * g;
                 any = 1;
                 break;
@@ -637,8 +637,7 @@ static uint32_t title_color( awl_sysmon_t* sm, const panel_t* p, int c ) {
     }
 }
 
-static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
-                   int hover ) {
+static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     awl_sysmon_t* sm = data;
     (void)scale;
     const awl_colors_t* k = &sm->p->config.colors;

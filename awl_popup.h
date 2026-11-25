@@ -9,7 +9,7 @@
  * pointer gets its motion, presses and wheel before anything below it,
  * unless something above it takes the pointer there (a fullscreen client).
  *
- * Persistent popups (:c:func:`popupsetpersistent`, the notifications) stay until
+ * Persistent popups (:c:func:`popup_set_persistent`, the notifications) stay until
  * they are hidden: a press elsewhere, another popup shown and locking the
  * screen leave them (they are only out of sight while it is locked). They
  * are in a tree of their own above the others: right above LyrOverlay if
@@ -25,104 +25,104 @@
 typedef struct {
     awl_window_t *win;
     struct wl_list link;
-    /** looks like a menu (:c:func:`popupsetmenustyle`) */
+    /** looks like a menu (:c:func:`popup_set_menu_style`) */
     bool menu:1;
-    /** the plugins' (:c:func:`popupcreate`), not AWL_TEST_WINDOWS' */
+    /** the plugins' (:c:func:`popup_create`), not AWL_TEST_WINDOWS' */
     bool plugin:1;
-    /** :c:func:`popupsetpersistent` */
+    /** :c:func:`popup_set_persistent` */
     bool persistent:1;
-    /** :c:func:`popupsetcolors`, 0: the style's */
+    /** :c:func:`popup_set_colors`, 0: the style's */
     uint32_t bg, fg, border;
-    /** :c:func:`popupsetborderwidth`, < 0: the style's */
+    /** :c:func:`popup_set_border_width`, < 0: the style's */
     int border_width;
 } Popup;
 
 /** a new, hidden popup of the plugins' (plugin) or of AWL_TEST_WINDOWS';
  * NULL before setup() */
-awl_window_t *popupnew(awl_server_t *srv, int plugin);
+awl_window_t *popup_new( awl_server_t *srv, int plugin );
 /** a new, hidden popup for the plugins, styled by
  * :c:member:`cfg->popup <awl_config_t.popup>`; NULL before setup(). The library gives back what it made
- * before it is unloaded; :c:func:`pluginsreap` destroys what it left. Several can be
+ * before it is unloaded; :c:func:`plugins_reap` destroys what it left. Several can be
  * shown at once. The host table hands the plugins the rest of
  * awl_window.h as it is. */
-awl_window_t *popupcreate(awl_server_t *srv);
+awl_window_t *popup_create( awl_server_t *srv );
 /** nothing if win is NULL */
-void popupdestroy(awl_server_t *srv, awl_window_t *win);
+void popup_destroy( awl_server_t *srv, awl_window_t *win );
 /** shows win for a bar widget on m, centered on center_x (logical pixels
  * from m's left edge), on the bar's side; a popup that isn't a menu closes
  * the menus open. A press anywhere but on the bar hides every popup. */
-void popupshow(awl_server_t *srv, awl_window_t *win, Monitor *m, int center_x);
+void popup_show( awl_server_t *srv, awl_window_t *win, Monitor *m, int center_x );
 /** shows win on m at a spot of its window area, an AWL_WINDOW_AT_*, moved
- * by dx, dy (:c:func:`awl_window_show_at`); closes the menus open, as :c:func:`popupshow` */
-void popupshowat(awl_server_t *srv, awl_window_t *win, Monitor *m, int at, int dx, int dy);
+ * by dx, dy (:c:func:`awl_window_show_at`); closes the menus open, as :c:func:`popup_show` */
+void popup_show_at( awl_server_t *srv, awl_window_t *win, Monitor *m, int at, int dx, int dy );
 /** hides win (:c:func:`awl_window_hide`) */
-void popuphide(awl_server_t *srv, awl_window_t *win);
+void popup_hide( awl_server_t *srv, awl_window_t *win );
 /** win takes the keyboard while shown (:c:func:`awl_window_set_key`) */
-void popupsetkey(awl_server_t *srv, awl_window_t *win, awl_window_key_t key, void *data);
+void popup_set_key( awl_server_t *srv, awl_window_t *win, awl_window_key_t key, void *data );
 /** the popup that has the keyboard: the newest shown one with a key
  * callback, NULL if none. While there is one, no client has the keyboard
- * focus: keypress() hands it every key before the bindings. */
-awl_window_t *popupkeyboard(awl_server_t *srv);
+ * focus: key_press() hands it every key before the bindings. */
+awl_window_t *popup_keyboard( awl_server_t *srv );
 /** after popups were shown or hidden: takes the keyboard focus from the
- * clients when a popup takes the keys, gives it back (focustop(selmon))
+ * clients when a popup takes the keys, gives it back (focus_top(sel_mon))
  * when none does anymore */
-void popupsgrabupdate(awl_server_t *srv);
+void popups_grab_update( awl_server_t *srv );
 /** shows win on m beside the box x, y, w, h, a row of another popup, on
  * its right unless left (:c:func:`awl_window_show_beside`) */
-void popupshowbeside(awl_server_t *srv, awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left);
+void popup_show_beside( awl_server_t *srv, awl_window_t *win, Monitor *m, int x, int y, int w, int h, int left );
 /** makes win look like a menu (:c:type:`awl_colors_t`'s menu_*,
  * :c:member:`awl_popup_config_t.menu`) from now on */
-void popupsetmenustyle(awl_server_t *srv, awl_window_t *win);
+void popup_set_menu_style( awl_server_t *srv, awl_window_t *win );
 /** makes win persistent, or not (see above), from now on */
-void popupsetpersistent(awl_server_t *srv, awl_window_t *win, int persistent);
+void popup_set_persistent( awl_server_t *srv, awl_window_t *win, int persistent );
 /** win's own background, text and border colors (0xRRGGBBAA) over the
  * style's, 0 keeps the style's */
-void popupsetcolors(awl_server_t *srv, awl_window_t *win, uint32_t bg, uint32_t fg, uint32_t border);
+void popup_set_colors( awl_server_t *srv, awl_window_t *win, uint32_t bg, uint32_t fg, uint32_t border );
 /** win's own border width, logical pixels (0: none), < 0 for the style's */
-void popupsetborderwidth(awl_server_t *srv, awl_window_t *win, int width);
+void popup_set_border_width( awl_server_t *srv, awl_window_t *win, int width );
 /** win's last placement (:c:func:`awl_window_box`) into x, y, w, h; returns
  * whether it is visible */
-int popupbox(awl_server_t *srv, awl_window_t *win, int *x, int *y, int *w, int *h);
+int popup_box( awl_server_t *srv, awl_window_t *win, int *x, int *y, int *w, int *h );
 /** the room win has on m at a spot (:c:func:`awl_window_room`) into x, y, w, h;
  * all 0 for no popup or monitor */
-void popuproom(awl_server_t *srv, awl_window_t *win, Monitor *m, int *x, int *y, int *w, int *h);
+void popup_room( awl_server_t *srv, awl_window_t *win, Monitor *m, int *x, int *y, int *w, int *h );
 /** whether win is a persistent popup */
-int popuppersistent(awl_server_t *srv, awl_window_t *win);
+int popup_persistent( awl_server_t *srv, awl_window_t *win );
 /** the layer the persistent popups' tree is above (LyrOverlay, or LyrTop,
  * the others' between unless another popup is shown), -1 before there is
  * one; ``*visible`` whether they are in sight */
-int popuppersistentlayer(awl_server_t *srv, int *visible);
+int popup_persistent_layer( awl_server_t *srv, int *visible );
 /** the screen was locked or unlocked (:c:member:`awl_server_t.locked`): the persistent popups go
  * out of sight while it is, and come back after */
-void popupslocked(awl_server_t *srv);
+void popups_locked( awl_server_t *srv );
 /** where part of win's painter is, 0 if it is not shown
  * (:c:func:`awl_window_part_box`) */
-int popuppartbox(awl_window_t *win, int part, int *x, int *y, int *w, int *h);
+int popup_part_box( awl_window_t *win, int part, int *x, int *y, int *w, int *h );
 /** whether the pointer is over win, one of the popups */
-int pointerinpopup(awl_server_t *srv, awl_window_t *win);
+int pointer_in_popup( awl_server_t *srv, awl_window_t *win );
 /** whether win is one of the popups and shown */
-int popupshown(awl_server_t *srv, awl_window_t *win);
+int popup_shown( awl_server_t *srv, awl_window_t *win );
 /** the topmost popup that takes the pointer at x, y, NULL if none */
-awl_window_t *popupat(awl_server_t *srv, double x, double y);
-/** the popup that has the pointer: :c:func:`popupat` the cursor, unless the
+awl_window_t *popup_at( awl_server_t *srv, double x, double y );
+/** the popup that has the pointer: :c:func:`popup_at` the cursor, unless the
  * screen is locked or the pointer busy (moving, resizing, pressed on a
  * client, dragging) */
-awl_window_t *popuppointer(awl_server_t *srv);
+awl_window_t *popup_pointer( awl_server_t *srv );
 /** The pointer moved: over a popup that takes it, that popup gets it and
  * nothing below does; returns whether it did. Logs (at verbose, -d) where
  * it goes. */
-int popupmotion(awl_server_t *srv);
+int popup_motion( awl_server_t *srv );
 /** m was arranged, or its font or scale changed */
-void popupsupdate(awl_server_t *srv, Monitor *m);
+void popups_update( awl_server_t *srv, Monitor *m );
 /** hides every popup but the persistent ones */
-void popupshideall(awl_server_t *srv);
+void popups_hide_all( awl_server_t *srv );
 /** m is going */
-void popupsremovemon(awl_server_t *srv, Monitor *m);
+void popups_remove_mon( awl_server_t *srv, Monitor *m );
 /** after plugins_config.c changed: every popup's look, and where the
  * persistent ones are */
-void popupsrestyle(awl_server_t *srv);
-/** destroys the plugins' popups (a reload, see :c:func:`pluginsreap`), whose
+void popups_restyle( awl_server_t *srv );
+/** destroys the plugins' popups (a reload, see :c:func:`plugins_reap`), whose
  * callbacks point into the library; returns how many */
-int popupsreap(awl_server_t *srv);
+int popups_reap( awl_server_t *srv );
 /** the scene is going */
-void popupsfini(awl_server_t *srv);
+void popups_fini( awl_server_t *srv );

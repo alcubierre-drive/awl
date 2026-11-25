@@ -2,7 +2,7 @@
 # Scenario test of awl's notification server (awl_notifications.c): a
 # live.sh test instance, its own session bus, driven by gdbus as clients
 # would and by AWL_TEST_WINDOWS' nclose/ninvoke/nhold as the library would
-# (testwincmd() in awl_test.c), checking the open notifications in its dump
+# (test_win_cmd() in awl_test.c), checking the open notifications in its dump
 # and the signals a gdbus monitor saw; at the end that awl is still alive
 # and exits cleanly.
 #

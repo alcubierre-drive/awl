@@ -28,14 +28,13 @@
 
 struct loop_timer;
 
-void loop_add_fd(int fd, void (*callback)(void *data), void *data);
+void loop_add_fd( int fd, void (*callback)(void *data), void *data );
 // also from an fd's callback
-void loop_remove_fd(int fd);
+void loop_remove_fd( int fd );
 // The timer is freed once it has run, or has been removed
-struct loop_timer *loop_add_timer(int ms, void (*callback)(void *data),
-        void *data);
+struct loop_timer *loop_add_timer( int ms, void (*callback)(void *data), void *data );
 // NULL is fine
-void loop_remove_timer(struct loop_timer *timer);
+void loop_remove_timer( struct loop_timer *timer );
 
 // The state
 
@@ -108,20 +107,19 @@ struct awlock_state {
 };
 
 // awlock.c: redraws every output's logo, as the state changed
-void damage_state(struct awlock_state *state);
+void damage_state( struct awlock_state *state );
 
 // auth.c: forks the PAM child and makes the password buffer; checked
 // passwords' results come in on the event loop. Exits on failure.
-void auth_start(struct awlock_state *state);
+void auth_start( struct awlock_state *state );
 // auth.c: a key typed (keysym), as text (UTF-8, "" for none)
-void auth_handle_key(struct awlock_state *state,
-        xkb_keysym_t keysym, const char *text);
+void auth_handle_key( struct awlock_state *state, xkb_keysym_t keysym, const char *text );
 // auth.c: shows AUTH_STATE_INVALID, then idle again after a while
-void schedule_auth_idle(struct awlock_state *state);
+void schedule_auth_idle( struct awlock_state *state );
 
 // fingerprint.c: starts verifying fingerprints with fprintd: a match unlocks
 // (state->running = false). NULL without a system bus.
-struct fingerprint *fingerprint_start(struct awlock_state *state);
-void fingerprint_stop(struct fingerprint *fp);
+struct fingerprint *fingerprint_start( struct awlock_state *state );
+void fingerprint_stop( struct fingerprint *fp );
 
 #endif

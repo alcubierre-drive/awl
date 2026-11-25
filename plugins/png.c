@@ -109,9 +109,9 @@ unsigned char* awl_png_encode( const uint32_t* px, int w, int h, int stride, int
             }
     }
     size_t row = (size_t)w * bpp;
-    size_t rawlen = (row + 1) * (size_t)h;
+    size_t raw_len = (row + 1) * (size_t)h;
 
-    if (!(raw = malloc( rawlen )) || !(prev = calloc( 1, row )) || !(cur = malloc( row ))
+    if (!(raw = malloc( raw_len )) || !(prev = calloc( 1, row )) || !(cur = malloc( row ))
             || !(s = calloc( 1, sizeof(*s) ))) /* sdefl leaves its counts as they are (its issues 58, 61) */
         goto fail;
     for (int y = 0; y < h; y++) {
@@ -135,7 +135,7 @@ unsigned char* awl_png_encode( const uint32_t* px, int w, int h, int stride, int
 
     /* signature, IHDR (8 + 13 + 4), IDAT's head (8) and the zlib stream
      * written in place after it, its CRC, IEND (12) */
-    cap = 8 + 25 + 8 + (size_t)sdefl_bound( (int)rawlen ) + 6 + 4 + 12;
+    cap = 8 + 25 + 8 + (size_t)sdefl_bound( (int)raw_len ) + 6 + 4 + 12;
     if (!(out = malloc( cap ))) goto fail;
     p = out;
     memcpy( p, sig, 8 );
@@ -149,7 +149,7 @@ unsigned char* awl_png_encode( const uint32_t* px, int w, int h, int stride, int
     p[14] = p[15] = p[16] = 0;    /* deflate, adaptive filters, no interlace */
     p = chunk_end( p, 4 + 13 );
 
-    zn = zsdeflate( s, p + 8, raw, (int)rawlen, level );
+    zn = zsdeflate( s, p + 8, raw, (int)raw_len, level );
     p = be32( p, (uint32_t)zn );
     memcpy( p, "IDAT", 4 );
     p = chunk_end( p, 4 + (size_t)zn );

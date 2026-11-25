@@ -306,12 +306,8 @@ void awl_osd_wallpaper( awl_osd_t* o ) {
     int cur, count;
     const int settled = awl_wallpaper_settled( o->p->wallpaper, &cur, &count ) && count > 0;
     /* the timer's mode, as awl keeps it in the config dictionary */
-    char mode[16] = "";
-    awl_dict_val_t v;
-    AWL_HOST_CFG_LOCK( awl_host );
-    if (AWL_HOST_CFG_GET( awl_host, "wallpaper_mode", &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR)
-        snprintf( mode, sizeof mode, "%s", v.str );
-    AWL_HOST_CFG_UNLOCK( awl_host );
+    char mode[16];
+    AWL_HOST_CFG_STRNCPY( awl_host, "wallpaper_mode", mode, sizeof mode );
     const char* off = o->p->config.wallpaper.interval ? "" : " (off)";
     char title[64];
     if (settled)

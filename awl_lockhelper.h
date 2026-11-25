@@ -17,7 +17,7 @@
  * The helper exits when awl does (the socket's end of file). Its lockers are
  * its children, not awl's: awl sees one go by its client's destroy. Only
  * with ``AWL_AWLOCK`` (the meson option ``lock``); without, these do
- * nothing and :c:func:`lockhelperrun` fails. Main thread only.
+ * nothing and :c:func:`lockhelper_run` fails. Main thread only.
  */
 
 #include <stdbool.h>
@@ -30,10 +30,10 @@ typedef struct awl_process_t awl_process_t;
 
 /** forks proc's helper; first thing in ``main()``, before any thread. A
  * helper that can't be forked is logged, and there is no awlock. */
-void lockhelperstart(awl_process_t *proc);
+void lockhelper_start( awl_process_t *proc );
 /** Has the helper start awlock with cfg on fd, the locker's end of its
  * Wayland connection; fd is the caller's still. False (logged) if the
  * helper is gone or its socket full. */
-bool lockhelperrun(awl_process_t *proc, const awlock_config_t *cfg, int fd);
+bool lockhelper_run( awl_process_t *proc, const awlock_config_t *cfg, int fd );
 /** pid, a child, exited: if it was the helper, there are no more lockers */
-void lockhelperexited(awl_process_t *proc, pid_t pid);
+void lockhelper_exited( awl_process_t *proc, pid_t pid );

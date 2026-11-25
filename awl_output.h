@@ -12,21 +12,21 @@
 
 /* the backend's new outputs, the output layout's changes, and requests of
  * the output management and output power management protocols */
-void createmon(struct wl_listener *listener, void *data);
-void updatemons(struct wl_listener *listener, void *data);
-void outputmgrapply(struct wl_listener *listener, void *data);
-void outputmgrtest(struct wl_listener *listener, void *data);
-void powermgrsetmode(struct wl_listener *listener, void *data);
+void create_mon( struct wl_listener *listener, void *data );
+void update_mons( struct wl_listener *listener, void *data );
+void output_mgr_apply( struct wl_listener *listener, void *data );
+void output_mgr_test( struct wl_listener *listener, void *data );
+void power_mgr_set_mode( struct wl_listener *listener, void *data );
 
 /** the monitor at x, y (layout coordinates), NULL if none */
-Monitor *xytomon(awl_server_t *srv, double x, double y);
-/** the enabled monitor add places after selmon (or before, add < 0), NULL
+Monitor *xy_to_mon( awl_server_t *srv, double x, double y );
+/** the enabled monitor add places after sel_mon (or before, add < 0), NULL
  * if none is enabled */
-Monitor *nextmon(awl_server_t *srv, int add);
+Monitor *next_mon( awl_server_t *srv, int add );
 /** selects m; the bars mark which one is */
-void setselmon(awl_server_t *srv, Monitor *m);
+void set_sel_mon( awl_server_t *srv, Monitor *m );
 /** the monitor whose output is named name, NULL if none */
-Monitor *monitornamed(awl_server_t *srv, const char *name);
-/** selmon, for the host table */
-Monitor *monitorselected(awl_server_t *srv);
-float monitorscale(Monitor *m);
+Monitor *monitor_named( awl_server_t *srv, const char *name );
+/** sel_mon, for the host table */
+Monitor *monitor_selected( awl_server_t *srv );
+float monitor_scale( Monitor *m );

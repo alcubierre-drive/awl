@@ -1,6 +1,7 @@
 /* awl_dict_type.h - minimal string -> tagged value hash map with a stable, portable C ABI. */
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 /** a string -> tagged value hash map (awl_dict.h); opaque */
@@ -71,4 +72,6 @@ typedef struct {
     int32_t (*s_iter)(const awl_dict_t*, int32_t (*)(const char*, const awl_dict_val_t*, void*), void*);
     void (*s_lock)(const awl_dict_t*);
     void (*s_unlock)(const awl_dict_t*);
+    char* (*s_strdup)(const awl_dict_t*, const char*);
+    int32_t (*s_strncpy)(const awl_dict_t*, const char*, char*, size_t);
 } awl_dict_c;

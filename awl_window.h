@@ -81,7 +81,7 @@ void awl_window_redraw( awl_server_t* srv, awl_window_t* win );
 
 /** Shows the window on m, or moves it there: on the bar's side of m's window
  * area (the top if top, else the bottom), centered on center_x (logical
- * pixels from m's left edge) but kept within m. It draws in :c:member:`m->popupfont <Monitor.popupfont>`,
+ * pixels from m's left edge) but kept within m. It draws in :c:member:`m->popup_font <Monitor.popup_font>`,
  * else in the bar's font; with neither it stays hidden. */
 void awl_window_show( awl_server_t* srv, awl_window_t* win, Monitor* m, int center_x, int top );
 /** Shows the window on m, or moves it there, beside anchor (layout
@@ -155,8 +155,8 @@ void awl_window_pointer_leave( awl_server_t* srv, awl_window_t* win );
 void awl_window_pointer_button( awl_window_t* win, double lx, double ly, uint32_t button, int* row, int* col );
 /** A scroll at lx, ly: calls the scroll callback, if any; the cell into
  * ``*row``, ``*col``. */
-void awl_window_pointer_axis( awl_window_t* win, double lx, double ly, uint32_t orientation,
-                              double delta, int32_t value120, int* row, int* col );
+void awl_window_pointer_axis( awl_window_t* win, double lx, double ly, uint32_t orientation, double delta,
+                              int32_t value120, int* row, int* col );
 /** the highlighted row, -1 none */
 int awl_window_hover_row( const awl_window_t* win );
 /** where a painted window's part is, layout coordinates and logical size;

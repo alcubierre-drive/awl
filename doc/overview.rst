@@ -47,7 +47,7 @@ with it.
      - the plugins, on the poller thread (plugins/)
    * - Wallpaper
      - shows it, scaled to cover, and fades (awl_background.c); the timer and
-       the :c:func:`wallpaper`/:c:func:`wallpapermode` actions (awl_wallpaper.c)
+       the :c:func:`wallpaper`/:c:func:`wallpaper_mode` actions (awl_wallpaper.c)
      - lists the directory, picks and decodes (plugins/wallpaper.c, Wuffs)
    * - Popups
      - awl's own popups (text, or a plugin's painter), any number at once: draws and places them (awl_window.c, awl_popup.c)
@@ -112,7 +112,7 @@ Locking
 
 awl locks with an ext-session-lock client, ``cfg->lock.locker``
 (awl's own, awlock, by default: lock/README.md), started by
-:c:func:`lockscreen`: as the :c:func:`lockscreen` action, at start with
+:c:func:`lock_screen`: as the :c:func:`lock_screen` action, at start with
 ``lock.at_start``, and on request of the plugins'
 logind thread, which listens for ``loginctl lock-session`` and for an
 upcoming suspend. Before suspend it holds a delay inhibitor until the locker

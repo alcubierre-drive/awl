@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 /* the file starts over once it grows past this */
-#define AWL_LOGFILE_MAX (1024*128)
+#define AWL_LOG_FILE_MAX (1024*128)
 
 
 static const struct { const char *name, *color; } levels[] = {
@@ -72,7 +72,7 @@ void awl_dbg_vprintf( awl_loglevel_t l, const char* fmt, va_list ap ) {
     pthread_mutex_lock( &proc->log.mtx );
     /* the prefix is at most 20 bytes, close enough for the size cap */
     proc->log.size += len + 20;
-    if (proc->log.size >= AWL_LOGFILE_MAX && !ftruncate( proc->log.fd, 0 )) proc->log.size = len + 20;
+    if (proc->log.size >= AWL_LOG_FILE_MAX && !ftruncate( proc->log.fd, 0 )) proc->log.size = len + 20;
     emit( proc->log.fd, l, 0, msg, len );
     pthread_mutex_unlock( &proc->log.mtx );
 }

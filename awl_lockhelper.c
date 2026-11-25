@@ -5,9 +5,9 @@
 /* awlock isn't built in (meson option lock): no helper, and awl never asks
  * one, it looks for a program by that name instead (awl_lockscreen.c) */
 
-void lockhelperstart(awl_process_t *proc) {}
-bool lockhelperrun(awl_process_t *proc, const awlock_config_t *cfg, int fd) {return false;}
-void lockhelperexited(awl_process_t *proc, pid_t pid) {}
+void lockhelper_start( awl_process_t *proc ) {}
+bool lockhelper_run( awl_process_t *proc, const awlock_config_t *cfg, int fd ) {return false;}
+void lockhelper_exited( awl_process_t *proc, pid_t pid ) {}
 
 #else
 #include "awl_log.h"
@@ -23,9 +23,7 @@ void lockhelperexited(awl_process_t *proc, pid_t pid) {}
 #include <unistd.h>
 
 /** the fd in msg's SCM_RIGHTS, -1 if none; any more are closed */
-static int
-recvfd(struct msghdr *msg)
-{
+static int recv_fd( struct msghdr *msg ) {
     int fd = -1;
     for (struct cmsghdr *h = CMSG_FIRSTHDR(msg); h; h = CMSG_NXTHDR(msg, h)) {
         if (h->cmsg_level != SOL_SOCKET || h->cmsg_type != SCM_RIGHTS)
@@ -44,9 +42,7 @@ recvfd(struct msghdr *msg)
 }
 
 /** a locker: awlock with cfg on fd; never returns */
-static _Noreturn void
-locker(const awlock_config_t *cfg, int fd)
-{
+static _Noreturn void locker( const awlock_config_t *cfg, int fd ) {
     /* no core dump, no ptrace by the user's other programs: it holds the
      * password, and its password child (a fork) inherits this */
     if (prctl(PR_SET_DUMPABLE, 0, 0, 0, 0))
@@ -62,9 +58,7 @@ locker(const awlock_config_t *cfg, int fd)
 }
 
 /** the helper: forks a locker for each request, until awl is gone */
-static _Noreturn void
-serve(int sock)
-{
+static _Noreturn void serve( int sock ) {
     /* the kernel reaps the lockers */
     signal(SIGCHLD, SIG_IGN);
     for (;;) {
@@ -83,7 +77,7 @@ serve(int sock)
             continue;
         if (n <= 0)
             _exit(n < 0);
-        int fd = recvfd(&msg);
+        int fd = recv_fd(&msg);
         /* awl's own request: anything else is a bug in awl */
         if (fd < 0 || (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) || (size_t)n != sizeof cfg
                 || !memchr(cfg.logo, '\0', sizeof cfg.logo)) {
@@ -104,9 +98,7 @@ serve(int sock)
     }
 }
 
-void
-lockhelperstart(awl_process_t *proc)
-{
+void lockhelper_start( awl_process_t *proc ) {
     int sv[2];
     /* SEQPACKET: one request per message, the fd with it */
     if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sv)) {
@@ -141,9 +133,7 @@ lockhelperstart(awl_process_t *proc)
     proc->lockhelper.pid = pid;
 }
 
-bool
-lockhelperrun(awl_process_t *proc, const awlock_config_t *cfg, int fd)
-{
+bool lockhelper_run( awl_process_t *proc, const awlock_config_t *cfg, int fd ) {
     if (proc->lockhelper.fd < 0) {
         awl_err_printf("lock: no lock helper, can't start awlock\n");
         return false;
@@ -170,9 +160,7 @@ lockhelperrun(awl_process_t *proc, const awlock_config_t *cfg, int fd)
     return true;
 }
 
-void
-lockhelperexited(awl_process_t *proc, pid_t pid)
-{
+void lockhelper_exited( awl_process_t *proc, pid_t pid ) {
     if (pid != proc->lockhelper.pid)
         return;
     awl_err_printf("lock: the lock helper (%d) exited; no more awlock\n", (int)pid);

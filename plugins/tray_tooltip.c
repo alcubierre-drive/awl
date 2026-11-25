@@ -45,8 +45,7 @@ void awl_tray_tooltip_hide( awl_tray_tooltip_t* t ) {
     if (t->win) awl_host->window_hide( awl_host->srv, t->win );
 }
 
-void awl_tray_tooltip_show( awl_tray_tooltip_t* t, uint32_t token, const char* monitor, int center_x,
-                            const char* text ) {
+void awl_tray_tooltip_show( awl_tray_tooltip_t* t, uint32_t token, const char* monitor, int center_x, const char* text ) {
     if (!t) return;
     char* copy = strdup( text );
     if (!copy || !(t->win || (t->win = awl_host->window_create( awl_host->srv ))) ||

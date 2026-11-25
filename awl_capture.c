@@ -51,11 +51,9 @@ struct awl_capture {
     struct wl_list writers;
 };
 
-static struct awl_capture *
-capturestate(awl_server_t *srv)
-{
+static struct awl_capture *capture_state( awl_server_t *srv ) {
     if (!srv->capture) {
-        srv->capture = ecalloc(1, sizeof(*srv->capture));
+        srv->capture = calloc_or_die(1, sizeof(*srv->capture));
         wl_list_init(&srv->capture->writers);
     }
     return srv->capture;
@@ -63,12 +61,10 @@ capturestate(awl_server_t *srv)
 
 /* ---- the grab ---- */
 
-int
-grabstart(awl_server_t *srv, const awl_grab_t *grab, void *data, const char *cursor)
-{
+int grab_start( awl_server_t *srv, const awl_grab_t *grab, void *data, const char *cursor ) {
     if (!grab || srv->locked || (srv->cursor.mode != CurNormal && srv->cursor.mode != CurPressed))
         return 0;
-    struct awl_capture *C = capturestate(srv);
+    struct awl_capture *C = capture_state(srv);
     C->grab = *grab;
     C->data = data;
     srv->cursor.mode = CurGrab;
@@ -84,9 +80,7 @@ grabstart(awl_server_t *srv, const awl_grab_t *grab, void *data, const char *cur
 }
 
 /** ends the grab; the library's cancel if tell */
-static void
-grabstop(awl_server_t *srv, int tell)
-{
+static void grab_stop( awl_server_t *srv, int tell ) {
     struct awl_capture *C = srv->capture;
     if (!C || srv->cursor.mode != CurGrab)
         return;
@@ -94,45 +88,37 @@ grabstop(awl_server_t *srv, int tell)
     void *data = C->data;
     C->grab = (awl_grab_t){0};
     C->data = NULL;
-    grabmark(srv, NULL, 0, 0, 0);
+    grab_mark(srv, NULL, 0, 0, 0);
     srv->cursor.mode = CurNormal;
     awl_vrb_printf("capture: grab %s\n", tell ? "cancelled" : "ended");
     /* what is under the pointer gets it back, and sets its image again (see
-     * buttonpress()'s end of a move) */
+     * button_press()'s end of a move) */
     wlr_cursor_set_xcursor(srv->cursor.wlr, srv->cursor.mgr, "default");
     wlr_seat_pointer_notify_clear_focus(srv->seat);
-    motionnotify(srv, 0, NULL, 0, 0, 0, 0);
+    motion_notify(srv, 0, NULL, 0, 0, 0, 0);
     if (tell && grab.cancel)
         grab.cancel(data);
 }
 
-void
-grabend(awl_server_t *srv)
-{
-    grabstop(srv, 0);
+void grab_end( awl_server_t *srv ) {
+    grab_stop(srv, 0);
 }
 
-void
-grabcancel(awl_server_t *srv)
-{
-    grabstop(srv, 1);
+void grab_cancel( awl_server_t *srv ) {
+    grab_stop(srv, 1);
 }
 
-int
-grabreap(awl_server_t *srv)
-{
+int grab_reap( awl_server_t *srv ) {
     if (srv->cursor.mode != CurGrab)
         return 0;
-    grabstop(srv, 0);
+    grab_stop(srv, 0);
     return 1;
 }
 
-void
-grabmotion(awl_server_t *srv)
-{
+void grab_motion( awl_server_t *srv ) {
     struct awl_capture *C = srv->capture;
     if (srv->locked) {
-        grabcancel(srv);
+        grab_cancel(srv);
         return;
     }
     /* a virtual pointer's motion comes as an internal one (time 0), and
@@ -145,26 +131,22 @@ grabmotion(awl_server_t *srv)
         C->grab.motion(C->x, C->y, C->data);
 }
 
-void
-grabbutton(awl_server_t *srv, uint32_t button, int pressed, uint32_t mods)
-{
+void grab_button( awl_server_t *srv, uint32_t button, int pressed, uint32_t mods ) {
     struct awl_capture *C = srv->capture;
     if (srv->locked) {
-        grabcancel(srv);
+        grab_cancel(srv);
         return;
     }
-    grabmotion(srv);
+    grab_motion(srv);
     /* motion() may have ended it */
     if (srv->cursor.mode == CurGrab && C->grab.button)
         C->grab.button(button, pressed, mods, C->data);
 }
 
-void
-grabkey(awl_server_t *srv, uint32_t sym, uint32_t mods)
-{
+void grab_key( awl_server_t *srv, uint32_t sym, uint32_t mods ) {
     struct awl_capture *C = srv->capture;
     if (srv->locked) {
-        grabcancel(srv);
+        grab_cancel(srv);
         return;
     }
     if (C->grab.key)
@@ -172,9 +154,7 @@ grabkey(awl_server_t *srv, uint32_t sym, uint32_t mods)
 }
 
 /** color, 0xRRGGBBAA, premultiplied as the scene wants it */
-static void
-premultiplied(uint32_t color, float out[4])
-{
+static void premultiplied( uint32_t color, float out[4] ) {
     float a = (color & 0xff) / 255.0f;
     out[0] = ((color >> 24) & 0xff) / 255.0f * a;
     out[1] = ((color >> 16) & 0xff) / 255.0f * a;
@@ -182,9 +162,7 @@ premultiplied(uint32_t color, float out[4])
     out[3] = a;
 }
 
-static void
-rectset(struct wlr_scene_rect *r, int x, int y, int w, int h)
-{
+static void rect_set( struct wlr_scene_rect *r, int x, int y, int w, int h ) {
     wlr_scene_node_set_enabled(&r->node, w > 0 && h > 0);
     if (w <= 0 || h <= 0)
         return;
@@ -192,11 +170,9 @@ rectset(struct wlr_scene_rect *r, int x, int y, int w, int h)
     wlr_scene_rect_set_size(r, w, h);
 }
 
-void
-grabmark(awl_server_t *srv, const awl_box_t *box, uint32_t dim, uint32_t frame, int frame_width)
-{
+void grab_mark( awl_server_t *srv, const awl_box_t *box, uint32_t dim, uint32_t frame, int frame_width ) {
     struct awl_capture *C = srv->capture;
-    struct wlr_box all = srv->out.sgeom;
+    struct wlr_box all = srv->out.screen_geom;
     float shade[4], line[4];
     int fw = MAX(frame_width, 0);
 
@@ -224,45 +200,39 @@ grabmark(awl_server_t *srv, const awl_box_t *box, uint32_t dim, uint32_t frame, 
     }
 
     if (box->w <= 0 || box->h <= 0) {
-        rectset(C->shade[0], all.x, all.y, all.width, all.height);
+        rect_set(C->shade[0], all.x, all.y, all.width, all.height);
         for (int i = 1; i < 4; i++)
-            rectset(C->shade[i], 0, 0, 0, 0);
+            rect_set(C->shade[i], 0, 0, 0, 0);
         for (int i = 0; i < 4; i++)
-            rectset(C->frame[i], 0, 0, 0, 0);
+            rect_set(C->frame[i], 0, 0, 0, 0);
         return;
     }
     /* the frame around the box, the shade around the frame: above, below,
      * left and right of it */
     struct wlr_box b = { box->x - fw, box->y - fw, box->w + 2 * fw, box->h + 2 * fw };
-    rectset(C->shade[0], all.x, all.y, all.width, b.y - all.y);
-    rectset(C->shade[1], all.x, b.y + b.height, all.width, all.y + all.height - b.y - b.height);
-    rectset(C->shade[2], all.x, b.y, b.x - all.x, b.height);
-    rectset(C->shade[3], b.x + b.width, b.y, all.x + all.width - b.x - b.width, b.height);
-    rectset(C->frame[0], b.x, b.y, b.width, fw);
-    rectset(C->frame[1], b.x, box->y + box->h, b.width, fw);
-    rectset(C->frame[2], b.x, box->y, fw, box->h);
-    rectset(C->frame[3], box->x + box->w, box->y, fw, box->h);
+    rect_set(C->shade[0], all.x, all.y, all.width, b.y - all.y);
+    rect_set(C->shade[1], all.x, b.y + b.height, all.width, all.y + all.height - b.y - b.height);
+    rect_set(C->shade[2], all.x, b.y, b.x - all.x, b.height);
+    rect_set(C->shade[3], b.x + b.width, b.y, all.x + all.width - b.x - b.width, b.height);
+    rect_set(C->frame[0], b.x, b.y, b.width, fw);
+    rect_set(C->frame[1], b.x, box->y + box->h, b.width, fw);
+    rect_set(C->frame[2], b.x, box->y, fw, box->h);
+    rect_set(C->frame[3], box->x + box->w, box->y, fw, box->h);
 }
 
 /* ---- what is where ---- */
 
-Client *
-clientat(awl_server_t *srv, double x, double y)
-{
+Client *client_at( awl_server_t *srv, double x, double y ) {
     Client *c = NULL;
-    xytonode(srv, x, y, NULL, &c, NULL, NULL, NULL);
+    xy_to_node(srv, x, y, NULL, &c, NULL, NULL, NULL);
     return c;
 }
 
-Client *
-clientfocused(awl_server_t *srv)
-{
-    return srv->out.selmon ? focustop(srv, srv->out.selmon) : NULL;
+Client *client_focused( awl_server_t *srv ) {
+    return srv->out.sel_mon ? focus_top(srv, srv->out.sel_mon) : NULL;
 }
 
-int
-clientbox(awl_server_t *srv, Client *c, int border, awl_box_t *box)
-{
+int client_box( awl_server_t *srv, Client *c, int border, awl_box_t *box ) {
     (void)srv;
     if (!c)
         return 0;
@@ -271,16 +241,12 @@ clientbox(awl_server_t *srv, Client *c, int border, awl_box_t *box)
     return 1;
 }
 
-Monitor *
-monitorat(awl_server_t *srv, double x, double y)
-{
-    return xytomon(srv, x, y);
+Monitor *monitor_at( awl_server_t *srv, double x, double y ) {
+    return xy_to_mon(srv, x, y);
 }
 
-int
-monitorbox(awl_server_t *srv, Monitor *m, awl_box_t *box)
-{
-    struct wlr_box b = m ? m->m : srv->out.sgeom;
+int monitor_box( awl_server_t *srv, Monitor *m, awl_box_t *box ) {
+    struct wlr_box b = m ? m->m : srv->out.screen_geom;
     if (b.width <= 0 || b.height <= 0)
         return 0;
     *box = (awl_box_t){ b.x, b.y, b.width, b.height };
@@ -291,9 +257,7 @@ monitorbox(awl_server_t *srv, Monitor *m, awl_box_t *box)
 
 /** the pixman format of what wlr_texture_read_pixels() writes in drm; 0 if
  * none fits */
-static pixman_format_code_t
-pixmanformat(uint32_t drm)
-{
+static pixman_format_code_t pixman_format( uint32_t drm ) {
     switch (drm) {
     case DRM_FORMAT_ARGB8888:    return PIXMAN_a8r8g8b8;
     case DRM_FORMAT_XRGB8888:    return PIXMAN_x8r8g8b8;
@@ -315,9 +279,7 @@ pixmanformat(uint32_t drm)
  * effect buffers have the output's size, as ours. A single client buffer
  * the scene would scan out is read as it is.
  */
-static pixman_image_t *
-outputrender(awl_server_t *srv, Monitor *m)
-{
+static pixman_image_t *output_render( awl_server_t *srv, Monitor *m ) {
     struct wlr_output *o = m->wlr_output;
     struct wlr_output_state state;
     struct wlr_swapchain *sc;
@@ -340,7 +302,7 @@ outputrender(awl_server_t *srv, Monitor *m)
     if (!(tex = wlr_texture_from_buffer(srv->renderer, state.buffer)))
         goto out;
     fmt = wlr_texture_preferred_read_format(tex);
-    if (!(pf = pixmanformat(fmt))) {
+    if (!(pf = pixman_format(fmt))) {
         fmt = DRM_FORMAT_ARGB8888;
         pf = PIXMAN_a8r8g8b8;
     }
@@ -362,7 +324,7 @@ out:
 }
 
 /**
- * src, m's frame (outputrender()), into dst, which shows box at scale s:
+ * src, m's frame (output_render()), into dst, which shows box at scale s:
  * the part of box m covers, turned upright by m's transform and scaled from
  * m's scale to s. The rect src gives each pixel of dst comes from one
  * affine map, logical pixels of dst to those of m's upright frame to its
@@ -370,9 +332,7 @@ out:
  * transform on the upright size), which pixman samples at the pixels'
  * centers.
  */
-static void
-compose(pixman_image_t *dst, pixman_image_t *src, Monitor *m, const awl_box_t *box, double s)
-{
+static void compose( pixman_image_t *dst, pixman_image_t *src, Monitor *m, const awl_box_t *box, double s ) {
     struct wlr_output *o = m->wlr_output;
     struct wlr_box in, want = { box->x, box->y, box->w, box->h };
     enum wl_output_transform inv = wlr_output_transform_invert(o->transform);
@@ -411,9 +371,7 @@ compose(pixman_image_t *dst, pixman_image_t *src, Monitor *m, const awl_box_t *b
     pixman_image_composite32(PIXMAN_OP_SRC, src, NULL, dst, x0, y0, 0, 0, x0, y0, x1 - x0, y1 - y0);
 }
 
-pixman_image_t *
-capture(awl_server_t *srv, const awl_box_t *box, float scale)
-{
+pixman_image_t *capture( awl_server_t *srv, const awl_box_t *box, float scale ) {
     struct wlr_box in;
     pixman_image_t *dst;
     Monitor *m;
@@ -425,7 +383,7 @@ capture(awl_server_t *srv, const awl_box_t *box, float scale)
     struct wlr_box want = { box->x, box->y, box->w, box->h };
     if (s <= 0) {
         s = 0;
-        wl_list_for_each(m, &srv->out.mons, link)
+        FOR_EACH_MON(m, srv)
             if (m->wlr_output->enabled && wlr_box_intersection(&in, &m->m, &want))
                 s = MAX(s, (double)m->wlr_output->scale);
         if (s <= 0)
@@ -440,10 +398,10 @@ capture(awl_server_t *srv, const awl_box_t *box, float scale)
     /* cleared: transparent where no monitor is */
     if (!(dst = pixman_image_create_bits(PIXMAN_a8r8g8b8, w, h, NULL, 0)))
         return NULL;
-    wl_list_for_each(m, &srv->out.mons, link) {
+    FOR_EACH_MON(m, srv) {
         if (!m->wlr_output->enabled || !wlr_box_intersection(&in, &m->m, &want))
             continue;
-        pixman_image_t *src = outputrender(srv, m);
+        pixman_image_t *src = output_render(srv, m);
         if (!src)
             continue;
         compose(dst, src, m, box, s);
@@ -461,28 +419,22 @@ capture(awl_server_t *srv, const awl_box_t *box, float scale)
 
 /* ---- the clipboard ---- */
 
-static void
-clipdataunref(ClipData *d)
-{
+static void clip_data_unref( ClipData *d ) {
     if (d && --d->refs == 0)
         free(d);
 }
 
-static void
-clipwriterfree(ClipWriter *w, int remove)
-{
+static void clip_writer_free( ClipWriter *w, int remove ) {
     if (remove && w->source)
         wl_event_source_remove(w->source);
     close(w->fd);
-    clipdataunref(w->bytes);
+    clip_data_unref(w->bytes);
     wl_list_remove(&w->link);
     free(w);
 }
 
 /** a paste's fd can take more: as much of the rest as it takes */
-static int
-clipwritable(int fd, uint32_t mask, void *data)
-{
+static int clip_writable( int fd, uint32_t mask, void *data ) {
     ClipWriter *w = data;
     (void)mask;
     while (w->off < w->bytes->len) {
@@ -495,61 +447,55 @@ clipwritable(int fd, uint32_t mask, void *data)
             break; /* the reader went away (EPIPE; SIGPIPE is ignored) */
         w->off += (size_t)n;
     }
-    clipwriterfree(w, 1);
+    clip_writer_free(w, 1);
     return 0;
 }
 
-static void
-clipsend(struct wlr_data_source *base, const char *mime, int32_t fd)
-{
+static void clip_send( struct wlr_data_source *base, const char *mime, int32_t fd ) {
     ClipSource *src = wl_container_of(base, src, base);
-    struct awl_capture *C = capturestate(src->srv);
+    struct awl_capture *C = capture_state(src->srv);
     int fl = fcntl(fd, F_GETFL);
     (void)mime;
     if (fl < 0 || fcntl(fd, F_SETFL, fl | O_NONBLOCK) < 0) {
         close(fd);
         return;
     }
-    ClipWriter *w = ecalloc(1, sizeof(*w));
+    ClipWriter *w = calloc_or_die(1, sizeof(*w));
     w->srv = src->srv;
     w->fd = fd;
     w->bytes = src->bytes;
     w->bytes->refs++;
     wl_list_insert(&C->writers, &w->link);
     /* never waits: a slow reader gets the rest as it reads */
-    w->source = wl_event_loop_add_fd(src->srv->event_loop, fd, WL_EVENT_WRITABLE, clipwritable, w);
+    w->source = wl_event_loop_add_fd(src->srv->event_loop, fd, WL_EVENT_WRITABLE, clip_writable, w);
     if (!w->source)
-        clipwriterfree(w, 0);
+        clip_writer_free(w, 0);
 }
 
-static void
-clipdestroy(struct wlr_data_source *base)
-{
+static void clip_destroy( struct wlr_data_source *base ) {
     ClipSource *src = wl_container_of(base, src, base);
-    clipdataunref(src->bytes);
+    clip_data_unref(src->bytes);
     free(src);
 }
 
-static const struct wlr_data_source_impl clipimpl = {
-    .send = clipsend,
-    .destroy = clipdestroy,
+static const struct wlr_data_source_impl clip_impl = {
+    .send = clip_send,
+    .destroy = clip_destroy,
 };
 
-int
-clipboardset(awl_server_t *srv, const char *mime, const void *data, size_t len)
-{
+int clipboard_set( awl_server_t *srv, const char *mime, const void *data, size_t len ) {
     char **p;
     if (!mime || !*mime || (!data && len))
         return 0;
-    capturestate(srv);
-    ClipSource *src = ecalloc(1, sizeof(*src));
+    capture_state(srv);
+    ClipSource *src = calloc_or_die(1, sizeof(*src));
     src->srv = srv;
-    src->bytes = ecalloc(1, sizeof(*src->bytes) + len);
+    src->bytes = calloc_or_die(1, sizeof(*src->bytes) + len);
     src->bytes->refs = 1;
     src->bytes->len = len;
     if (len)
         memcpy(src->bytes->data, data, len);
-    wlr_data_source_init(&src->base, &clipimpl);
+    wlr_data_source_init(&src->base, &clip_impl);
     if (!(p = wl_array_add(&src->base.mime_types, sizeof(*p))) || !(*p = strdup(mime))) {
         if (p)
             *p = NULL; /* wlr_data_source_destroy() frees each */
@@ -561,15 +507,13 @@ clipboardset(awl_server_t *srv, const char *mime, const void *data, size_t len)
     return 1;
 }
 
-void
-capturefini(awl_server_t *srv)
-{
+void capture_fini( awl_server_t *srv ) {
     ClipWriter *w, *tmp;
     if (!srv->capture)
         return;
     /* their event sources went with the display's loop */
     wl_list_for_each_safe(w, tmp, &srv->capture->writers, link)
-        clipwriterfree(w, 0);
+        clip_writer_free(w, 0);
     /* the mark goes with the scene */
     free(srv->capture);
     srv->capture = NULL;

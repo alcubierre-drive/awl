@@ -60,7 +60,7 @@ typedef struct awl_plugin_colors_t {
     uint32_t tag_bg, tag_occupied, tag_urgent, tag_selected;
     /** the selected monitor's mark under the first tag; the frame around a
      * per-tag layout's symbol */
-    uint32_t selmon, pertag;
+    uint32_t sel_mon, per_tag;
     /** the task bar's windows (shown, focused, urgent, minimized) and
      * their titles */
     uint32_t win_bg, win_focused, win_urgent, win_minimized, win_fg;
@@ -110,8 +110,8 @@ typedef struct awl_plugin_colors_t {
 /** the bar's colors of :c:type:`awl_plugin_colors_t`, which
  * :c:member:`awl_plugin_data_t.colors` has as pixman's */
 #define AWL_BAR_COLORS( X ) \
-    X( bar_bg ) X( bar_fg ) X( tag_bg ) X( tag_occupied ) X( tag_urgent ) X( tag_selected ) X( selmon ) \
-    X( pertag ) X( win_bg ) X( win_focused ) X( win_urgent ) X( win_minimized ) X( win_fg ) \
+    X( bar_bg ) X( bar_fg ) X( tag_bg ) X( tag_occupied ) X( tag_urgent ) X( tag_selected ) X( sel_mon ) \
+    X( per_tag ) X( win_bg ) X( win_focused ) X( win_urgent ) X( win_minimized ) X( win_fg ) \
     X( clock_meter ) X( stats_bg ) X( cpu ) X( io ) X( mem ) X( swap ) X( good ) X( warning ) X( bad )
 
 #define AWL_BAR_COLOR_PIXMAN( name ) pixman_color_t name;
@@ -142,7 +142,7 @@ typedef struct awl_plugin_config_t {
      * temperature): of the CPU package sensor (coretemp), else of ACPI's
      * thermal_zone0 */
     struct {
-        struct { float min, max; } coretemp, thermal_zone;
+        struct { float min, max; } core_temp, thermal_zone;
     } temperature;
     struct {
         /** the battery's and the AC adapter's sysfs directories, with a
@@ -450,7 +450,7 @@ void awl_speaker_mute_toggle( awl_plugin_data_t* p );
  * and corrects it if the daemon's differs. Main thread, returns at once. */
 void awl_brightness_adjust( awl_plugin_data_t* p, float delta );
 /** plugins.c: the idle inhibitors ignored, or honored again
- * (:c:func:`toggleidleinhibit`); the osd's notification follows */
+ * (:c:func:`toggle_idle_inhibit`); the osd's notification follows */
 void awl_idle_inhibit_toggle( awl_plugin_data_t* p );
 
 /** plugins_widgets.c: :c:member:`awl_plugin_api_t.bar_widgets`, the widgets
@@ -472,11 +472,11 @@ int awl_desktop_stop( awl_desktop_panel_t* dp );
 /** plugins_desktop_panel.c: :c:member:`awl_plugin_api_t.desktop_version` */
 uint64_t awl_desktop_version( awl_desktop_panel_t* dp );
 /** plugins_desktop_panel.c: :c:member:`awl_plugin_api_t.desktop_measure` */
-void awl_desktop_measure( awl_desktop_panel_t* dp, struct fcft_font* font, int avail_w, int avail_h, int r,
-                          float scale, int* x, int* y, int* w, int* h );
+void awl_desktop_measure( awl_desktop_panel_t* dp, struct fcft_font* font, int avail_w, int avail_h, int r, float scale,
+                          int* x, int* y, int* w, int* h );
 /** plugins_desktop_panel.c: :c:member:`awl_plugin_api_t.desktop_draw` */
-void awl_desktop_draw( awl_desktop_panel_t* dp, pixman_image_t* pix, struct fcft_font* font, uint32_t* data,
-                       int stride, int w, int h, int r, float scale );
+void awl_desktop_draw( awl_desktop_panel_t* dp, pixman_image_t* pix, struct fcft_font* font, uint32_t* data, int stride,
+                       int w, int h, int r, float scale );
 /** plugins_desktop_panel.c: :c:member:`awl_plugin_api_t.desktop_click` */
 int awl_desktop_click( awl_desktop_panel_t* dp, int button, uint32_t mods );
 
@@ -538,8 +538,8 @@ static inline int parts_box( const awl_box_t* part, const int* has, int n, int p
 
 /** s in b (offset by x0, y0), centered or left-aligned, cut with an
  * ellipsis if wider */
-static inline void text_in( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, awl_box_t b,
-                            const char* s, uint32_t fg, int center ) {
+static inline void text_in( pixman_image_t* pix, struct fcft_font* font, int x0, int y0, awl_box_t b, const char* s,
+                            uint32_t fg, int center ) {
     int w = (int)awl_host->text_width( font, s );
     int x = center && w < b.w ? b.x + (b.w - w) / 2 : b.x;
     awl_host->text_over( pix, font, x0 + x, y0 + b.y, (unsigned)(w < b.w ? w + 1 : b.w), (unsigned)b.h, s, fg );
@@ -548,8 +548,9 @@ static inline void text_in( pixman_image_t* pix, struct fcft_font* font, int x0,
 /** \*win, made on first use with painter and the callbacks (scroll NULL for
  * none); NULL before awl is set up */
 static inline awl_window_t* popup_window( awl_window_t** win, const awl_window_painter_t* painter,
-        void (*click)( awl_window_t*, int, int, uint32_t, void* ),
-        void (*scroll)( awl_window_t*, int, int, uint32_t, double, int32_t, void* ), void* data ) {
+                                          void (*click)( awl_window_t*, int, int, uint32_t, void* ),
+                                          void (*scroll)( awl_window_t*, int, int, uint32_t, double, int32_t, void* ),
+                                          void* data ) {
     if (*win || !(*win = awl_host->window_create( awl_host->srv ))) return *win;
     awl_host->window_set_painter( awl_host->srv, *win, painter, data );
     awl_host->window_set_click( awl_host->srv, *win, click, data );

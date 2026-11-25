@@ -78,7 +78,7 @@ executable('lock', 'lock.c',
     command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@']),
   dependencies: dependency('wayland-client'),
 )
-# hang, a window that stops answering resizes (rendermon()'s RESIZE_WAIT_MS)
+# hang, a window that stops answering resizes (render_mon()'s RESIZE_WAIT_MS)
 hang_protocol = wl_protocols / 'stable/xdg-shell/xdg-shell.xml'
 executable('hang', 'hang.c',
   custom_target('hang-xdg-shell-client-protocol.h',

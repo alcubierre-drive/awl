@@ -28,13 +28,13 @@ static const char tombstone_marker;
 #define LIVE(e) ((e)->key && (e)->key != TOMBSTONE)
 
 /* FNV-1a */
-static uint64_t hash(const char *s) {
+static uint64_t hash( const char *s ) {
     uint64_t h = 1469598103934665603ULL;
     while (*s) { h ^= (unsigned char)*s++; h *= 1099511628211ULL; }
     return h;
 }
 
-static char *dupstr(const char *s) {
+static char *dup_str( const char *s ) {
     size_t n = strlen(s) + 1;
     char *p = malloc(n);
     if (p) memcpy(p, s, n);
@@ -42,7 +42,7 @@ static char *dupstr(const char *s) {
 }
 
 /* Returns slot holding key, or the best empty/tombstone slot to insert into. */
-static entry *find(entry *slots, size_t cap, const char *key) {
+static entry *find( entry *slots, size_t cap, const char *key ) {
     size_t i = (size_t)(hash(key) & (cap - 1));
     entry *tomb = NULL;
     for (;;) {
@@ -55,14 +55,14 @@ static entry *find(entry *slots, size_t cap, const char *key) {
 }
 
 /* frees what the dict owns of v */
-static void release(const awl_dict_val_t *v) {
+static void release( const awl_dict_val_t *v ) {
     switch (v->kind) {
     case AWL_DICT_KIND_STR: free(v->str); break;
     case AWL_DICT_KIND_OWNED: v->owned.free(v->owned.ptr); break;
     }
 }
 
-static int grow(awl_dict_t *d) {
+static int grow( awl_dict_t *d ) {
     /* Double if genuinely full; otherwise just rehash to clear tombstones. */
     size_t ncap = d->len * 4 >= d->cap ? d->cap * 2 : d->cap;
     entry *ns = calloc(ncap, sizeof(entry));
@@ -74,7 +74,7 @@ static int grow(awl_dict_t *d) {
     return 0;
 }
 
-awl_dict_t *awl_dict_new(void) {
+awl_dict_t *awl_dict_new( void ) {
     awl_dict_t *d = malloc(sizeof *d);
     if (!d) return NULL;
     d->cap = 8; d->len = d->used = 0;
@@ -91,7 +91,7 @@ awl_dict_t *awl_dict_new(void) {
     return d;
 }
 
-void awl_dict_destroy(awl_dict_t *d) {
+void awl_dict_destroy( awl_dict_t *d ) {
     if (!d) return;
     for (size_t i = 0; i < d->cap; i++)
         if (LIVE(&d->slots[i])) { free(d->slots[i].key); release(&d->slots[i].val); }
@@ -100,7 +100,7 @@ void awl_dict_destroy(awl_dict_t *d) {
     free(d);
 }
 
-static int32_t set(awl_dict_t *d, const char *key, const awl_dict_val_t *val) {
+static int32_t set( awl_dict_t *d, const char *key, const awl_dict_val_t *val ) {
     awl_dict_val_t v = *val;
     switch (v.kind) {
     case AWL_DICT_KIND_PTR: break;
@@ -112,7 +112,7 @@ static int32_t set(awl_dict_t *d, const char *key, const awl_dict_val_t *val) {
     }
     if ((d->used + 1) * 4 > d->cap * 3 && grow(d) < 0) return AWL_DICT_ERR_NOMEM;
     /* copied before the old value goes, which v.str may point into */
-    if (v.kind == AWL_DICT_KIND_STR && !(v.str = dupstr(v.str))) return AWL_DICT_ERR_NOMEM;
+    if (v.kind == AWL_DICT_KIND_STR && !(v.str = dup_str(v.str))) return AWL_DICT_ERR_NOMEM;
     entry *e = find(d->slots, d->cap, key);
     if (LIVE(e)) {
         if (!(v.kind == AWL_DICT_KIND_OWNED && e->val.kind == AWL_DICT_KIND_OWNED &&
@@ -121,7 +121,7 @@ static int32_t set(awl_dict_t *d, const char *key, const awl_dict_val_t *val) {
         e->val = v;
         return AWL_DICT_OK;
     }
-    char *k = dupstr(key);
+    char *k = dup_str(key);
     if (!k) {
         if (v.kind == AWL_DICT_KIND_STR) free(v.str);
         return AWL_DICT_ERR_NOMEM;
@@ -131,14 +131,14 @@ static int32_t set(awl_dict_t *d, const char *key, const awl_dict_val_t *val) {
     return AWL_DICT_OK;
 }
 
-static int32_t get(const awl_dict_t *d, const char *key, awl_dict_val_t *out) {
+static int32_t get( const awl_dict_t *d, const char *key, awl_dict_val_t *out ) {
     entry *e = find(d->slots, d->cap, key);
     if (!LIVE(e)) return AWL_DICT_NOT_FOUND;
     if (out) *out = e->val;
     return AWL_DICT_OK;
 }
 
-static int32_t del(awl_dict_t *d, const char *key) {
+static int32_t del( awl_dict_t *d, const char *key ) {
     entry *e = find(d->slots, d->cap, key);
     if (!LIVE(e)) return AWL_DICT_NOT_FOUND;
     free(e->key);
@@ -147,7 +147,7 @@ static int32_t del(awl_dict_t *d, const char *key) {
     return AWL_DICT_OK;
 }
 
-uint64_t awl_dict_len(const awl_dict_t *d) {
+uint64_t awl_dict_len( const awl_dict_t *d ) {
     if (!d) return 0;
     LOCK(d);
     uint64_t n = (uint64_t)d->len;
@@ -155,7 +155,7 @@ uint64_t awl_dict_len(const awl_dict_t *d) {
     return n;
 }
 
-static int32_t next(const awl_dict_t *d, uint64_t *cursor, const char **key, awl_dict_val_t *val) {
+static int32_t next( const awl_dict_t *d, uint64_t *cursor, const char **key, awl_dict_val_t *val ) {
     for (uint64_t i = *cursor; i < (uint64_t)d->cap; i++) {
         entry *e = &d->slots[i];
         if (LIVE(e)) {
@@ -169,7 +169,8 @@ static int32_t next(const awl_dict_t *d, uint64_t *cursor, const char **key, awl
     return AWL_DICT_NOT_FOUND;
 }
 
-static int32_t iterate(const awl_dict_t *d, int32_t (*iter)(const char* key, const awl_dict_val_t* val, void* ctx), void* ctx) {
+static int32_t iterate( const awl_dict_t *d, int32_t (*iter)(const char* key, const awl_dict_val_t* val, void* ctx),
+                        void* ctx ) {
     for (uint64_t i=0; i<d->cap; i++) {
         entry *e = &d->slots[i];
         if (LIVE(e)) {
@@ -182,7 +183,7 @@ static int32_t iterate(const awl_dict_t *d, int32_t (*iter)(const char* key, con
 
 /* the public functions: check the arguments, then do it under the lock */
 
-int32_t awl_dict_set(awl_dict_t *d, const char *key, const awl_dict_val_t *val) {
+int32_t awl_dict_set( awl_dict_t *d, const char *key, const awl_dict_val_t *val ) {
     if (!d || !key || !val) return AWL_DICT_ERR_INVALID;
     LOCK(d);
     int32_t r = set(d, key, val);
@@ -190,7 +191,7 @@ int32_t awl_dict_set(awl_dict_t *d, const char *key, const awl_dict_val_t *val) 
     return r;
 }
 
-int32_t awl_dict_get(const awl_dict_t *d, const char *key, awl_dict_val_t *out) {
+int32_t awl_dict_get( const awl_dict_t *d, const char *key, awl_dict_val_t *out ) {
     if (!d || !key) return AWL_DICT_ERR_INVALID;
     LOCK(d);
     int32_t r = get(d, key, out);
@@ -198,7 +199,31 @@ int32_t awl_dict_get(const awl_dict_t *d, const char *key, awl_dict_val_t *out) 
     return r;
 }
 
-int32_t awl_dict_del(awl_dict_t *d, const char *key) {
+char *awl_dict_strdup( const awl_dict_t *d, const char *key ) {
+    awl_dict_val_t v;
+    char *s = NULL;
+    awl_dict_lock(d);
+    if (awl_dict_get(d, key, &v) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR)
+        s = dup_str(v.str);
+    awl_dict_unlock(d);
+    return s;
+}
+
+int32_t awl_dict_strncpy( const awl_dict_t *d, const char *key, char *out, size_t n ) {
+    awl_dict_val_t v;
+    if (!out || !n) return AWL_DICT_ERR_INVALID;
+    awl_dict_lock(d);
+    int32_t r = awl_dict_get(d, key, &v);
+    if (r == AWL_DICT_OK && v.kind != AWL_DICT_KIND_STR) r = AWL_DICT_NOT_FOUND;
+    size_t len = r == AWL_DICT_OK ? strlen(v.str) : 0;
+    if (len >= n) r = AWL_DICT_ERR_INVALID;
+    if (r == AWL_DICT_OK) memcpy(out, v.str, len + 1);
+    else *out = '\0';
+    awl_dict_unlock(d);
+    return r;
+}
+
+int32_t awl_dict_del( awl_dict_t *d, const char *key ) {
     if (!d || !key) return AWL_DICT_ERR_INVALID;
     LOCK(d);
     int32_t r = del(d, key);
@@ -206,7 +231,7 @@ int32_t awl_dict_del(awl_dict_t *d, const char *key) {
     return r;
 }
 
-int32_t awl_dict_next(const awl_dict_t *d, uint64_t *cursor, const char **key, awl_dict_val_t *val) {
+int32_t awl_dict_next( const awl_dict_t *d, uint64_t *cursor, const char **key, awl_dict_val_t *val ) {
     if (!d || !cursor) return AWL_DICT_ERR_INVALID;
     LOCK(d);
     int32_t r = next(d, cursor, key, val);
@@ -214,7 +239,8 @@ int32_t awl_dict_next(const awl_dict_t *d, uint64_t *cursor, const char **key, a
     return r;
 }
 
-int32_t awl_dict_iter(const awl_dict_t *d, int32_t (*iter)(const char* key, const awl_dict_val_t* val, void* ctx), void* ctx) {
+int32_t awl_dict_iter( const awl_dict_t *d, int32_t (*iter)(const char* key, const awl_dict_val_t* val, void* ctx),
+                       void* ctx ) {
     if (!d || iter == NULL) return AWL_DICT_ERR_INVALID;
     LOCK(d);
     int32_t r = iterate(d, iter, ctx);
@@ -222,10 +248,10 @@ int32_t awl_dict_iter(const awl_dict_t *d, int32_t (*iter)(const char* key, cons
     return r;
 }
 
-void awl_dict_lock(const awl_dict_t *d) {
+void awl_dict_lock( const awl_dict_t *d ) {
     if (d) LOCK(d);
 }
 
-void awl_dict_unlock(const awl_dict_t *d) {
+void awl_dict_unlock( const awl_dict_t *d ) {
     if (d) UNLOCK(d);
 }

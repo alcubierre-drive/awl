@@ -13,19 +13,19 @@ typedef struct awl_colorstop_t {
     uint32_t color;
 } awl_colorstop_t;
 
-#define AWL_COLORMAP_MAX 16
+#define AWL_COLOR_MAP_MAX 16
 
 /** A color map over 0 to 1: v[0] to v[n - 1] by ascending at, linearly in each channel
  * (alpha too) between two, the first's color below it and the last's above;
- * two stops at the same value make a step. Set with :c:macro:`COLORMAP() <COLORMAP>`. */
+ * two stops at the same value make a step. Set with :c:macro:`COLOR_MAP() <COLOR_MAP>`. */
 typedef struct awl_colormap_t {
-    awl_colorstop_t v[AWL_COLORMAP_MAX];
+    awl_colorstop_t v[AWL_COLOR_MAP_MAX];
     size_t n;
 } awl_colormap_t;
 
-/** the color map of the stops {at, color}, ... (at most AWL_COLORMAP_MAX),
- * as an initializer; (:c:type:`awl_colormap_t`)COLORMAP(...) to assign one */
-#define COLORMAP( ... ) { .v = { __VA_ARGS__ }, \
+/** the color map of the stops {at, color}, ... (at most AWL_COLOR_MAP_MAX),
+ * as an initializer; (:c:type:`awl_colormap_t`)COLOR_MAP(...) to assign one */
+#define COLOR_MAP( ... ) { .v = { __VA_ARGS__ }, \
     .n = sizeof( (awl_colorstop_t[]){ __VA_ARGS__ } ) / sizeof( awl_colorstop_t ) }
 
 /** m's color (0xRRGGBBAA) at x, 0 to 1; 0 if m has no stops */

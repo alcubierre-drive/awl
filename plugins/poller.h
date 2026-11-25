@@ -18,8 +18,8 @@ typedef struct awl_poller_t awl_poller_t;
 
 /** Sets up the loop, not running yet; ip may be NULL (no addresses).
  * NULL on failure. */
-awl_poller_t* poller_new( awl_stats_t* stats, awl_temperature_t* temp, awl_date_t* date,
-                          awl_battery_t* bat, awl_ipaddr_t* ip );
+awl_poller_t* poller_new( awl_stats_t* stats, awl_temperature_t* temp, awl_date_t* date, awl_battery_t* bat,
+                          awl_ipaddr_t* ip );
 /** For the other plugins' event sources: from the calling thread until
  * :c:func:`poller_start`, then only from callbacks on the loop. */
 pa_mainloop_api* poller_api( awl_poller_t* p );

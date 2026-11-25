@@ -151,9 +151,9 @@ static int append_env_strv( sd_bus_message* m, const char* const* names ) {
     return r < 0 ? r : sd_bus_message_close_container( m );
 }
 
-static void env_call( sd_bus* bus, const char* what, const char* dest, const char* path,
-                      const char* iface, const char* member,
-                      int (*append)( sd_bus_message*, const char* const* ), const char* const* names ) {
+static void env_call( sd_bus* bus, const char* what, const char* dest, const char* path, const char* iface,
+                      const char* member, int (*append)( sd_bus_message*, const char* const* ),
+                      const char* const* names ) {
     sd_bus_message *m = NULL, *reply = NULL;
     sd_bus_error e = SD_BUS_ERROR_NULL;
     int r;

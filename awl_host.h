@@ -276,7 +276,7 @@ typedef struct awl_host_t {
     void (*logind_state)( awl_server_t* srv, unsigned flags );
     /**
      * config values that can change while awl runs, by name. awl owns the
-     * dictionary (``cfg.s``, :c:member:`awl_server_t.cfgdict`): it lives as long as awl
+     * dictionary (``cfg.s``, :c:member:`awl_server_t.cfg_dict`): it lives as long as awl
      * and keeps its entries across reloads.
      *
      * Any thread may use it, plugin threads included (awl_dict.h has the
@@ -324,7 +324,7 @@ typedef struct awl_host_t {
      * back. Main thread only, like everything that takes it. */
     awl_server_t* srv;
 
-    /** :c:func:`configdefaults`: fills in c with awl's defaults
+    /** :c:func:`config_defaults`: fills in c with awl's defaults
      * (awl_config_defaults.h), which plugins_config.c changes; they point into awl, so they stay
      * valid */
     void (*config_defaults)( awl_config_t* c );
@@ -332,53 +332,53 @@ typedef struct awl_host_t {
     const awl_actions_t* actions;
     /** what the config's layouts arrange with */
     const awl_arranges_t* arranges;
-    /** :c:func:`focusclient` */
-    void (*focusclient)( awl_server_t* srv, Client* c, int lift );
-    /** :c:func:`clientsetvisible`: shows c, or minimizes it, and arranges its
+    /** :c:func:`focus_client` */
+    void (*focus_client)( awl_server_t* srv, Client* c, int lift );
+    /** :c:func:`client_set_visible`: shows c, or minimizes it, and arranges its
      * monitor */
     void (*client_set_visible)( awl_server_t* srv, Client* c, int visible );
     /** :c:func:`arrange` */
     void (*arrange)( awl_server_t* srv, Monitor* m );
-    /** :c:func:`monitornamed`: the monitor of the output named name, NULL if none */
+    /** :c:func:`monitor_named`: the monitor of the output named name, NULL if none */
     Monitor* (*monitor_named)( awl_server_t* srv, const char* name );
-    /** the selected monitor (:c:member:`awl_outputs_t.selmon`), NULL if there is none */
+    /** the selected monitor (:c:member:`awl_outputs_t.sel_mon`), NULL if there is none */
     Monitor* (*monitor_selected)( awl_server_t* srv );
     /** m's output scale (what its popups are drawn at), 1 for NULL */
     float (*monitor_scale)( Monitor* m );
-    /** :c:func:`idleinhibitignored`: whether idle comes despite the
-     * inhibitors (the action toggleidleinhibit) */
+    /** :c:func:`idle_inhibit_ignored`: whether idle comes despite the
+     * inhibitors (the action toggle_idle_inhibit) */
     bool (*idle_inhibit_ignored)( awl_server_t* srv );
 
     /* ---- popups (awl_window.h), NULL windows are fine everywhere ---- */
 
-    /** :c:func:`popupcreate`: a hidden, empty popup, NULL before awl is set up.
+    /** :c:func:`popup_create`: a hidden, empty popup, NULL before awl is set up.
      * The library destroys what it made before it is unloaded (its fini);
      * awl removes what it left then, with a warning */
     awl_window_t* (*window_create)( awl_server_t* srv );
-    /** :c:func:`popupdestroy` */
+    /** :c:func:`popup_destroy` */
     void (*window_destroy)( awl_server_t* srv, awl_window_t* win );
-    /** :c:func:`popupsetmenustyle`: the window looks like a menu,
+    /** :c:func:`popup_set_menu_style`: the window looks like a menu,
      * :c:type:`awl_colors_t`'s menu_* and :c:member:`awl_popup_config_t.menu`, from now on */
     void (*window_set_menu_style)( awl_server_t* srv, awl_window_t* win );
-    /** :c:func:`popupsetpersistent`: the window stays until it is hidden (a
+    /** :c:func:`popup_set_persistent`: the window stays until it is hidden (a
      * notification): a press elsewhere and other popups shown leave it,
      * showing it closes no menu, and it is above the other popups, over
      * fullscreen clients too if :c:member:`awl_config_t.popup`'s persistent_overlay;
      * out of sight while the screen is locked, back after. 0: an ordinary
      * popup again. */
     void (*window_set_persistent)( awl_server_t* srv, awl_window_t* win, int persistent );
-    /** :c:func:`popupsetcolors`: the window's own background, text and border
+    /** :c:func:`popup_set_colors`: the window's own background, text and border
      * colors (0xRRGGBBAA; a painter's content is its own), 0 for the
      * popups' (:c:member:`awl_config_t.popup`) */
     void (*window_set_colors)( awl_server_t* srv, awl_window_t* win, uint32_t bg, uint32_t fg, uint32_t border );
-    /** :c:func:`popupsetborderwidth`: the window's own border width, logical
+    /** :c:func:`popup_set_border_width`: the window's own border width, logical
      * pixels (0: none), < 0 for the popups' (:c:member:`awl_config_t.popup`) */
     void (*window_set_border_width)( awl_server_t* srv, awl_window_t* win, int width );
-    /** :c:func:`popuproom`: the room the window has on m at a spot
+    /** :c:func:`popup_room`: the room the window has on m at a spot
      * (:c:member:`~awl_host_t.window_show_at`): m's window area less the window's margins, layout
      * coordinates */
     void (*window_room)( awl_server_t* srv, awl_window_t* win, Monitor* m, int* x, int* y, int* w, int* h );
-    /** :c:func:`popupbox`: where the window was last placed, layout coordinates
+    /** :c:func:`popup_box`: where the window was last placed, layout coordinates
      * and logical size, its frame included; returns whether it is visible */
     int (*window_box)( awl_server_t* srv, awl_window_t* win, int* x, int* y, int* w, int* h );
     /** :c:func:`awl_window_set_text`: rows separated by '\n', columns by '\t';
@@ -391,26 +391,26 @@ typedef struct awl_host_t {
     void (*window_set_painter)( awl_server_t* srv, awl_window_t* win, const awl_window_painter_t* painter, void* data );
     /** :c:func:`awl_window_redraw`: what the painter draws changed */
     void (*window_redraw)( awl_server_t* srv, awl_window_t* win );
-    /** :c:func:`popupshow`: shows the window for a bar widget on m, centered on
+    /** :c:func:`popup_show`: shows the window for a bar widget on m, centered on
      * center_x (logical pixels from m's left edge), on the bar's side; one
      * that isn't a menu closes the menus open */
     void (*window_show)( awl_server_t* srv, awl_window_t* win, Monitor* m, int center_x );
-    /** :c:func:`popupshowbeside`: shows the window on m beside the box x, y, w, h
+    /** :c:func:`popup_show_beside`: shows the window on m beside the box x, y, w, h
      * (layout coordinates, logical size), a row of another window: a
      * submenu beside its menu, on the right unless left, else where it fits */
     void (*window_show_beside)( awl_server_t* srv, awl_window_t* win, Monitor* m, int x, int y, int w, int h, int left );
-    /** :c:func:`popupshowat`: shows the window on m at a spot of its window
+    /** :c:func:`popup_show_at`: shows the window on m at a spot of its window
      * area, an AWL_WINDOW_AT_* (awl.h; the margin away from its edges),
      * moved by dx, dy logical pixels (the strips: over the bar, or along an edge);
      * one that isn't a menu closes the menus open */
     void (*window_show_at)( awl_server_t* srv, awl_window_t* win, Monitor* m, int at, int dx, int dy );
-    /** :c:func:`popuphide` */
+    /** :c:func:`popup_hide` */
     void (*window_hide)( awl_server_t* srv, awl_window_t* win );
     /** :c:func:`awl_window_monitor`: where the window is shown, NULL while hidden
      * (awl also hides it, on a press elsewhere unless it is persistent, or
      * with its monitor) */
     Monitor* (*window_monitor)( const awl_window_t* win );
-    /** :c:func:`popuppartbox`: where part of the window's painter is, layout
+    /** :c:func:`popup_part_box`: where part of the window's painter is, layout
      * coordinates and logical size; 0 if it is not shown */
     int (*window_part_box)( awl_window_t* win, int part, int* x, int* y, int* w, int* h );
     /** :c:func:`awl_window_set_click`: the window takes the pointer, presses go to
@@ -436,7 +436,7 @@ typedef struct awl_host_t {
      * going away; not a persistent one out of sight while the screen is
      * locked); NULL: no more */
     void (*window_set_hidden)( awl_window_t* win, void (*hidden)( awl_window_t* win, void* data ), void* data );
-    /** :c:func:`popupsetkey`: while shown, the window has the keyboard (the
+    /** :c:func:`popup_set_key`: while shown, the window has the keyboard (the
      * newest such one): every key pressed, and repeated while held, goes to
      * key( win, sym, utf8, mods, data ) before awl's bindings, which get
      * what it doesn't take (it returns 0); no client gets any, none has the
@@ -458,7 +458,7 @@ typedef struct awl_host_t {
     void (*notif_close)( awl_server_t* srv, uint32_t id, awl_notif_reason_t reason );
     /** the user chose action key of notification id: ActionInvoked, after
      * ActivationToken with a new xdg-activation token of awl's, which the
-     * client may focus a window with (:c:func:`activationtoken`; or only make it
+     * client may focus a window with (:c:func:`activation_token`; or only make it
      * urgent: :c:member:`awl_config_t.notifications.activate_urgent`); then it closes,
      * unless it is resident */
     void (*notif_invoke)( awl_server_t* srv, uint32_t id, const char* key );
@@ -494,17 +494,17 @@ typedef struct awl_host_t {
 
     /* ---- screenshots (awl_capture.h) ---- */
 
-    /** :c:func:`grabstart`: takes the pointer and the keyboard for grab
+    /** :c:func:`grab_start`: takes the pointer and the keyboard for grab
      * (:c:type:`awl_grab_t`, copied) with the cursor image cursor (an xcursor
      * name, NULL ``crosshair``). Returns 0 if it can't: the screen is locked,
      * another grab holds, a window is being moved or resized. The library
      * ends its grab before it is unloaded; awl ends what it left then, with
      * a warning. */
     int (*grab_start)( awl_server_t* srv, const awl_grab_t* grab, void* data, const char* cursor );
-    /** :c:func:`grabend`: ends the grab and takes its mark down; nothing if
+    /** :c:func:`grab_end`: ends the grab and takes its mark down; nothing if
      * none holds */
     void (*grab_end)( awl_server_t* srv );
-    /** :c:func:`grabmark`: while a grab holds, shades everything but box
+    /** :c:func:`grab_mark`: while a grab holds, shades everything but box
      * in dim and frames it in frame (0xRRGGBBAA each), frame_width logical
      * pixels outside it; a box without size shades everything, NULL takes
      * it down */
@@ -530,7 +530,7 @@ typedef struct awl_host_t {
      * NULL if it covers none or can't be rendered. Takes as long as a frame
      * of each monitor it covers, on the main thread. */
     pixman_image_t* (*capture)( awl_server_t* srv, const awl_box_t* box, float scale );
-    /** :c:func:`clipboardset`: makes len bytes of data (copied) the
+    /** :c:func:`clipboard_set`: makes len bytes of data (copied) the
      * clipboard's, offered as mime (e.g. ``image/png``); they stay until
      * someone else's copy replaces them. Returns 0 on failure. */
     int (*clipboard_set)( awl_server_t* srv, const char* mime, const void* data, size_t len );
@@ -546,8 +546,14 @@ typedef struct awl_host_t {
 /** :c:func:`awl_dict_del` on :c:member:`awl_host_t.cfg` */
 #define AWL_HOST_CFG_DEL( host, key ) \
     (host)->cfg.s_del( (host)->cfg.s, (key) )
+/** :c:func:`awl_dict_strdup` on :c:member:`awl_host_t.cfg`: key's string, the caller's to free */
+#define AWL_HOST_CFG_STRDUP( host, key ) \
+    (host)->cfg.s_strdup( (host)->cfg.s, (key) )
+/** :c:func:`awl_dict_strncpy` on :c:member:`awl_host_t.cfg`: key's string into out, n bytes */
+#define AWL_HOST_CFG_STRNCPY( host, key, out, n ) \
+    (host)->cfg.s_strncpy( (host)->cfg.s, (key), (out), (n) )
 /** :c:func:`awl_dict_lock` on :c:member:`awl_host_t.cfg`, e.g. around getting a string and
- * using it::
+ * using it, where a copy (:c:macro:`AWL_HOST_CFG_STRNCPY`) won't do::
  *
  *     :c:type:`awl_dict_val_t` v;
  *     AWL_HOST_CFG_LOCK( awl_host );

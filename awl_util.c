@@ -12,8 +12,7 @@
 
 #include "awl_util.h"
 
-void
-die(const char *fmt, ...) {
+void die( const char *fmt, ... ) {
     va_list ap;
     char msg[1024];
     int err = errno;
@@ -30,9 +29,7 @@ die(const char *fmt, ...) {
     exit(1);
 }
 
-void *
-ecalloc(size_t nmemb, size_t size)
-{
+void *calloc_or_die( size_t nmemb, size_t size ) {
     void *p;
 
     if (!(p = calloc(nmemb, size)))
@@ -40,8 +37,7 @@ ecalloc(size_t nmemb, size_t size)
     return p;
 }
 
-int
-fd_set_nonblock(int fd) {
+int fd_set_nonblock( int fd ) {
     int flags = fcntl(fd, F_GETFL);
     if (flags < 0) {
         awl_err_printf("fcntl(F_GETFL): %s\n", strerror(errno));
@@ -55,9 +51,7 @@ fd_set_nonblock(int fd) {
     return 0;
 }
 
-char **
-envwith(const char *const *entries)
-{
+char **env_with( const char *const *entries ) {
     extern char **environ;
     size_t n = 0, m = 0, k = 0;
     char **env;
@@ -80,14 +74,10 @@ envwith(const char *const *entries)
     return env;
 }
 
-int
-streqnull(const char *a, const char *b)
-{
+int streq_null( const char *a, const char *b ) {
     return a == b || (a && b && !strcmp(a, b));
 }
 
-char *
-strdupnull(const char *s)
-{
+char *strdup_null( const char *s ) {
     return s ? strdup(s) : NULL;
 }

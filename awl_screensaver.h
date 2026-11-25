@@ -6,7 +6,7 @@
  * sd-bus (awl_bus.h), while :c:member:`awl_config_t.screensaver_inhibit` is
  * set: what players, browsers and call apps ask to keep the screen on with,
  * GTK apps through xdg-desktop-portal-gtk. While a cookie is held, idle is
- * inhibited (:c:func:`checkidleinhibitor`), visible or not: the caller has no
+ * inhibited (:c:func:`check_idle_inhibitor`), visible or not: the caller has no
  * surface. A cookie ends with UnInhibit, with its caller leaving the bus, or
  * with the connection. The name is requested with SD_BUS_NAME_QUEUE: another
  * screensaver that has it keeps it. Main thread only.

@@ -19,8 +19,7 @@ awl_tray_tooltip_t* awl_tray_tooltip_new( awl_plugin_data_t* p );
 void awl_tray_tooltip_hide( awl_tray_tooltip_t* t );
 /** the tooltip text for token (the caller's, nonzero), shown after a moment
  * (at once if another one is) */
-void awl_tray_tooltip_show( awl_tray_tooltip_t* t, uint32_t token, const char* monitor, int center_x,
-                            const char* text );
+void awl_tray_tooltip_show( awl_tray_tooltip_t* t, uint32_t token, const char* monitor, int center_x, const char* text );
 /** hides token's tooltip, if it is the one shown or waiting */
 void awl_tray_tooltip_drop( awl_tray_tooltip_t* t, uint32_t token );
 /** gives back its window and timer and frees t (the plugin library's fini) */

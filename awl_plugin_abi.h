@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 58
+#define AWL_PLUGIN_ABI 60
 /** The name of the library's only exported symbol, an :c:type:`awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -41,25 +41,24 @@
  * :c:macro:`AWL_ACTION() <AWL_ACTION>`.
  */
 #define AWL_ACTIONS \
-    AWL_ACTION_REGISTER( borderclockmode ) AWL_ACTION_REGISTER( changebw ) \
-    AWL_ACTION_REGISTER( chvt ) \
+    AWL_ACTION_REGISTER( border_clock_mode ) AWL_ACTION_REGISTER( change_border_width ) \
+    AWL_ACTION_REGISTER( change_master_count ) AWL_ACTION_REGISTER( change_opacity ) \
     AWL_ACTION_REGISTER( cycle_layout ) AWL_ACTION_REGISTER( cycle_view ) \
-    AWL_ACTION_REGISTER( focusmon ) AWL_ACTION_REGISTER( focusstack ) \
-    AWL_ACTION_REGISTER( incnmaster ) AWL_ACTION_REGISTER( killclient ) \
-    AWL_ACTION_REGISTER( lockscreen ) AWL_ACTION_REGISTER( maximize ) \
-    AWL_ACTION_REGISTER( minimize ) AWL_ACTION_REGISTER( moveresize ) \
-    AWL_ACTION_REGISTER( movestack ) AWL_ACTION_REGISTER( outputprofile ) \
-    AWL_ACTION_REGISTER( plugin_restart ) \
-    AWL_ACTION_REGISTER( quit ) AWL_ACTION_REGISTER( setlayout ) \
-    AWL_ACTION_REGISTER( setmfact ) AWL_ACTION_REGISTER( spawn ) AWL_ACTION_REGISTER( tag ) \
-    AWL_ACTION_REGISTER( tagmon ) AWL_ACTION_REGISTER( togglebar ) \
-    AWL_ACTION_REGISTER( togglebw ) AWL_ACTION_REGISTER( togglefloating ) \
-    AWL_ACTION_REGISTER( togglefullscreen ) AWL_ACTION_REGISTER( toggleidleinhibit ) \
-    AWL_ACTION_REGISTER( toggleontop ) \
-    AWL_ACTION_REGISTER( togglepertag ) AWL_ACTION_REGISTER( toggletag ) \
-    AWL_ACTION_REGISTER( toggleview ) AWL_ACTION_REGISTER( transluce ) \
-    AWL_ACTION_REGISTER( unminimize ) AWL_ACTION_REGISTER( view ) \
-    AWL_ACTION_REGISTER( wallpaper ) AWL_ACTION_REGISTER( wallpapermode )
+    AWL_ACTION_REGISTER( focus_monitor ) AWL_ACTION_REGISTER( focus_stack ) \
+    AWL_ACTION_REGISTER( kill_client ) AWL_ACTION_REGISTER( lock_screen ) \
+    AWL_ACTION_REGISTER( maximize ) AWL_ACTION_REGISTER( minimize ) \
+    AWL_ACTION_REGISTER( move_resize ) AWL_ACTION_REGISTER( move_stack ) \
+    AWL_ACTION_REGISTER( move_to_monitor ) AWL_ACTION_REGISTER( output_profile ) \
+    AWL_ACTION_REGISTER( plugin_restart ) AWL_ACTION_REGISTER( quit ) \
+    AWL_ACTION_REGISTER( set_layout ) AWL_ACTION_REGISTER( set_master_factor ) \
+    AWL_ACTION_REGISTER( spawn ) AWL_ACTION_REGISTER( switch_vt ) AWL_ACTION_REGISTER( tag ) \
+    AWL_ACTION_REGISTER( toggle_bar ) AWL_ACTION_REGISTER( toggle_border ) \
+    AWL_ACTION_REGISTER( toggle_floating ) AWL_ACTION_REGISTER( toggle_fullscreen ) \
+    AWL_ACTION_REGISTER( toggle_idle_inhibit ) AWL_ACTION_REGISTER( toggle_on_top ) \
+    AWL_ACTION_REGISTER( toggle_per_tag ) AWL_ACTION_REGISTER( toggle_tag ) \
+    AWL_ACTION_REGISTER( toggle_view ) AWL_ACTION_REGISTER( unminimize ) \
+    AWL_ACTION_REGISTER( view ) AWL_ACTION_REGISTER( wallpaper ) \
+    AWL_ACTION_REGISTER( wallpaper_mode )
 
 #define AWL_ACTION_REGISTER( name ) void (*name)( awl_server_t* srv, const Arg* arg );
 /** awl's functions of :c:macro:`AWL_ACTIONS`, one ``void (*name)( awl_server_t*, const Arg* )`` each */
@@ -71,7 +70,7 @@ typedef struct awl_actions_t {
 /** awl's layouts' arrange functions, one ``AWL_LAYOUT_REGISTER( name )``
  * each, used like :c:macro:`AWL_ACTIONS`; layouts write them as :c:macro:`AWL_LAYOUT() <AWL_LAYOUT>` */
 #define AWL_ARRANGES \
-    AWL_LAYOUT_REGISTER( bstack ) AWL_LAYOUT_REGISTER( gaplessgrid ) \
+    AWL_LAYOUT_REGISTER( bottom_stack ) AWL_LAYOUT_REGISTER( gapless_grid ) \
     AWL_LAYOUT_REGISTER( monocle ) AWL_LAYOUT_REGISTER( tile )
 
 #define AWL_LAYOUT_REGISTER( name ) void (*name)( awl_server_t* srv, Monitor* m );
@@ -105,7 +104,7 @@ typedef struct awl_plugin_api_t {
      * toggles); 0: show nothing. Cheap, called on every redraw request.
      */
     uint64_t (*desktop_version)( void );
-    /** lays the panel out in font (:c:member:`Monitor.desktopfont`,
+    /** lays the panel out in font (:c:member:`Monitor.desktop_font`,
      * else the bar's; never NULL) for the usable
      * area avail_w x avail_h with corner radius r; returns its position in
      * that area and its size (0: none) */
@@ -125,7 +124,7 @@ typedef struct awl_plugin_api_t {
     /** the newest decoded wallpaper not taken yet, or NULL; the caller owns
      * it. A redraw request announces one. */
     awl_image_t* (*wallpaper_take)( void );
-    /** the wallpaper timer's mode changed (the wallpapermode action) */
+    /** the wallpaper timer's mode changed (the wallpaper_mode action) */
     void (*wallpaper_mode)( WallpaperMode mode );
 
     /** whether the screen is covered by the locker: from the first frame

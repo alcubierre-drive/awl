@@ -38,12 +38,12 @@ typedef struct awl_tray_app_env_t {
  * first use, and anew after a reload changed icon_theme, for the programs
  * started from then on. It lives until the next call or
  * :c:func:`awl_tray_app_cleanup`. */
-const awl_tray_app_env_t *awl_tray_app_env(awl_process_t *proc);
+const awl_tray_app_env_t *awl_tray_app_env( awl_process_t *proc );
 
 /** the config's icon_theme (NULL or "": none) and the config dictionary's
  * "home" (NULL or "": none; where ~/.icons and ~/.local/share are), at
  * startup and after each plugin reload; the next :c:func:`awl_tray_app_env`
  * makes it anew if the theme changed */
-void awl_tray_app_set_theme(awl_process_t *proc, const char *theme, const char *home);
+void awl_tray_app_set_theme( awl_process_t *proc, const char *theme, const char *home );
 /** removes what :c:func:`awl_tray_app_env` made */
-void awl_tray_app_cleanup(awl_process_t *proc);
+void awl_tray_app_cleanup( awl_process_t *proc );

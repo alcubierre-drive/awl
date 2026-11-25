@@ -188,8 +188,8 @@ static int on_sleep_subscribed( sd_bus_message* m, void* userdata, sd_bus_error*
     return 0;
 }
 
-static int add_session_match( logind_t* s, sd_bus_slot** slot, const char* member,
-                              sd_bus_message_handler_t cb, sd_bus_message_handler_t installed ) {
+static int add_session_match( logind_t* s, sd_bus_slot** slot, const char* member, sd_bus_message_handler_t cb,
+                              sd_bus_message_handler_t installed ) {
     char rule[512];
     snprintf( rule, sizeof rule, "type='signal',sender='" LOGIND_NAME "',path='%s',"
               "interface='" LOGIND_SESSION "',member='%s'", s->session, member );

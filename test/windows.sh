@@ -1,7 +1,7 @@
 #!/bin/bash
 # Scenario test of awl's popups (awl_window.c, awl_popup.c): a
 # live.sh test instance whose popups it drives through AWL_TEST_WINDOWS (see
-# testwincmd() in awl_test.c), checking after every step where they are -- inside
+# test_win_cmd() in awl_test.c), checking after every step where they are -- inside
 # their monitor and against its window area's edge, hidden once the monitor
 # is gone or off, none after a plugin reload -- that awl is still alive, and
 # at the end that it exits cleanly, popups still open.
@@ -109,7 +109,7 @@ scrolled() { grep -qx "scroll $1" <<<"$state"; }
 noscrolls() { ! grep -q '^scroll ' <<<"$state"; }
 # window N's highlighted row
 hoverrow() { test "$(field "$1" 9)" = "$2"; }
-# the newest monitor's name: createmon() puts it first
+# the newest monitor's name: create_mon() puts it first
 newest() { awk '$1 == "mon" { print $2; exit }' <<<"$state"; }
 randr() { "$live" randr "$@" >/dev/null || die "wlr-randr $*"; sleep 0.3; }
 
@@ -345,7 +345,7 @@ else
 	point 300 300
 	win
 	check "leaving the popup closes it" pnone
-	# hover only (awl_bar.c's barbutton()): a press on the widget closes its
+	# hover only (awl_bar.c's bar_button()): a press on the widget closes its
 	# popup, and it stays closed until the pointer leaves and comes back
 	point "$hx" "$hy"
 	"$live" click "$hx" "$hy" left >/dev/null
@@ -369,7 +369,7 @@ else
 	randr --output $M1 --scale 1.5
 	win
 	read -r hx hy < <(hoverat $M1)
-	# updatebar() scales the font by size and dpi, i.e. by scale squared: at
+	# update_bar() scales the font by size and dpi, i.e. by scale squared: at
 	# 1.5 the right-hand widgets may not fit, and end up past the edge
 	if [ "$hx" -lt "$(awk -v m=$M1 '$1 == "mon" && $2 == m { print $3 + $5 }' <<<"$state")" ]; then
 		point "$hx" "$hy"

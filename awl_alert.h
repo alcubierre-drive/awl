@@ -16,10 +16,10 @@
 /** the alerts there are; each is up or not */
 typedef enum {
     /** the plugins' logind thread doesn't listen to logind (awl_lockscreen.c's
-     * :c:func:`logindupdate`): no lock on ``loginctl lock-session``, or none
+     * :c:func:`logind_update`): no lock on ``loginctl lock-session``, or none
      * before suspend */
     AwlAlertLogind,
-    /** the locker :c:func:`lockscreen` started exited before it ever locked: a
+    /** the locker :c:func:`lock_screen` started exited before it ever locked: a
      * wrong :c:member:`cfg->lock.locker <awl_config_t.lock.locker>`, or it crashed */
     AwlAlertLocker,
     /** how many there are */
@@ -29,8 +29,7 @@ typedef enum {
 /** Raises the alert id with the text fmt (short: the bar shows it), or
  * changes its text. If either is new, logs it and requests a redraw; only
  * raising it notifies. */
-void awl_alert_set( awl_server_t* srv, awl_alert_id_t id, const char* fmt, ... )
-    __attribute__(( format( printf, 3, 4 ) ));
+void awl_alert_set( awl_server_t* srv, awl_alert_id_t id, const char* fmt, ... ) __attribute__(( format( printf, 3, 4 ) ));
 /** Takes the alert id down, if up; logs that. */
 void awl_alert_clear( awl_server_t* srv, awl_alert_id_t id );
 /** Whether the alert id is up. */

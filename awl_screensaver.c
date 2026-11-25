@@ -12,6 +12,12 @@
 #define NAME  "org.freedesktop.ScreenSaver"
 #define IFACE "org.freedesktop.ScreenSaver"
 
+enum {
+    /** cookies held at once, at most: a player or browser holds one or two, so
+     * more is a client that leaks them; each costs a bus match */
+    MAX_COOKIES = 64,
+};
+
 /** an Inhibit's cookie, until UnInhibit or its caller leaves the bus */
 typedef struct cookie {
     struct wl_list link;
@@ -29,6 +35,7 @@ struct awl_screensaver {
     sd_bus_slot* vtable[2];
     /** :c:type:`cookie_t`, the newest first */
     struct wl_list cookies;
+    int ncookies;
     uint32_t last_id;
 };
 
@@ -37,11 +44,12 @@ static void release( cookie_t* c, const char* why ) {
     awl_screensaver_t* S = c->S;
     awl_log_printf( "screensaver: %s no longer inhibits idle (%s)\n", c->app, why );
     wl_list_remove( &c->link );
+    S->ncookies--;
     sd_bus_track_unref( c->track );
     free( c->app );
     free( c );
     /* not while stopping: then the server is going, or checks itself */
-    if (S->srv->screensaver == S) checkidleinhibitor( S->srv, NULL );
+    if (S->srv->screensaver == S) check_idle_inhibitor( S->srv, NULL );
 }
 
 /** the caller of a cookie left the bus */
@@ -51,14 +59,18 @@ static int on_gone( sd_bus_track* track, void* userdata ) {
     return 0;
 }
 
-/** Inhibit(ss) -> u: application name, reason; the cookie */
+/** Inhibit(ss) -> u: application name, reason; the cookie. Refused past
+ * MAX_COOKIES */
 static int method_inhibit( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     awl_screensaver_t* S = userdata;
     const char *app, *reason;
     int r;
-    (void)ret_error;
     if ((r = sd_bus_message_read( m, "ss", &app, &reason )) < 0) return r;
-    cookie_t* c = ecalloc( 1, sizeof(*c) );
+    if (S->ncookies == MAX_COOKIES) {
+        awl_wrn_printf( "screensaver: %s can't inhibit idle, %d cookies are held\n", app, MAX_COOKIES );
+        return sd_bus_error_setf( ret_error, SD_BUS_ERROR_LIMITS_EXCEEDED, "%d cookies are held", MAX_COOKIES );
+    }
+    cookie_t* c = calloc_or_die( 1, sizeof(*c) );
     if ((r = sd_bus_track_new( sd_bus_message_get_bus( m ), &c->track, on_gone, c )) < 0 ||
         (r = sd_bus_track_add_sender( c->track, m )) < 0) {
         sd_bus_track_unref( c->track );
@@ -70,8 +82,9 @@ static int method_inhibit( sd_bus_message* m, void* userdata, sd_bus_error* ret_
     c->id = S->last_id;
     c->app = strdup( app );
     wl_list_insert( &S->cookies, &c->link );
+    S->ncookies++;
     awl_log_printf( "screensaver: %s inhibits idle (%s)\n", app, reason );
-    checkidleinhibitor( S->srv, NULL );
+    check_idle_inhibitor( S->srv, NULL );
     return sd_bus_reply_method_return( m, "u", c->id );
 }
 
@@ -156,12 +169,12 @@ void awl_screensaver_configure( awl_server_t* srv ) {
     if (!srv->cfg->screensaver_inhibit) {
         if (srv->screensaver) {
             awl_screensaver_stop( srv );
-            checkidleinhibitor( srv, NULL );
+            check_idle_inhibitor( srv, NULL );
         }
         return;
     }
     if (srv->screensaver) return;
-    awl_screensaver_t* S = ecalloc( 1, sizeof(*S) );
+    awl_screensaver_t* S = calloc_or_die( 1, sizeof(*S) );
     S->srv = srv;
     wl_list_init( &S->cookies );
     if (!(S->conn = awl_bus_start( srv->event_loop, &ops, S ))) {
@@ -180,5 +193,5 @@ void awl_screensaver_stop( awl_server_t* srv ) {
 }
 
 bool awl_screensaver_inhibited( const awl_screensaver_t* S ) {
-    return S && !wl_list_empty( &S->cookies );
+    return S && S->ncookies;
 }

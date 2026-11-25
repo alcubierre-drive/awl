@@ -6,7 +6,7 @@
 # crashes leaves awl locked and alive, and awl starts its own, awlock, up to
 # 5 times until an unlock; a new locker can lock again; and awl exits
 # cleanly on SIGTERM while a lock is in place (the lock then goes with its
-# client, after lockfini() has removed the lock's timers).
+# client, after lock_fini() has removed the lock's timers).
 #
 # awlock is the instance's, found by its parents (awl, the lock helper),
 # never by name alone: the real session's must be left alone. It locks;

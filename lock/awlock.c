@@ -19,15 +19,17 @@
 // The event loop: poll() on the fds, with the next timer's timeout
 
 #define LOOP_FDS 4
+// at most the auth idle, password clear, key repeat and fingerprint retry
+// timers run at once; twice that leaves room
+#define LOOP_TIMERS 8
 
+// a slot of loop.timers, free while callback is NULL; a handle is a pointer to
+// its slot, so it is good until the timer fires or is removed, and its owner
+// forgets it then (the slot may be another timer's by the next one)
 struct loop_timer {
     void (*callback)(void *data);
     void *data;
     int64_t expiry; // now_ms()
-    // removed, freed by loop_poll(): a timer's callback may remove the
-    // next timer while loop_poll() walks them
-    bool removed;
-    struct wl_list link; // loop.timers
 };
 
 static struct {
@@ -37,23 +39,23 @@ static struct {
         void *data;
     } callbacks[LOOP_FDS];
     int nfds;
-    struct wl_list timers; // struct loop_timer::link
-} loop = {.timers = {&loop.timers, &loop.timers}};
+    struct loop_timer timers[LOOP_TIMERS];
+} loop;
 
-static int64_t now_ms(void) {
+static int64_t now_ms( void ) {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
 // waits for an fd or the next timer, and runs their callbacks
-static void loop_poll(void) {
+static void loop_poll( void ) {
     int64_t now = now_ms();
     int ms = -1; // no timer: until an fd
-    struct loop_timer *timer, *tmp;
-    wl_list_for_each(timer, &loop.timers, link) {
+    for (int i = 0; i < LOOP_TIMERS; i++) {
+        const struct loop_timer *timer = &loop.timers[i];
         int64_t left = timer->expiry > now ? timer->expiry - now : 0;
-        if (!timer->removed && (ms < 0 || left < ms)) {
+        if (timer->callback && (ms < 0 || left < ms)) {
             ms = left;
         }
     }
@@ -69,19 +71,19 @@ static void loop_poll(void) {
         }
     }
 
+    // the slot is free before the callback runs, which may add a timer
+    // there or remove one further on
     now = now_ms();
-    wl_list_for_each_safe(timer, tmp, &loop.timers, link) {
-        if (timer->removed || timer->expiry <= now) {
-            if (!timer->removed) {
-                timer->callback(timer->data);
-            }
-            wl_list_remove(&timer->link);
-            free(timer);
+    for (int i = 0; i < LOOP_TIMERS; i++) {
+        struct loop_timer timer = loop.timers[i];
+        if (timer.callback && timer.expiry <= now) {
+            loop.timers[i].callback = NULL;
+            timer.callback(timer.data);
         }
     }
 }
 
-void loop_add_fd(int fd, void (*callback)(void *data), void *data) {
+void loop_add_fd( int fd, void (*callback)(void *data), void *data ) {
     if (loop.nfds == LOOP_FDS) {
         awl_err_printf("awlock: more than %d fds\n", LOOP_FDS);
         return;
@@ -91,7 +93,7 @@ void loop_add_fd(int fd, void (*callback)(void *data), void *data) {
     loop.callbacks[loop.nfds++].data = data;
 }
 
-void loop_remove_fd(int fd) {
+void loop_remove_fd( int fd ) {
     for (int i = 0; i < loop.nfds; i++) {
         if (loop.fds[i].fd == fd) {
             loop.fds[i].fd = -1;
@@ -99,23 +101,20 @@ void loop_remove_fd(int fd) {
     }
 }
 
-struct loop_timer *loop_add_timer(int ms, void (*callback)(void *data),
-        void *data) {
-    struct loop_timer *timer = calloc(1, sizeof(*timer));
-    if (!timer) {
-        awl_err_printf("awlock: Unable to allocate memory for timer\n");
-        return NULL;
+struct loop_timer *loop_add_timer( int ms, void (*callback)(void *data), void *data ) {
+    for (int i = 0; i < LOOP_TIMERS; i++) {
+        if (!loop.timers[i].callback) {
+            loop.timers[i] = (struct loop_timer){callback, data, now_ms() + ms};
+            return &loop.timers[i];
+        }
     }
-    timer->callback = callback;
-    timer->data = data;
-    timer->expiry = now_ms() + ms;
-    wl_list_insert(&loop.timers, &timer->link);
-    return timer;
+    awl_err_printf("awlock: more than %d timers\n", LOOP_TIMERS);
+    return NULL;
 }
 
-void loop_remove_timer(struct loop_timer *timer) {
+void loop_remove_timer( struct loop_timer *timer ) {
     if (timer) {
-        timer->removed = true;
+        timer->callback = NULL;
     }
 }
 
@@ -128,8 +127,7 @@ struct shm_buffer {
     size_t size;
 };
 
-static struct shm_buffer *create_buffer(struct wl_shm *shm,
-        struct shm_buffer *buf, int32_t width, int32_t height) {
+static struct shm_buffer *create_buffer( struct wl_shm *shm, struct shm_buffer *buf, int32_t width, int32_t height ) {
     uint32_t stride = width * 4;
     size_t size = stride * height;
 
@@ -157,7 +155,7 @@ static struct shm_buffer *create_buffer(struct wl_shm *shm,
     return buf;
 }
 
-static void destroy_buffer(struct shm_buffer *buffer) {
+static void destroy_buffer( struct shm_buffer *buffer ) {
     if (buffer->buffer) {
         wl_buffer_destroy(buffer->buffer);
     }
@@ -234,7 +232,7 @@ static struct {
 // then the rows; anything else (more colours, symbolic ones, other keys than
 // c, as some editors write, extensions) is refused. name is for the log:
 // logo.xpm (logo_xpm, compiled in) or lock.logo's file.
-static bool logo_load(const char *const *xpm, int lines, const char *name) {
+static bool logo_load( const char *const *xpm, int lines, const char *name ) {
     int ncolors, cpp;
     if (lines < 1 ||
             sscanf(xpm[0], "%d %d %d %d", &logo.w, &logo.h, &ncolors, &cpp) != 4 ||
@@ -298,7 +296,7 @@ static bool logo_load(const char *const *xpm, int lines, const char *name) {
 // (outside comments) logo_load() takes; *lines of them in *xpm, kept for
 // logo.rows, as the file's contents they are in. Not C's escapes: a
 // backslash is refused, as no XPM needs one.
-static bool logo_read(const char *path, char ***xpm, int *lines) {
+static bool logo_read( const char *path, char ***xpm, int *lines ) {
     FILE *f = fopen(path, "r");
     if (!f) {
         awl_err_printf("awlock: logo: %s: %s\n", path, strerror(errno));
@@ -353,7 +351,7 @@ static bool logo_read(const char *path, char ***xpm, int *lines) {
     return true;
 }
 
-static enum logo_state logo_state(const struct awlock_state *state) {
+static enum logo_state logo_state( const struct awlock_state *state ) {
     if (state->auth_state == AUTH_STATE_INVALID) {
         return LOGO_WRONG;
     }
@@ -369,13 +367,13 @@ static enum logo_state logo_state(const struct awlock_state *state) {
 }
 
 // a colour (RRGGBBAA) at an opacity: its alpha times alpha, 0 to 1
-static uint32_t logo_dim(uint32_t color, float alpha) {
+static uint32_t logo_dim( uint32_t color, float alpha ) {
     uint32_t a = (uint32_t)((color & 0xFF) * alpha + 0.5f);
     return (color & 0xFFFFFF00) | a;
 }
 
 // RRGGBBAA as premultiplied ARGB8888, the shm format
-static uint32_t premultiplied(uint32_t color) {
+static uint32_t premultiplied( uint32_t color ) {
     uint32_t a = color & 0xFF, argb = a << 24;
     for (int i = 0; i < 3; i++) {
         uint32_t c = (color >> (24 - 8 * i)) & 0xFF;
@@ -384,7 +382,7 @@ static uint32_t premultiplied(uint32_t color) {
     return argb;
 }
 
-static void destroy_logo_buffers(struct awlock_surface *surface) {
+static void destroy_logo_buffers( struct awlock_surface *surface ) {
     for (int i = 0; i < LOGO_STATES; i++) {
         destroy_buffer(&surface->logo_full[i]);
         destroy_buffer(&surface->logo_dimmed[i]);
@@ -394,8 +392,7 @@ static void destroy_logo_buffers(struct awlock_surface *surface) {
 // the logo in a state, its colours dimmed or not: drawn the first time it is
 // needed, each logo pixel a square of logo_scale * scale buffer pixels, and
 // kept until the scale changes
-static struct shm_buffer *logo_buffer(struct awlock_surface *surface,
-        enum logo_state ls, bool dim) {
+static struct shm_buffer *logo_buffer( struct awlock_surface *surface, enum logo_state ls, bool dim ) {
     struct awlock_state *state = surface->state;
     if (surface->logo_buffers_scale != surface->scale) {
         destroy_logo_buffers(surface);
@@ -440,8 +437,7 @@ static struct shm_buffer *logo_buffer(struct awlock_surface *surface,
 // whether it is dimmed: at the pointer on the pointer's surface; centred
 // elsewhere, dimmed once the pointer has been on any surface (before that,
 // typing shows on every output alike)
-static void logo_place(struct awlock_surface *surface, double *x, double *y,
-        bool *dim) {
+static void logo_place( struct awlock_surface *surface, double *x, double *y, bool *dim ) {
     struct awlock_state *state = surface->state;
     if (state->pointer_surface == surface) {
         *x = state->pointer_x;
@@ -457,7 +453,7 @@ static void logo_place(struct awlock_surface *surface, double *x, double *y,
 // The lock surface: transparent, so awl's lock screen shows through. It needs
 // a buffer (ext-session-lock: no null buffer) of the configured size: one
 // transparent pixel, stretched (the viewport's destination is its size).
-static void draw_background(struct awlock_surface *surface) {
+static void draw_background( struct awlock_surface *surface ) {
     if (surface->width == 0 || surface->height == 0) {
         return; // not yet configured
     }
@@ -467,7 +463,7 @@ static void draw_background(struct awlock_surface *surface) {
     wl_surface_commit(surface->surface);
 }
 
-static void draw_logo(struct awlock_surface *surface) {
+static void draw_logo( struct awlock_surface *surface ) {
     struct awlock_state *state = surface->state;
     struct shm_buffer *buf = NULL;
     int x = 0, y = 0;
@@ -499,7 +495,7 @@ static void draw_logo(struct awlock_surface *surface) {
 
 // Surfaces, outputs, the lock
 
-static void destroy_surface(struct awlock_surface *surface) {
+static void destroy_surface( struct awlock_surface *surface ) {
     wl_list_remove(&surface->link);
     if (surface->state->pointer_surface == surface) {
         surface->state->pointer_surface = NULL;
@@ -533,7 +529,7 @@ static void destroy_surface(struct awlock_surface *surface) {
 
 static const struct ext_session_lock_surface_v1_listener ext_session_lock_surface_v1_listener;
 
-static void create_surface(struct awlock_surface *surface) {
+static void create_surface( struct awlock_surface *surface ) {
     struct awlock_state *state = surface->state;
 
     surface->surface = wl_compositor_create_surface(state->compositor);
@@ -556,9 +552,8 @@ static void create_surface(struct awlock_surface *surface) {
     surface->created = true;
 }
 
-static void ext_session_lock_surface_v1_handle_configure(void *data,
-        struct ext_session_lock_surface_v1 *lock_surface, uint32_t serial,
-        uint32_t width, uint32_t height) {
+static void ext_session_lock_surface_v1_handle_configure( void *data, struct ext_session_lock_surface_v1 *lock_surface,
+                                                          uint32_t serial, uint32_t width, uint32_t height ) {
     struct awlock_surface *surface = data;
     surface->width = width;
     surface->height = height;
@@ -575,15 +570,14 @@ static const struct wl_callback_listener surface_frame_listener;
 
 // draws now, and nothing more until the frame is done: the logo follows the
 // pointer once per frame, without a frame's delay
-static void draw_surface(struct awlock_surface *surface) {
+static void draw_surface( struct awlock_surface *surface ) {
     surface->frame_callback = wl_surface_frame(surface->surface);
     wl_callback_add_listener(surface->frame_callback, &surface_frame_listener, surface);
     surface->dirty = false;
     draw_logo(surface);
 }
 
-static void surface_frame_handle_done(void *data, struct wl_callback *callback,
-        uint32_t time) {
+static void surface_frame_handle_done( void *data, struct wl_callback *callback, uint32_t time ) {
     struct awlock_surface *surface = data;
     (void)time;
     wl_callback_destroy(callback);
@@ -597,7 +591,7 @@ static const struct wl_callback_listener surface_frame_listener = {
     .done = surface_frame_handle_done,
 };
 
-static void damage_surface(struct awlock_surface *surface) {
+static void damage_surface( struct awlock_surface *surface ) {
     if (surface->width == 0 || surface->height == 0) {
         return; // not yet configured
     }
@@ -608,29 +602,28 @@ static void damage_surface(struct awlock_surface *surface) {
     }
 }
 
-void damage_state(struct awlock_state *state) {
+void damage_state( struct awlock_state *state ) {
     struct awlock_surface *surface;
     wl_list_for_each(surface, &state->surfaces, link) {
         damage_surface(surface);
     }
 }
 
-static void handle_wl_output_geometry(void *data, struct wl_output *wl_output,
-        int32_t x, int32_t y, int32_t width_mm, int32_t height_mm,
-        int32_t subpixel, const char *make, const char *model,
-        int32_t transform) {
+static void handle_wl_output_geometry( void *data, struct wl_output *wl_output, int32_t x, int32_t y, int32_t width_mm,
+                                       int32_t height_mm, int32_t subpixel, const char *make, const char *model,
+                                       int32_t transform ) {
     // nothing: the logo is pixels, no text, so the subpixel order doesn't
     // matter
     (void)data; (void)wl_output; (void)x; (void)y; (void)width_mm; (void)height_mm; (void)subpixel; (void)make; (void)model; (void)transform;
 }
 
-static void handle_wl_output_mode(void *data, struct wl_output *output,
-        uint32_t flags, int32_t width, int32_t height, int32_t refresh) {
+static void handle_wl_output_mode( void *data, struct wl_output *output, uint32_t flags, int32_t width, int32_t height,
+                                   int32_t refresh ) {
     // Who cares
     (void)data; (void)output; (void)flags; (void)width; (void)height; (void)refresh;
 }
 
-static void handle_wl_output_done(void *data, struct wl_output *output) {
+static void handle_wl_output_done( void *data, struct wl_output *output ) {
     struct awlock_surface *surface = data;
     (void)output;
     if (!surface->created && surface->state->running) {
@@ -638,8 +631,7 @@ static void handle_wl_output_done(void *data, struct wl_output *output) {
     }
 }
 
-static void handle_wl_output_scale(void *data, struct wl_output *output,
-        int32_t factor) {
+static void handle_wl_output_scale( void *data, struct wl_output *output, int32_t factor ) {
     struct awlock_surface *surface = data;
     (void)output;
     surface->scale = factor;
@@ -648,14 +640,12 @@ static void handle_wl_output_scale(void *data, struct wl_output *output,
     }
 }
 
-static void handle_wl_output_name(void *data, struct wl_output *output,
-        const char *name) {
+static void handle_wl_output_name( void *data, struct wl_output *output, const char *name ) {
     // Who cares
     (void)data; (void)output; (void)name;
 }
 
-static void handle_wl_output_description(void *data, struct wl_output *output,
-        const char *description) {
+static void handle_wl_output_description( void *data, struct wl_output *output, const char *description ) {
     // Who cares
     (void)data; (void)output; (void)description;
 }
@@ -669,13 +659,13 @@ static const struct wl_output_listener output_listener = {
     .description = handle_wl_output_description,
 };
 
-static void ext_session_lock_v1_handle_locked(void *data, struct ext_session_lock_v1 *lock) {
+static void ext_session_lock_v1_handle_locked( void *data, struct ext_session_lock_v1 *lock ) {
     struct awlock_state *state = data;
     (void)lock;
     state->locked = true;
 }
 
-static void ext_session_lock_v1_handle_finished(void *data, struct ext_session_lock_v1 *lock) {
+static void ext_session_lock_v1_handle_finished( void *data, struct ext_session_lock_v1 *lock ) {
     (void)data; (void)lock;
     awl_err_printf("awlock: Failed to lock session -- "
             "is another lockscreen running?\n");
@@ -701,8 +691,7 @@ struct awlock_seat {
     struct loop_timer *repeat_timer;
 };
 
-static void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
-        uint32_t format, int32_t fd, uint32_t size) {
+static void keyboard_keymap( void *data, struct wl_keyboard *wl_keyboard, uint32_t format, int32_t fd, uint32_t size ) {
     struct awlock_seat *seat = data;
     struct awlock_state *state = seat->state;
     (void)wl_keyboard;
@@ -738,27 +727,26 @@ static void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
     state->xkb.state = xkb_state;
 }
 
-static void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
-        uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {
+static void keyboard_enter( void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface,
+                            struct wl_array *keys ) {
     // Who cares
     (void)data; (void)wl_keyboard; (void)serial; (void)surface; (void)keys;
 }
 
-static void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
-        uint32_t serial, struct wl_surface *surface) {
+static void keyboard_leave( void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, struct wl_surface *surface ) {
     // Who cares
     (void)data; (void)wl_keyboard; (void)serial; (void)surface;
 }
 
-static void keyboard_repeat(void *data) {
+static void keyboard_repeat( void *data ) {
     struct awlock_seat *seat = data;
     seat->repeat_timer = loop_add_timer(seat->repeat_period_ms,
         keyboard_repeat, seat);
     auth_handle_key(seat->state, seat->repeat_sym, seat->repeat_text);
 }
 
-static void keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
-        uint32_t serial, uint32_t time, uint32_t key, uint32_t key_state) {
+static void keyboard_key( void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t time, uint32_t key,
+                          uint32_t key_state ) {
     struct awlock_seat *seat = data;
     struct xkb_state *xkb_state = seat->state->xkb.state;
     (void)wl_keyboard; (void)serial; (void)time;
@@ -778,9 +766,8 @@ static void keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
     }
 }
 
-static void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,
-        uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched,
-        uint32_t mods_locked, uint32_t group) {
+static void keyboard_modifiers( void *data, struct wl_keyboard *wl_keyboard, uint32_t serial, uint32_t mods_depressed,
+                                uint32_t mods_latched, uint32_t mods_locked, uint32_t group ) {
     struct awlock_seat *seat = data;
     struct awlock_state *state = seat->state;
     (void)wl_keyboard; (void)serial;
@@ -801,8 +788,7 @@ static void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,
         XKB_STATE_MODS_DEPRESSED | XKB_STATE_MODS_LATCHED);
 }
 
-static void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
-        int32_t rate, int32_t delay) {
+static void keyboard_repeat_info( void *data, struct wl_keyboard *wl_keyboard, int32_t rate, int32_t delay ) {
     struct awlock_seat *seat = data;
     (void)wl_keyboard;
     seat->repeat_period_ms = rate > 0 ? 1000 / rate : 0; // keys per second
@@ -824,7 +810,7 @@ static const struct wl_keyboard_listener keyboard_listener = {
 
 // the surface the pointer left gets its logo back in the centre, the one it
 // is on gets it at the pointer
-static void pointer_moved(struct awlock_state *state) {
+static void pointer_moved( struct awlock_state *state ) {
     if (state->pointer_drawn && state->pointer_drawn != state->pointer_surface) {
         damage_surface(state->pointer_drawn);
     }
@@ -834,9 +820,8 @@ static void pointer_moved(struct awlock_state *state) {
     state->pointer_drawn = state->pointer_surface;
 }
 
-static void wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
-        uint32_t serial, struct wl_surface *surface,
-        wl_fixed_t surface_x, wl_fixed_t surface_y) {
+static void wl_pointer_enter( void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface,
+                              wl_fixed_t surface_x, wl_fixed_t surface_y ) {
     struct awlock_seat *seat = data;
     struct awlock_state *state = seat->state;
     // the logo is the cursor
@@ -859,53 +844,48 @@ static void wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
     }
 }
 
-static void wl_pointer_leave(void *data, struct wl_pointer *wl_pointer,
-        uint32_t serial, struct wl_surface *surface) {
+static void wl_pointer_leave( void *data, struct wl_pointer *wl_pointer, uint32_t serial, struct wl_surface *surface ) {
     struct awlock_seat *seat = data;
     (void)wl_pointer; (void)serial; (void)surface;
     seat->state->pointer_surface = NULL;
 }
 
-static void wl_pointer_motion(void *data, struct wl_pointer *wl_pointer,
-        uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+static void wl_pointer_motion( void *data, struct wl_pointer *wl_pointer, uint32_t time, wl_fixed_t surface_x,
+                               wl_fixed_t surface_y ) {
     struct awlock_seat *seat = data;
     (void)wl_pointer; (void)time;
     seat->state->pointer_x = wl_fixed_to_double(surface_x);
     seat->state->pointer_y = wl_fixed_to_double(surface_y);
 }
 
-static void wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
-        uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
+static void wl_pointer_button( void *data, struct wl_pointer *wl_pointer, uint32_t serial, uint32_t time,
+                               uint32_t button, uint32_t state ) {
     // Who cares
     (void)data; (void)wl_pointer; (void)serial; (void)time; (void)button; (void)state;
 }
 
-static void wl_pointer_axis(void *data, struct wl_pointer *wl_pointer,
-        uint32_t time, uint32_t axis, wl_fixed_t value) {
+static void wl_pointer_axis( void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis, wl_fixed_t value ) {
     // Who cares
     (void)data; (void)wl_pointer; (void)time; (void)axis; (void)value;
 }
 
-static void wl_pointer_frame(void *data, struct wl_pointer *wl_pointer) {
+static void wl_pointer_frame( void *data, struct wl_pointer *wl_pointer ) {
     struct awlock_seat *seat = data;
     (void)wl_pointer;
     pointer_moved(seat->state);
 }
 
-static void wl_pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
-        uint32_t axis_source) {
+static void wl_pointer_axis_source( void *data, struct wl_pointer *wl_pointer, uint32_t axis_source ) {
     // Who cares
     (void)data; (void)wl_pointer; (void)axis_source;
 }
 
-static void wl_pointer_axis_stop(void *data, struct wl_pointer *wl_pointer,
-        uint32_t time, uint32_t axis) {
+static void wl_pointer_axis_stop( void *data, struct wl_pointer *wl_pointer, uint32_t time, uint32_t axis ) {
     // Who cares
     (void)data; (void)wl_pointer; (void)time; (void)axis;
 }
 
-static void wl_pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
-        uint32_t axis, int32_t discrete) {
+static void wl_pointer_axis_discrete( void *data, struct wl_pointer *wl_pointer, uint32_t axis, int32_t discrete ) {
     // Who cares
     (void)data; (void)wl_pointer; (void)axis; (void)discrete;
 }
@@ -922,8 +902,7 @@ static const struct wl_pointer_listener pointer_listener = {
     .axis_discrete = wl_pointer_axis_discrete,
 };
 
-static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
-        enum wl_seat_capability caps) {
+static void seat_handle_capabilities( void *data, struct wl_seat *wl_seat, enum wl_seat_capability caps ) {
     struct awlock_seat *seat = data;
     if (seat->pointer) {
         wl_pointer_release(seat->pointer);
@@ -946,8 +925,7 @@ static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
     }
 }
 
-static void seat_handle_name(void *data, struct wl_seat *wl_seat,
-        const char *name) {
+static void seat_handle_name( void *data, struct wl_seat *wl_seat, const char *name ) {
     // Who cares
     (void)data; (void)wl_seat; (void)name;
 }
@@ -959,8 +937,8 @@ static const struct wl_seat_listener seat_listener = {
 
 // The registry, main()
 
-static void handle_global(void *data, struct wl_registry *registry,
-        uint32_t name, const char *interface, uint32_t version) {
+static void handle_global( void *data, struct wl_registry *registry, uint32_t name, const char *interface,
+                           uint32_t version ) {
     struct awlock_state *state = data;
     if (strcmp(interface, wl_compositor_interface.name) == 0) {
         state->compositor = wl_registry_bind(registry, name,
@@ -1002,8 +980,7 @@ static void handle_global(void *data, struct wl_registry *registry,
     }
 }
 
-static void handle_global_remove(void *data, struct wl_registry *registry,
-        uint32_t name) {
+static void handle_global_remove( void *data, struct wl_registry *registry, uint32_t name ) {
     struct awlock_state *state = data;
     struct awlock_surface *surface;
     (void)registry;
@@ -1022,7 +999,7 @@ static const struct wl_registry_listener registry_listener = {
 
 static struct awlock_state state;
 
-static void display_in(void *data) {
+static void display_in( void *data ) {
     (void)data;
     if (wl_display_dispatch(state.display) == -1) {
         state.running = false;
@@ -1031,7 +1008,7 @@ static void display_in(void *data) {
 
 // an opacity from 0 to 1: one outside clamped, NaN def (logo_dim() needs
 // 0 to 1, or the alpha spills into blue, or converts undefined)
-static float alpha_valid(const char *name, float a, float def) {
+static float alpha_valid( const char *name, float a, float def ) {
     if (a >= 0.0f && a <= 1.0f) {
         return a;
     }
@@ -1041,7 +1018,7 @@ static float alpha_valid(const char *name, float a, float def) {
     return v;
 }
 
-int awlock_main(const awlock_config_t *cfg, int wayland_fd) {
+int awlock_main( const awlock_config_t *cfg, int wayland_fd ) {
     state.wayland_fd = wayland_fd;
     state.args = *cfg;
     // 16: 848 logical pixels wide, up to ten buffers per output

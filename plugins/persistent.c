@@ -38,7 +38,7 @@ int awl_persistent_path( char* out, size_t n ) {
 }
 
 /** the whole file in buf, NUL-terminated; its length, or -1 */
-static ssize_t readall( const char* path, char* buf, size_t n ) {
+static ssize_t read_all( const char* path, char* buf, size_t n ) {
     int fd = open( path, O_RDONLY | O_CLOEXEC );
     if (fd < 0) return -1;
     size_t len = 0;
@@ -77,7 +77,7 @@ int awl_persistent_get_str( const char* key, char* out, size_t n ) {
     if (!buf) return -1;
 
     pthread_mutex_lock( &lock );
-    if (readall( path, buf, MAX_SIZE + 1 ) >= 0) {
+    if (read_all( path, buf, MAX_SIZE + 1 ) >= 0) {
         for (char* line = buf; line && *line; ) {
             char* next = strchr( line, '\n' );
             if (next) *next++ = 0;
@@ -106,7 +106,7 @@ int awl_persistent_get_num( const char* key, int64_t* v ) {
 }
 
 /** creates path's directories, as far as they don't exist */
-static void mkparents( char* path ) {
+static void make_parents( char* path ) {
     for (char* p = strchr( path + 1, '/' ); p; p = strchr( p + 1, '/' )) {
         *p = 0;
         mkdir( path, 0755 ); /* existing ones fail, a real failure shows at open() */
@@ -132,7 +132,7 @@ int awl_persistent_set_str( const char* key, const char* v ) {
     }
 
     pthread_mutex_lock( &lock );
-    ssize_t len = readall( path, buf, MAX_SIZE + 1 );
+    ssize_t len = read_all( path, buf, MAX_SIZE + 1 );
     if (len < 0 && errno != ENOENT) {
         /* unreadable or too large: rather keep it than lose its other lines */
         awl_err_printf( "persistent: can't read %s, not writing it\n", path );
@@ -142,7 +142,7 @@ int awl_persistent_set_str( const char* key, const char* v ) {
     }
     if (len < 0) {
         buf[0] = 0;
-        mkparents( path );
+        make_parents( path );
     }
 
     FILE* f = NULL;
@@ -222,16 +222,7 @@ int awl_persistent_load_str( const char* key ) {
 
 int awl_persistent_save_str( const char* key ) {
     char val[256], saved[256];
-    awl_dict_val_t v;
-    int r = -1;
-    /* the string is the dictionary's until it's unlocked */
-    AWL_HOST_CFG_LOCK( awl_host );
-    if (AWL_HOST_CFG_GET( awl_host, key, &v ) == AWL_DICT_OK && v.kind == AWL_DICT_KIND_STR) {
-        int len = snprintf( val, sizeof(val), "%s", v.str );
-        r = len >= 0 && (size_t)len < sizeof(val) ? 0 : -1;
-    }
-    AWL_HOST_CFG_UNLOCK( awl_host );
-    if (r) return -1;
+    if (AWL_HOST_CFG_STRNCPY( awl_host, key, val, sizeof(val) ) != AWL_DICT_OK) return -1;
     if (!awl_persistent_get_str( key, saved, sizeof(saved) ) && !strcmp( saved, val ))
         return 0;
     return awl_persistent_set_str( key, val );

@@ -22,14 +22,14 @@
 // memset(), but not optimised away for a buffer that is freed next: the
 // writes are volatile (explicit_bzero() and memset_explicit() need
 // _DEFAULT_SOURCE or C23)
-static void clear_buffer(void *buf, size_t size) {
+static void clear_buffer( void *buf, size_t size ) {
     volatile unsigned char *p = buf;
     while (size--) {
         *p++ = 0;
     }
 }
 
-static char *password_buffer_create(size_t size) {
+static char *password_buffer_create( size_t size ) {
     void *buffer;
     int result = posix_memalign(&buffer, sysconf(_SC_PAGESIZE), size);
     if (result) {
@@ -43,13 +43,13 @@ static char *password_buffer_create(size_t size) {
     return buffer;
 }
 
-static void password_buffer_destroy(char *buffer, size_t size) {
+static void password_buffer_destroy( char *buffer, size_t size ) {
     clear_buffer(buffer, size);
     munlock(buffer, size);
     free(buffer);
 }
 
-static void clear_password_buffer(struct awlock_password *pw) {
+static void clear_password_buffer( struct awlock_password *pw ) {
     clear_buffer(pw->buffer, PASSWORD_SIZE);
     pw->len = 0;
 }
@@ -61,7 +61,7 @@ static void clear_password_buffer(struct awlock_password *pw) {
 
 static int password_fd = -1, reply_fd = -1;
 
-static bool write_all(int fd, const void *buf, size_t size) {
+static bool write_all( int fd, const void *buf, size_t size ) {
     for (size_t done = 0; done < size; ) {
         ssize_t n = write(fd, (const char *)buf + done, size - done);
         if (n < 0) {
@@ -73,7 +73,7 @@ static bool write_all(int fd, const void *buf, size_t size) {
 }
 
 // false at the end of the pipe too (errno then 0)
-static bool read_all(int fd, void *buf, size_t size) {
+static bool read_all( int fd, void *buf, size_t size ) {
     for (size_t done = 0; done < size; ) {
         errno = 0;
         ssize_t n = read(fd, (char *)buf + done, size - done);
@@ -86,7 +86,7 @@ static bool read_all(int fd, void *buf, size_t size) {
 }
 
 // awlock: the password to the child; it is cleared, whatever happens
-static bool send_password(struct awlock_password *pw) {
+static bool send_password( struct awlock_password *pw ) {
     size_t size = pw->len + 1;
     bool sent = write_all(password_fd, &size, sizeof(size)) &&
         write_all(password_fd, pw->buffer, size);
@@ -98,7 +98,7 @@ static bool send_password(struct awlock_password *pw) {
 }
 
 // awlock: whether the child found the password right
-static bool receive_reply(void) {
+static bool receive_reply( void ) {
     bool right;
     if (!read_all(reply_fd, &right, sizeof(right))) {
         awl_err_printf("awlock: Failed to read the password's check: %s\n", strerror(errno));
@@ -111,7 +111,7 @@ static bool receive_reply(void) {
 
 // the child: the next password, in a password buffer of *size; NULL when
 // awlock has gone (it exits on an error)
-static char *receive_password(size_t *size) {
+static char *receive_password( size_t *size ) {
     if (!read_all(password_fd, size, sizeof(*size))) {
         if (errno == 0) {
             return NULL;
@@ -137,8 +137,7 @@ static char *receive_password(size_t *size) {
 
 // PAM's questions: the password (data: the char * being checked) for each
 // prompt; PAM clears and frees the copies
-static int converse(int num_msg, const struct pam_message **msg,
-        struct pam_response **resp, void *data) {
+static int converse( int num_msg, const struct pam_message **msg, struct pam_response **resp, void *data ) {
     const char *password = *(char **)data;
     struct pam_response *replies = calloc(num_msg, sizeof(*replies));
     if (!replies) {
@@ -166,7 +165,7 @@ static int converse(int num_msg, const struct pam_message **msg,
 }
 
 // checks passwords until awlock closes its end, then exits
-static _Noreturn void child_run(void) {
+static _Noreturn void child_run( void ) {
     struct passwd *passwd = getpwuid(getuid());
     if (!passwd) {
         awl_err_printf("awlock: getpwuid failed: %s\n", strerror(errno));
@@ -206,7 +205,7 @@ static _Noreturn void child_run(void) {
 
 // the pipes, and the child; each keeps its two ends. The child closes
 // wayland_fd, the locker's connection to awl.
-static bool child_start(int wayland_fd) {
+static bool child_start( int wayland_fd ) {
     int passwords[2], replies[2]; // [0] read, [1] written
     if (pipe(passwords) != 0 || pipe(replies) != 0) {
         awl_err_printf("awlock: failed to create pipe: %s\n", strerror(errno));
@@ -233,7 +232,7 @@ static bool child_start(int wayland_fd) {
 // Typing
 
 // the last UTF-8 character off
-static bool backspace(struct awlock_password *pw) {
+static bool backspace( struct awlock_password *pw ) {
     if (pw->len == 0) {
         return false;
     }
@@ -246,7 +245,7 @@ static bool backspace(struct awlock_password *pw) {
 }
 
 // a full buffer drops what is typed
-static void append(struct awlock_password *pw, const char *text) {
+static void append( struct awlock_password *pw, const char *text ) {
     size_t n = strlen(text);
     if (pw->len + n < PASSWORD_SIZE) {
         memcpy(pw->buffer + pw->len, text, n + 1);
@@ -254,42 +253,42 @@ static void append(struct awlock_password *pw, const char *text) {
     }
 }
 
-static void set_auth_idle(void *data) {
+static void set_auth_idle( void *data ) {
     struct awlock_state *state = data;
     state->auth_idle_timer = NULL;
     state->auth_state = AUTH_STATE_IDLE;
     damage_state(state);
 }
 
-void schedule_auth_idle(struct awlock_state *state) {
+void schedule_auth_idle( struct awlock_state *state ) {
     loop_remove_timer(state->auth_idle_timer);
     state->auth_idle_timer = loop_add_timer(3000, set_auth_idle, state);
 }
 
-static void cancel_password_clear(struct awlock_state *state) {
+static void cancel_password_clear( struct awlock_state *state ) {
     loop_remove_timer(state->clear_password_timer);
     state->clear_password_timer = NULL;
 }
 
 // the password forgotten: typed (Escape, Ctrl-U), or left (after 10 s)
-static void clear_password(struct awlock_state *state) {
+static void clear_password( struct awlock_state *state ) {
     cancel_password_clear(state);
     clear_password_buffer(&state->password);
     damage_state(state);
 }
 
-static void clear_password_timer(void *data) {
+static void clear_password_timer( void *data ) {
     struct awlock_state *state = data;
     state->clear_password_timer = NULL;
     clear_password(state);
 }
 
-static void schedule_password_clear(struct awlock_state *state) {
+static void schedule_password_clear( struct awlock_state *state ) {
     loop_remove_timer(state->clear_password_timer);
     state->clear_password_timer = loop_add_timer(10000, clear_password_timer, state);
 }
 
-static void submit_password(struct awlock_state *state) {
+static void submit_password( struct awlock_state *state ) {
     // nothing to check: not a wrong password for PAM (pam_faillock)
     if (state->password.len == 0) {
         return;
@@ -306,8 +305,7 @@ static void submit_password(struct awlock_state *state) {
     damage_state(state);
 }
 
-void auth_handle_key(struct awlock_state *state,
-        xkb_keysym_t keysym, const char *text) {
+void auth_handle_key( struct awlock_state *state, xkb_keysym_t keysym, const char *text ) {
     switch (keysym) {
     case XKB_KEY_KP_Enter:
     case XKB_KEY_Return:
@@ -367,7 +365,7 @@ void auth_handle_key(struct awlock_state *state,
 }
 
 // the child's reply: unlocks, or shows the password as wrong
-static void reply_in(void *data) {
+static void reply_in( void *data ) {
     struct awlock_state *state = data;
     if (receive_reply()) {
         state->running = false;
@@ -378,7 +376,7 @@ static void reply_in(void *data) {
     }
 }
 
-void auth_start(struct awlock_state *state) {
+void auth_start( struct awlock_state *state ) {
     // first: the child gets no password buffer
     if (!child_start(state->wayland_fd)) {
         exit(EXIT_FAILURE);

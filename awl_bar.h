@@ -13,72 +13,72 @@
 #include "awl_server.h"
 
 /** :c:member:`awl_server_t.bars` and the hover's timers, before the first monitor */
-void barinit(awl_server_t *srv);
+void bar_init( awl_server_t *srv );
 /** removes the timers and the redraw */
-void barfini(awl_server_t *srv);
+void bar_fini( awl_server_t *srv );
 /** frees :c:member:`awl_server_t.bars`; last, once no monitor is left */
-void barfree(awl_server_t *srv);
+void bar_free( awl_server_t *srv );
 /** sets up m's bar with the library's widgets; it is drawn with the others */
-void baraddmon(awl_server_t *srv, Monitor *m);
+void bar_add_mon( awl_server_t *srv, Monitor *m );
 /** m is going: forgets the hover's widgets in its bar, releases its fonts
- * and tears its bar down (closemon() then leaves the bar alone);
- * cleanupmon() destroys the scene nodes and buffers */
-void barremovemon(awl_server_t *srv, Monitor *m);
+ * and tears its bar down (close_mon() then leaves the bar alone);
+ * cleanup_mon() destroys the scene nodes and buffers */
+void bar_remove_mon( awl_server_t *srv, Monitor *m );
 /** before the plugin library goes (:c:func:`awl_plugins_reload`): ends the hover
  * (callback_leave, callback_view) while its widgets are still there, and
  * clears every bar's widgets */
-void barwidgetsclear(awl_server_t *srv);
+void bar_widgets_clear( awl_server_t *srv );
 /** after it: every bar gets the library's widgets again */
-void barwidgetsattach(awl_server_t *srv);
+void bar_widgets_attach( awl_server_t *srv );
 /** after plugins_config.c changed: the bars' fonts (and with them their
  * height), the popups' and the desktop file list's, the window list's blur */
-void barconfigure(awl_server_t *srv);
+void bar_configure( awl_server_t *srv );
 
 /** m's bar width, and its font and height if m's scale changed (or it has
  * none yet) */
-void updatebar(awl_server_t *srv, Monitor *m);
-/** redraws every bar now; :c:func:`barsdirty` is what to call on a change */
-void drawbars(awl_server_t *srv);
+void update_bar( awl_server_t *srv, Monitor *m );
+/** redraws every bar now; :c:func:`bars_dirty` is what to call on a change */
+void draw_bars( awl_server_t *srv );
 /** Something the bars show changed: they are redrawn once the event loop
  * has handled what it has now, however many changes came in. */
-void barsdirty(awl_server_t *srv);
+void bars_dirty( awl_server_t *srv );
 /** shows or hides m's bar */
-void togglebar_mon(awl_server_t *srv, Monitor *m);
+void toggle_bar_mon( awl_server_t *srv, Monitor *m );
 /** a new, cleared Buffer of width x height pixels for the scene: the bars'
  * and the alerts' */
-Buffer *buffercreate(int width, int height);
+Buffer *buffer_create( int width, int height );
 
-/** whether the pointer is on selmon's bar */
-int pointeronbar(awl_server_t *srv);
+/** whether the pointer is on sel_mon's bar */
+int pointer_on_bar( awl_server_t *srv );
 /** c is the client under the pointer, which may cover the bar. Exclusive
  * focus (e.g. a launcher) deliberately doesn't reset the hover
  * state. */
-void updatehover(awl_server_t *srv, Client *c);
-/** The wheel turned by delta with the pointer on selmon's bar: the widget
+void update_hover( awl_server_t *srv, Client *c );
+/** The wheel turned by delta with the pointer on sel_mon's bar: the widget
  * there gets it (its callback_scroll, in steps); returns whether one was
  * there. */
-int baraxis(awl_server_t *srv, double delta, uint32_t mods);
-/** A press with the pointer on selmon's bar: closes what the hover of the
+int bar_axis( awl_server_t *srv, double delta, uint32_t mods );
+/** A press with the pointer on sel_mon's bar: closes what the hover of the
  * widget there opened, or keeps it from opening. Returns 1 if the widget's
  * callback_click took the press; else ``*click`` becomes ClkBar. */
-int barbutton(awl_server_t *srv, uint32_t button, uint32_t mods, unsigned int *click);
+int bar_button( awl_server_t *srv, uint32_t button, uint32_t mods, unsigned int *click );
 
 /* m's awl_bar_t (awl_bar_type.h) */
 /** makes bar m's (m->bar, unused), without font or widgets */
-void awl_bar_setup(awl_bar_t *bar, Monitor *m);
+void awl_bar_setup( awl_bar_t *bar, Monitor *m );
 /** Makes the registry's font (:c:func:`awl_font_get`, or :c:func:`awl_font_get_exact` if
  * !fallback; proc's registry) bar's, giving back its old one. Returns it;
  * NULL (bar keeps its font) if none loads. */
-struct fcft_font *awl_bar_set_font(awl_process_t *proc, awl_bar_t *bar, const char *name,
-        float size, float scale, int fallback);
+struct fcft_font *awl_bar_set_font( awl_process_t *proc, awl_bar_t *bar, const char *name, float size, float scale,
+                                    int fallback );
 /** makes :c:member:`bar->pix <awl_bar_t.pix>` an image of bits, see :c:func:`awl_draw_image` */
-void awl_bar_prepare_drawing(awl_bar_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride);
+void awl_bar_prepare_drawing( awl_bar_t *bar, unsigned int w, unsigned int h, uint32_t *bits, int stride );
 /** lets go of what :c:func:`awl_bar_prepare_drawing` pointed at */
-void awl_bar_finish_drawing(awl_bar_t *bar);
+void awl_bar_finish_drawing( awl_bar_t *bar );
 /** gives back bar's font (to proc's registry) and image, frees its widgets
  * and empties it: its monitor has no bar anymore
  * (:c:member:`bar->m <awl_bar_t.m>` is NULL) */
-void awl_bar_teardown(awl_process_t *proc, awl_bar_t *bar);
+void awl_bar_teardown( awl_process_t *proc, awl_bar_t *bar );
 /** Frees every widget's userdata and empties the widget lists, so nothing in
  * the bar points into ``libawlplugins.so`` anymore. */
-void awl_bar_widgets_clear(awl_bar_t *bar);
+void awl_bar_widgets_clear( awl_bar_t *bar );

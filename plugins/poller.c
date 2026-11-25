@@ -139,8 +139,8 @@ static void* poller_run( void* arg ) {
     return NULL;
 }
 
-awl_poller_t* poller_new( awl_stats_t* stats, awl_temperature_t* temp, awl_date_t* date,
-                          awl_battery_t* bat, awl_ipaddr_t* ip ) {
+awl_poller_t* poller_new( awl_stats_t* stats, awl_temperature_t* temp, awl_date_t* date, awl_battery_t* bat,
+                          awl_ipaddr_t* ip ) {
     awl_poller_t* p = calloc(1, sizeof(awl_poller_t));
     if (!p) return NULL;
     p->stats = stats;

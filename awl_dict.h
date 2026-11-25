@@ -3,6 +3,8 @@
 
 #include "awl_dict_type.h"
 
+#include <stddef.h>
+
 /**
  * The dict's functions; the types are awl_dict_type.h's.
  *
@@ -24,13 +26,13 @@
  */
 
 /** Create an empty :c:type:`awl_dict_t`. Returns NULL on allocation failure. */
-awl_dict_t *awl_dict_new(void);
+awl_dict_t *awl_dict_new( void );
 
 /** Free the :c:type:`awl_dict_t`, its key copies and the values it owns (strings, and
  * owned values through their free function). Plain pointers and numbers need
  * nothing. NULL is a no-op. No other thread may use the dict anymore, or
  * still hold its lock. */
-void awl_dict_destroy(awl_dict_t *d);
+void awl_dict_destroy( awl_dict_t *d );
 
 /** Insert or overwrite. The key (NUL-terminated) and a string value are
  * copied; an owned value is taken over. The value it replaces is released as
@@ -38,20 +40,31 @@ void awl_dict_destroy(awl_dict_t *d);
  * changes and an owned value stays the caller's.
  * Returns :c:enumerator:`AWL_DICT_OK`, :c:enumerator:`AWL_DICT_ERR_NOMEM` or :c:enumerator:`AWL_DICT_ERR_INVALID` (also for an
  * unknown kind, a NULL string or an owned value without free function). */
-int32_t awl_dict_set(awl_dict_t *d, const char *key, const awl_dict_val_t *val);
+int32_t awl_dict_set( awl_dict_t *d, const char *key, const awl_dict_val_t *val );
 
 /** Look up a key. On :c:enumerator:`AWL_DICT_OK` copies the value to ``*out`` (if out is non-NULL).
  * A string or owned pointer stays the dict's: it is valid until the entry is
  * overwritten or removed.
  * Returns :c:enumerator:`AWL_DICT_OK`, :c:enumerator:`AWL_DICT_NOT_FOUND` or :c:enumerator:`AWL_DICT_ERR_INVALID`. */
-int32_t awl_dict_get(const awl_dict_t *d, const char *key, awl_dict_val_t *out);
+int32_t awl_dict_get( const awl_dict_t *d, const char *key, awl_dict_val_t *out );
+
+/** A copy of key's string, made under the lock: the caller frees it.
+ * NULL if there is no such key, it holds no string, or on allocation failure.
+ * An empty string is copied, too. */
+char *awl_dict_strdup( const awl_dict_t *d, const char *key );
+
+/** Copies key's string to out, n bytes with the NUL, under the lock.
+ * Returns :c:enumerator:`AWL_DICT_OK` if it fit whole; :c:enumerator:`AWL_DICT_NOT_FOUND` if there is no such
+ * key or it holds no string, :c:enumerator:`AWL_DICT_ERR_INVALID` if it didn't fit (or out is NULL or n 0).
+ * Unless it returns :c:enumerator:`AWL_DICT_OK`, out is empty: never a truncated string. */
+int32_t awl_dict_strncpy( const awl_dict_t *d, const char *key, char *out, size_t n );
 
 /** Remove a key, freeing a string or owned value.
  * Returns :c:enumerator:`AWL_DICT_OK`, :c:enumerator:`AWL_DICT_NOT_FOUND` or :c:enumerator:`AWL_DICT_ERR_INVALID`. */
-int32_t awl_dict_del(awl_dict_t *d, const char *key);
+int32_t awl_dict_del( awl_dict_t *d, const char *key );
 
 /** Number of live entries (0 for NULL). */
-uint64_t awl_dict_len(const awl_dict_t *d);
+uint64_t awl_dict_len( const awl_dict_t *d );
 
 /** Iterate. Start with ``*cursor = 0`` and call until it returns :c:enumerator:`AWL_DICT_NOT_FOUND`::
  *
@@ -61,16 +74,17 @@ uint64_t awl_dict_len(const awl_dict_t *d);
  * The returned key pointer is owned by the :c:type:`awl_dict_t` and is valid until the
  * entry is removed or the :c:type:`awl_dict_t` is modified. Don't modify the :c:type:`awl_dict_t` while
  * iterating. */
-int32_t awl_dict_next(const awl_dict_t *d, uint64_t *cursor, const char **key, awl_dict_val_t *val);
+int32_t awl_dict_next( const awl_dict_t *d, uint64_t *cursor, const char **key, awl_dict_val_t *val );
 
 /** iterate, and call ``(*iter)(key, val, ctx)`` for each entry, abort iteration if
  * its return value != :c:enumerator:`AWL_DICT_OK`, and return that value.
  * returns :c:enumerator:`AWL_DICT_OK` on successful iteration of all slots. Holds the lock
  * throughout; iter must not modify the dict. */
-int32_t awl_dict_iter(const awl_dict_t *d, int32_t (*iter)(const char* key, const awl_dict_val_t* val, void* ctx), void* ctx);
+int32_t awl_dict_iter( const awl_dict_t *d, int32_t (*iter)(const char* key, const awl_dict_val_t* val, void* ctx),
+                       void* ctx );
 
 /** Take the dict's lock (see the top of this file); calls nest.
  * NULL is a no-op. */
-void awl_dict_lock(const awl_dict_t *d);
+void awl_dict_lock( const awl_dict_t *d );
 /** Release it */
-void awl_dict_unlock(const awl_dict_t *d);
+void awl_dict_unlock( const awl_dict_t *d );

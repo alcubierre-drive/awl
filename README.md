@@ -64,7 +64,7 @@ The configuration is in two files:
   part between the `CUSTOM` markers is configuration: there,
   `configure(c, p)` gets awl's defaults (awl_config_defaults.h) in `c` and the
   plugins' (plugins_config_defaults.h) in `p`, and changes only what it wants,
-  e.g. `c->modkey = WLR_MODIFIER_LOGO;`, `SETLIST(c->keys, keys);` for
+  e.g. `c->mod_key = WLR_MODIFIER_LOGO;`, `SETLIST(c->keys, keys);` for
   bindings of its own, or `p->colors.bar_bg = ...;` for the bar (awl's own
   colors are in `c->colors`, the plugins' in `p->colors`). The two
   defaults files list every setting with its default (what zero means where
@@ -110,7 +110,7 @@ the tray and wallpaper settings, and the bar's widgets.
 
 ## Running
 
-    awl [-s startup command] [-l logfile] [-L] [-d] [-v]
+    awl [-s startup command] [-l log_file] [-L] [-d] [-v]
 
 `-s` runs a shell command at startup. awl sends it SIGTERM when it exits.
 `-L` doesn't lock the screen at startup, even if the config's `lock.at_start` says so.

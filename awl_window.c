@@ -87,7 +87,7 @@ static void configure( awl_window_t* win ) {
 }
 
 awl_window_t* awl_window_create( struct wlr_scene_tree* parent, const awl_window_style_t* style ) {
-    awl_window_t* win = ecalloc( 1, sizeof(*win) );
+    awl_window_t* win = calloc_or_die( 1, sizeof(*win) );
     win->style = *style;
     win->tree = wlr_scene_tree_create( parent );
     win->buffer = wlr_scene_buffer_create( win->tree, NULL );
@@ -108,9 +108,9 @@ static void buffers_drop( awl_window_t* win ) {
 
 /** a w x h buffer to paint all of: a slot the scene no longer holds (it
  * lets go once it has the texture), else a new one in a free slot, else a
- * one-off (*oneoff), to drop once the scene has it */
-static Buffer* buffer_get( awl_window_t* win, int w, int h, int* oneoff ) {
-    *oneoff = 0;
+ * one-off (*one_off), to drop once the scene has it */
+static Buffer* buffer_get( awl_window_t* win, int w, int h, int* one_off ) {
+    *one_off = 0;
     for (size_t i = 0; i < sizeof win->bufs / sizeof *win->bufs; i++) {
         Buffer* b = win->bufs[i];
         if (b && b->base.n_locks) continue;
@@ -118,11 +118,11 @@ static Buffer* buffer_get( awl_window_t* win, int w, int h, int* oneoff ) {
             wlr_buffer_drop( &b->base );
             b = NULL;
         }
-        if (!b) b = win->bufs[i] = buffercreate( w, h );
+        if (!b) b = win->bufs[i] = buffer_create( w, h );
         return b;
     }
-    *oneoff = 1;
-    return buffercreate( w, h );
+    *one_off = 1;
+    return buffer_create( w, h );
 }
 
 void awl_window_destroy( awl_window_t* win ) {
@@ -172,7 +172,7 @@ void awl_window_redraw( awl_server_t* srv, awl_window_t* win ) {
 
 /** what m's popups draw with: the popup font, else the bar's */
 static struct fcft_font* font_of( Monitor* m ) {
-    return m->popupfont ? m->popupfont : m->bar.font;
+    return m->popup_font ? m->popup_font : m->bar.font;
 }
 
 /** an AWL_WINDOW_AT_* that is a strip, :c:enumerator:`AWL_WINDOW_AT_BAR`'s and the edges' */
@@ -193,8 +193,8 @@ static awl_window_style_t frame_style( const awl_window_t* win ) {
 }
 
 /** a painted window's layout, its frame around what the painter measures */
-static int layout_painted( awl_window_t* win, awl_window_layout_t* L, struct fcft_font* font, float s,
-                           int max_w, int max_h ) {
+static int layout_painted( awl_window_t* win, awl_window_layout_t* L, struct fcft_font* font, float s, int max_w,
+                           int max_h ) {
     const awl_window_style_t st = frame_style( win );
     const int inset = awl_window_inset( &st, s );
     int cw = 0, ch = 0;
@@ -237,8 +237,8 @@ static int draw( awl_window_t* win ) {
         return 0;
 
     /* the frame paints every pixel: a reused buffer needs no clearing */
-    int oneoff;
-    Buffer* b = buffer_get( win, L.width, L.height, &oneoff );
+    int one_off;
+    Buffer* b = buffer_get( win, L.width, L.height, &one_off );
     const int32_t stride = (int32_t)b->stride;
     if (win->painter.paint)
         paint_painted( win, &L, font, s, b->data, stride );
@@ -250,7 +250,7 @@ static int draw( awl_window_t* win ) {
     win->lh = (int)lroundf( L.height / s );
     wlr_scene_buffer_set_buffer( win->buffer, &b->base );
     wlr_scene_buffer_set_dest_size( win->buffer, win->lw, win->lh );
-    if (oneoff) wlr_buffer_drop( &b->base ); /* the scene holds it now */
+    if (one_off) wlr_buffer_drop( &b->base ); /* the scene holds it now */
     if (win->blur) {
         wlr_scene_blur_set_size( win->blur, win->lw, win->lh );
         wlr_scene_blur_set_corner_radius( win->blur, st.radius );
@@ -258,11 +258,11 @@ static int draw( awl_window_t* win ) {
     return 1;
 }
 
-static void place( awl_server_t* srv, awl_window_t* win ) {
+static void place( const awl_config_t* cfg, awl_window_t* win ) {
     Monitor* m = win->m;
     int x, y;
     if (as_strip( win )) {
-        const int top = win->at == AWL_WINDOW_AT_BAR ? srv->cfg->bar.top : win->at == AWL_WINDOW_AT_STRIP_TOP;
+        const int top = win->at == AWL_WINDOW_AT_BAR ? cfg->bar.top : win->at == AWL_WINDOW_AT_STRIP_TOP;
         x = m->m.x;
         y = top ? m->m.y : m->m.y + m->m.height - win->lh;
     } else if (win->placement == PLACE_AT)
@@ -296,7 +296,7 @@ void awl_window_update( awl_server_t* srv, awl_window_t* win, Monitor* m ) {
         wlr_scene_node_set_enabled( &win->tree->node, 0 );
         return;
     }
-    place( srv, win );
+    place( srv->cfg, win );
     wlr_scene_node_set_enabled( &win->tree->node, 1 );
 }
 
@@ -491,8 +491,8 @@ void awl_window_pointer_button( awl_window_t* win, double lx, double ly, uint32_
     if (win->click) win->click( win, *row, *col, button, win->click_data );
 }
 
-void awl_window_pointer_axis( awl_window_t* win, double lx, double ly, uint32_t orientation,
-                              double delta, int32_t value120, int* row, int* col ) {
+void awl_window_pointer_axis( awl_window_t* win, double lx, double ly, uint32_t orientation, double delta,
+                              int32_t value120, int* row, int* col ) {
     cell_at( win, lx, ly, row, col );
     if (win->scroll) win->scroll( win, *row, *col, orientation, delta, value120, win->scroll_data );
 }

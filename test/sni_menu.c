@@ -203,8 +203,8 @@ static void changed( void ) {
                                    g_variant_new( "(ui)", revision, 0 ), NULL );
 }
 
-static void menu_call( GDBusConnection* c, const char* sender, const char* path, const char* iface,
-                       const char* method, GVariant* args, GDBusMethodInvocation* inv, gpointer data ) {
+static void menu_call( GDBusConnection* c, const char* sender, const char* path, const char* iface, const char* method,
+                       GVariant* args, GDBusMethodInvocation* inv, gpointer data ) {
     (void)c; (void)sender; (void)path; (void)iface; (void)data;
     if (!strcmp( method, "GetLayout" )) {
         gint32 parent, depth;
@@ -250,8 +250,8 @@ static GVariant* menu_prop( GDBusConnection* c, const char* sender, const char* 
     return g_variant_new_string( "normal" );
 }
 
-static void item_call( GDBusConnection* c, const char* sender, const char* path, const char* iface,
-                       const char* method, GVariant* args, GDBusMethodInvocation* inv, gpointer data ) {
+static void item_call( GDBusConnection* c, const char* sender, const char* path, const char* iface, const char* method,
+                       GVariant* args, GDBusMethodInvocation* inv, gpointer data ) {
     (void)c; (void)sender; (void)path; (void)iface; (void)args; (void)data;
     printf( "item %s\n", method );
     fflush( stdout );

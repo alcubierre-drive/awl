@@ -569,10 +569,10 @@ static uint32_t new_id( awl_notifs_t* N, uint32_t replaces_id ) {
 }
 
 /** the timeout for urgency when the sender leaves it to the server */
-static int default_timeout( awl_server_t* srv, awl_notif_urgency_t urgency ) {
+static int default_timeout( const awl_config_t* cfg, awl_notif_urgency_t urgency ) {
     return urgency == AWL_NOTIF_CRITICAL ? 0
-         : urgency == AWL_NOTIF_LOW ? srv->cfg->notifications.timeout_low
-         : srv->cfg->notifications.timeout_normal;
+         : urgency == AWL_NOTIF_LOW ? cfg->notifications.timeout_low
+         : cfg->notifications.timeout_normal;
 }
 
 /** opens n (complete, with its generation), or replaces the open one it
@@ -638,7 +638,7 @@ static int method_notify( sd_bus_message* m, void* userdata, sd_bus_error* ret_e
         goto fail;
     n->pub.timeout = n->pub.urgency == AWL_NOTIF_CRITICAL ? 0
                    : expire_timeout >= 0 ? expire_timeout
-                   : default_timeout( srv, n->pub.urgency );
+                   : default_timeout( srv->cfg, n->pub.urgency );
     n->pub.generation = ++N->generation;
     return sd_bus_reply_method_return( m, "u", post( srv, n, replaces_id ) );
 fail:
@@ -726,7 +726,7 @@ uint32_t awl_notifications_send( awl_server_t* srv, const awl_notif_send_t* s ) 
     n->pub.flags = AWL_NOTIF_AWL | (s->flags & (AWL_NOTIF_TRANSIENT | AWL_NOTIF_OSD));
     if (n->pub.flags & AWL_NOTIF_OSD) n->pub.flags |= AWL_NOTIF_TRANSIENT;
     n->pub.look = s->look;
-    n->pub.timeout = s->timeout >= 0 ? s->timeout : default_timeout( srv, n->pub.urgency );
+    n->pub.timeout = s->timeout >= 0 ? s->timeout : default_timeout( srv->cfg, n->pub.urgency );
     if (!(n->pub.app = strdup( "awl" )) || !(n->pub.summary = copy_utf8( s->summary, MAX_SUMMARY )) ||
         !(n->pub.body = copy_utf8( s->body, MAX_BODY )) || !(n->pub.image_path = copy_utf8( s->image, MAX_PATH )) ||
         !(n->tag = copy_utf8( s->tag, MAX_SHORT )) || strings_set( n ) < 0 ||
@@ -821,7 +821,7 @@ static const awl_bus_ops_t ops = {
 
 int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( awl_process_t* proc ) ) {
     if (srv->notifs) return 0;
-    awl_notifs_t* N = srv->notifs = ecalloc( 1, sizeof(*N) );
+    awl_notifs_t* N = srv->notifs = calloc_or_die( 1, sizeof(*N) );
     N->next_id = 1;
     N->loop = loop;
     N->changed = changed;

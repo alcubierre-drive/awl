@@ -37,9 +37,7 @@
 /* its state is :c:member:`awl_process_t.tray` */
 
 /** a malloc()ed printf; aborts awl like GLib did if there is no memory */
-static char *
-fmt(const char *f, ...)
-{
+static char *fmt( const char *f, ... ) {
     va_list ap;
     char *s;
     va_start(ap, f);
@@ -52,15 +50,11 @@ fmt(const char *f, ...)
     return s;
 }
 
-static char *
-copy(const char *s)
-{
+static char *copy( const char *s ) {
     return fmt("%s", s);
 }
 
-void
-awl_tray_app_set_theme(awl_process_t *proc, const char *theme, const char *home)
-{
+void awl_tray_app_set_theme( awl_process_t *proc, const char *theme, const char *home ) {
     free(proc->tray.theme);
     proc->tray.theme = theme && *theme ? copy(theme) : NULL;
     free(proc->tray.home);
@@ -68,9 +62,7 @@ awl_tray_app_set_theme(awl_process_t *proc, const char *theme, const char *home)
 }
 
 /** forgets what :c:func:`awl_tray_app_env` made */
-static void
-drop(awl_process_t *proc)
-{
+static void drop( awl_process_t *proc ) {
     for (int i = 0; i < 2; i++) {
         if (proc->tray.env.fds[i] >= 0) close(proc->tray.env.fds[i]);
         proc->tray.env.fds[i] = -1;
@@ -86,9 +78,7 @@ drop(awl_process_t *proc)
 
 /** XDG_DATA_DIRS, or its default, as GLib has it: each in turn, while
  * each() returns 0 */
-static int
-each_data_dir(int (*each)(const char *dir, void *data), void *data)
-{
+static int each_data_dir( int (*each)(const char *dir, void *data), void *data ) {
     const char *dirs = getenv("XDG_DATA_DIRS");
     if (!dirs || !*dirs) dirs = "/usr/local/share/:/usr/share/";
     char *list = copy(dirs), *save = NULL;
@@ -100,23 +90,17 @@ each_data_dir(int (*each)(const char *dir, void *data), void *data)
 }
 
 /** XDG_DATA_HOME, or home's .local/share; malloc()ed */
-static char *
-user_data_dir(const char *home)
-{
+static char *user_data_dir( const char *home ) {
     const char *d = getenv("XDG_DATA_HOME");
     if (d && *d) return copy(d);
     return fmt("%s/.local/share", home ? home : "");
 }
 
-static int
-exists(const char *path)
-{
+static int exists( const char *path ) {
     return !access(path, F_OK);
 }
 
-static int
-theme_in(const char *dir, void *name)
-{
+static int theme_in( const char *dir, void *name ) {
     char *index = fmt("%s/icons/%s/index.theme", dir, (const char *)name);
     int found = exists(index);
     free(index);
@@ -125,9 +109,7 @@ theme_in(const char *dir, void *name)
 
 /** whether an icon theme name is installed where GTK looks for one; home
  * the user's home folder (NULL: none) */
-static int
-installed(const char *name, const char *home)
-{
+static int installed( const char *name, const char *home ) {
     char *user = user_data_dir(home);
     char *dot = fmt("%s/.icons/%s/index.theme", home ? home : "", name);
     int found = theme_in(user, (void *)name) || exists(dot)
@@ -138,9 +120,7 @@ installed(const char *name, const char *home)
 }
 
 /** a file's contents, NUL terminated; NULL if it can't be read */
-static char *
-slurp(const char *path)
-{
+static char *slurp( const char *path ) {
     FILE *f = fopen(path, "re");
     if (!f) return NULL;
     char *text = NULL;
@@ -166,9 +146,7 @@ typedef struct {
     char *text;
 } profile_find_t;
 
-static int
-profile_in(const char *dir, void *data)
-{
+static int profile_in( const char *dir, void *data ) {
     profile_find_t *p = data;
     char *path = fmt("%s/dconf/profile/%s", dir, p->name);
     p->text = slurp(path);
@@ -180,9 +158,7 @@ profile_in(const char *dir, void *data)
  * DCONF_PROFILE (a path, or a name), else "user", in /etc/dconf/profile
  * then the data dirs' dconf/profile; just the user's database if there is
  * none */
-static char *
-base_profile(void)
-{
+static char *base_profile( void ) {
     const char *name = getenv("DCONF_PROFILE");
     char *text = NULL;
     if (name && name[0] == '/') {
@@ -223,9 +199,7 @@ typedef struct {
     size_t len, cap;
 } bytes_t;
 
-static void
-grow(bytes_t *b, size_t n)
-{
+static void grow( bytes_t *b, size_t n ) {
     if (b->len + n <= b->cap) return;
     size_t cap = b->cap ? b->cap : 256;
     while (cap < b->len + n) cap *= 2;
@@ -239,24 +213,18 @@ grow(bytes_t *b, size_t n)
 }
 
 /** gvdb's key hash (djb) */
-static uint32_t
-gvdb_hash(const char *key)
-{
+static uint32_t gvdb_hash( const char *key ) {
     uint32_t h = 5381;
     for (; *key; key++) h = h * 33 + (uint32_t)(signed char)*key;
     return h;
 }
 
-static void
-put32(bytes_t *b, size_t at, uint32_t v)
-{
+static void put32( bytes_t *b, size_t at, uint32_t v ) {
     v = htole32(v);
     memcpy(b->data + at, &v, 4);
 }
 
-static size_t
-append(bytes_t *b, const void *data, size_t n, size_t align)
-{
+static size_t append( bytes_t *b, const void *data, size_t n, size_t align ) {
     size_t pad = (align - b->len % align) % align;
     grow(b, pad + n);
     memset(b->data + b->len, 0, pad);
@@ -269,9 +237,7 @@ append(bytes_t *b, const void *data, size_t n, size_t align)
 
 /** a hash table of n items at its place, all in one bucket and without a
  * bloom filter: returns where it starts, ``*end`` where it ends */
-static size_t
-table(bytes_t *b, int n, size_t *end)
-{
+static size_t table( bytes_t *b, int n, size_t *end ) {
     /* no bloom words, 1 bucket starting at item 0 */
     const uint32_t header[3] = { 0, htole32(1), 0 };
     size_t at = append(b, header, sizeof header, 4);
@@ -281,10 +247,8 @@ table(bytes_t *b, int n, size_t *end)
     return at;
 }
 
-static void
-item(bytes_t *b, size_t table_at, int i, const char *key, size_t key_at, char type,
-        size_t start, size_t end)
-{
+static void item( bytes_t *b, size_t table_at, int i, const char *key, size_t key_at, char type, size_t start,
+                  size_t end ) {
     size_t at = table_at + 12 + (size_t)i * sizeof(gvdb_item_t);
     put32(b, at, gvdb_hash(key));
     put32(b, at + 4, 0xffffffffu); /* no parent: the whole key is its own */
@@ -298,9 +262,7 @@ item(bytes_t *b, size_t table_at, int i, const char *key, size_t key_at, char ty
 
 /** the string s as a GVariant variant ("v" holding an "s"), serialized: the
  * string and its NUL, then a NUL and the child's type */
-static size_t
-value(bytes_t *b, const char *s, size_t *end)
-{
+static size_t value( bytes_t *b, const char *s, size_t *end ) {
     size_t n = strlen(s);
     size_t at = append(b, s, n + 1, 8);
     append(b, "\0s", 2, 1);
@@ -310,9 +272,7 @@ value(bytes_t *b, const char *s, size_t *end)
 
 /** KEY set to theme, and locked: the root table holds it and .locks, a
  * table with the lock */
-static bytes_t
-database(const char *theme)
-{
+static bytes_t database( const char *theme ) {
     bytes_t b = { 0 };
     /* "GVariant", version 0 */
     const uint32_t header[6] = { htole32(0x72615647), htole32(0x746e6169) };
@@ -334,9 +294,7 @@ database(const char *theme)
 
 /** a sealed in-memory file named name holding data, close-on-exec; -1 on
  * failure */
-static int
-memfile(const char *name, const void *data, size_t n)
-{
+static int mem_file( const char *name, const void *data, size_t n ) {
     int fd = memfd_create(name, MFD_CLOEXEC | MFD_ALLOW_SEALING);
     if (fd < 0) {
         awl_err_printf("tray: memfd_create: %s\n", strerror(errno));
@@ -358,9 +316,7 @@ memfile(const char *name, const void *data, size_t n)
 }
 
 /** the shim, next to awl's executable; NULL if it isn't there */
-static char *
-shim(void)
-{
+static char *shim( void ) {
     char exe[PATH_MAX];
     ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
     if (n <= 0) return NULL;
@@ -377,21 +333,19 @@ shim(void)
 }
 
 /** the profile, the database and the variables for proc's tray.theme */
-static int
-make(awl_process_t *proc)
-{
+static int make( awl_process_t *proc ) {
     char *lib = shim();
     if (!lib) {
         awl_wrn_printf("tray: no " SHIM " next to awl, programs keep the desktop's icon theme\n");
         return 0;
     }
     bytes_t db = database(proc->tray.theme);
-    proc->tray.env.fds[1] = memfile("awl-tray-dconf-db", db.data, db.len);
+    proc->tray.env.fds[1] = mem_file("awl-tray-dconf-db", db.data, db.len);
     free(db.data);
     if (proc->tray.env.fds[1] >= 0) {
         char *base = base_profile();
         char *text = fmt("%sfile-db:/proc/self/fd/%d\n", base, proc->tray.env.fds[1]);
-        proc->tray.env.fds[0] = memfile("awl-tray-dconf-profile", text, strlen(text));
+        proc->tray.env.fds[0] = mem_file("awl-tray-dconf-profile", text, strlen(text));
         free(text);
         free(base);
     }
@@ -413,9 +367,7 @@ make(awl_process_t *proc)
     return 1;
 }
 
-const awl_tray_app_env_t *
-awl_tray_app_env(awl_process_t *proc)
-{
+const awl_tray_app_env_t *awl_tray_app_env( awl_process_t *proc ) {
     if (!proc->tray.theme) return NULL;
     if (proc->tray.made_for && !strcmp(proc->tray.made_for, proc->tray.theme)) return proc->tray.env.env ? &proc->tray.env : NULL;
     drop(proc);
@@ -433,9 +385,7 @@ awl_tray_app_env(awl_process_t *proc)
     return &proc->tray.env;
 }
 
-void
-awl_tray_app_cleanup(awl_process_t *proc)
-{
+void awl_tray_app_cleanup( awl_process_t *proc ) {
     drop(proc);
     free(proc->tray.theme);
     proc->tray.theme = NULL;

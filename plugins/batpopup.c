@@ -136,8 +136,7 @@ static int can_step( awl_batpopup_t* bp, int i, int dir ) {
     return i ? v < 100 : v < (bp->s.end >= 0 ? bp->s.end - 1 : 99);
 }
 
-static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0,
-                   int hover ) {
+static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, float scale, int x0, int y0, int hover ) {
     awl_batpopup_t* bp = data;
     (void)scale;
     const awl_colors_t* c = &bp->p->config.colors;
@@ -245,8 +244,8 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
 }
 
 /** over a threshold's row: up raises it, down lowers it */
-static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta,
-                    int32_t value120, void* data ) {
+static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta, int32_t value120,
+                    void* data ) {
     awl_batpopup_t* bp = data;
     (void)win; (void)col;
     int i = threshold_of( part );

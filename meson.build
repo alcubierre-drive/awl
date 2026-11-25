@@ -11,7 +11,7 @@
 # Switches are in meson.options. Custom flags: the CUSTOM lists below, or
 # -Dc_args=... / -Dc_link_args=... on the command line.
 project('awl', 'c',
-  version: '0.8-dev',
+  version: '0.9',
   meson_version: '>=1.1',
   default_options: [
     # awl itself only uses C99 features, but wlroots' headers use anonymous
