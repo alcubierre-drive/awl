@@ -449,6 +449,9 @@ void awl_speaker_mute_toggle( awl_plugin_data_t* p );
  * it isn't running; the osd's notification shows the expected value at once
  * and corrects it if the daemon's differs. Main thread, returns at once. */
 void awl_brightness_adjust( awl_plugin_data_t* p, float delta );
+/** plugins.c: the idle inhibitors ignored, or honored again
+ * (:c:func:`toggleidleinhibit`); the osd's notification follows */
+void awl_idle_inhibit_toggle( awl_plugin_data_t* p );
 
 /** plugins_widgets.c: :c:member:`awl_plugin_api_t.bar_widgets`, the widgets
  * on p's state (:c:member:`widget_t.plugins`) */

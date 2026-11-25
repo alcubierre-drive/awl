@@ -1142,12 +1142,12 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     const awl_colors_t* ak = &la->p->config.colors;
     const awl_plugin_colors_t* k = COLORS;
     const uint32_t fg = ak->popup_fg, dim = k->launcher_dim.v, match = k->launcher_match.v;
+    (void)hover; (void)scale;
     if (bar( la )) {
         paint_bar( la, pix, font, x0, y0, fg, dim, match );
         return;
     }
 
-    int x, right;
     paint_query( la, pix, font, x0 + la->pad, x0 + la->w - la->pad, y0, la->input_h );
 
     const float t = fmaxf( 1, (float)px( la, 1 ) );
@@ -1166,13 +1166,13 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
         if (r == la->sel)
             awl_fill_shape( pix, (float)x0, (float)y, (float)la->w, (float)la->row_h,
                             (float)px( la, pc->radius < 6 ? (float)pc->radius : 6 ), 0, la->p->config.colors.popup_hover );
-        x = x0 + la->pad;
+        int x = x0 + la->pad;
         /* the run mode has no icons, nor their column */
         if (!run_mode( la )) {
             paint_icon( la, pix, r, x, y, la->row_h );
             x += la->icon_px + la->gap;
         }
-        right = x0 + la->w - la->pad;
+        const int right = x0 + la->w - la->pad;
         /* the name, what the query matched in it marked */
         int pos[AWL_FUZZY_MAX_QUERY];
         const int n = marks( la->fz, &fq, name_of( la, r ), pos );
@@ -1403,12 +1403,14 @@ static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods
 
 static void click( awl_window_t* win, int row, int col, uint32_t button, void* data ) {
     awl_launcher_t* la = data;
+    (void)win; (void)col;
     if (row >= 0 && button == BTN_LEFT) activate( la, la->top + row, 0, 0 );
 }
 
 static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, double delta, int32_t value120,
                     void* data ) {
     awl_launcher_t* la = data;
+    (void)win; (void)row; (void)col;
     /* the bar layout's row goes sideways too */
     if (orientation != 0 && !bar( la )) return;
     const int steps = scroll_steps( &la->acc, value120, delta );
@@ -1418,11 +1420,13 @@ static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, d
 
 static void hover( awl_window_t* win, int row, int inside, void* data ) {
     awl_launcher_t* la = data;
+    (void)win; (void)inside;
     if (row >= 0 && la->top + row != la->sel) choose( la, la->top + row );
 }
 
 static void hidden( awl_window_t* win, void* data ) {
     awl_launcher_t* la = data;
+    (void)win;
     la->query[0] = '\0';
     la->nres = la->sel = la->top = la->nshown = 0;
 }

@@ -312,6 +312,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     const awl_plugin_colors_t* pc = &cp->p->plugin_config.colors;
     char buf[128];
     const float r = (float)px( cp, 4 );
+    (void)scale;
     if (hover >= 0 && hover != P_LIST && cp->has[hover]) {
         awl_box_t b = cp->part[hover];
         awl_fill_shape( pix, (float)(x0 + b.x), (float)(y0 + b.y), (float)b.w, (float)b.h, r, 0, c->popup_hover );
@@ -475,6 +476,7 @@ static void go_today( awl_calpopup_t* cp ) {
 
 static void click( awl_window_t* win, int part, int col, uint32_t button, void* data ) {
     awl_calpopup_t* cp = data;
+    (void)win; (void)col;
     if (button != BTN_LEFT || part < 0) return;
     switch (part) {
     case P_MPREV: step_month( cp, -1 ); break;
@@ -504,6 +506,7 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
 static void scroll( awl_window_t* win, int part, int col, uint32_t orientation, double delta,
                     int32_t value120, void* data ) {
     awl_calpopup_t* cp = data;
+    (void)win; (void)col;
     if (orientation != 0) return;
     int n = scroll_steps( &cp->acc, value120, delta );
     if (!n) return;

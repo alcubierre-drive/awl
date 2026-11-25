@@ -36,61 +36,72 @@ AWL_ARRANGES
 
 /** the notifications' config popup (:c:func:`awl_notify_config`) */
 static void AWL_ACTION( notifyconfig )( awl_server_t* srv, const Arg* arg ) {
+    (void)srv; (void)arg;
     awl_notify_config();
 }
 
 /** opens or closes the launcher, :c:member:`arg->i <Arg.i>` its mode (:c:enumerator:`AWL_LAUNCHER_APPS`, :c:enumerator:`AWL_LAUNCHER_RUN`) (:c:func:`awl_launcher_toggle`) */
 static void AWL_ACTION( launcher )( awl_server_t* srv, const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
+    (void)srv;
     if (p) awl_launcher_toggle( p->launcher, arg->i );
 }
 
 /** takes a screenshot, :c:member:`arg->i <Arg.i>` of what (:c:enum:`awl_screenshot_mode`): the pointer chooses, the focused window, the selected monitor, all (:c:func:`awl_screenshot`) */
 static void AWL_ACTION( screenshot )( awl_server_t* srv, const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
+    (void)srv;
     if (p) awl_screenshot( p->screenshot, arg->i );
 }
 
 /** switches the backlight daemon's automatic updates on or off (:c:func:`backlight_toggle`) */
 static void AWL_ACTION( backlighttoggle )( awl_server_t* srv, const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
+    (void)srv; (void)arg;
     if (p) backlight_toggle( p->backlight );
 }
 
 /** forces an automatic backlight update (:c:func:`backlight_update`) */
 static void AWL_ACTION( backlightupdate )( awl_server_t* srv, const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
+    (void)srv; (void)arg;
     if (p) backlight_update( p->backlight );
 }
 
 /** changes the screen's brightness by :c:member:`arg->f <Arg.f>` (:c:func:`awl_brightness_adjust`) */
 static void AWL_ACTION( brightness )( awl_server_t* srv, const Arg* arg ) {
+    (void)srv;
     awl_brightness_adjust( awl_plugin_get(), arg->f );
 }
 
 /** changes the volume by :c:member:`arg->f <Arg.f>` (:c:func:`awl_volume_adjust`) */
 static void AWL_ACTION( volume )( awl_server_t* srv, const Arg* arg ) {
+    (void)srv;
     awl_volume_adjust( awl_plugin_get(), arg->f );
 }
 
 /** mutes or unmutes the sink (:c:func:`awl_volume_mute_toggle`) */
 static void AWL_ACTION( volumemute )( awl_server_t* srv, const Arg* arg ) {
+    (void)srv; (void)arg;
     awl_volume_mute_toggle( awl_plugin_get() );
 }
 
 /** mutes or unmutes the source (:c:func:`awl_mic_mute_toggle`) */
 static void AWL_ACTION( micmute )( awl_server_t* srv, const Arg* arg ) {
+    (void)srv; (void)arg;
     awl_mic_mute_toggle( awl_plugin_get() );
 }
 
 /** mutes or unmutes the speaker port only (:c:func:`awl_speaker_mute_toggle`) */
 static void AWL_ACTION( speakermute )( awl_server_t* srv, const Arg* arg ) {
+    (void)srv; (void)arg;
     awl_speaker_mute_toggle( awl_plugin_get() );
 }
 
 /** suspends through logind (:c:func:`awl_logind_suspend`) */
 static void AWL_ACTION( suspend )( awl_server_t* srv, const Arg* arg ) {
     awl_plugin_data_t* p = awl_plugin_get();
+    (void)srv; (void)arg;
     if (p) awl_logind_suspend( p->logind );
 }
 
@@ -355,6 +366,7 @@ configure(awl_config_t *c, awl_plugin_config_t *p)
     p->colors.tray_bg         = molokai_light_gray;
     AWL_SET(p->colors.launcher_prompt, color_mix_8(molokai_red, molokai_orange, 0.5));
     AWL_SET(p->colors.launcher_query,  molokai_orange);
+    p->colors.screenshot_frame = color_mix_8(molokai_red, molokai_orange, 0.5);
 
     p->launcher.prompt = "<b>launch &gt; </b>";
     p->launcher.run_prompt = "<b>run $ </b>";

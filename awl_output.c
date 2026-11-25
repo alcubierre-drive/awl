@@ -27,12 +27,12 @@ cleanupmon(struct wl_listener *listener, void *data)
     Monitor *m = wl_container_of(listener, m, destroy);
     awl_server_t *srv = m->srv;
     LayerSurface *l, *tmp;
-    size_t i;
+    (void)data;
 
     srv->out.in_cleanupmon = 1;
 
     /* m->layers[i] are intentionally not unlinked */
-    for (i = 0; i < LENGTH(m->layers); i++) {
+    for (size_t i = 0; i < LENGTH(m->layers); i++) {
         wl_list_for_each_safe(l, tmp, &m->layers[i], link)
             wlr_layer_surface_v1_destroy(l->layer_surface);
     }
@@ -60,7 +60,7 @@ cleanupmon(struct wl_listener *listener, void *data)
     background_removemon(srv->background, m);
     popupsremovemon(srv, m);
     wlr_scene_node_destroy(&m->alert->node);
-    for (i = 0; i < LENGTH(m->bar_bufs); i++)
+    for (size_t i = 0; i < LENGTH(m->bar_bufs); i++)
         if (m->bar_bufs[i])
             wlr_buffer_drop(&m->bar_bufs[i]->base);
     free(m);
@@ -104,19 +104,16 @@ createmon(struct wl_listener *listener, void *data)
     /* This event is raised by the backend when a new output (aka a display or
      * monitor) becomes available. */
     struct wlr_output *wlr_output = data;
-    const MonitorRule *r;
-    size_t i, li;
     struct wlr_output_state state;
-    Monitor *m;
 
     if (!wlr_output_init_render(wlr_output, srv->alloc, srv->renderer))
         return;
 
-    m = wlr_output->data = ecalloc(1, sizeof(*m));
+    Monitor *m = wlr_output->data = ecalloc(1, sizeof(*m));
     m->srv = srv;
     m->wlr_output = wlr_output;
 
-    for (i = 0; i < LENGTH(m->layers); i++)
+    for (size_t i = 0; i < LENGTH(m->layers); i++)
         wl_list_init(&m->layers[i]);
 
     wlr_output_state_init(&state);
@@ -127,13 +124,13 @@ createmon(struct wl_listener *listener, void *data)
     m->ptlt[0].mfact = 0.55f;
     m->ptlt[0].nmaster = 1;
     m->ptlt[0].lt[0] = m->ptlt[0].lt[1] = &srv->cfg->layouts.v[0];
-    for (r = srv->cfg->monrules.v; r < srv->cfg->monrules.v + srv->cfg->monrules.n; r++) {
+    for (const MonitorRule *r = srv->cfg->monrules.v; r < srv->cfg->monrules.v + srv->cfg->monrules.n; r++) {
         if (!r->name || strstr(wlr_output->name, r->name)) {
             m->m.x = r->x;
             m->m.y = r->y;
             m->ptlt[0].mfact = r->mfact;
             m->ptlt[0].nmaster = r->nmaster;
-            li = r->layout > 0 && (size_t)r->layout < srv->cfg->layouts.n ? (size_t)r->layout : 0;
+            size_t li = r->layout > 0 && (size_t)r->layout < srv->cfg->layouts.n ? (size_t)r->layout : 0;
             m->ptlt[0].lt[0] = &srv->cfg->layouts.v[li];
             m->ptlt[0].lt[1] = &srv->cfg->layouts.v[srv->cfg->layouts.n > 1 && li != 1];
             m->pertag = !!r->pertag;
@@ -143,7 +140,7 @@ createmon(struct wl_listener *listener, void *data)
         }
     }
     /* every view starts with the monitor's layout */
-    for (i = 1; i < LENGTH(m->ptlt); i++)
+    for (size_t i = 1; i < LENGTH(m->ptlt); i++)
         m->ptlt[i] = m->ptlt[0];
     strncpy(m->ltsymbol, sellayout(m)->symbol, LENGTH(m->ltsymbol)-1);
 
@@ -349,8 +346,7 @@ outputmatches(struct wlr_output *o, const char *match)
 static const OutputSetting *
 profilesetting(const OutputProfile *p, struct wlr_output *o)
 {
-    const OutputSetting *s;
-    for (s = p->outputs.v; s < p->outputs.v + p->outputs.n; s++)
+    for (const OutputSetting *s = p->outputs.v; s < p->outputs.v + p->outputs.n; s++)
         if (outputmatches(o, s->match))
             return s;
     return NULL;
@@ -377,10 +373,9 @@ outputprofile(awl_server_t *srv, const Arg *arg)
     const OutputProfile *p = NULL;
     const OutputSetting *s;
     Monitor *m;
-    size_t i;
-    int on = 0, found;
+    int on = 0;
 
-    for (i = 0; name && i < srv->cfg->outputprofiles.n; i++)
+    for (size_t i = 0; name && i < srv->cfg->outputprofiles.n; i++)
         if (srv->cfg->outputprofiles.v[i].name && !strcmp(srv->cfg->outputprofiles.v[i].name, name))
             p = &srv->cfg->outputprofiles.v[i];
     if (!p) {
@@ -391,7 +386,7 @@ outputprofile(awl_server_t *srv, const Arg *arg)
     for (s = p->outputs.v; s < p->outputs.v + p->outputs.n; s++) {
         if (!s->on)
             continue;
-        found = 0;
+        int found = 0;
         wl_list_for_each(m, &srv->out.mons, link)
             found |= outputmatches(m->wlr_output, s->match);
         if (!found) {
@@ -451,6 +446,7 @@ powermgrsetmode(struct wl_listener *listener, void *data)
     struct wlr_output_power_v1_set_mode_event *event = data;
     struct wlr_output_state state = {0};
     Monitor *m = event->output->data;
+    (void)listener;
 
     if (!m)
         return;
@@ -489,6 +485,7 @@ rendermon(struct wl_listener *listener, void *data)
     Client *c;
     struct wlr_output_state pending = {0};
     struct timespec now;
+    (void)data;
 
     clock_gettime(CLOCK_MONOTONIC, &now);
     /* Render if no XDG clients have an outstanding resize and are visible on
@@ -527,6 +524,7 @@ void
 updatemons(struct wl_listener *listener, void *data)
 {
     awl_server_t *srv = wl_container_of(listener, srv, listen.layout_change);
+    (void)data;
     outputsupdate(srv);
 }
 
@@ -543,14 +541,14 @@ outputsupdate(awl_server_t *srv)
     struct wlr_output_configuration_v1 *config
             = wlr_output_configuration_v1_create();
     Client *c;
-    struct wlr_output_configuration_head_v1 *config_head;
     Monitor *m;
 
     /* First remove from the layout the disabled monitors */
     wl_list_for_each(m, &srv->out.mons, link) {
         if (m->wlr_output->enabled || m->asleep)
             continue;
-        config_head = wlr_output_configuration_head_v1_create(config, m->wlr_output);
+        struct wlr_output_configuration_head_v1 *config_head
+                = wlr_output_configuration_head_v1_create(config, m->wlr_output);
         config_head->state.enabled = 0;
         /* Remove this output from the layout to avoid cursor enter inside it */
         wlr_output_layout_remove(srv->out.layout, m->wlr_output);
@@ -580,7 +578,8 @@ outputsupdate(awl_server_t *srv)
     wl_list_for_each(m, &srv->out.mons, link) {
         if (!m->wlr_output->enabled)
             continue;
-        config_head = wlr_output_configuration_head_v1_create(config, m->wlr_output);
+        struct wlr_output_configuration_head_v1 *config_head
+                = wlr_output_configuration_head_v1_create(config, m->wlr_output);
 
         /* Get the effective monitor geometry to use for surfaces */
         wlr_output_layout_get_box(srv->out.layout, m->wlr_output, &m->m);

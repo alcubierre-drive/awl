@@ -43,12 +43,10 @@ static void entry_clear(awl_font_slot_t *e) {
 /** a slot for a new entry, cleared: a free one, else the oldest one not in
  * use (those in use before it move to the end); NULL if all are in use */
 static awl_font_slot_t *slot_take(awl_process_t *proc) {
-    awl_font_slot_t *e;
-
     if (proc->fonts.count < AWL_FONT_SLOTS)
         return SLOT(proc, proc->fonts.count++);
     for (unsigned i = 0; i < AWL_FONT_SLOTS; i++) {
-        e = SLOT(proc, 0);
+        awl_font_slot_t *e = SLOT(proc, 0);
         /* the head becomes the tail either way: freed and reused, or kept */
         proc->fonts.head = (proc->fonts.head + 1) % AWL_FONT_SLOTS;
         if (e->refs > 0)
@@ -227,10 +225,8 @@ pixman_image_t *awl_draw_image(unsigned int w, unsigned int h, uint32_t *bits, i
 }
 
 static void rect_color(pixman_image_t *pix, int x, int y, unsigned int w, unsigned int h, uint32_t color) {
-    pixman_color_t clr;
-
     /* the image is premultiplied ARGB, color is not */
-    clr = color_8bit_to_16bit(color);
+    pixman_color_t clr = color_8bit_to_16bit(color);
     clr.red = (uint32_t)clr.red * clr.alpha / 0xffff;
     clr.green = (uint32_t)clr.green * clr.alpha / 0xffff;
     clr.blue = (uint32_t)clr.blue * clr.alpha / 0xffff;
@@ -241,14 +237,14 @@ static void rect_color(pixman_image_t *pix, int x, int y, unsigned int w, unsign
 /* width of `text` in pixels, kerning included */
 static unsigned int text_width(struct fcft_font *font, const char *text) {
     uint32_t cp = 0, last_cp = 0;
-    long x = 0, x_kern;
-    const struct fcft_glyph *glyph;
+    long x = 0;
 
     while (*text) {
         text += utf8decode(text, &cp);
-        if (!(glyph = fcft_rasterize_char_utf32(font, cp, FCFT_SUBPIXEL_DEFAULT)))
+        const struct fcft_glyph *glyph = fcft_rasterize_char_utf32(font, cp, FCFT_SUBPIXEL_DEFAULT);
+        if (!glyph)
             continue;
-        x_kern = 0;
+        long x_kern = 0;
         if (last_cp)
             fcft_kerning(font, last_cp, cp, &x_kern, NULL);
         last_cp = cp;
@@ -261,14 +257,8 @@ static unsigned int text_width(struct fcft_font *font, const char *text) {
 static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
         unsigned int w, unsigned int h, unsigned int lpad, const char *text,
         uint32_t fg, uint32_t bg, int fill) {
-    int ty;
-    int utf8charlen;
-    long x_kern;
     uint32_t cp = 0, last_cp = 0;
-    pixman_color_t clr;
-    pixman_image_t *fg_pix;
     int noellipsis = 0;
-    const struct fcft_glyph *glyph, *eg;
     int fcft_subpixel_mode = FCFT_SUBPIXEL_DEFAULT;
 
     if (!pix || !w || !text || !font)
@@ -276,11 +266,11 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
 
     /* pixman's colors are premultiplied, fg is not (a translucent fg
      * would come out too bright) */
-    clr = color_8bit_to_16bit(fg);
+    pixman_color_t clr = color_8bit_to_16bit(fg);
     clr.red = (uint32_t)clr.red * clr.alpha / 0xffff;
     clr.green = (uint32_t)clr.green * clr.alpha / 0xffff;
     clr.blue = (uint32_t)clr.blue * clr.alpha / 0xffff;
-    fg_pix = pixman_image_create_solid_fill(&clr);
+    pixman_image_t *fg_pix = pixman_image_create_solid_fill(&clr);
 
     if (fill)
         rect_color(pix, x, y, w, y<0?h-y:h, bg);
@@ -292,23 +282,22 @@ static int text_color(pixman_image_t *pix, struct fcft_font *font, int x, int y,
         fcft_subpixel_mode = FCFT_SUBPIXEL_NONE;
 
     // U+2026 == …
-    eg = fcft_rasterize_char_utf32(font, 0x2026, fcft_subpixel_mode);
+    const struct fcft_glyph *eg = fcft_rasterize_char_utf32(font, 0x2026, fcft_subpixel_mode);
+    int ty = y + (h - font->height) / 2 + font->ascent;
 
     while (*text) {
-        utf8charlen = utf8decode(text, &cp);
+        int utf8charlen = utf8decode(text, &cp);
 
-        glyph = fcft_rasterize_char_utf32(font, cp, fcft_subpixel_mode);
+        const struct fcft_glyph *glyph = fcft_rasterize_char_utf32(font, cp, fcft_subpixel_mode);
         if (!glyph) {
             text += utf8charlen;
             continue;
         }
 
-        x_kern = 0;
+        long x_kern = 0;
         if (last_cp)
             fcft_kerning(font, last_cp, cp, &x_kern, NULL);
         last_cp = cp;
-
-        ty = y + (h - font->height) / 2 + font->ascent;
 
         /* draw ellipsis if remaining text doesn't fit */
         if (!noellipsis && x_kern + glyph->advance.x + eg->advance.x > w && text[utf8charlen] != '\0') {

@@ -338,6 +338,11 @@ void awl_brightness_adjust( awl_plugin_data_t* p, float delta ) {
     awl_osd_brightness( p->osd, delta );
 }
 
+void awl_idle_inhibit_toggle( awl_plugin_data_t* p ) {
+    awl_host->actions->toggleidleinhibit( awl_host->srv, &(Arg){ 0 } );
+    if (p) awl_osd_idle_inhibit( p->osd, !awl_host->idle_inhibit_ignored( awl_host->srv ) );
+}
+
 void awl_notify_config( void ) {
     ConfigLines cl = { 0 };
     /* holds the lock throughout; nothing waits under it but malloc() */

@@ -360,3 +360,8 @@ void awl_osd_dnd( awl_osd_t* o, int on ) {
     text_osd( o, "osd-dnd", on ? "Do not disturb" : "Notifications enabled",
               on ? pc->notify.bell_icon_dnd : pc->notify.bell_icon );
 }
+
+void awl_osd_idle_inhibit( awl_osd_t* o, int on ) {
+    if (!o) return;
+    text_osd( o, "osd-idle-inhibit", on ? "Idle inhibit on" : "Idle inhibit off", NULL );
+}

@@ -384,6 +384,7 @@ void awl_desktop_draw( awl_desktop_panel_t* dp, pixman_image_t* pix, struct fcft
                        int w, int h, int radius, float s ) {
     const PanelLayout* l = &dp->lay;
     char buf[sizeof(dp->files[0].name) + 2];
+    (void)s;
 
     if (l->n == 0)
         text( pix, font, l->pad, l->pad, l->col_w[0], l->row_h, "(empty)", fade( COLORS->desktop_file, DESK->hidden_alpha ) );

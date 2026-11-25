@@ -227,10 +227,9 @@ static void run( job_t* j ) {
 static void* worker( void* data ) {
     awl_screenshot_t* s = data;
     struct pollfd fd = { .fd = s->thread.wake_fd, .events = POLLIN };
-    job_t* j;
     while (1) {
         pthread_mutex_lock( &s->lock );
-        j = pop( &s->todo );
+        job_t* j = pop( &s->todo );
         pthread_mutex_unlock( &s->lock );
         if (j) {
             run( j );
@@ -325,12 +324,11 @@ static char* escaped( const char* s ) {
 }
 
 void awl_screenshot_redraw( awl_screenshot_t* s ) {
-    job_t* j;
     char body[PATH_MAX + 128];
     if (!s) return;
     while (1) {
         pthread_mutex_lock( &s->lock );
-        j = pop( &s->done );
+        job_t* j = pop( &s->done );
         pthread_mutex_unlock( &s->lock );
         if (!j) break;
         bool copied = j->png && awl_host->clipboard_set( awl_host->srv, "image/png", j->png, j->len );
@@ -438,6 +436,7 @@ static void grab_button( uint32_t button, int pressed, uint32_t mods, void* data
 
 static int grab_key( uint32_t sym, uint32_t mods, void* data ) {
     awl_screenshot_t* s = data;
+    (void)mods;
     /* the modifiers alone choose nothing, and Shift turns a held right
      * press into all monitors */
     switch (sym) {

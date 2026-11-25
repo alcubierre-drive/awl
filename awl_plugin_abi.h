@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 57
+#define AWL_PLUGIN_ABI 58
 /** The name of the library's only exported symbol, an :c:type:`awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -54,7 +54,8 @@
     AWL_ACTION_REGISTER( setmfact ) AWL_ACTION_REGISTER( spawn ) AWL_ACTION_REGISTER( tag ) \
     AWL_ACTION_REGISTER( tagmon ) AWL_ACTION_REGISTER( togglebar ) \
     AWL_ACTION_REGISTER( togglebw ) AWL_ACTION_REGISTER( togglefloating ) \
-    AWL_ACTION_REGISTER( togglefullscreen ) AWL_ACTION_REGISTER( toggleontop ) \
+    AWL_ACTION_REGISTER( togglefullscreen ) AWL_ACTION_REGISTER( toggleidleinhibit ) \
+    AWL_ACTION_REGISTER( toggleontop ) \
     AWL_ACTION_REGISTER( togglepertag ) AWL_ACTION_REGISTER( toggletag ) \
     AWL_ACTION_REGISTER( toggleview ) AWL_ACTION_REGISTER( transluce ) \
     AWL_ACTION_REGISTER( unminimize ) AWL_ACTION_REGISTER( view ) \

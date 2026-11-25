@@ -711,6 +711,7 @@ static const awl_window_painter_t painter = { measure, paint, hit, box };
 /** nothing to click: it is there for the pointer, whose column the
  * painter gets */
 static void click( awl_window_t* win, int part, int col, uint32_t button, void* data ) {
+    (void)data;
     (void)win; (void)part; (void)col; (void)button;
 }
 

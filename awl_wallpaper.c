@@ -39,13 +39,13 @@ static const char *const wallpaper_mode_names[WallpaperModeCount] = {
 static int
 wallpapermodedict(awl_server_t *srv)
 {
-    int mode = -1, i;
+    int mode = -1;
     awl_dict_val_t v;
 
     awl_dict_lock(srv->cfgdict);
     if (awl_dict_get(srv->cfgdict, "wallpaper_mode", &v) == AWL_DICT_OK
             && v.kind == AWL_DICT_KIND_STR)
-        for (i = 0; i < WallpaperModeCount; i++)
+        for (int i = 0; i < WallpaperModeCount; i++)
             if (!strcmp(v.str, wallpaper_mode_names[i]))
                 mode = i;
     awl_dict_unlock(srv->cfgdict);
@@ -172,8 +172,6 @@ wallpapermodeinit(awl_server_t *srv)
 void
 wallpaperconfigure(awl_server_t *srv)
 {
-    int mode;
-
     /* a new interval starts counting now; an unchanged one keeps counting */
     if (srv->cfg->wallpaper.interval != srv->wallpaper->applied.interval) {
         srv->wallpaper->applied.interval = srv->cfg->wallpaper.interval;
@@ -183,7 +181,7 @@ wallpaperconfigure(awl_server_t *srv)
      * an unchanged one doesn't. So does a new cfgdict "wallpaper_mode" (the
      * library's init() sets it before this runs), which wins when both
      * change. */
-    mode = wallpapermodedict(srv);
+    int mode = wallpapermodedict(srv);
     if (srv->cfg->wallpaper.mode != srv->wallpaper->applied.mode) {
         srv->wallpaper->applied.mode = srv->cfg->wallpaper.mode;
         if (mode < 0 || mode == srv->wallpaper->applied.mode_dict)

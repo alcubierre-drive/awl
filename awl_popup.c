@@ -108,8 +108,6 @@ popupfind(awl_server_t *srv, awl_window_t *win)
 awl_window_t *
 popupnew(awl_server_t *srv, int plugin)
 {
-    Popup *p;
-    awl_window_style_t style;
     if (!srv->scene)
         return NULL;
     /* over the bar and the windows, under fullscreen ones */
@@ -117,8 +115,8 @@ popupnew(awl_server_t *srv, int plugin)
         srv->popups.tree = wlr_scene_tree_create(&srv->scene->tree);
         popupsplace(srv);
     }
-    style = popupstyle(srv, NULL);
-    p = ecalloc(1, sizeof(*p));
+    awl_window_style_t style = popupstyle(srv, NULL);
+    Popup *p = ecalloc(1, sizeof(*p));
     p->win = awl_window_create(srv->popups.tree, &style);
     p->plugin = plugin;
     p->border_width = -1;
@@ -226,21 +224,21 @@ popupsgrabupdate(awl_server_t *srv)
         focusclient(srv, focustop(srv, srv->out.selmon), 0);
 }
 
-/** whether something above win's tree takes the pointer at x, y: a
- * fullscreen client over the popups, a layer surface over the persistent
- * ones (the popups themselves never do, awl_window.c) */
+/** whether something above the popups' tree (the persistent one's if
+ * persistent) takes the pointer at x, y: a fullscreen client over the popups,
+ * a layer surface over the persistent ones (the popups themselves never do,
+ * awl_window.c) */
 static int
-popupcovered(awl_server_t *srv, awl_window_t *win, int persistent, double x, double y)
+popupcovered(awl_server_t *srv, int persistent, double x, double y)
 {
     struct wlr_scene_node *node = wlr_scene_node_at(&srv->scene->tree.node, x, y, NULL, NULL);
     struct wlr_scene_node *ours = persistent ? &srv->popups.persistent_tree->node : &srv->popups.tree->node;
-    struct wlr_scene_node *it;
     if (!node)
         return 0;
     /* the scene's child that has it, then whether that is above ours */
     while (node->parent && node->parent != &srv->scene->tree)
         node = &node->parent->node;
-    for (it = ours; &it->link != &srv->scene->tree.children;
+    for (struct wlr_scene_node *it = ours; &it->link != &srv->scene->tree.children;
             it = wl_container_of(it->link.next, it, link))
         if (it == node)
             return it != ours;
@@ -256,7 +254,7 @@ popupat(awl_server_t *srv, double x, double y)
     for (int i = 0; i < 2; i++)
         wl_list_for_each_reverse(p, &srv->popups.list, link)
             if (p->persistent == (i ? !top : top) && awl_window_takes_pointer(p->win, x, y))
-                return popupcovered(srv, p->win, p->persistent, x, y) ? NULL : p->win;
+                return popupcovered(srv, p->persistent, x, y) ? NULL : p->win;
     return NULL;
 }
 
@@ -272,7 +270,6 @@ int
 popupmotion(awl_server_t *srv)
 {
     awl_window_t *win = popuppointer(srv);
-    int row;
 
     if (srv->popups.hovered && srv->popups.hovered != win) {
         awl_window_pointer_leave(srv, srv->popups.hovered);
@@ -288,7 +285,7 @@ popupmotion(awl_server_t *srv)
         updatehover(srv, NULL);
         srv->popups.hovered = win;
     }
-    row = awl_window_hover_row(win);
+    int row = awl_window_hover_row(win);
     if (awl_window_pointer_motion(srv, win, srv->cursor.wlr->x, srv->cursor.wlr->y) != row)
         awl_dbg_printf(awl_loglevel_vrb, "popup %p: pointer on row %d at %.0f,%.0f\n", (void *)win,
                 awl_window_hover_row(win), srv->cursor.wlr->x, srv->cursor.wlr->y);
@@ -325,11 +322,10 @@ void
 popupsetmenustyle(awl_server_t *srv, awl_window_t *win)
 {
     Popup *p = popupfind(srv, win);
-    awl_window_style_t style;
     if (!p)
         return;
     p->menu = 1;
-    style = popupstyle(srv, p);
+    awl_window_style_t style = popupstyle(srv, p);
     awl_window_set_style(srv, win, &style);
 }
 
@@ -352,13 +348,12 @@ void
 popupsetcolors(awl_server_t *srv, awl_window_t *win, uint32_t bg, uint32_t fg, uint32_t border)
 {
     Popup *p = popupfind(srv, win);
-    awl_window_style_t style;
     if (!p || (p->bg == bg && p->fg == fg && p->border == border))
         return;
     p->bg = bg;
     p->fg = fg;
     p->border = border;
-    style = popupstyle(srv, p);
+    awl_window_style_t style = popupstyle(srv, p);
     awl_window_set_style(srv, win, &style);
 }
 
@@ -366,13 +361,12 @@ void
 popupsetborderwidth(awl_server_t *srv, awl_window_t *win, int width)
 {
     Popup *p = popupfind(srv, win);
-    awl_window_style_t style;
     if (width < 0)
         width = -1;
     if (!p || p->border_width == width)
         return;
     p->border_width = width;
-    style = popupstyle(srv, p);
+    awl_window_style_t style = popupstyle(srv, p);
     awl_window_set_style(srv, win, &style);
 }
 
@@ -449,9 +443,8 @@ void
 popupsrestyle(awl_server_t *srv)
 {
     Popup *p;
-    awl_window_style_t style;
     wl_list_for_each(p, &srv->popups.list, link) {
-        style = popupstyle(srv, p);
+        awl_window_style_t style = popupstyle(srv, p);
         awl_window_set_style(srv, p->win, &style);
     }
     popupsplace(srv);

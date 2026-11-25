@@ -291,19 +291,18 @@ static void wake_callback( pa_mainloop_api* a, pa_io_event* e, int fd, pa_io_eve
     int req = atomic_exchange( &pa->t->requests, 0 );
     int delta = atomic_exchange( &pa->t->volume_delta, 0 );
     if (!pa->_context || pa_context_get_state( pa->_context ) != PA_CONTEXT_READY) return;
-    pa_operation* op;
     if (req & REQ_MIC_MUTE) {
-        op = pa_context_get_source_info_by_name( pa->_context, "@DEFAULT_SOURCE@", source_mute_callback, pa );
+        pa_operation* op = pa_context_get_source_info_by_name( pa->_context, "@DEFAULT_SOURCE@", source_mute_callback, pa );
         if (op) pa_operation_unref( op );
     }
     if ((req & REQ_SPEAKER_MUTE) && pa->speaker[0]) {
-        op = pa_context_get_sink_info_by_name( pa->_context, pa->speaker, speaker_mute_callback, pa );
+        pa_operation* op = pa_context_get_sink_info_by_name( pa->_context, pa->speaker, speaker_mute_callback, pa );
         if (op) pa_operation_unref( op );
     }
     // the sink's, only once it is known
     if (!pa->name[0] || !pa->volume_known) return;
     if (req & REQ_MUTE) {
-        op = pa_context_set_sink_mute_by_name( pa->_context, pa->name, !pa->muted, NULL, NULL );
+        pa_operation* op = pa_context_set_sink_mute_by_name( pa->_context, pa->name, !pa->muted, NULL, NULL );
         if (op) {
             pa_operation_unref( op );
             pa->muted = !pa->muted;

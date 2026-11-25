@@ -386,24 +386,26 @@ static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix
     return w->bar->center_widget_space;
 }
 
+/** a frame in c around the bar's cell at x, ww wide, an eighth of its height thick */
+static void cell_frame( const widget_t* w, pixman_image_t* pix, uint32_t x, int ww, pixman_color_t c ) {
+    int hh = w->bar->height;
+    int t = hh / 8;
+    if (t < 1) t = 1;
+    pixman_rectangle16_t rects[] = {
+        { .x=x,        .y=0,    .width=ww, .height=t },
+        { .x=x,        .y=hh-t, .width=ww, .height=t },
+        { .x=x,        .y=0,    .width=t,  .height=hh },
+        { .x=x+ww-t,   .y=0,    .width=t,  .height=hh },
+    };
+    pixman_image_fill_rectangles( PIXMAN_OP_SRC, pix, &c, 4, rects );
+}
+
 static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix ) {
     awl_plugin_data_t* P = w->plugins;
     int ww = text_cell_width( P, w, w->bar->font, "XXX" );
     cell_text( P, w, pix, x, ww, w->bar->font, w->bar->ltsymbol, P->colors.bar_fg, P->colors.bar_bg );
     /* each tag has its own layout: a red frame around the symbol */
-    if (w->bar->pertag) {
-        int hh = w->bar->height;
-        int t = hh / 8;
-        if (t < 1) t = 1;
-        pixman_color_t c = P->colors.pertag;
-        pixman_rectangle16_t rects[] = {
-            { .x=x,        .y=0,    .width=ww, .height=t },
-            { .x=x,        .y=hh-t, .width=ww, .height=t },
-            { .x=x,        .y=0,    .width=t,  .height=hh },
-            { .x=x+ww-t,   .y=0,    .width=t,  .height=hh },
-        };
-        pixman_image_fill_rectangles( PIXMAN_OP_SRC, pix, &c, 4, rects );
-    }
+    if (w->bar->pertag) cell_frame( w, pix, x, ww, P->colors.pertag );
     return ww;
 }
 
@@ -668,6 +670,7 @@ static void sniwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods 
     awl_plugin_data_t* P = w->plugins;
     sniwidget_t* u = w->userdata;
     int i = sniwidget_at( u, (int32_t)x );
+    (void)mods;
     if (!P->sni || i < 0) return;
     const awl_sni_item_t* it = &u->snap->items[i];
     awl_tray_tooltip_drop( P->tray_tip, u->tip );
@@ -693,6 +696,7 @@ static void sniwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods
     awl_plugin_data_t* P = w->plugins;
     sniwidget_t* u = w->userdata;
     int i = sniwidget_at( u, (int32_t)x );
+    (void)mods;
     if (P->sni && i >= 0 && amount) sni_scroll( P->sni, u->snap->items[i].serial, amount, 0 );
 }
 
@@ -1447,12 +1451,14 @@ static void ipwidget_free( void* userdata ) {
 }
 
 static void tagwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
+    (void)mods;
     (void)w;
     (void)x;
     awl_host->actions->cycle_view( awl_host->srv, &(Arg){.i=amount} );
 }
 static void tagwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     int t = (double)x / (double)w->width * w->bar->ntags;
+    (void)mods;
     switch (button) {
         case BTN_LEFT: awl_host->actions->view( awl_host->srv, &(Arg){.ui = (1 << t)} ); break;
         case BTN_RIGHT: awl_host->actions->toggleview( awl_host->srv, &(Arg){.ui = (1 << t)} ); break;
@@ -1462,16 +1468,20 @@ static void tagwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods 
 }
 
 static void layoutwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
+    (void)mods;
     (void)w; (void)x; awl_host->actions->cycle_layout( awl_host->srv, &(Arg){.i=amount} );
 }
 static void layoutwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
+    (void)mods;
     (void)w; (void)x; awl_host->actions->cycle_layout( awl_host->srv, &(Arg){.i=button==BTN_LEFT?1:-1} );
 }
 
 static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
+    (void)w; (void)x; (void)mods;
     awl_host->actions->focusstack( awl_host->srv, &(Arg){.i=amount} );
 }
 static void taskbarwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
+    (void)button; (void)mods;
     if (w->bar->n_tagwindows <= 0) return;
     awl_bar_window_t* windows = w->bar->tagwindows;
     int win_idx = (double)x / (double)w->width * (double)w->bar->n_tagwindows;
@@ -1493,11 +1503,13 @@ static void taskbarwidget_click( widget_t* w, uint32_t x, int button, uint32_t m
 
 static void pulsewidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
+    (void)mods;
     (void)w; (void)x; (void)button;
     const char* const* mixer = P->plugin_config.volume.mixer;
     if (mixer && mixer[0]) awl_host->actions->spawn( awl_host->srv, &(Arg){.v=mixer} );
 }
 static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
+    (void)mods;
     (void)w; (void)x;
     awl_volume_adjust( w->plugins, amount < 0 ? 0.025f : -0.025f );
 }
@@ -1527,6 +1539,7 @@ static void clockwidget_leave( widget_t* w ) {
 /* pages the calendar the hover opened; does nothing while it is closed */
 static void clockwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
+    (void)mods;
     (void)w; (void)x;
     awl_calpopup_scroll( P->calpopup, amount );
 }
@@ -1536,6 +1549,7 @@ static void clockwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mo
  * hover's would (callback_leave). */
 static void clockwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
+    (void)mods;
     (void)x;
     const int timer = awl_timerpopup_shown( P->timerpopup );
     clockwidget_leave( w );
@@ -1666,15 +1680,17 @@ static int eyes_closed_decode( awl_widgets_t* wd ) {
     *state = -1;
     const char* err = NULL;
     void* work = NULL;
-    wuffs_png__decoder* dec = malloc( sizeof__wuffs_png__decoder() );
-    if (!dec) { err = "out of memory"; goto out; }
-    wuffs_base__status st = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(),
-            WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
-    if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
-
     // the reader doesn't write
     wuffs_base__io_buffer src = wuffs_base__ptr_u8__reader( (uint8_t*)icons_eyes_closed_png,
             icons_eyes_closed_png_len, true );
+    wuffs_base__status st;
+    uint64_t wlen;
+    wuffs_png__decoder* dec = malloc( sizeof__wuffs_png__decoder() );
+    if (!dec) { err = "out of memory"; goto out; }
+    st = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(),
+            WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
+    if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
+
     wuffs_base__image_config ic;
     st = wuffs_png__decoder__decode_image_config( dec, &ic, &src );
     if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
@@ -1690,7 +1706,7 @@ static int eyes_closed_decode( awl_widgets_t* wd ) {
             wuffs_base__make_slice_u8( (uint8_t*)wd->eyes_closed_bits, sizeof(wd->eyes_closed_bits) ) );
     if (!wuffs_base__status__is_ok( &st )) { err = wuffs_base__status__message( &st ); goto out; }
 
-    uint64_t wlen = wuffs_png__decoder__workbuf_len( dec ).max_incl;
+    wlen = wuffs_png__decoder__workbuf_len( dec ).max_incl;
     work = malloc( wlen ? wlen : 1 );
     if (!work) { err = "out of memory"; goto out; }
     st = wuffs_png__decoder__decode_frame( dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC,
@@ -1798,6 +1814,7 @@ static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* p
 }
 
 static void backlightwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
+    (void)mods;
     (void)w; (void)x;
     awl_plugin_data_t* P = w->plugins;
     if (!P->backlight) return;
@@ -1809,13 +1826,15 @@ static void backlightwidget_click( widget_t* w, uint32_t x, int button, uint32_t
 }
 
 static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
+    (void)mods;
     (void)w; (void)x;
     awl_brightness_adjust( w->plugins, amount < 0 ? 0.025f : -0.025f );
 }
 
 /* the notifications: a bell (the config's icon, else in the emoji font,
  * else a letter), crossed out while do-not-disturb, with a dot in the bad color at its top right
- * while any are open; hover: how many are unread (open, not shown again
+ * while any are open, framed in the bad color while the idle inhibitors
+ * are ignored (Shift+left click); hover: how many are unread (open, not shown again
  * from the history) */
 typedef struct {
     const char* bell;
@@ -1882,6 +1901,8 @@ static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
         const float dx = (float)x + (float)l + (float)s->bell_w + d / 2.0f - d;
         awl_fill_shape( pix, dx, top > 0 ? top : 0, d, d, d / 2.0f, 0, color_16bit_to_8bit( P->colors.bad ) );
     }
+    /* the idle inhibitors are ignored (Shift+left click) */
+    if (awl_host->idle_inhibit_ignored( awl_host->srv )) cell_frame( w, pix, x, (int)w->width, P->colors.bad );
     return w->width;
 }
 
@@ -1889,7 +1910,9 @@ static void notifywidget_click( widget_t* w, uint32_t x, int button, uint32_t mo
     awl_plugin_data_t* P = w->plugins;
     (void)x;
     notifysnap_t* s = w->userdata;
-    if (button == BTN_RIGHT && s) {
+    if (button == BTN_LEFT && mods & WLR_MODIFIER_SHIFT) {
+        awl_idle_inhibit_toggle( P );
+    } else if (button == BTN_RIGHT && s) {
         float center = (float)s->x + (float)w->width / 2.0f;
         awl_notify_menu_toggle( awl_notify_menu( P->notify ), w->bar->m, (int)(center / w->bar->scale + 0.5f) );
     } else if (button == BTN_LEFT) {

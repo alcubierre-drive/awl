@@ -74,11 +74,13 @@ static const struct ext_session_lock_surface_v1_listener surface_listener = {
 };
 
 static void lock_locked( void* data, struct ext_session_lock_v1* lock ) {
+    (void)data; (void)lock;
     locked = 1;
     report();
 }
 
 static void lock_finished( void* data, struct ext_session_lock_v1* lock ) {
+    (void)data; (void)lock;
     finished = 1;
 }
 
@@ -88,6 +90,7 @@ static const struct ext_session_lock_v1_listener lock_listener = {
 };
 
 static void global( void* data, struct wl_registry* reg, uint32_t name, const char* iface, uint32_t version ) {
+    (void)version; (void)data;
     if (!strcmp( iface, wl_compositor_interface.name ))
         compositor = wl_registry_bind( reg, name, &wl_compositor_interface, 4 );
     else if (!strcmp( iface, wl_shm_interface.name ))
@@ -99,6 +102,7 @@ static void global( void* data, struct wl_registry* reg, uint32_t name, const ch
 }
 
 static void global_remove( void* data, struct wl_registry* reg, uint32_t name ) {
+    (void)data; (void)reg; (void)name;
 }
 
 static const struct wl_registry_listener registry_listener = {

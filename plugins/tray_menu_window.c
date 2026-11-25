@@ -238,6 +238,7 @@ static void paint( void* data, pixman_image_t* pix, struct fcft_font* font, floa
     const uint32_t dim = k->menu_dim.v, highlight_fg = k->menu_highlight_fg.v;
     const int radius = MIN( mw->p->config.popup.menu.radius.v, 4 );
     const level_t* sub = child_of( mw, L );
+    (void)scale; (void)hover;
     L->x0 = x0;
     for (int i = L->top; i < L->top + L->shown; i++) {
         const row_t* r = &L->rows[i];
@@ -497,6 +498,7 @@ static void hidden( awl_window_t* win, void* data ) {
     level_t* L_ = data;
     awl_tray_menu_window_t* mw = L_->mw;
     const int k = (int)(L_ - mw->lv);
+    (void)win;
     if (mw->snap && k < mw->depth && !mw->quiet) close_menu( mw, 1 );
 }
 
@@ -564,6 +566,7 @@ static void click( awl_window_t* win, int row, int col, uint32_t button, void* d
     level_t* L_ = data;
     awl_tray_menu_window_t* mw = L_->mw;
     const int k = (int)(L_ - mw->lv);
+    (void)win; (void)col;
     if (!mw->snap || k >= mw->depth || row < 0 || row >= mw->lv[k].nrows || (button != BTN_LEFT && button != BTN_RIGHT))
         return;
     const awl_tray_menu_node_t* n = &mw->snap->nodes[mw->lv[k].rows[row].node];
@@ -614,6 +617,7 @@ static int open_sel( awl_tray_menu_window_t* mw, int k ) {
 
 static int key( awl_window_t* win, uint32_t sym, const char* utf8, uint32_t mods, void* data ) {
     awl_tray_menu_window_t* mw = data;
+    (void)win; (void)utf8; (void)mods;
     if (!mw->snap || !mw->depth) return 0;
     const int k = mw->depth - 1;
     level_t* L = &mw->lv[k];
@@ -653,6 +657,7 @@ static void scroll( awl_window_t* win, int row, int col, uint32_t orientation, d
     level_t* L_ = data;
     awl_tray_menu_window_t* mw = L_->mw;
     const int k = (int)(L_ - mw->lv);
+    (void)win; (void)row; (void)col;
     if (!mw->snap || k >= mw->depth || orientation != 0) return;
     level_t* L = &mw->lv[k];
     const int steps = scroll_steps( &L->acc, value120, delta );

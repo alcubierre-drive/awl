@@ -585,6 +585,7 @@ static void draw_surface(struct awlock_surface *surface) {
 static void surface_frame_handle_done(void *data, struct wl_callback *callback,
         uint32_t time) {
     struct awlock_surface *surface = data;
+    (void)time;
     wl_callback_destroy(callback);
     surface->frame_callback = NULL;
     if (surface->dirty) {
@@ -620,15 +621,18 @@ static void handle_wl_output_geometry(void *data, struct wl_output *wl_output,
         int32_t transform) {
     // nothing: the logo is pixels, no text, so the subpixel order doesn't
     // matter
+    (void)data; (void)wl_output; (void)x; (void)y; (void)width_mm; (void)height_mm; (void)subpixel; (void)make; (void)model; (void)transform;
 }
 
 static void handle_wl_output_mode(void *data, struct wl_output *output,
         uint32_t flags, int32_t width, int32_t height, int32_t refresh) {
     // Who cares
+    (void)data; (void)output; (void)flags; (void)width; (void)height; (void)refresh;
 }
 
 static void handle_wl_output_done(void *data, struct wl_output *output) {
     struct awlock_surface *surface = data;
+    (void)output;
     if (!surface->created && surface->state->running) {
         create_surface(surface);
     }
@@ -637,6 +641,7 @@ static void handle_wl_output_done(void *data, struct wl_output *output) {
 static void handle_wl_output_scale(void *data, struct wl_output *output,
         int32_t factor) {
     struct awlock_surface *surface = data;
+    (void)output;
     surface->scale = factor;
     if (surface->state->running) {
         damage_surface(surface);
@@ -646,11 +651,13 @@ static void handle_wl_output_scale(void *data, struct wl_output *output,
 static void handle_wl_output_name(void *data, struct wl_output *output,
         const char *name) {
     // Who cares
+    (void)data; (void)output; (void)name;
 }
 
 static void handle_wl_output_description(void *data, struct wl_output *output,
         const char *description) {
     // Who cares
+    (void)data; (void)output; (void)description;
 }
 
 static const struct wl_output_listener output_listener = {
@@ -664,10 +671,12 @@ static const struct wl_output_listener output_listener = {
 
 static void ext_session_lock_v1_handle_locked(void *data, struct ext_session_lock_v1 *lock) {
     struct awlock_state *state = data;
+    (void)lock;
     state->locked = true;
 }
 
 static void ext_session_lock_v1_handle_finished(void *data, struct ext_session_lock_v1 *lock) {
+    (void)data; (void)lock;
     awl_err_printf("awlock: Failed to lock session -- "
             "is another lockscreen running?\n");
     exit(2);
@@ -696,6 +705,7 @@ static void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
         uint32_t format, int32_t fd, uint32_t size) {
     struct awlock_seat *seat = data;
     struct awlock_state *state = seat->state;
+    (void)wl_keyboard;
     if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
         close(fd);
         awl_err_printf("awlock: Unknown keymap format %d, aborting\n", format);
@@ -731,11 +741,13 @@ static void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
 static void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
         uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {
     // Who cares
+    (void)data; (void)wl_keyboard; (void)serial; (void)surface; (void)keys;
 }
 
 static void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
         uint32_t serial, struct wl_surface *surface) {
     // Who cares
+    (void)data; (void)wl_keyboard; (void)serial; (void)surface;
 }
 
 static void keyboard_repeat(void *data) {
@@ -749,6 +761,7 @@ static void keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
         uint32_t serial, uint32_t time, uint32_t key, uint32_t key_state) {
     struct awlock_seat *seat = data;
     struct xkb_state *xkb_state = seat->state->xkb.state;
+    (void)wl_keyboard; (void)serial; (void)time;
     // a key pressed or released ends the last one's repeat
     loop_remove_timer(seat->repeat_timer);
     seat->repeat_timer = NULL;
@@ -770,6 +783,7 @@ static void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,
         uint32_t mods_locked, uint32_t group) {
     struct awlock_seat *seat = data;
     struct awlock_state *state = seat->state;
+    (void)wl_keyboard; (void)serial;
     if (state->xkb.state == NULL) {
         return;
     }
@@ -790,6 +804,7 @@ static void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,
 static void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
         int32_t rate, int32_t delay) {
     struct awlock_seat *seat = data;
+    (void)wl_keyboard;
     seat->repeat_period_ms = rate > 0 ? 1000 / rate : 0; // keys per second
     seat->repeat_delay_ms = delay;
 }
@@ -847,12 +862,14 @@ static void wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
 static void wl_pointer_leave(void *data, struct wl_pointer *wl_pointer,
         uint32_t serial, struct wl_surface *surface) {
     struct awlock_seat *seat = data;
+    (void)wl_pointer; (void)serial; (void)surface;
     seat->state->pointer_surface = NULL;
 }
 
 static void wl_pointer_motion(void *data, struct wl_pointer *wl_pointer,
         uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
     struct awlock_seat *seat = data;
+    (void)wl_pointer; (void)time;
     seat->state->pointer_x = wl_fixed_to_double(surface_x);
     seat->state->pointer_y = wl_fixed_to_double(surface_y);
 }
@@ -860,31 +877,37 @@ static void wl_pointer_motion(void *data, struct wl_pointer *wl_pointer,
 static void wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
         uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
     // Who cares
+    (void)data; (void)wl_pointer; (void)serial; (void)time; (void)button; (void)state;
 }
 
 static void wl_pointer_axis(void *data, struct wl_pointer *wl_pointer,
         uint32_t time, uint32_t axis, wl_fixed_t value) {
     // Who cares
+    (void)data; (void)wl_pointer; (void)time; (void)axis; (void)value;
 }
 
 static void wl_pointer_frame(void *data, struct wl_pointer *wl_pointer) {
     struct awlock_seat *seat = data;
+    (void)wl_pointer;
     pointer_moved(seat->state);
 }
 
 static void wl_pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
         uint32_t axis_source) {
     // Who cares
+    (void)data; (void)wl_pointer; (void)axis_source;
 }
 
 static void wl_pointer_axis_stop(void *data, struct wl_pointer *wl_pointer,
         uint32_t time, uint32_t axis) {
     // Who cares
+    (void)data; (void)wl_pointer; (void)time; (void)axis;
 }
 
 static void wl_pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
         uint32_t axis, int32_t discrete) {
     // Who cares
+    (void)data; (void)wl_pointer; (void)axis; (void)discrete;
 }
 
 static const struct wl_pointer_listener pointer_listener = {
@@ -926,6 +949,7 @@ static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 static void seat_handle_name(void *data, struct wl_seat *wl_seat,
         const char *name) {
     // Who cares
+    (void)data; (void)wl_seat; (void)name;
 }
 
 static const struct wl_seat_listener seat_listener = {
@@ -982,6 +1006,7 @@ static void handle_global_remove(void *data, struct wl_registry *registry,
         uint32_t name) {
     struct awlock_state *state = data;
     struct awlock_surface *surface;
+    (void)registry;
     wl_list_for_each(surface, &state->surfaces, link) {
         if (surface->output_global_name == name) {
             destroy_surface(surface);
@@ -998,6 +1023,7 @@ static const struct wl_registry_listener registry_listener = {
 static struct awlock_state state;
 
 static void display_in(void *data) {
+    (void)data;
     if (wl_display_dispatch(state.display) == -1) {
         state.running = false;
     }

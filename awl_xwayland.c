@@ -21,6 +21,7 @@ void
 activatex11(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, activate);
+    (void)data;
 
     /* Only "managed" windows can be activated */
     if (!client_is_unmanaged(c))
@@ -31,6 +32,7 @@ void
 associatex11(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, associate);
+    (void)data;
 
     LISTEN(&client_surface(c)->events.map, &c->map, mapnotify);
     LISTEN(&client_surface(c)->events.unmap, &c->unmap, unmapnotify);
@@ -67,10 +69,9 @@ createnotifyx11(struct wl_listener *listener, void *data)
 {
     awl_server_t *srv = wl_container_of(listener, srv, listen.new_xwayland_surface);
     struct wlr_xwayland_surface *xsurface = data;
-    Client *c;
 
     /* Allocate a Client for this surface */
-    c = xsurface->data = ecalloc(1, sizeof(*c));
+    Client *c = xsurface->data = ecalloc(1, sizeof(*c));
     c->srv = srv;
     c->surface.xwayland = xsurface;
     c->type = X11;
@@ -92,6 +93,7 @@ void
 dissociatex11(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, dissociate);
+    (void)data;
     wl_list_remove(&c->map.link);
     wl_list_remove(&c->unmap.link);
 }
@@ -102,6 +104,7 @@ sethints(struct wl_listener *listener, void *data)
     Client *c = wl_container_of(listener, c, set_hints);
     awl_server_t *srv = c->srv;
     struct wlr_surface *surface = client_surface(c);
+    (void)data;
     if (c == focustop(srv, srv->out.selmon) || !c->surface.xwayland->hints)
         return;
 
@@ -117,6 +120,7 @@ xwaylandready(struct wl_listener *listener, void *data)
 {
     awl_server_t *srv = wl_container_of(listener, srv, listen.xwayland_ready);
     struct wlr_xcursor *xcursor;
+    (void)data;
 
     /* assign the one and only seat */
     wlr_xwayland_set_seat(srv->xwayland, srv->seat);

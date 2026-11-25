@@ -85,14 +85,13 @@ static int red_blue( const char* name ) {
 }
 
 static void test_decode( void ) {
-    pixman_image_t* img;
     printf( "-- decode\n" );
     CHECK( red_blue( "baseline.jpg" ) );
     CHECK( red_blue( "progressive.jpg" ) );
     CHECK( red_blue( "444.jpg" ) );
     CHECK( red_blue( "cmyk.jpg" ) );
     /* gray: the same in each channel */
-    img = decode( "gray.jpg", 64, 48 );
+    pixman_image_t* img = decode( "gray.jpg", 64, 48 );
     CHECK( img && pixel( img, 8, 24 ) >> 24 == 0xff && (pixel( img, 8, 24 ) & 0xff) == (pixel( img, 8, 24 ) >> 16 & 0xff) );
     if (img) pixman_image_unref( img );
     /* PNG still: premultiplied, the right half blue at half alpha */
@@ -152,14 +151,13 @@ static int xpm_decodes( const char* s, int file ) {
 #define XPM "/* XPM */\nstatic char* x[] = {\n"
 
 static void test_xpm( void ) {
-    pixman_image_t* img;
     size_t len;
     printf( "-- xpm\n" );
     CHECK( red_blue( "rb.xpm" ) );
     /* 2 characters a pixel, one key with a space: None, #rgb, 16 bits a
      * channel, a name with spaces, "c" after "s", "c" over "m", "g" over
      * "g4", an unknown name black; the hotspot ignored, a longer row too */
-    img = decode( "cases.xpm", 8, 2 );
+    pixman_image_t* img = decode( "cases.xpm", 8, 2 );
     static const uint32_t want[8] = { 0, 0xffffffff, 0xffff0000, 0xff2f4f4f,
                                       0xff00ff00, 0xffff0000, 0xff808080, 0xff000000 };
     int ok = img && pixman_image_get_width( img ) == 8 && pixman_image_get_height( img ) == 2;
@@ -247,14 +245,13 @@ static int rgba_refused( const uint8_t* data, size_t len, int w, int h, int stri
 }
 
 static void test_rgba( void ) {
-    pixman_image_t* img;
     printf( "-- rgba\n" );
     /* 2 x 2 RGBA: opaque red, half-alpha white, transparent green, half-alpha blue */
     static const uint8_t rgba[] = {
         0xff, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x80,
         0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0x80,
     };
-    img = awl_icon_from_rgba( rgba, sizeof rgba, 2, 2, 8, 1, 8, 4, 2, 2 );
+    pixman_image_t* img = awl_icon_from_rgba( rgba, sizeof rgba, 2, 2, 8, 1, 8, 4, 2, 2 );
     CHECK( img && pixman_image_get_width( img ) == 2 && pixman_image_get_height( img ) == 2 );
     CHECK( img && pixel( img, 0, 0 ) == 0xffff0000 && pixel( img, 1, 0 ) == 0x80808080 && pixel( img, 0, 1 ) == 0 &&
            pixel( img, 1, 1 ) == 0x80000080 );

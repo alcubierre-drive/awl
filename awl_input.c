@@ -1,4 +1,5 @@
 #include "awl_input.h"
+#include "awl_bar.h"
 #include "awl_capture.h"
 #include "awl_config.h"
 #include "awl_cursor.h"
@@ -77,8 +78,9 @@ struct awl_input {
     int64_t last_activity;
     /** whether :c:func:`checkidleinhibitor` found an inhibitor, the timer
      * is armed, :c:member:`awl_config_t.on_idle` ran since the last
-     * :c:func:`activity`, the timeout passed while inhibited (logged) */
-    bool idle_inhibited:1, idle_armed:1, idle_done:1, idle_held:1;
+     * :c:func:`activity`, the timeout passed while inhibited (logged), the
+     * inhibitors are ignored (:c:func:`toggleidleinhibit`) */
+    bool idle_inhibited:1, idle_armed:1, idle_done:1, idle_held:1, idle_ignored:1;
 };
 
 /** the idle check due :c:member:`awl_config_t.idle_seconds` after the last
@@ -123,10 +125,10 @@ idlecheck(void *data)
 void
 checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude)
 {
-    int inhibited = 0, unused_lx, unused_ly;
+    int unused_lx, unused_ly;
     struct wlr_idle_inhibitor_v1 *inhibitor;
     Client *c;
-    inhibited = awl_screensaver_inhibited(srv->screensaver);
+    int inhibited = awl_screensaver_inhibited(srv->screensaver);
     wl_list_for_each(c, &srv->clients.list, link)
         inhibited |= c->inhibit_idle && (srv->cfg->bypass_surface_visibility
                 || wlr_scene_node_coords(&c->scene->node, &unused_lx, &unused_ly));
@@ -139,6 +141,7 @@ checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude)
             break;
         }
     }
+    inhibited &= !srv->input->idle_ignored;
 
     wlr_idle_notifier_v1_set_inhibited(srv->idle_notifier, inhibited);
     /* like wlroots' notifier: the idle time counts from the inhibitor's end */
@@ -148,6 +151,22 @@ checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude)
     }
     srv->input->idle_inhibited = inhibited;
     idlearm(srv);
+}
+
+void
+toggleidleinhibit(awl_server_t *srv, const Arg *arg)
+{
+    (void)arg;
+    srv->input->idle_ignored = !srv->input->idle_ignored;
+    awl_log_printf("idle: inhibitors %s\n", srv->input->idle_ignored ? "ignored" : "honored");
+    checkidleinhibitor(srv, NULL);
+    barsdirty(srv);
+}
+
+bool
+idleinhibitignored(awl_server_t *srv)
+{
+    return srv->input->idle_ignored;
 }
 
 void
@@ -298,6 +317,7 @@ destroykeyboardgroup(struct wl_listener *listener, void *data)
     awl_server_t *srv = group->srv;
     /* a virtual keyboard's (virtualkeyboard()) */
     int virtual = group != srv->input->kb_group;
+    (void)data;
     wl_event_source_remove(group->key_repeat_source);
     wl_list_remove(&group->key.link);
     wl_list_remove(&group->modifiers.link);
@@ -361,8 +381,7 @@ keybinding(awl_server_t *srv, uint32_t mods, xkb_keysym_t sym)
      * processing keys, rather than passing them on to the client for its own
      * processing.
      */
-    const Key *k;
-    for (k = srv->cfg->keys.v; k < srv->cfg->keys.v + srv->cfg->keys.n; k++) {
+    for (const Key *k = srv->cfg->keys.v; k < srv->cfg->keys.v + srv->cfg->keys.n; k++) {
         if (CLEANMASK(mods) == CLEANMASK(bindmods(srv, k->mod))
                 && sym == k->keysym && k->func) {
             // awl_vrb_printf( "keybinding: (mod:%u key:%u func:%p arg:%li)\n", k->mod, k->keysym, k->func, k->arg.v );
@@ -380,8 +399,7 @@ keypopup(awl_server_t *srv, KeyboardGroup *group, uint32_t keycode, uint32_t mod
 {
     struct xkb_state *state = group->wlr_group->keyboard.xkb_state;
     const xkb_keysym_t *syms;
-    int i, handled = 0, nsyms = xkb_state_key_get_syms(state, keycode, &syms);
-    awl_window_t *win;
+    int handled = 0, nsyms = xkb_state_key_get_syms(state, keycode, &syms);
     char utf8[16];
 
     /* what it types, if anything: not Return's or Ctrl+W's control
@@ -389,9 +407,10 @@ keypopup(awl_server_t *srv, KeyboardGroup *group, uint32_t keycode, uint32_t mod
     xkb_state_key_get_utf8(state, keycode, utf8, sizeof(utf8));
     if ((unsigned char)utf8[0] < 0x20 || utf8[0] == 0x7f)
         utf8[0] = '\0';
-    for (i = 0; i < nsyms; i++) {
+    for (int i = 0; i < nsyms; i++) {
         /* the callback may hide it, or take another key */
-        if ((win = popupkeyboard(srv)) && awl_window_key(win, syms[i], utf8, mods))
+        awl_window_t *win = popupkeyboard(srv);
+        if (win && awl_window_key(win, syms[i], utf8, mods))
             handled = 1;
         else
             handled = keybinding(srv, mods, syms[i]) || handled;
@@ -402,7 +421,6 @@ keypopup(awl_server_t *srv, KeyboardGroup *group, uint32_t keycode, uint32_t mod
 void
 keypress(struct wl_listener *listener, void *data)
 {
-    int i;
     /* This event is raised when a key is pressed or released. */
     KeyboardGroup *group = wl_container_of(listener, group, key);
     awl_server_t *srv = group->srv;
@@ -429,7 +447,7 @@ keypress(struct wl_listener *listener, void *data)
         group->nsyms = 0;
         wl_event_source_timer_update(group->key_repeat_source, 0);
         /* the callback may end the grab */
-        for (i = 0; i < nsyms && srv->cursor.mode == CurGrab; i++)
+        for (int i = 0; i < nsyms && srv->cursor.mode == CurGrab; i++)
             grabkey(srv, syms[i], mods);
         return;
     }
@@ -460,7 +478,7 @@ keypress(struct wl_listener *listener, void *data)
     /* On _press_ if there is no active screen locker,
      * attempt to process a compositor keybinding. */
     if (!srv->locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-        for (i = 0; i < nsyms; i++)
+        for (int i = 0; i < nsyms; i++)
             handled = keybinding(srv, mods, syms[i]) || handled;
     }
 
@@ -492,6 +510,7 @@ keypressmod(struct wl_listener *listener, void *data)
      * pressed. We simply communicate this to the client. */
     KeyboardGroup *group = wl_container_of(listener, group, modifiers);
     awl_server_t *srv = group->srv;
+    (void)data;
 
     wlr_seat_set_keyboard(srv->seat, &group->wlr_group->keyboard);
     /* Send modifiers to the client. */
@@ -504,7 +523,6 @@ keyrepeat(void *data)
 {
     KeyboardGroup *group = data;
     awl_server_t *srv = group->srv;
-    int i;
     if (!group->nsyms || group->wlr_group->keyboard.repeat_info.rate <= 0)
         return 0;
 
@@ -525,7 +543,7 @@ keyrepeat(void *data)
         }
         return 0;
     }
-    for (i = 0; i < group->nsyms; i++)
+    for (int i = 0; i < group->nsyms; i++)
         keybinding(srv, group->mods, group->keysyms[i]);
 
     return 0;
@@ -559,6 +577,7 @@ static void
 untrackinputdevice(struct wl_listener *listener, void *data)
 {
     InputDevice *d = wl_container_of(listener, d, destroy);
+    (void)data;
     wl_list_remove(&d->destroy.link);
     wl_list_remove(&d->link);
     free(d);
@@ -626,10 +645,9 @@ inputfini(awl_server_t *srv)
 void
 inputfree(awl_server_t *srv)
 {
-    int i;
     if (!srv->input)
         return;
-    for (i = 0; i < (int)LENGTH(srv->input->applied.xkb); i++)
+    for (int i = 0; i < (int)LENGTH(srv->input->applied.xkb); i++)
         free(srv->input->applied.xkb[i]);
     free(srv->input);
     srv->input = NULL;
@@ -642,10 +660,10 @@ inputconfigure(awl_server_t *srv)
     struct xkb_keymap *keymap;
     const char *xkb[5] = { srv->cfg->keyboard.xkb.rules, srv->cfg->keyboard.xkb.model,
         srv->cfg->keyboard.xkb.layout, srv->cfg->keyboard.xkb.variant, srv->cfg->keyboard.xkb.options };
-    int i, changed;
+    int changed = 0;
 
     /* keyboards: the virtual ones keep the keymaps their clients gave them */
-    for (i = changed = 0; i < (int)LENGTH(xkb); i++)
+    for (int i = 0; i < (int)LENGTH(xkb); i++)
         changed |= !streqnull(xkb[i], srv->input->applied.xkb[i]);
     if (changed && !(keymap = compilekeymap(srv))) {
         awl_wrn_printf("plugins_config.c: can't compile the keymap, keeping the old one\n");
@@ -655,7 +673,7 @@ inputconfigure(awl_server_t *srv)
             if (d->device->type == WLR_INPUT_DEVICE_KEYBOARD)
                 wlr_keyboard_set_keymap(wlr_keyboard_from_input_device(d->device), keymap);
         xkb_keymap_unref(keymap);
-        for (i = 0; i < (int)LENGTH(xkb); i++) {
+        for (int i = 0; i < (int)LENGTH(xkb); i++) {
             free(srv->input->applied.xkb[i]);
             srv->input->applied.xkb[i] = strdupnull(xkb[i]);
         }

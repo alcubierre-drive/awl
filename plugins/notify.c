@@ -393,10 +393,8 @@ static int hit( void* data, int x, int y ) {
 
 static int part_box( void* data, int part, int* x, int* y, int* w, int* h ) {
     const note_t* n = data;
-    box_t b;
-    if (part == 0) b = (box_t){ 0, 0, n->w, n->h };
-    else if (part > 0 && part <= n->nactions) b = n->act[part - 1];
-    else return 0;
+    if (part < 0 || part > n->nactions) return 0;
+    const box_t b = part ? n->act[part - 1] : (box_t){ 0, 0, n->w, n->h };
     *x = b.x;
     *y = b.y;
     *w = b.w;

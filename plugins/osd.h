@@ -61,3 +61,6 @@ void awl_osd_desktop( awl_osd_t* o, const char* text );
  * disturb" or "Notifications enabled" alone, centered, notify's bell_icon_dnd
  * or bell_icon beside it. It shows through do-not-disturb, as every OSD. */
 void awl_osd_dnd( awl_osd_t* o, int on );
+/** the idle inhibitors are honored (on) or ignored (:c:func:`awl_idle_inhibit_toggle`):
+ * "Idle inhibit on" or "Idle inhibit off" alone, centered */
+void awl_osd_idle_inhibit( awl_osd_t* o, int on );

@@ -58,6 +58,7 @@ static bool image_begin( struct wlr_buffer* wb, uint32_t flags, void** data,
 }
 
 static void image_end( struct wlr_buffer* wb ) {
+    (void)wb;
 }
 
 static const struct wlr_buffer_impl image_impl = {

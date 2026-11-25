@@ -65,6 +65,7 @@ struct awl_window {
 
 /** clicks and the pointer go through */
 static bool accepts_input( struct wlr_scene_buffer* buffer, double* sx, double* sy ) {
+    (void)buffer; (void)sx; (void)sy;
     return false;
 }
 

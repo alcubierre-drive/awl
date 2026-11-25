@@ -74,6 +74,7 @@ void borderclockmode(awl_server_t *srv, const Arg *arg);
 static inline int
 client_is_x11(Client *c)
 {
+    (void)c;
 #ifdef XWAYLAND
     return c->type == X11;
 #endif
@@ -93,22 +94,19 @@ client_surface(Client *c)
 static inline int
 toplevel_from_wlr_surface(struct wlr_surface *s, Client **pc, LayerSurface **pl)
 {
-    struct wlr_xdg_surface *xdg_surface, *tmp_xdg_surface;
-    struct wlr_surface *root_surface;
+    struct wlr_xdg_surface *xdg_surface;
     struct wlr_layer_surface_v1 *layer_surface;
     Client *c = NULL;
     LayerSurface *l = NULL;
     int type = -1;
-#ifdef XWAYLAND
-    struct wlr_xwayland_surface *xsurface;
-#endif
 
     if (!s)
         return -1;
-    root_surface = wlr_surface_get_root_surface(s);
+    struct wlr_surface *root_surface = wlr_surface_get_root_surface(s);
 
 #ifdef XWAYLAND
-    if ((xsurface = wlr_xwayland_surface_try_from_wlr_surface(root_surface))) {
+    struct wlr_xwayland_surface *xsurface = wlr_xwayland_surface_try_from_wlr_surface(root_surface);
+    if (xsurface) {
         c = xsurface->data;
         type = c->type;
         goto end;
@@ -123,19 +121,15 @@ toplevel_from_wlr_surface(struct wlr_surface *s, Client **pc, LayerSurface **pl)
 
     xdg_surface = wlr_xdg_surface_try_from_wlr_surface(root_surface);
     while (xdg_surface) {
-        tmp_xdg_surface = NULL;
         switch (xdg_surface->role) {
-        case WLR_XDG_SURFACE_ROLE_POPUP:
+        case WLR_XDG_SURFACE_ROLE_POPUP: {
             if (!xdg_surface->popup || !xdg_surface->popup->parent)
                 return -1;
-
-            tmp_xdg_surface = wlr_xdg_surface_try_from_wlr_surface(xdg_surface->popup->parent);
-
-            if (!tmp_xdg_surface)
-                return toplevel_from_wlr_surface(xdg_surface->popup->parent, pc, pl);
-
-            xdg_surface = tmp_xdg_surface;
+            struct wlr_surface *parent = xdg_surface->popup->parent;
+            if (!(xdg_surface = wlr_xdg_surface_try_from_wlr_surface(parent)))
+                return toplevel_from_wlr_surface(parent, pc, pl);
             break;
+        }
         case WLR_XDG_SURFACE_ROLE_TOPLEVEL:
             c = xdg_surface->data;
             type = c->type;
@@ -271,9 +265,6 @@ client_get_title(Client *c)
 static inline int
 client_is_float_type(Client *c)
 {
-    struct wlr_xdg_toplevel *toplevel;
-    struct wlr_xdg_toplevel_state state;
-
 #ifdef XWAYLAND
     if (client_is_x11(c)) {
         struct wlr_xwayland_surface *surface = c->surface.xwayland;
@@ -294,8 +285,8 @@ client_is_float_type(Client *c)
     }
 #endif
 
-    toplevel = c->surface.xdg->toplevel;
-    state = toplevel->current;
+    struct wlr_xdg_toplevel *toplevel = c->surface.xdg->toplevel;
+    struct wlr_xdg_toplevel_state state = toplevel->current;
     return toplevel->parent || (state.min_width != 0 && state.min_height != 0
         && (state.min_width == state.max_width
             || state.min_height == state.max_height));
@@ -346,6 +337,7 @@ client_is_stopped(Client *c)
 static inline int
 client_is_unmanaged(Client *c)
 {
+    (void)c;
 #ifdef XWAYLAND
     if (client_is_x11(c))
         return c->surface.xwayland->override_redirect;
@@ -378,8 +370,7 @@ client_send_close(Client *c)
 static inline void
 client_set_border_color(Client *c, const float color[static 4])
 {
-    int i;
-    for (i = 0; i < 4; i++)
+    for (int i = 0; i < 4; i++)
         wlr_scene_rect_set_color(c->border[i], color);
 }
 
@@ -450,6 +441,7 @@ client_set_suspended(Client *c, int suspended)
 static inline int
 client_wants_focus(Client *c)
 {
+    (void)c;
 #ifdef XWAYLAND
     return client_is_unmanaged(c)
         && wlr_xwayland_surface_override_redirect_wants_focus(c->surface.xwayland)

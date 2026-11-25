@@ -181,8 +181,9 @@ pixman_image_t* awl_xpm_decode( const uint8_t* data, size_t len, const awl_icon_
     cursor_t c = { data, data + len };
     const uint8_t* s;
     size_t n;
-    color_t* colors = NULL;
     pixman_image_t* img = NULL;
+    uint32_t* px;
+    const color_t* last;
     int unknown = 0;
     *err = NULL;
 
@@ -211,7 +212,7 @@ pixman_image_t* awl_xpm_decode( const uint8_t* data, size_t len, const awl_icon_
         *err = "too many colors or characters a pixel";
         return NULL;
     }
-    colors = malloc( (size_t)nc * sizeof(*colors) );
+    color_t* colors = malloc( (size_t)nc * sizeof(*colors) );
     if (!colors) {
         *err = "out of memory";
         return NULL;
@@ -240,8 +241,8 @@ pixman_image_t* awl_xpm_decode( const uint8_t* data, size_t len, const awl_icon_
         *err = "out of memory";
         goto out;
     }
-    uint32_t* px = pixman_image_get_data( img );
-    const color_t* last = &colors[0];
+    px = pixman_image_get_data( img );
+    last = &colors[0];
     for (long y = 0; y < h; y++) {
         if (next_string( &c, &s, &n ) != 1 || n < (size_t)(w * cpp)) {
             *err = "rows missing or short";

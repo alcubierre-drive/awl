@@ -66,10 +66,9 @@ capturestate(awl_server_t *srv)
 int
 grabstart(awl_server_t *srv, const awl_grab_t *grab, void *data, const char *cursor)
 {
-    struct awl_capture *C;
     if (!grab || srv->locked || (srv->cursor.mode != CurNormal && srv->cursor.mode != CurPressed))
         return 0;
-    C = capturestate(srv);
+    struct awl_capture *C = capturestate(srv);
     C->grab = *grab;
     C->data = data;
     srv->cursor.mode = CurGrab;
@@ -89,12 +88,10 @@ static void
 grabstop(awl_server_t *srv, int tell)
 {
     struct awl_capture *C = srv->capture;
-    awl_grab_t grab;
-    void *data;
     if (!C || srv->cursor.mode != CurGrab)
         return;
-    grab = C->grab;
-    data = C->data;
+    awl_grab_t grab = C->grab;
+    void *data = C->data;
     C->grab = (awl_grab_t){0};
     C->data = NULL;
     grabmark(srv, NULL, 0, 0, 0);
@@ -199,9 +196,9 @@ void
 grabmark(awl_server_t *srv, const awl_box_t *box, uint32_t dim, uint32_t frame, int frame_width)
 {
     struct awl_capture *C = srv->capture;
-    struct wlr_box all = srv->out.sgeom, b;
+    struct wlr_box all = srv->out.sgeom;
     float shade[4], line[4];
-    int i, fw = MAX(frame_width, 0);
+    int fw = MAX(frame_width, 0);
 
     if (!box || srv->cursor.mode != CurGrab) {
         if (C && C->mark)
@@ -212,7 +209,7 @@ grabmark(awl_server_t *srv, const awl_box_t *box, uint32_t dim, uint32_t frame, 
         /* above everything; the locker's tree is there too, but no grab
          * holds while the screen is locked */
         C->mark = wlr_scene_tree_create(srv->layers[LyrBlock]);
-        for (i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++) {
             C->shade[i] = wlr_scene_rect_create(C->mark, 0, 0, (float[4]){0});
             C->frame[i] = wlr_scene_rect_create(C->mark, 0, 0, (float[4]){0});
         }
@@ -221,22 +218,22 @@ grabmark(awl_server_t *srv, const awl_box_t *box, uint32_t dim, uint32_t frame, 
     wlr_scene_node_set_enabled(&C->mark->node, 1);
     premultiplied(dim, shade);
     premultiplied(frame, line);
-    for (i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++) {
         wlr_scene_rect_set_color(C->shade[i], shade);
         wlr_scene_rect_set_color(C->frame[i], line);
     }
 
     if (box->w <= 0 || box->h <= 0) {
         rectset(C->shade[0], all.x, all.y, all.width, all.height);
-        for (i = 1; i < 4; i++)
+        for (int i = 1; i < 4; i++)
             rectset(C->shade[i], 0, 0, 0, 0);
-        for (i = 0; i < 4; i++)
+        for (int i = 0; i < 4; i++)
             rectset(C->frame[i], 0, 0, 0, 0);
         return;
     }
     /* the frame around the box, the shade around the frame: above, below,
      * left and right of it */
-    b = (struct wlr_box){ box->x - fw, box->y - fw, box->w + 2 * fw, box->h + 2 * fw };
+    struct wlr_box b = { box->x - fw, box->y - fw, box->w + 2 * fw, box->h + 2 * fw };
     rectset(C->shade[0], all.x, all.y, all.width, b.y - all.y);
     rectset(C->shade[1], all.x, b.y + b.height, all.width, all.y + all.height - b.y - b.height);
     rectset(C->shade[2], all.x, b.y, b.x - all.x, b.height);
@@ -266,10 +263,10 @@ clientfocused(awl_server_t *srv)
 int
 clientbox(awl_server_t *srv, Client *c, int border, awl_box_t *box)
 {
-    int bw;
+    (void)srv;
     if (!c)
         return 0;
-    bw = border ? 0 : (int)c->bw;
+    int bw = border ? 0 : (int)c->bw;
     *box = (awl_box_t){ c->geom.x + bw, c->geom.y + bw, c->geom.width - 2 * bw, c->geom.height - 2 * bw };
     return 1;
 }
@@ -380,29 +377,27 @@ compose(pixman_image_t *dst, pixman_image_t *src, Monitor *m, const awl_box_t *b
     struct wlr_box in, want = { box->x, box->y, box->w, box->h };
     enum wl_output_transform inv = wlr_output_transform_invert(o->transform);
     struct wlr_fbox q0, q1, q2;
-    pixman_transform_t t;
-    double k, tx, ty, a, b, c, d;
-    int tw = o->width, th = o->height, x0, y0, x1, y1;
+    int tw = o->width, th = o->height;
 
     if (!wlr_box_intersection(&in, &m->m, &want))
         return;
     wlr_output_transform_coords(o->transform, &tw, &th);
-    x0 = (int)lround((in.x - box->x) * s);
-    y0 = (int)lround((in.y - box->y) * s);
-    x1 = (int)lround((in.x + in.width - box->x) * s);
-    y1 = (int)lround((in.y + in.height - box->y) * s);
+    int x0 = (int)lround((in.x - box->x) * s);
+    int y0 = (int)lround((in.y - box->y) * s);
+    int x1 = (int)lround((in.x + in.width - box->x) * s);
+    int y1 = (int)lround((in.y + in.height - box->y) * s);
 
     /* dst's pixels to the upright frame's: scale k, offset tx, ty */
-    k = o->scale / s;
-    tx = (box->x - m->m.x) * (double)o->scale;
-    ty = (box->y - m->m.y) * (double)o->scale;
+    double k = o->scale / s;
+    double tx = (box->x - m->m.x) * (double)o->scale;
+    double ty = (box->y - m->m.y) * (double)o->scale;
     /* the upright frame's to the buffer's: where 0,0 and the unit vectors go */
     wlr_fbox_transform(&q0, &(struct wlr_fbox){ 0, 0, 0, 0 }, inv, tw, th);
     wlr_fbox_transform(&q1, &(struct wlr_fbox){ 1, 0, 0, 0 }, inv, tw, th);
     wlr_fbox_transform(&q2, &(struct wlr_fbox){ 0, 1, 0, 0 }, inv, tw, th);
-    a = q1.x - q0.x, b = q2.x - q0.x;
-    c = q1.y - q0.y, d = q2.y - q0.y;
-    t = (pixman_transform_t){{
+    double a = q1.x - q0.x, b = q2.x - q0.x;
+    double c = q1.y - q0.y, d = q2.y - q0.y;
+    pixman_transform_t t = {{
         { pixman_double_to_fixed(a * k), pixman_double_to_fixed(b * k),
           pixman_double_to_fixed(a * tx + b * ty + q0.x) },
         { pixman_double_to_fixed(c * k), pixman_double_to_fixed(d * k),
@@ -419,15 +414,15 @@ compose(pixman_image_t *dst, pixman_image_t *src, Monitor *m, const awl_box_t *b
 pixman_image_t *
 capture(awl_server_t *srv, const awl_box_t *box, float scale)
 {
-    struct wlr_box want, in;
-    pixman_image_t *dst, *src;
+    struct wlr_box in;
+    pixman_image_t *dst;
     Monitor *m;
     double s = scale;
-    int w, h, n = 0;
+    int n = 0;
 
     if (!box || box->w <= 0 || box->h <= 0)
         return NULL;
-    want = (struct wlr_box){ box->x, box->y, box->w, box->h };
+    struct wlr_box want = { box->x, box->y, box->w, box->h };
     if (s <= 0) {
         s = 0;
         wl_list_for_each(m, &srv->out.mons, link)
@@ -436,8 +431,8 @@ capture(awl_server_t *srv, const awl_box_t *box, float scale)
         if (s <= 0)
             return NULL;
     }
-    w = (int)lround(box->w * s);
-    h = (int)lround(box->h * s);
+    int w = (int)lround(box->w * s);
+    int h = (int)lround(box->h * s);
     if (w <= 0 || h <= 0 || w > CAPTURE_MAX_SIDE || h > CAPTURE_MAX_SIDE) {
         awl_err_printf("capture: %dx%d at %d,%d, scale %g: too large\n", box->w, box->h, box->x, box->y, s);
         return NULL;
@@ -448,7 +443,8 @@ capture(awl_server_t *srv, const awl_box_t *box, float scale)
     wl_list_for_each(m, &srv->out.mons, link) {
         if (!m->wlr_output->enabled || !wlr_box_intersection(&in, &m->m, &want))
             continue;
-        if (!(src = outputrender(srv, m)))
+        pixman_image_t *src = outputrender(srv, m);
+        if (!src)
             continue;
         compose(dst, src, m, box, s);
         pixman_image_unref(src);
@@ -488,9 +484,9 @@ static int
 clipwritable(int fd, uint32_t mask, void *data)
 {
     ClipWriter *w = data;
-    ssize_t n;
+    (void)mask;
     while (w->off < w->bytes->len) {
-        n = write(fd, w->bytes->data + w->off, w->bytes->len - w->off);
+        ssize_t n = write(fd, w->bytes->data + w->off, w->bytes->len - w->off);
         if (n < 0 && errno == EINTR)
             continue;
         if (n < 0 && errno == EAGAIN)
@@ -508,13 +504,13 @@ clipsend(struct wlr_data_source *base, const char *mime, int32_t fd)
 {
     ClipSource *src = wl_container_of(base, src, base);
     struct awl_capture *C = capturestate(src->srv);
-    ClipWriter *w;
     int fl = fcntl(fd, F_GETFL);
+    (void)mime;
     if (fl < 0 || fcntl(fd, F_SETFL, fl | O_NONBLOCK) < 0) {
         close(fd);
         return;
     }
-    w = ecalloc(1, sizeof(*w));
+    ClipWriter *w = ecalloc(1, sizeof(*w));
     w->srv = src->srv;
     w->fd = fd;
     w->bytes = src->bytes;
@@ -542,12 +538,11 @@ static const struct wlr_data_source_impl clipimpl = {
 int
 clipboardset(awl_server_t *srv, const char *mime, const void *data, size_t len)
 {
-    ClipSource *src;
     char **p;
     if (!mime || !*mime || (!data && len))
         return 0;
     capturestate(srv);
-    src = ecalloc(1, sizeof(*src));
+    ClipSource *src = ecalloc(1, sizeof(*src));
     src->srv = srv;
     src->bytes = ecalloc(1, sizeof(*src->bytes) + len);
     src->bytes->refs = 1;

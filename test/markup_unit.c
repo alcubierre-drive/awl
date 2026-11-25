@@ -188,9 +188,8 @@ static const char* lines( const awl_markup_layout_t* L ) {
 static int laid( const char* src, int max_w, int max_lines, const char* want ) {
     awl_markup_t m;
     awl_markup_layout_t L = { 0 };
-    int ok;
     awl_markup_parse( &m, src, 1 );
-    ok = awl_markup_layout( &L, &m, fonts, width, max_w, max_lines, 2 ) && !strcmp( lines( &L ), want );
+    int ok = awl_markup_layout( &L, &m, fonts, width, max_w, max_lines, 2 ) && !strcmp( lines( &L ), want );
     if (!ok) printf( "      %s at %d: got \"%s\", want \"%s\"\n", src, max_w, lines( &L ), want );
     awl_markup_layout_free( &L );
     awl_markup_free( &m );

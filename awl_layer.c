@@ -41,7 +41,6 @@ arrangelayer(Monitor *m, struct wl_list *list, struct wlr_box *usable_area, int 
 void
 arrangelayers(awl_server_t *srv, Monitor *m)
 {
-    int i;
     struct wlr_box usable_area = m->m;
     LayerSurface *l;
     uint32_t layers_above_shell[] = {
@@ -57,7 +56,7 @@ arrangelayers(awl_server_t *srv, Monitor *m)
     }
 
     /* Arrange exclusive surfaces from top->bottom */
-    for (i = 3; i >= 0; i--)
+    for (int i = 3; i >= 0; i--)
         arrangelayer(m, &m->layers[i], &usable_area, 1);
 
     if (!wlr_box_equal(&usable_area, &m->w)) {
@@ -66,7 +65,7 @@ arrangelayers(awl_server_t *srv, Monitor *m)
     }
 
     /* Arrange non-exlusive surfaces from top->bottom */
-    for (i = 3; i >= 0; i--)
+    for (int i = 3; i >= 0; i--)
         arrangelayer(m, &m->layers[i], &usable_area, 0);
 
     desktop_update(srv->desktop, m);
@@ -75,7 +74,7 @@ arrangelayers(awl_server_t *srv, Monitor *m)
     popupsupdate(srv, m);
 
     /* Find topmost keyboard interactive layer, if such a layer exists */
-    for (i = 0; i < (int)LENGTH(layers_above_shell); i++) {
+    for (int i = 0; i < (int)LENGTH(layers_above_shell); i++) {
         wl_list_for_each_reverse(l, &m->layers[layers_above_shell[i]], link) {
             if (srv->locked || !l->layer_surface->current.keyboard_interactive || !l->mapped)
                 continue;
@@ -94,14 +93,14 @@ commitlayersurfacenotify(struct wl_listener *listener, void *data)
     awl_server_t *srv = l->srv;
     struct wlr_layer_surface_v1 *layer_surface = l->layer_surface;
     struct wlr_scene_tree *scene_layer = srv->layers[layermap[layer_surface->current.layer]];
-    struct wlr_layer_surface_v1_state old_state;
+    (void)data;
 
     if (l->layer_surface->initial_commit) {
         client_set_scale(layer_surface->surface, l->mon->wlr_output->scale);
 
         /* Temporarily set the layer's current state to pending
          * so that we can easily arrange it */
-        old_state = l->layer_surface->current;
+        struct wlr_layer_surface_v1_state old_state = l->layer_surface->current;
         l->layer_surface->current = l->layer_surface->pending;
         arrangelayers(srv, l->mon);
         l->layer_surface->current = old_state;
@@ -128,7 +127,6 @@ createlayersurface(struct wl_listener *listener, void *data)
 {
     awl_server_t *srv = wl_container_of(listener, srv, listen.new_layer_surface);
     struct wlr_layer_surface_v1 *layer_surface = data;
-    LayerSurface *l;
     struct wlr_surface *surface = layer_surface->surface;
     struct wlr_scene_tree *scene_layer = srv->layers[layermap[layer_surface->pending.layer]];
 
@@ -137,7 +135,7 @@ createlayersurface(struct wl_listener *listener, void *data)
         wlr_layer_surface_v1_destroy(layer_surface);
         return;
     }
-    l = layer_surface->data = ecalloc(1, sizeof(*l));
+    LayerSurface *l = layer_surface->data = ecalloc(1, sizeof(*l));
     l->srv = srv;
     l->type = LayerShell;
     LISTEN(&surface->events.commit, &l->surface_commit, commitlayersurfacenotify);
@@ -161,6 +159,7 @@ void
 destroylayersurfacenotify(struct wl_listener *listener, void *data)
 {
     LayerSurface *l = wl_container_of(listener, l, destroy);
+    (void)data;
 
     wl_list_remove(&l->link);
     wl_list_remove(&l->destroy.link);
@@ -176,6 +175,7 @@ unmaplayersurfacenotify(struct wl_listener *listener, void *data)
 {
     LayerSurface *l = wl_container_of(listener, l, unmap);
     awl_server_t *srv = l->srv;
+    (void)data;
 
     l->mapped = 0;
     wlr_scene_node_set_enabled(&l->scene->node, 0);

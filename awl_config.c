@@ -186,8 +186,7 @@ updatepluginpause(awl_server_t *srv)
 static int
 envconfigured(awl_server_t *srv, const char *name)
 {
-    size_t i;
-    for (i = 0; i < srv->cfg->environment.n; i++)
+    for (size_t i = 0; i < srv->cfg->environment.n; i++)
         if (srv->cfg->environment.v[i].name && !strcmp(srv->cfg->environment.v[i].name, name))
             return 1;
     return 0;
@@ -243,18 +242,18 @@ static void
 environmentapply(awl_server_t *srv)
 {
     awl_process_t *proc = srv->proc;
-    size_t i, j;
-    for (i = 0; i < proc->config.nenvsaved; i++)
+    for (size_t i = 0; i < proc->config.nenvsaved; i++)
         if (!envconfigured(srv, proc->config.envsaved[i].name))
             envset(proc, proc->config.envsaved[i].name, proc->config.envsaved[i].orig);
-    for (i = 0; i < srv->cfg->environment.n; i++) {
+    for (size_t i = 0; i < srv->cfg->environment.n; i++) {
         const EnvVar *e = &srv->cfg->environment.v[i];
         if (!e->name || !*e->name || strchr(e->name, '=')) {
             awl_wrn_printf("environment: no variable \"%s\"\n", e->name ? e->name : "(null)");
             continue;
         }
-        for (j = 0; j < proc->config.nenvsaved && strcmp(proc->config.envsaved[j].name, e->name); j++)
-            ;
+        size_t j = 0;
+        while (j < proc->config.nenvsaved && strcmp(proc->config.envsaved[j].name, e->name))
+            j++;
         if (j == proc->config.nenvsaved) {
             void *more = realloc(proc->config.envsaved, (proc->config.nenvsaved + 1) * sizeof(*proc->config.envsaved));
             const char *orig = getenv(e->name);

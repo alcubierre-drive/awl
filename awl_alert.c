@@ -73,6 +73,7 @@ static void notify( awl_server_t* srv, const char* text ) {
 
 /** clicks go through the alert */
 static bool accepts_input( struct wlr_scene_buffer* buffer, double* sx, double* sy ) {
+    (void)buffer; (void)sx; (void)sy;
     return false;
 }
 
@@ -107,8 +108,6 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
     const float s = m->wlr_output->scale;
     struct fcft_font* font;
     pixman_image_t* pix;
-    Buffer* buf;
-    int pad, w, h;
 
     if (!m->alert) /* createmon() arranges before it makes it */
         return;
@@ -129,9 +128,9 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
         wlr_scene_node_set_enabled( &m->alert->node, 0 );
         return;
     }
-    pad = font->height * 6 / 10;
-    h = font->height + pad;
-    w = (int)awl_draw_text_width( font, text ) + 2 * pad;
+    int pad = font->height * 6 / 10;
+    int h = font->height + pad;
+    int w = (int)awl_draw_text_width( font, text ) + 2 * pad;
     if (w > (int)(m->w.width * s) - 2 * (int)(margin * s))
         w = (int)(m->w.width * s) - 2 * (int)(margin * s);
     if (w <= 0) {
@@ -140,7 +139,7 @@ void awl_alert_draw( awl_server_t* srv, Monitor* m ) {
         return;
     }
 
-    buf = buffercreate( w, h );
+    Buffer* buf = buffercreate( w, h );
     if ((pix = awl_draw_image( w, h, buf->data, buf->stride ))) {
         awl_draw_text( pix, font, 0, 0, w, h, pad, text, fg, bg );
         pixman_image_unref( pix );

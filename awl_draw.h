@@ -41,10 +41,9 @@ static inline size_t
 utf8decode(const char *c, uint32_t *u)
 {
     size_t i, j, len, type;
-    uint32_t udecoded;
 
     *u = UTF_INVALID;
-    udecoded = utf8decodebyte(c[0], &len);
+    uint32_t udecoded = utf8decodebyte(c[0], &len);
     if (!BETWEEN(len, 1, UTF_SIZ))
         return 1;
     for (i = 1, j = 1; i < UTF_SIZ && j < len; ++i, ++j) {
@@ -135,13 +134,12 @@ static inline void awl_fill_shape( pixman_image_t* pix, float x, float y, float 
             in0 = INT_MAX, in1 = INT_MIN;
         for (int xx = (int)floorf( x ); xx < (int)ceilf( x + w ); xx++) {
             if (xx < 0 || xx >= iw) continue;
-            float k;
+            float k = 1;
             if (xx >= in0 && xx <= in1) {
                 if (t > 0) {
                     xx = in1;
                     continue;
                 }
-                k = 1;
             } else {
                 float fx = (float)xx + 0.5f - x;
                 k = awl_shape_coverage( fx, fy, w, h, r );

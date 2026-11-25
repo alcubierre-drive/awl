@@ -146,15 +146,19 @@ static awl_image_t* decode( Changer* c, const char* path ) {
         return NULL;
     }
 
+    wuffs_base__io_buffer src = wuffs_base__ptr_u8__reader( map, (size_t)st.st_size, false );
+    wuffs_base__status s;
+    uint32_t w, h;
+    uint64_t wlen;
+    size_t len;
     wuffs_png__decoder* dec = malloc( sizeof__wuffs_png__decoder() );
     if (!dec) goto out;
-    wuffs_base__status s = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(),
+    s = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(),
             WUFFS_VERSION, WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED );
     if (!wuffs_base__status__is_ok( &s )) { err = wuffs_base__status__message( &s ); goto out; }
     /* the file is ours, a broken one shows as such */
     wuffs_png__decoder__set_quirk( dec, WUFFS_BASE__QUIRK_IGNORE_CHECKSUM, 1 );
 
-    wuffs_base__io_buffer src = wuffs_base__ptr_u8__reader( map, (size_t)st.st_size, false );
     src.meta.wi = 0;
     feedmore( c, &src );
 
@@ -163,13 +167,13 @@ static awl_image_t* decode( Changer* c, const char* path ) {
     while (s.repr == wuffs_base__suspension__short_read && feedmore( c, &src ));
     if (!wuffs_base__status__is_ok( &s )) { err = wuffs_base__status__message( &s ); goto out; }
 
-    uint32_t w = wuffs_base__pixel_config__width( &ic.pixcfg ),
-             h = wuffs_base__pixel_config__height( &ic.pixcfg );
+    w = wuffs_base__pixel_config__width( &ic.pixcfg );
+    h = wuffs_base__pixel_config__height( &ic.pixcfg );
     if (!w || !h || w > max_side || h > max_side) { err = "unsupported size"; goto out; }
     wuffs_base__pixel_config__set( &ic.pixcfg, WUFFS_BASE__PIXEL_FORMAT__BGRA_PREMUL,
                                    WUFFS_BASE__PIXEL_SUBSAMPLING__NONE, w, h );
 
-    size_t len = (size_t)w * h * 4;
+    len = (size_t)w * h * 4;
     img = malloc( sizeof(*img) + len );
     if (!img) { err = "out of memory"; goto out; }
     img->width = (int)w;
@@ -181,7 +185,7 @@ static awl_image_t* decode( Changer* c, const char* path ) {
     if (!wuffs_base__status__is_ok( &s )) { err = wuffs_base__status__message( &s ); goto out; }
 
     /* PNG's unfiltering wants the whole inflated image */
-    uint64_t wlen = wuffs_png__decoder__workbuf_len( dec ).max_incl;
+    wlen = wuffs_png__decoder__workbuf_len( dec ).max_incl;
     work = malloc( wlen ? wlen : 1 );
     if (!work) { err = "out of memory"; goto out; }
     do s = wuffs_png__decoder__decode_frame( dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC,

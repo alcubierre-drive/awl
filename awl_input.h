@@ -41,6 +41,11 @@ void createidleinhibitor(struct wl_listener *listener, void *data);
  * org.freedesktop.ScreenSaver cookie (awl_screensaver.h) keeps the outputs on, and holds off
  * :c:member:`awl_config_t.on_idle`; exclude is going */
 void checkidleinhibitor(awl_server_t *srv, struct wlr_surface *exclude);
+/** what :c:func:`checkidleinhibitor` finds ignored, or honored again: idle
+ * comes, :c:member:`awl_config_t.on_idle` runs, despite the inhibitors */
+void toggleidleinhibit(awl_server_t *srv, const Arg *arg);
+/** whether :c:func:`toggleidleinhibit` has the inhibitors ignored */
+bool idleinhibitignored(awl_server_t *srv);
 /** a key or the pointer: for the idle notifier's clients, the
  * notifications' timeouts (:c:func:`awl_notifications_activity`) and
  * :c:member:`awl_config_t.idle_seconds` */

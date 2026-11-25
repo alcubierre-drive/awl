@@ -91,7 +91,7 @@ unsigned char* awl_png_encode( const uint32_t* px, int w, int h, int stride, int
     unsigned char* out = NULL, * raw = NULL, * prev = NULL, * cur = NULL, * p;
     struct sdefl* s = NULL;
     int bpp = 3, zn;
-    size_t row, rawlen, cap;
+    size_t cap;
 
     if (w <= 0 || h <= 0 || stride < w * 4 || !px || !len) return NULL;
     if (level < 0 || level > 8) level = AWL_PNG_LEVEL_DEFAULT;
@@ -108,8 +108,8 @@ unsigned char* awl_png_encode( const uint32_t* px, int w, int h, int stride, int
                 break;
             }
     }
-    row = (size_t)w * bpp;
-    rawlen = (row + 1) * (size_t)h;
+    size_t row = (size_t)w * bpp;
+    size_t rawlen = (row + 1) * (size_t)h;
 
     if (!(raw = malloc( rawlen )) || !(prev = calloc( 1, row )) || !(cur = malloc( row ))
             || !(s = calloc( 1, sizeof(*s) ))) /* sdefl leaves its counts as they are (its issues 58, 61) */
@@ -118,7 +118,6 @@ unsigned char* awl_png_encode( const uint32_t* px, int w, int h, int stride, int
         const uint32_t* r = (const uint32_t*)((const char*)px + (size_t)y * stride);
         unsigned char* o = raw + (row + 1) * (size_t)y;
         int f = row_filter( r, w );
-        unsigned char* t;
         row_bytes( cur, r, w, bpp );
         o[0] = (unsigned char)f;
         if (f == FILTER_NONE) {
@@ -130,7 +129,8 @@ unsigned char* awl_png_encode( const uint32_t* px, int w, int h, int stride, int
                 o[1 + i] = (unsigned char)(cur[i] - paeth( a, b, c ));
             }
         }
-        t = prev, prev = cur, cur = t;
+        unsigned char* t = prev;
+        prev = cur, cur = t;
     }
 
     /* signature, IHDR (8 + 13 + 4), IDAT's head (8) and the zlib stream

@@ -157,6 +157,7 @@ static void
 maplocksurface(struct wl_listener *listener, void *data)
 {
     Monitor *m = wl_container_of(listener, m, map_lock_surface);
+    (void)data;
     wl_event_loop_add_idle(m->srv->event_loop, lockpointer, m->srv);
 }
 
@@ -236,7 +237,8 @@ destroylocksurface(struct wl_listener *listener, void *data)
 {
     Monitor *m = wl_container_of(listener, m, destroy_lock_surface);
     awl_server_t *srv = m->srv;
-    struct wlr_session_lock_surface_v1 *surface, *lock_surface = m->lock_surface;
+    struct wlr_session_lock_surface_v1 *lock_surface = m->lock_surface;
+    (void)data;
 
     m->lock_surface = NULL;
     wl_list_remove(&m->destroy_lock_surface.link);
@@ -246,7 +248,8 @@ destroylocksurface(struct wl_listener *listener, void *data)
         return;
 
     if (srv->locked && srv->lock->cur && !wl_list_empty(&srv->lock->cur->surfaces)) {
-        surface = wl_container_of(srv->lock->cur->surfaces.next, surface, link);
+        struct wlr_session_lock_surface_v1 *surface
+                = wl_container_of(srv->lock->cur->surfaces.next, surface, link);
         client_notify_enter(srv, surface->surface, wlr_seat_get_keyboard(srv->seat));
     } else if (!srv->locked) {
         focusclient(srv, focustop(srv, srv->out.selmon), 1);
@@ -260,6 +263,7 @@ destroysessionlock(struct wl_listener *listener, void *data)
 {
     SessionLock *lock = wl_container_of(listener, lock, destroy);
     awl_server_t *srv = lock->srv;
+    (void)data;
     destroylock(srv, lock, 0);
 }
 
@@ -303,6 +307,7 @@ lockfire(int fd, uint32_t mask, void *data)
     awl_server_t *srv = data;
     uint64_t count;
     unsigned flags;
+    (void)mask;
     /* drained first: whatever is stored after this wakes the loop again */
     if (read(fd, &count, sizeof count) < 0) {}
     flags = atomic_load(&srv->proc->lock.logind_flags);
@@ -321,6 +326,7 @@ static void
 awlockgone(struct wl_listener *listener, void *data)
 {
     struct awl_lock *lock = wl_container_of(listener, lock, locker_destroy);
+    (void)data;
     wl_list_remove(&listener->link);
     lock->locker_client = NULL;
     lockergone(lock->srv);
@@ -401,7 +407,7 @@ void
 lockscreen(awl_server_t *srv, const Arg *arg)
 {
     const char *const *argv = srv->cfg->lock.locker;
-    pid_t pid;
+    (void)arg;
     if (srv->lock->cur || srv->lock->closing)
         return;
     if (srv->lock->locker_pid > 0 || srv->lock->locker_client) {
@@ -420,7 +426,7 @@ lockscreen(awl_server_t *srv, const Arg *arg)
         return;
     }
 #endif
-    pid = spawn_pid(srv->proc, &(Arg){.v = argv});
+    pid_t pid = spawn_pid(srv->proc, &(Arg){.v = argv});
     if (pid > 0) {
         srv->lock->locker_pid = pid;
         lockerstarted(srv);
@@ -488,7 +494,6 @@ locksession(struct wl_listener *listener, void *data)
 {
     awl_server_t *srv = wl_container_of(listener, srv, listen.new_session_lock);
     struct wlr_session_lock_v1 *session_lock = data;
-    SessionLock *lock;
     Monitor *m;
     if (srv->lock->blur && srv->cfg->lock.blur) {
         wlr_scene_node_set_enabled(&srv->lock->blur->node, 1);
@@ -498,7 +503,7 @@ locksession(struct wl_listener *listener, void *data)
         wlr_session_lock_v1_destroy(session_lock);
         return;
     }
-    lock = session_lock->data = ecalloc(1, sizeof(*lock));
+    SessionLock *lock = session_lock->data = ecalloc(1, sizeof(*lock));
     lock->srv = srv;
     focusclient(srv, NULL, 0);
     /* the launcher drops the keyboard, the menus go: they'd only wait under
@@ -536,6 +541,7 @@ unlocksession(struct wl_listener *listener, void *data)
 {
     SessionLock *lock = wl_container_of(listener, lock, unlock);
     awl_server_t *srv = lock->srv;
+    (void)data;
     destroylock(srv, lock, 1);
 }
 

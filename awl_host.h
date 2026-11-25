@@ -345,6 +345,9 @@ typedef struct awl_host_t {
     Monitor* (*monitor_selected)( awl_server_t* srv );
     /** m's output scale (what its popups are drawn at), 1 for NULL */
     float (*monitor_scale)( Monitor* m );
+    /** :c:func:`idleinhibitignored`: whether idle comes despite the
+     * inhibitors (the action toggleidleinhibit) */
+    bool (*idle_inhibit_ignored)( awl_server_t* srv );
 
     /* ---- popups (awl_window.h), NULL windows are fine everywhere ---- */
 

@@ -56,7 +56,7 @@ arrange(awl_server_t *srv, Monitor *m)
 void
 gaplessgrid(awl_server_t *srv, Monitor *m)
 {
-    unsigned int n = 0, i = 0, ch, cw, cn, rn, rows, cols;
+    unsigned int n = 0, i = 0, cols;
     Client *c;
 
     wl_list_for_each(c, &srv->clients.list, link)
@@ -80,22 +80,21 @@ gaplessgrid(awl_server_t *srv, Monitor *m)
         cols = 3;
     }
 
-    rows = n / cols;
+    unsigned int rows = n / cols;
 
     /* window geometries */
-    cw = cols ? (unsigned int)(m->w.width / cols) : (unsigned int)(m->w.width);
-    cn = 0; /* current column number */
-    rn = 0; /* current row number */
+    unsigned int cw = cols ? (unsigned int)(m->w.width / cols) : (unsigned int)(m->w.width);
+    unsigned int cn = 0; /* current column number */
+    unsigned int rn = 0; /* current row number */
     wl_list_for_each(c, &srv->clients.list, link) {
-        unsigned int cx, cy;
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->ismaximized || c->isfullscreen)
             continue;
 
         if ((i / rows + 1) > (cols - n % cols))
             rows = n / cols + 1;
-        ch = rows ? (unsigned int)(m->w.height / rows) : (unsigned int)(m->w.height);
-        cx = m->w.x + cn * cw;
-        cy = m->w.y + rn * ch;
+        unsigned int ch = rows ? (unsigned int)(m->w.height / rows) : (unsigned int)(m->w.height);
+        unsigned int cx = m->w.x + cn * cw;
+        unsigned int cy = m->w.y + rn * ch;
         resize(srv, c, (struct wlr_box) { cx, cy, cw, ch}, 0);
         rn++;
         if (rn >= rows) {
@@ -109,8 +108,7 @@ gaplessgrid(awl_server_t *srv, Monitor *m)
 void
 bstack(awl_server_t *srv, Monitor *m)
 {
-    int w, h, mh, mx, tx, ty, tw;
-    int i, n = 0;
+    int n = 0;
     Client *c;
     const struct PertagLayout *l = monlt(m);
 
@@ -120,27 +118,23 @@ bstack(awl_server_t *srv, Monitor *m)
     if (n == 0)
         return;
 
+    int mh = m->w.height, tw = m->w.width, ty = m->w.y;
     if (n > l->nmaster) {
         mh = (int)round(l->nmaster ? l->mfact * m->w.height : 0);
         tw = m->w.width / (n - l->nmaster);
         ty = m->w.y + mh;
-    } else {
-        mh = m->w.height;
-        tw = m->w.width;
-        ty = m->w.y;
     }
 
-    i = mx = 0;
-    tx = m-> w.x;
+    int i = 0, mx = 0, tx = m->w.x;
     wl_list_for_each(c, &srv->clients.list, link) {
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->ismaximized || c->isfullscreen)
             continue;
         if (i < l->nmaster) {
-            w = (m->w.width - mx) / (MIN(n, l->nmaster) - i);
+            int w = (m->w.width - mx) / (MIN(n, l->nmaster) - i);
             resize(srv, c, (struct wlr_box) { .x = m->w.x + mx, .y = m->w.y, .width = w, .height = mh }, 0);
             mx += c->geom.width;
         } else {
-            h = m->w.height - mh;
+            int h = m->w.height - mh;
             resize(srv, c, (struct wlr_box) { .x = tx, .y = ty, .width = tw, .height = h }, 0);
             if (tw != m->w.width)
                 tx += c->geom.width;
@@ -216,11 +210,10 @@ sellayout(Monitor *m)
 void
 togglepertag(awl_server_t *srv, const Arg *arg)
 {
-    size_t slot;
     (void)arg;
     if (!srv->out.selmon)
         return;
-    slot = pertagslot(srv->out.selmon);
+    size_t slot = pertagslot(srv->out.selmon);
     srv->out.selmon->pertag = !srv->out.selmon->pertag;
     if (srv->out.selmon->pertag)
         srv->out.selmon->ptlt[slot] = srv->out.selmon->ptlt[0];
@@ -246,12 +239,11 @@ void
 setlayout(awl_server_t *srv, const Arg *arg)
 {
     const Layout *l = NULL;
-    struct PertagLayout *ml;
     if (!srv->out.selmon || !arg || arg->i >= (int)srv->cfg->layouts.n)
         return;
     if (arg->i >= 0)
         l = &srv->cfg->layouts.v[arg->i];
-    ml = monlt(srv->out.selmon);
+    struct PertagLayout *ml = monlt(srv->out.selmon);
     if (!l || l != ml->lt[ml->sellt])
         ml->sellt ^= 1;
     if (l)
@@ -274,9 +266,8 @@ tagsconfigure(awl_server_t *srv)
 {
     Monitor *m;
     Client *c;
-    size_t i;
     wl_list_for_each(m, &srv->out.mons, link)
-        for (i = 0; i < LENGTH(m->tagset); i++)
+        for (size_t i = 0; i < LENGTH(m->tagset); i++)
             if (!(m->tagset[i] &= TAGMASK(srv->cfg)))
                 m->tagset[i] = 1;
     wl_list_for_each(c, &srv->clients.list, link)
@@ -288,10 +279,9 @@ void
 layoutsmoved(awl_server_t *srv, const Layout *old, size_t n_old)
 {
     Monitor *m;
-    size_t i, j;
     wl_list_for_each(m, &srv->out.mons, link) {
-        for (j = 0; j < LENGTH(m->ptlt); j++)
-            for (i = 0; i < LENGTH(m->ptlt[j].lt); i++)
+        for (size_t j = 0; j < LENGTH(m->ptlt); j++)
+            for (size_t i = 0; i < LENGTH(m->ptlt[j].lt); i++)
                 m->ptlt[j].lt[i] = layoutmoved(srv, m->ptlt[j].lt[i], old, n_old);
         arrange(srv, m);
     }
@@ -301,11 +291,9 @@ layoutsmoved(awl_server_t *srv, const Layout *old, size_t n_old)
 void
 setmfact(awl_server_t *srv, const Arg *arg)
 {
-    float f;
-
     if (!arg || !srv->out.selmon || !sellayout(srv->out.selmon)->arrange)
         return;
-    f = arg->f < 1.0f ? arg->f + monlt(srv->out.selmon)->mfact : arg->f - 1.0f;
+    float f = arg->f < 1.0f ? arg->f + monlt(srv->out.selmon)->mfact : arg->f - 1.0f;
     if (f < 0.1 || f > 0.9)
         return;
     monlt(srv->out.selmon)->mfact = f;
@@ -336,8 +324,7 @@ tagmon(awl_server_t *srv, const Arg *arg)
 void
 tile(awl_server_t *srv, Monitor *m)
 {
-    unsigned int mw, my, ty;
-    int i, n = 0;
+    int n = 0;
     Client *c;
     const struct PertagLayout *l = monlt(m);
 
@@ -347,11 +334,10 @@ tile(awl_server_t *srv, Monitor *m)
     if (n == 0)
         return;
 
+    unsigned int mw = m->w.width, my = 0, ty = 0;
+    int i = 0;
     if (n > l->nmaster)
         mw = l->nmaster ? (int)roundf(m->w.width * l->mfact) : 0;
-    else
-        mw = m->w.width;
-    i = my = ty = 0;
     wl_list_for_each(c, &srv->clients.list, link) {
         if (!VISIBLEON_ACTIVE(c, m) || c->isfloating || c->isfullscreen || c->ismaximized)
             continue;

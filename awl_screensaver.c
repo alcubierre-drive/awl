@@ -55,11 +55,10 @@ static int on_gone( sd_bus_track* track, void* userdata ) {
 static int method_inhibit( sd_bus_message* m, void* userdata, sd_bus_error* ret_error ) {
     awl_screensaver_t* S = userdata;
     const char *app, *reason;
-    cookie_t* c;
     int r;
     (void)ret_error;
     if ((r = sd_bus_message_read( m, "ss", &app, &reason )) < 0) return r;
-    c = ecalloc( 1, sizeof(*c) );
+    cookie_t* c = ecalloc( 1, sizeof(*c) );
     if ((r = sd_bus_track_new( sd_bus_message_get_bus( m ), &c->track, on_gone, c )) < 0 ||
         (r = sd_bus_track_add_sender( c->track, m )) < 0) {
         sd_bus_track_unref( c->track );
@@ -154,7 +153,6 @@ static const awl_bus_ops_t ops = {
 };
 
 void awl_screensaver_configure( awl_server_t* srv ) {
-    awl_screensaver_t* S;
     if (!srv->cfg->screensaver_inhibit) {
         if (srv->screensaver) {
             awl_screensaver_stop( srv );
@@ -163,7 +161,7 @@ void awl_screensaver_configure( awl_server_t* srv ) {
         return;
     }
     if (srv->screensaver) return;
-    S = ecalloc( 1, sizeof(*S) );
+    awl_screensaver_t* S = ecalloc( 1, sizeof(*S) );
     S->srv = srv;
     wl_list_init( &S->cookies );
     if (!(S->conn = awl_bus_start( srv->event_loop, &ops, S ))) {

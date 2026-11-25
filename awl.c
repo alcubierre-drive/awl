@@ -210,6 +210,7 @@ gpureset(struct wl_listener *listener, void *data)
     struct wlr_renderer *old_renderer = srv->renderer;
     struct wlr_allocator *old_alloc = srv->alloc;
     struct Monitor *m;
+    (void)data;
     /* must match setup(): the scene holds scenefx-only nodes (blur,
      * per-node opacity) that a plain wlroots renderer cannot render */
     if (!(srv->renderer = fx_renderer_create(srv->backend)))
@@ -239,6 +240,7 @@ int
 handlesigquit(int signo, void *data)
 {
     awl_server_t *srv = data;
+    (void)signo;
     quit(srv, NULL);
     return 0;
 }
@@ -246,6 +248,7 @@ handlesigquit(int signo, void *data)
 void
 quit(awl_server_t *srv, const Arg *arg)
 {
+    (void)arg;
     wl_display_terminate(srv->dpy);
 }
 
@@ -314,7 +317,6 @@ run(awl_server_t *srv, char *startup_cmd, int nolock)
 void
 setup(awl_server_t *srv)
 {
-    int drm_fd, i;
     sigset_t handled;
 
     /* These signals are handled in the event loop (a signalfd). That
@@ -364,7 +366,7 @@ setup(awl_server_t *srv)
     /* Initialize the scene graph used to lay out windows */
     srv->scene = wlr_scene_create();
     srv->root_bg = wlr_scene_rect_create(&srv->scene->tree, 0, 0, (float[4])RGBA(srv->cfg->colors.root));
-    for (i = 0; i < NUM_LAYERS; i++) {
+    for (int i = 0; i < NUM_LAYERS; i++) {
         srv->layers[i] = wlr_scene_tree_create(&srv->scene->tree);
     }
     srv->cursor.drag_icon = wlr_scene_tree_create(&srv->scene->tree);
@@ -404,7 +406,8 @@ setup(awl_server_t *srv)
                 wlr_linux_dmabuf_v1_create_with_renderer(srv->dpy, 5, srv->renderer));
     }
 
-    if ((drm_fd = wlr_renderer_get_drm_fd(srv->renderer)) >= 0 && srv->renderer->features.timeline
+    int drm_fd = wlr_renderer_get_drm_fd(srv->renderer);
+    if (drm_fd >= 0 && srv->renderer->features.timeline
             && srv->backend->features.timeline)
         wlr_linux_drm_syncobj_manager_v1_create(srv->dpy, 1, drm_fd);
 

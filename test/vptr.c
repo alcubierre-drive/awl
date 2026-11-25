@@ -17,12 +17,13 @@ static struct zwlr_virtual_pointer_manager_v1* mgr;
 static struct wl_seat* seat;
 
 static void global( void* data, struct wl_registry* r, uint32_t name, const char* iface, uint32_t ver ) {
+    (void)data; (void)ver;
     if (!strcmp( iface, zwlr_virtual_pointer_manager_v1_interface.name ))
         mgr = wl_registry_bind( r, name, &zwlr_virtual_pointer_manager_v1_interface, 1 );
     else if (!strcmp( iface, wl_seat_interface.name ) && !seat)
         seat = wl_registry_bind( r, name, &wl_seat_interface, 1 );
 }
-static void global_remove( void* data, struct wl_registry* r, uint32_t name ) {}
+static void global_remove( void* data, struct wl_registry* r, uint32_t name ) { (void)data; (void)r; (void)name; }
 static const struct wl_registry_listener reg = { global, global_remove };
 
 /* libinput's degrees per wheel notch, what wlroots passes on as the delta */

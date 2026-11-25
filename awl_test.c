@@ -64,6 +64,7 @@ static void
 testoutputadd_backend(struct wlr_backend *b, void *data)
 {
     unsigned int w, h;
+    (void)data;
     testsize(&w, &h);
     if (wlr_backend_is_headless(b))
         wlr_headless_add_output(b, w, h);
@@ -76,6 +77,7 @@ static int
 testoutputadd(int signo, void *data)
 {
     awl_server_t *srv = data;
+    (void)signo;
     wlr_multi_for_each_backend(srv->backend, testoutputadd_backend, NULL);
     return 0;
 }
@@ -84,10 +86,10 @@ static int
 testoutputremove(int signo, void *data)
 {
     awl_server_t *srv = data;
+    (void)signo;
     /* the newest monitor, createmon() inserts at the head; never the last one */
-    Monitor *m;
     if (wl_list_length(&srv->out.mons) > 1) {
-        m = wl_container_of(srv->out.mons.next, m, link);
+        Monitor *m = wl_container_of(srv->out.mons.next, m, link);
         wlr_output_destroy(m->wlr_output);
     }
     return 0;
@@ -274,13 +276,11 @@ testwincmd(struct awl_test *T, char *line)
     awl_server_t *srv = T->srv;
     char cmd[16] = "", mon[64] = "", tmp[PATH_MAX], onoff[4] = "";
     double cx, cy;
-    int n = -1, x = 0, off = 0, args = 0, toggle;
+    int n = -1, x = 0, off = 0, args = 0;
     Monitor *m = NULL, *it;
     struct wlr_box box;
     Popup *p;
-    awl_bar_t *d;
-    unsigned int xpos;
-    int bx, by, i, nn;
+    int bx, by, i;
     unsigned int id;
     char key[64] = "", token[64] = "", img[48];
     FILE *f;
@@ -292,7 +292,7 @@ testwincmd(struct awl_test *T, char *line)
         awl_notifications_activity(srv);
     if (*line == ' ')
         line++;
-    toggle = !strcmp(cmd, "toggle");
+    int toggle = !strcmp(cmd, "toggle");
     if (toggle || !strcmp(cmd, "show")) {
         if (sscanf(line, "%d %63s %d%n", &n, mon, &x, &args) != 3)
             goto bad;
@@ -433,10 +433,9 @@ testwincmd(struct awl_test *T, char *line)
     } else if (!strcmp(cmd, "hit")) {
         awl_box_t cb, mb;
         double hx, hy;
-        Client *c;
         if (sscanf(line, "%lf %lf", &hx, &hy) != 2)
             goto bad;
-        c = clientat(srv, hx, hy);
+        Client *c = clientat(srv, hx, hy);
         m = monitorat(srv, hx, hy);
         if (clientbox(srv, c, 1, &cb))
             testappend(T, "hit %d %d %d %d", cb.x, cb.y, cb.w, cb.h);
@@ -521,11 +520,11 @@ testwincmd(struct awl_test *T, char *line)
         }
         /* barwidgetat()'s layout of the right-hand widgets */
         wl_list_for_each(it, &srv->out.mons, link) {
-            d = &it->bar;
+            awl_bar_t *d = &it->bar;
             if (!d->m || !it->scene_buffer || !it->wlr_output->enabled)
                 continue;
             wlr_scene_node_coords(&it->scene_buffer->node, &bx, &by);
-            xpos = d->center_widget_start + d->center_widget_space;
+            unsigned int xpos = d->center_widget_start + d->center_widget_space;
             for (i = d->n_widgets_right - 1; i >= 0; --i) {
                 x = it->m.x + (int)((xpos + d->widgets_right[i].width / 2) / it->wlr_output->scale);
                 if (d->widgets_right[i].callback_hover && d->widgets_right[i].width)
@@ -537,7 +536,7 @@ testwincmd(struct awl_test *T, char *line)
                 xpos += d->widgets_right[i].width;
             }
         }
-        nn = awl_notifications_list(srv, T->notifs, LENGTH(T->notifs));
+        int nn = awl_notifications_list(srv, T->notifs, LENGTH(T->notifs));
         for (i = 0; i < nn && i < (int)LENGTH(T->notifs); i++) {
             const awl_notif_t *o = T->notifs[i];
             if (o->image_data.data)
@@ -577,6 +576,7 @@ testwinctl(int fd, uint32_t mask, void *data)
     struct awl_test *T = data;
     char *line, *nl;
     ssize_t r;
+    (void)mask;
 
     while ((r = read(fd, T->buf + T->len, sizeof(T->buf) - 1 - T->len)) > 0) {
         T->len += (size_t)r;
@@ -598,6 +598,7 @@ static void
 testdestroy(struct wl_listener *listener, void *data)
 {
     struct awl_test *T = wl_container_of(listener, T, destroy);
+    (void)data;
     wl_list_remove(&T->destroy.link);
     close(T->fd);
     free(T);
@@ -606,7 +607,6 @@ testdestroy(struct wl_listener *listener, void *data)
 void
 testinit(awl_server_t *srv)
 {
-    struct awl_test *T;
     /* for testing (test/live.sh): SIGUSR1 adds an output, SIGUSR2 removes
      * the newest one; headless and nested (wayland) backends only */
     if (getenv("AWL_TEST_OUTPUTS")) {
@@ -623,7 +623,7 @@ testinit(awl_server_t *srv)
      * for the text popups, see testwincmd(); O_RDWR, so it never reads EOF
      * while no writer has it open */
     if (getenv("AWL_TEST_WINDOWS")) {
-        T = ecalloc(1, sizeof *T);
+        struct awl_test *T = ecalloc(1, sizeof *T);
         T->srv = srv;
         if ((T->fd = open(getenv("AWL_TEST_WINDOWS"), O_RDWR | O_NONBLOCK | O_CLOEXEC)) < 0)
             die("AWL_TEST_WINDOWS %s:", getenv("AWL_TEST_WINDOWS"));

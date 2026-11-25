@@ -482,7 +482,7 @@ static item_t* item_find( awl_sni_t* s, uint64_t serial ) {
     return NULL;
 }
 
-static void item_free( awl_sni_t* s, item_t* it ) {
+static void item_free( item_t* it ) {
     sd_bus_slot_unref( it->match );
     sd_event_source_disable_unref( it->debounce );
     sni_menu_free( it->menu );
@@ -717,7 +717,7 @@ static item_t* item_new( awl_sni_t* s, const char* id ) {
     if (!it->id || !it->bus_name || !it->path || !sd_bus_service_name_is_valid( it->bus_name ) ||
         !sd_bus_object_path_is_valid( it->path )) {
         if (it->id) awl_wrn_printf( "sni: watcher lists a broken item '%s'\n", id );
-        item_free( s, it );
+        item_free( it );
         return NULL;
     }
     char rule[1024];
@@ -740,7 +740,7 @@ static void sync_items( awl_sni_t* s, char** ids ) {
         if (id && *id) continue;
         awl_vrb_printf( "sni: item %s gone\n", s->items[i]->id );
         changed |= s->items[i]->ready;
-        item_free( s, s->items[i] );
+        item_free( s->items[i] );
         memmove( &s->items[i], &s->items[i + 1], (size_t)(s->nitems - i - 1) * sizeof(*s->items) );
         s->nitems--;
     }
@@ -941,7 +941,7 @@ static void schedule_retry( awl_sni_t* s, uint64_t usec );
 
 static void drop_bus( awl_sni_t* s ) {
     s->lost = sd_event_source_disable_unref( s->lost );
-    for (int i = 0; i < s->nitems; i++) item_free( s, s->items[i] );
+    for (int i = 0; i < s->nitems; i++) item_free( s->items[i] );
     s->nitems = 0;
     s->listing = sd_bus_slot_unref( s->listing );
     s->owner_match = sd_bus_slot_unref( s->owner_match );

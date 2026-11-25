@@ -55,14 +55,14 @@ void
 scenebuffersetopacity(struct wlr_scene_buffer *buffer, int sx, int sy, void *data)
 {
     Client *c = data;
+    (void)sx; (void)sy;
     if (c && c->one_minus_alpha != 0 && c->blur) {
-        float opacity = 1. - c->one_minus_alpha;
         struct wlr_scene_surface *scene_surface = wlr_scene_surface_try_from_buffer(buffer);
         if (!scene_surface) return;
 
         struct wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(scene_surface->surface);
         if (xdg_surface && xdg_surface->role == WLR_XDG_SURFACE_ROLE_TOPLEVEL) {
-            wlr_scene_buffer_set_opacity(buffer, opacity);
+            wlr_scene_buffer_set_opacity(buffer, 1. - c->one_minus_alpha);
 
             // if (!wlr_subsurface_try_from_wlr_surface(xdg_surface->surface) && c->blur) {
             //     wlr_scene_blur_set_transparency_mask_source(c->blur, buffer);
@@ -75,37 +75,30 @@ void
 applyrules(awl_server_t *srv, Client *c)
 {
     /* rule matching */
-    const char *appid, *title;
     uint32_t newtags = 0;
-    int i;
-    const Rule *r;
-    Monitor *mon = srv->out.selmon, *m;
+    Monitor *mon = srv->out.selmon;
 
-    appid = client_get_appid(c);
-    title = client_get_title(c);
+    const char *appid = client_get_appid(c);
+    const char *title = client_get_title(c);
     awl_log_printf( "SPAWN APPID '%s' @TITLE '%s'\n", appid, title );
-    int apply_resize = 0;
-    struct wlr_box rbox;
+    struct wlr_box rbox = {0};
 
-    for (r = srv->cfg->rules.v; r < srv->cfg->rules.v + srv->cfg->rules.n; r++) {
+    for (const Rule *r = srv->cfg->rules.v; r < srv->cfg->rules.v + srv->cfg->rules.n; r++) {
         if ((!r->title || strstr(title, r->title))
                 && (!r->id || strstr(appid, r->id))) {
             c->isfloating = r->isfloating;
             newtags |= r->tags;
-            i = 0;
+            int i = 0;
+            Monitor *m;
             wl_list_for_each(m, &srv->out.mons, link) {
                 if (r->monitor == i++)
                     mon = m;
             }
             if (c->isfloating || !sellayout(mon)->arrange) {
                 /* client is floating or in floating layout */
-                if (r->w != 0 && r->h != 0) {
-                    rbox.width = r->w;
-                    rbox.height = r->h;
-                    rbox.x = mon->w.x + mon->w.width - rbox.width;
-                    rbox.y = mon->w.y + mon->w.height - rbox.height;
-                    apply_resize = 1;
-                }
+                if (r->w != 0 && r->h != 0)
+                    rbox = (struct wlr_box){ mon->w.x + mon->w.width - r->w,
+                            mon->w.y + mon->w.height - r->h, r->w, r->h };
             }
             c->one_minus_alpha = r->one_minus_alpha;
             c->inhibit_idle |= r->inhibit_idle;
@@ -115,7 +108,7 @@ applyrules(awl_server_t *srv, Client *c)
 
     c->isfloating |= client_is_float_type(c);
     setmon(srv, c, mon, newtags);
-    if (apply_resize) resize(srv, c, rbox, 1);
+    if (rbox.width) resize(srv, c, rbox, 1);
 }
 
 void
@@ -140,6 +133,7 @@ commitnotify(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, commit);
     awl_server_t *srv = c->srv;
+    (void)data;
 
     if (c->surface.xdg->initial_commit) {
         /*
@@ -176,13 +170,12 @@ commitpopup(struct wl_listener *listener, void *data)
     struct wlr_xdg_popup *popup = wlr_xdg_popup_try_from_wlr_surface(surface);
     LayerSurface *l = NULL;
     Client *c = NULL;
-    struct wlr_box box;
-    int type = -1;
+    (void)listener;
 
     if (!popup || !popup->base->initial_commit)
         return;
 
-    type = toplevel_from_wlr_surface(popup->base->surface, &c, &l);
+    int type = toplevel_from_wlr_surface(popup->base->surface, &c, &l);
     if (type < 0)
         return;
 
@@ -225,7 +218,7 @@ commitpopup(struct wl_listener *listener, void *data)
     // save pointer for submenus
     popup->base->surface->data = &popup_tree->node;
 
-    box = type == LayerShell ? l->mon->m : c->mon->w;
+    struct wlr_box box = type == LayerShell ? l->mon->m : c->mon->w;
     box.x -= (type == LayerShell ? l->scene->node.x : c->geom.x);
     box.y -= (type == LayerShell ? l->scene->node.y : c->geom.y);
     wlr_xdg_popup_unconstrain_from_box(popup, &box);
@@ -240,6 +233,7 @@ createdecoration(struct wl_listener *listener, void *data)
 {
     struct wlr_xdg_toplevel_decoration_v1 *deco = data;
     Client *c = deco->toplevel->base->data;
+    (void)listener;
     c->decoration = deco;
 
     LISTEN(&deco->events.request_mode, &c->set_decoration_mode, requestdecorationmode);
@@ -282,6 +276,7 @@ static void
 destroypopuplistener(struct wl_listener *listener, void *data)
 {
     struct popup_listener *p_listener = wl_container_of(listener, p_listener, destroy);
+    (void)data;
     wl_list_remove(&p_listener->commit.link);
     wl_list_remove(&p_listener->destroy.link);
     free(p_listener);
@@ -291,6 +286,7 @@ void
 createpopup(struct wl_listener *listener, void *data)
 {
     struct wlr_xdg_popup *popup = data;
+    (void)listener;
 
     struct popup_listener *p_listener = calloc(1, sizeof*p_listener);
     if (!p_listener) return;
@@ -306,6 +302,7 @@ void
 destroydecoration(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, destroy_decoration);
+    (void)data;
 
     wl_list_remove(&c->destroy_decoration.link);
     wl_list_remove(&c->set_decoration_mode.link);
@@ -316,6 +313,7 @@ destroynotify(struct wl_listener *listener, void *data)
 {
     /* Called when the xdg_toplevel is destroyed. */
     Client *c = wl_container_of(listener, c, destroy);
+    (void)data;
     wl_list_remove(&c->destroy.link);
     wl_list_remove(&c->set_title.link);
     wl_list_remove(&c->fullscreen.link);
@@ -341,7 +339,7 @@ void
 focusclient(awl_server_t *srv, Client *c, int lift)
 {
     struct wlr_surface *old = srv->seat->keyboard_state.focused_surface;
-    int unused_lx, unused_ly, old_client_type;
+    int old_client_type;
     Client *old_c = NULL;
     LayerSurface *old_l = NULL;
 
@@ -376,6 +374,7 @@ focusclient(awl_server_t *srv, Client *c, int lift)
 
     /* Deactivate old client if focus is changing */
     if (old && (!c || client_surface(c) != old)) {
+        int unused_lx, unused_ly;
         /* If an overlay is focused, don't focus or activate the client,
          * but only update its position in fstack to render its border with its color
          * and focus it after the overlay is closed. */
@@ -495,6 +494,7 @@ fullscreennotify(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, fullscreen);
     awl_server_t *srv = c->srv;
+    (void)data;
     setfullscreen(srv, c, client_wants_fullscreen(c));
 }
 
@@ -561,7 +561,7 @@ mapnotify(struct wl_listener *listener, void *data)
     Client *w, *c = wl_container_of(listener, c, map);
     awl_server_t *srv = c->srv;
     Monitor *m;
-    int i;
+    (void)data;
 
     /* Create scene tree for this client and its border */
     c->scene = client_surface(c)->data = wlr_scene_tree_create(srv->layers[LyrTile]);
@@ -587,12 +587,12 @@ mapnotify(struct wl_listener *listener, void *data)
         goto unset_fullscreen;
     }
 
-    for (i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++) {
         c->border[i] = wlr_scene_rect_create(c->scene, 0, 0,
             (float[])RGBA(srv->clients.borders[c->isurgent ? BorderUrg : BorderNorm]));
         c->border[i]->node.data = c;
     }
-    for (i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++) {
         struct wlr_scene_buffer **r = &c->clock[i / 2][i % 2];
         *r = wlr_scene_buffer_create(c->scene, NULL);
         (*r)->node.data = c;
@@ -640,6 +640,7 @@ maximizenotify(struct wl_listener *listener, void *data)
      * protocol version
      * wlr_xdg_surface_schedule_configure() is used to send an empty reply. */
     Client *c = wl_container_of(listener, c, maximize);
+    (void)data;
     if (c->surface.xdg->initialized
             && wl_resource_get_version(c->surface.xdg->toplevel->resource)
                     < XDG_TOPLEVEL_WM_CAPABILITIES_SINCE_VERSION)
@@ -650,6 +651,7 @@ void
 requestdecorationmode(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, set_decoration_mode);
+    (void)data;
     if (c->surface.xdg->initialized)
         wlr_xdg_toplevel_decoration_v1_set_mode(c->decoration,
                 WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
@@ -684,6 +686,7 @@ clockbufferbegin(struct wlr_buffer *wb, uint32_t flags, void **data,
 static void
 clockbufferend(struct wlr_buffer *wb)
 {
+    (void)wb;
 }
 
 static const struct wlr_buffer_impl clockbuffer_impl = {
@@ -703,18 +706,17 @@ borderclockbuffer(awl_server_t *srv, int i, uint32_t color, int len, int fade)
     uint32_t key[3] = {color, (uint32_t)len, (uint32_t)fade};
     double a = (color & 0xFF) / 255.0;
     ClockBuffer *b;
-    int x, j;
 
     if (cl->clock_buf[i] && !memcmp(cl->clock_buf_key[i], key, sizeof(key)))
         return cl->clock_buf[i];
     if (!(b = calloc(1, sizeof(*b) + (size_t)len * 4)))
         return NULL;
     wlr_buffer_init(&b->base, &clockbuffer_impl, len, 1);
-    for (x = 0; x < len; x++) {
+    for (int x = 0; x < len; x++) {
         int edge = MIN(x, len - 1 - x);
         double k = edge < fade ? a * (edge + 0.5) / fade : a;
         uint32_t px = (uint32_t)lround(k * 255) << 24;
-        for (j = 1; j < 4; j++) /* r, g, b */
+        for (int j = 1; j < 4; j++) /* r, g, b */
             px |= (uint32_t)lround(((color >> (8 * j)) & 0xFF) * k) << (8 * (j - 1));
         b->data[x] = px;
     }
@@ -743,7 +745,7 @@ borderclockmark(struct wlr_scene_buffer *r[2], struct wlr_buffer *buf, struct wl
     double dx = sin(a), dy = -cos(a), hw = w / 2.0, hh = h / 2.0;
     double tx = fabs(dx) > 1e-9 ? hw / fabs(dx) : INFINITY;
     double ty = fabs(dy) > 1e-9 ? hh / fabs(dy) : INFINITY;
-    double s, f;
+    double s;
 
     len = MIN(len, MIN(el[0], el[1]));
     if (len <= 0 || bw <= 0) {
@@ -763,7 +765,7 @@ borderclockmark(struct wlr_scene_buffer *r[2], struct wlr_buffer *buf, struct wl
     o = (o % per + per) % per;
     for (e = 0; o >= el[e]; e++)
         o -= el[e];
-    f = buf ? buf->width / (double)len : 1;
+    double f = buf ? buf->width / (double)len : 1;
 
     /* u: where on side e the piece starts, o: where in the mark */
     for (i = 0, u = o, o = 0; i < 2; i++, e = (e + 1) % 4, u = 0) {
@@ -799,15 +801,13 @@ borderclockplace(awl_server_t *srv, struct wlr_scene_buffer *clock[2][2], struct
     struct tm tm;
     int len[2] = {cfg->border_clock.hour_len, cfg->border_clock.minute_len};
     uint32_t color[2] = {cfg->colors.border_clock_hour, cfg->colors.border_clock_minute};
-    double sec, a;
-    int i;
 
     clock_gettime(CLOCK_REALTIME, &ts);
     if (!localtime_r(&ts.tv_sec, &tm))
         return;
-    sec = tm.tm_min * 60 + tm.tm_sec + ts.tv_nsec / 1e9;
-    for (i = 0; i < 2; i++) {
-        a = ((i ? 0 : tm.tm_hour % 12 * 3600) + sec) / turn[i] * (2 * BORDERCLOCK_PI);
+    double sec = tm.tm_min * 60 + tm.tm_sec + ts.tv_nsec / 1e9;
+    for (int i = 0; i < 2; i++) {
+        double a = ((i ? 0 : tm.tm_hour % 12 * 3600) + sec) / turn[i] * (2 * BORDERCLOCK_PI);
         borderclockmark(clock[i], borderclockbuffer(srv, i, color[i], len[i],
                 MAX(0, MIN(cfg->border_clock.fade, len[i] / 2))), box, bw, a, len[i]);
     }
@@ -825,10 +825,10 @@ borderclockclient(awl_server_t *srv, Client *c)
 static void
 borderclockmon(awl_server_t *srv, Monitor *m, int show)
 {
-    Client *c;
-    int i, any = srv->cfg->border_clock.screen_empty;
+    int any = srv->cfg->border_clock.screen_empty;
 
     if (show && !any) {
+        Client *c;
         wl_list_for_each(c, &srv->clients.list, link) {
             if (VISIBLEON_ACTIVE(c, m)) {
                 any = 1;
@@ -838,17 +838,17 @@ borderclockmon(awl_server_t *srv, Monitor *m, int show)
     }
     show = show && any;
     if (show && !m->clock[0][0])
-        for (i = 0; i < 4; i++)
+        for (int i = 0; i < 4; i++)
             m->clock[i / 2][i % 2] = wlr_scene_buffer_create(srv->layers[LyrTile], NULL);
     if (!m->clock[0][0])
         return;
-    for (i = 0; i < 4; i++)
+    for (int i = 0; i < 4; i++)
         wlr_scene_node_set_enabled(&m->clock[i / 2][i % 2]->node, show);
     if (!show)
         return;
     borderclockplace(srv, m->clock, m->w, (int)srv->cfg->borderpx);
     /* right above the borders, which raising a window would cover */
-    for (i = 0; i < 4; i++)
+    for (int i = 0; i < 4; i++)
         wlr_scene_node_raise_to_top(&m->clock[i / 2][i % 2]->node);
 }
 
@@ -882,8 +882,6 @@ borderclock(awl_server_t *srv)
     Client *c, *sel = mode == BorderClockFocused ? focustop(srv, srv->out.selmon) : NULL;
     Monitor *m;
     struct timespec ts;
-    long ms;
-    int i, on;
 
     /* off, and hidden everywhere already */
     if (mode == BorderClockOff && !srv->clients.clock_on)
@@ -893,8 +891,8 @@ borderclock(awl_server_t *srv)
     wl_list_for_each(c, &srv->clients.list, link) {
         if (!c->clock[0][0])
             continue;
-        on = c == sel; /* without a border, 0 wide */
-        for (i = 0; i < 4; i++)
+        int on = c == sel; /* without a border, 0 wide */
+        for (int i = 0; i < 4; i++)
             wlr_scene_node_set_enabled(&c->clock[i / 2][i % 2]->node, on);
         if (on)
             borderclockclient(srv, c);
@@ -914,7 +912,7 @@ borderclock(awl_server_t *srv)
     /* just past the next minute; at least every 15 s, as the timer's clock
      * stands still while suspended */
     clock_gettime(CLOCK_REALTIME, &ts);
-    ms = 60000 - (ts.tv_sec % 60) * 1000 - ts.tv_nsec / 1000000 + 50;
+    long ms = 60000 - (ts.tv_sec % 60) * 1000 - ts.tv_nsec / 1000000 + 50;
 
     wl_event_source_timer_update(srv->clients.clock_timer, (int)MIN(ms, cfg->border_clock.min_update_time_ms));
 }
@@ -922,18 +920,15 @@ borderclock(awl_server_t *srv)
 void
 resize(awl_server_t *srv, Client *c, struct wlr_box geo, int interact)
 {
-    struct wlr_box *bbox;
     struct wlr_box clip;
-    int old_width, old_height;
-    uint32_t serial;
 
     if (!c->mon || !client_surface(c)->mapped)
         return;
 
-    bbox = interact ? &srv->out.sgeom : &c->mon->w;
+    struct wlr_box *bbox = interact ? &srv->out.sgeom : &c->mon->w;
 
-    old_width = c->geom.width;
-    old_height = c->geom.height;
+    int old_width = c->geom.width;
+    int old_height = c->geom.height;
 
     client_set_bounds(c, geo.width, geo.height);
     c->geom = geo;
@@ -961,7 +956,7 @@ resize(awl_server_t *srv, Client *c, struct wlr_box geo, int interact)
         borderclockclient(srv, c);
 
     /* this is a no-op if size hasn't changed */
-    serial = client_set_size(c, c->geom.width - 2 * c->bw,
+    uint32_t serial = client_set_size(c, c->geom.width - 2 * c->bw,
             c->geom.height - 2 * c->bw);
     /* the oldest unanswered one: rendermon() waits for it only so long */
     if (serial && !c->resize) {
@@ -1055,6 +1050,7 @@ void
 togglebw(awl_server_t *srv, const Arg *arg)
 {
     Client* sel = focustop(srv, srv->out.selmon);
+    (void)arg;
     if (sel && !sel->isfullscreen) {
         sel->bw = sel->bw ? 0 : srv->cfg->borderpx;
         arrange(srv, srv->out.selmon);
@@ -1075,6 +1071,7 @@ void
 togglefloating(awl_server_t *srv, const Arg *arg)
 {
     Client *sel = focustop(srv, srv->out.selmon);
+    (void)arg;
     /* return if fullscreen */
     if (sel && !sel->isfullscreen)
         setfloating(srv, sel, !sel->isfloating);
@@ -1084,6 +1081,7 @@ void
 togglefullscreen(awl_server_t *srv, const Arg *arg)
 {
     Client *sel = focustop(srv, srv->out.selmon);
+    (void)arg;
     if (sel)
         setfullscreen(srv, sel, !sel->isfullscreen);
 }
@@ -1094,6 +1092,7 @@ unmapnotify(struct wl_listener *listener, void *data)
     /* Called when the surface is unmapped, and should no longer be shown. */
     Client *c = wl_container_of(listener, c, unmap);
     awl_server_t *srv = c->srv;
+    (void)data;
     if (c == srv->cursor.grabc) {
         srv->cursor.mode = CurNormal;
         srv->cursor.grabc = NULL;
@@ -1120,6 +1119,7 @@ updatetitle(struct wl_listener *listener, void *data)
 {
     Client *c = wl_container_of(listener, c, set_title);
     awl_server_t *srv = c->srv;
+    (void)data;
     /* the task bar lists every window of its monitor's current tags */
     if (c->mon && (c->tags & c->mon->tagset[c->mon->seltags]))
         barsdirty(srv);
@@ -1215,6 +1215,7 @@ unminimize(awl_server_t *srv, const Arg* arg)
 {
     Client *c = NULL;
     int found_client = 0;
+    (void)arg;
     wl_list_for_each(c, &srv->clients.fstack, flink) {
         if (VISIBLEON(c, srv->out.selmon) && !c->isvisible) {
             c->isvisible = 1;
@@ -1232,6 +1233,7 @@ void
 maximize(awl_server_t *srv, const Arg* arg)
 {
     Client* sel = focustop(srv, srv->out.selmon);
+    (void)arg;
     if (!sel) return;
     sel->ismaximized = !sel->ismaximized;
     if (sel->ismaximized)
@@ -1243,11 +1245,11 @@ maximize(awl_server_t *srv, const Arg* arg)
 void
 clientsconfigure(awl_server_t *srv)
 {
-    Monitor *m;
     Client *c, *sel = focustop(srv, srv->out.selmon);
 
     /* borders: those at the old default width get the new one */
     if (srv->cfg->borderpx != srv->clients.applied_borderpx) {
+        Monitor *m;
         wl_list_for_each(c, &srv->clients.list, link) {
             if (c->isfullscreen || c->bw != srv->clients.applied_borderpx)
                 continue;

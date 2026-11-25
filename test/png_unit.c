@@ -41,9 +41,9 @@ static uint8_t* decode( const uint8_t* png, size_t len, int w, int h, int* type 
     wuffs_base__io_buffer src = wuffs_base__ptr_u8__reader( (uint8_t*)png, len, true );
     wuffs_base__image_config ic;
     wuffs_base__pixel_buffer pb;
-    wuffs_base__status st;
+    uint64_t wlen;
     *type = len > 25 ? png[25] : -1;
-    st = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(), WUFFS_VERSION, 0 );
+    wuffs_base__status st = wuffs_png__decoder__initialize( dec, sizeof__wuffs_png__decoder(), WUFFS_VERSION, 0 );
     if (!wuffs_base__status__is_ok( &st )) goto out;
     st = wuffs_png__decoder__decode_image_config( dec, &ic, &src );
     if (!wuffs_base__status__is_ok( &st )) goto out;
@@ -56,7 +56,7 @@ static uint8_t* decode( const uint8_t* png, size_t len, int w, int h, int* type 
     st = wuffs_base__pixel_buffer__set_from_slice( &pb, &ic.pixcfg,
                                                    wuffs_base__make_slice_u8( out, (size_t)w * h * 4 ) );
     if (!wuffs_base__status__is_ok( &st )) goto fail;
-    uint64_t wlen = wuffs_png__decoder__workbuf_len( dec ).max_incl;
+    wlen = wuffs_png__decoder__workbuf_len( dec ).max_incl;
     work = malloc( wlen ? wlen : 1 );
     st = wuffs_png__decoder__decode_frame( dec, &pb, &src, WUFFS_BASE__PIXEL_BLEND__SRC,
                                            wuffs_base__make_slice_u8( work, wlen ), NULL );
@@ -76,13 +76,12 @@ out:
 static int roundtrip( const char* what, const uint32_t* px, int w, int h, int stride, int* type ) {
     size_t len = 0;
     uint8_t* png = awl_png_encode( px, w, h, stride, AWL_PNG_LEVEL_DEFAULT, &len );
-    uint8_t* got;
     int ok = 1;
     if (!png) {
         printf( "      %s: not encoded\n", what );
         return 0;
     }
-    got = decode( png, len, w, h, type );
+    uint8_t* got = decode( png, len, w, h, type );
     if (!got) {
         printf( "      %s: not decoded (%zu bytes)\n", what, len );
         free( png );

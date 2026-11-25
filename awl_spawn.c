@@ -30,6 +30,7 @@ handlesigchld(int signo, void *data)
 {
     awl_server_t *srv = data;
     siginfo_t in;
+    (void)signo;
     /* wlroots reaps the Xwayland fork itself and gives up on Xwayland if
      * that fails, so look first (WNOWAIT) and leave that one alone */
     while (!waitid(P_ALL, 0, &in, WEXITED | WNOHANG | WNOWAIT) && in.si_pid) {
@@ -48,7 +49,6 @@ spawn_pid(awl_process_t *proc, const Arg *arg)
 {
     char **argv = (char **)arg->v, **envp = NULL;
     const awl_tray_app_env_t *tray = NULL;
-    pid_t pid;
     /* TRAY_ICONS first: the rest, with awl_tray_app_env()'s variables (the
      * child can't set them itself, it shares our memory until it execs) */
     if (argv[0] && !strcmp(argv[0], TRAY_ICONS)) {
@@ -61,7 +61,7 @@ spawn_pid(awl_process_t *proc, const Arg *arg)
     }
     /* on execvp failure, must call _exit() not exit()/die(): vfork()'s child
      * shares stdio buffers with the parent until it exits or execs. */
-    pid = vfork();
+    pid_t pid = vfork();
     if (pid < 0) {
         awl_err_printf("vfork failed: %s\n", strerror(errno));
     } else if (pid == 0) {
@@ -106,27 +106,28 @@ autostart(awl_process_t *proc, const char *const *argv)
 void
 stopchildren(awl_process_t *proc)
 {
-    pid_t pids[LENGTH(proc->spawn.autostarted) + 1], r;
+    pid_t pids[LENGTH(proc->spawn.autostarted) + 1];
     struct timespec tick = {0, 20 * 1000 * 1000};
-    int i, n = 0, left, waited;
+    int n = 0;
 
     if (proc->spawn.startup > 0)
         pids[n++] = proc->spawn.startup;
-    for (i = 0; i < proc->spawn.nautostarted; i++)
+    for (int i = 0; i < proc->spawn.nautostarted; i++)
         if (proc->spawn.autostarted[i] > 0)
             pids[n++] = proc->spawn.autostarted[i];
     proc->spawn.startup = -1;
     proc->spawn.nautostarted = 0;
 
-    for (i = 0; i < n; i++)
+    for (int i = 0; i < n; i++)
         kill(-pids[i], SIGTERM);
-    for (waited = 0;; waited += 20) {
-        left = 0;
-        for (i = 0; i < n; i++) {
+    for (int waited = 0;; waited += 20) {
+        int left = 0;
+        for (int i = 0; i < n; i++) {
             if (!pids[i])
                 continue;
             /* ECHILD: handlesigchld() already reaped it */
-            if ((r = waitpid(pids[i], NULL, WNOHANG)) == pids[i] || (r < 0 && errno == ECHILD))
+            pid_t r = waitpid(pids[i], NULL, WNOHANG);
+            if (r == pids[i] || (r < 0 && errno == ECHILD))
                 pids[i] = 0;
             else
                 left++;
@@ -135,7 +136,7 @@ stopchildren(awl_process_t *proc)
             break;
         nanosleep(&tick, NULL);
     }
-    for (i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         if (!pids[i])
             continue;
         awl_wrn_printf("pid %d still running %d ms after SIGTERM, sending SIGKILL\n",

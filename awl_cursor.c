@@ -41,22 +41,20 @@ axisnotify(struct wl_listener *listener, void *data)
 
     Client* c = NULL;
     awl_window_t *twin;
-    int row, col;
-    struct wlr_keyboard *keyboard;
-    uint32_t mods;
 
     /* a grab drops the scrolling */
     if (srv->cursor.mode == CurGrab)
         return;
 
-    keyboard = wlr_seat_get_keyboard(srv->seat);
-    mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
+    struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(srv->seat);
+    uint32_t mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
 
     /* A popup that takes the pointer gets the scrolling, as it gets the
      * presses; one with only a click callback drops it: its motion took the
      * pointer focus from what is below anyway. An open xdg_popup's grab
      * comes first, as for the buttons. */
     if (!wlr_seat_pointer_has_grab(srv->seat) && (twin = popuppointer(srv))) {
+        int row, col;
         awl_dbg_printf(awl_loglevel_vrb, "popup %p: axis %d %g (%d/120) at %.0f,%.0f\n", (void *)twin,
                 event->orientation, event->delta, event->delta_discrete, srv->cursor.wlr->x, srv->cursor.wlr->y);
         /* the callback may destroy it */
@@ -81,8 +79,7 @@ desktopat(awl_server_t *srv, double x, double y)
     /* only the wallpaper, background layer surfaces (LyrBg) and the desktop
      * panels, which aren't in layers[], are below; LyrBlock only matters
      * while locked */
-    int i;
-    for (i = LyrBottom; i < LyrBlock; i++)
+    for (int i = LyrBottom; i < LyrBlock; i++)
         if (wlr_scene_node_at(&srv->layers[i]->node, x, y, NULL, NULL))
             return 0;
     return xytomon(srv, x, y) != NULL;
@@ -92,19 +89,15 @@ void
 buttonpress(struct wl_listener *listener, void *data)
 {
     awl_server_t *srv = wl_container_of(listener, srv, listen.cursor_button);
-    unsigned int click;
     struct wlr_pointer_button_event *event = data;
-    struct wlr_keyboard *keyboard;
-    uint32_t mods;
     Client *c;
-    const Button *b;
     awl_window_t *twin;
 
     activity(srv);
 
     /* a grab takes every press and release, before an open menu's grab */
     if (srv->cursor.mode == CurGrab) {
-        keyboard = wlr_seat_get_keyboard(srv->seat);
+        struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(srv->seat);
         grabbutton(srv, event->button, event->state == WL_POINTER_BUTTON_STATE_PRESSED,
                 keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0);
         return;
@@ -148,13 +141,13 @@ buttonpress(struct wl_listener *listener, void *data)
         popupshideall(srv);
 
     /* the bar's are ClkBar (barbutton()) */
-    click = ClkRoot;
+    unsigned int click = ClkRoot;
     xytonode(srv, srv->cursor.wlr->x, srv->cursor.wlr->y, NULL, &c, NULL, NULL, NULL);
     if (c)
         click = ClkClient;
 
-    keyboard = wlr_seat_get_keyboard(srv->seat);
-    mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
+    struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(srv->seat);
+    uint32_t mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
 
     if (!c && !srv->clients.exclusive_focus && event->state == WL_POINTER_BUTTON_STATE_PRESSED && !srv->locked
             && barbutton(srv, event->button, CLEANMASK(mods), &click))
@@ -172,7 +165,7 @@ buttonpress(struct wl_listener *listener, void *data)
         if (c && (!client_is_unmanaged(c) || client_wants_focus(c)))
             focusclient(srv, c, 1);
 
-        for (b = srv->cfg->buttons.v; b < srv->cfg->buttons.v + srv->cfg->buttons.n; b++) {
+        for (const Button *b = srv->cfg->buttons.v; b < srv->cfg->buttons.v + srv->cfg->buttons.n; b++) {
             if (CLEANMASK(mods) == CLEANMASK(bindmods(srv, b->mod)) &&
                     event->button == b->button && b->func) {
                 if (b->click == click) {
@@ -245,6 +238,7 @@ cursorframe(struct wl_listener *listener, void *data)
      * event. Frame events are sent after regular pointer events to group
      * multiple events together. For instance, two axis events may happen at the
      * same time, in which case a frame event won't be sent in between. */
+    (void)data;
     /* Notify the client with pointer focus of the frame event. */
     wlr_seat_pointer_notify_frame(srv->seat);
 }
@@ -268,6 +262,7 @@ destroydragicon(struct wl_listener *listener, void *data)
 {
     DragIcon *icon = wl_container_of(listener, icon, destroy);
     awl_server_t *srv = icon->srv;
+    (void)data;
     /* Focus enter isn't sent during drag, so refocus the focused node. */
     focusclient(srv, focustop(srv, srv->out.selmon), 1);
     motionnotify(srv, 0, NULL, 0, 0, 0, 0);
@@ -280,6 +275,7 @@ destroypointerconstraint(struct wl_listener *listener, void *data)
 {
     PointerConstraint *pointer_constraint = wl_container_of(listener, pointer_constraint, destroy);
     awl_server_t *srv = pointer_constraint->srv;
+    (void)data;
 
     if (srv->cursor.active_constraint == pointer_constraint->constraint) {
         cursorwarptohint(srv);
@@ -300,14 +296,14 @@ motionabsolute(struct wl_listener *listener, void *data)
      * move the mouse over the window. You could enter the window from any edge,
      * so we have to warp the mouse there. Also, some hardware emits these events. */
     struct wlr_pointer_motion_absolute_event *event = data;
-    double lx, ly, dx, dy;
+    double lx, ly;
 
     if (!event->time_msec) /* this is 0 with virtual pointers */
         wlr_cursor_warp_absolute(srv->cursor.wlr, &event->pointer->base, event->x, event->y);
 
     wlr_cursor_absolute_to_layout_coords(srv->cursor.wlr, &event->pointer->base, event->x, event->y, &lx, &ly);
-    dx = lx - srv->cursor.wlr->x;
-    dy = ly - srv->cursor.wlr->y;
+    double dx = lx - srv->cursor.wlr->x;
+    double dy = ly - srv->cursor.wlr->y;
     motionnotify(srv, event->time_msec, &event->pointer->base, dx, dy, dx, dy);
 }
 
@@ -451,8 +447,6 @@ void
 pointerfocus(awl_server_t *srv, Client *c, struct wlr_surface *surface, double sx, double sy,
         uint32_t time)
 {
-    struct timespec now;
-
     if (surface != srv->seat->pointer_state.focused_surface &&
             srv->cfg->sloppyfocus && time && c && !client_is_unmanaged(c))
         focusclient(srv, c, 0);
@@ -464,6 +458,7 @@ pointerfocus(awl_server_t *srv, Client *c, struct wlr_surface *surface, double s
     }
 
     if (!time) {
+        struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
         time = now.tv_sec * 1000 + now.tv_nsec / 1000000;
     }
@@ -532,9 +527,8 @@ startdrag(struct wl_listener *listener, void *data)
     if (!drag->icon)
         return;
 
-    DragIcon *icon;
     drag->icon->data = &wlr_scene_drag_icon_create(srv->cursor.drag_icon, drag->icon)->node;
-    icon = ecalloc(1, sizeof(*icon));
+    DragIcon *icon = ecalloc(1, sizeof(*icon));
     icon->srv = srv;
     LISTEN(&drag->icon->events.destroy, &icon->destroy, destroydragicon);
 }
@@ -543,18 +537,17 @@ void
 xytonode(awl_server_t *srv, double x, double y, struct wlr_surface **psurface,
         Client **pc, LayerSurface **pl, double *nx, double *ny)
 {
-    struct wlr_scene_node *node, *pnode;
     struct wlr_surface *surface = NULL;
     struct wlr_scene_surface *scene_surface = NULL;
     Client *c = NULL;
     LayerSurface *l = NULL;
-    int layer;
 
     /* the topmost layer with something of a client's or a layer surface's
      * there has it: what is below a window's border must not lend it its
      * surface */
-    for (layer = NUM_LAYERS - 1; !surface && !c && !l && layer >= 0; layer--) {
-        if (!(node = wlr_scene_node_at(&srv->layers[layer]->node, x, y, nx, ny)))
+    for (int layer = NUM_LAYERS - 1; !surface && !c && !l && layer >= 0; layer--) {
+        struct wlr_scene_node *node = wlr_scene_node_at(&srv->layers[layer]->node, x, y, nx, ny);
+        if (!node)
             continue;
 
         if (node->type == WLR_SCENE_NODE_BUFFER) {
@@ -564,7 +557,7 @@ xytonode(awl_server_t *srv, double x, double y, struct wlr_surface **psurface,
             surface = scene_surface->surface;
         }
         /* Walk the tree to find a node that knows the client */
-        for (pnode = node; pnode && !c; pnode = &pnode->parent->node)
+        for (struct wlr_scene_node *pnode = node; pnode && !c; pnode = &pnode->parent->node)
             c = pnode->data;
         /* the walk went on past the node that had it */
         if (c && c->type == LayerShell) {

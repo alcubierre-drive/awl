@@ -405,9 +405,9 @@ static int measure( layout_t* C, unsigned int s, unsigned int e ) {
  * fewer as they go, about: kerning), galloping then bisecting; -1 if the
  * first doesn't */
 static int fit( layout_t* C, unsigned int s, const unsigned int* cand, int k, int limit ) {
-    int lo, hi = 1;
+    int hi = 1;
     if (!k || measure( C, s, cand[0] ) > limit) return -1;
-    lo = 0;
+    int lo = 0;
     while (hi < k && measure( C, s, cand[hi] ) <= limit) {
         lo = hi;
         hi *= 2;
@@ -530,13 +530,13 @@ int awl_markup_layout( awl_markup_layout_t* L, const awl_markup_t* m, struct fcf
     L->buf = malloc( 2 * (size_t)len + strlen( AWL_MARKUP_ELLIPSIS ) + 2 );
     if (!C.scratch || !C.cand || !L->buf) goto out;
     for (;;) {
-        unsigned int pe = s, e, next;
+        unsigned int pe = s;
         int last = max_lines > 0 && L->nlines + 1 == (unsigned int)max_lines, cut = 0;
 
         while (pe < len && t[pe] != '\n')
             pe++;
-        e = s < pe ? line_end( &C, s, pe, max_w ) : s;
-        next = e;
+        unsigned int e = s < pe ? line_end( &C, s, pe, max_w ) : s;
+        unsigned int next = e;
         while (next < pe && t[next] == ' ')
             next++;
         if (next == pe && pe < len) next++;

@@ -820,9 +820,8 @@ static const awl_bus_ops_t ops = {
 };
 
 int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( awl_process_t* proc ) ) {
-    awl_notifs_t* N;
     if (srv->notifs) return 0;
-    N = srv->notifs = ecalloc( 1, sizeof(*N) );
+    awl_notifs_t* N = srv->notifs = ecalloc( 1, sizeof(*N) );
     N->next_id = 1;
     N->loop = loop;
     N->changed = changed;

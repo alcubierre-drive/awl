@@ -6,6 +6,7 @@
 #include "awl_capture.h"
 #include "awl_client.h"
 #include "awl_dict.h"
+#include "awl_input.h"
 #include "awl_layout.h"
 #include "awl_lockscreen.h"
 #include "awl_notifications.h"
@@ -43,9 +44,8 @@ static int timer_fire( void* data ) {
 
 /** a timer on the main loop that calls fn( data ), unarmed */
 static awl_timer_t* timer_add( awl_server_t* srv, void (*fn)( void* data ), void* data ) {
-    awl_timer_t* t;
     if (!srv->event_loop || !fn) return NULL;
-    t = ecalloc( 1, sizeof(*t) );
+    awl_timer_t* t = ecalloc( 1, sizeof(*t) );
     t->fn = fn;
     t->data = data;
     t->source = wl_event_loop_add_timer( srv->event_loop, timer_fire, t );
@@ -156,6 +156,7 @@ static const awl_host_t host_template = {
     .monitor_named = monitornamed,
     .monitor_selected = monitorselected,
     .monitor_scale = monitorscale,
+    .idle_inhibit_ignored = idleinhibitignored,
 
     .window_create = popupcreate,
     .window_destroy = popupdestroy,

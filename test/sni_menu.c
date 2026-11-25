@@ -92,13 +92,12 @@ static GVariant* separator( int id ) {
 
 static GVariant* layout( void ) {
     GVariantBuilder kids;
-    GVariantBuilder* p;
     g_variant_builder_init( &kids, G_VARIANT_TYPE( "av" ) );
 
     /* separators first and twice in a row: the tray drops them */
     g_variant_builder_add( &kids, "v", separator( ID_SEP1 ) );
 
-    p = props( "_Open file" );
+    GVariantBuilder* p = props( "_Open file" );
     g_variant_builder_add( p, "{sv}", "icon-name", g_variant_new_string( "document-open" ) );
     g_variant_builder_add( &kids, "v", entry( ID_OPEN, p, NULL ) );
     g_variant_builder_unref( p );
@@ -206,6 +205,7 @@ static void changed( void ) {
 
 static void menu_call( GDBusConnection* c, const char* sender, const char* path, const char* iface,
                        const char* method, GVariant* args, GDBusMethodInvocation* inv, gpointer data ) {
+    (void)c; (void)sender; (void)path; (void)iface; (void)data;
     if (!strcmp( method, "GetLayout" )) {
         gint32 parent, depth;
         g_variant_get( args, "(ii^a&s)", &parent, &depth, NULL );
@@ -243,6 +243,7 @@ static void menu_call( GDBusConnection* c, const char* sender, const char* path,
 
 static GVariant* menu_prop( GDBusConnection* c, const char* sender, const char* path, const char* iface,
                             const char* name, GError** err, gpointer data ) {
+    (void)c; (void)sender; (void)path; (void)iface; (void)err; (void)data;
     if (!strcmp( name, "Version" )) return g_variant_new_uint32( 3 );
     if (!strcmp( name, "IconThemePath" )) return g_variant_new_strv( NULL, 0 );
     if (!strcmp( name, "TextDirection" )) return g_variant_new_string( "ltr" );
@@ -251,6 +252,7 @@ static GVariant* menu_prop( GDBusConnection* c, const char* sender, const char* 
 
 static void item_call( GDBusConnection* c, const char* sender, const char* path, const char* iface,
                        const char* method, GVariant* args, GDBusMethodInvocation* inv, gpointer data ) {
+    (void)c; (void)sender; (void)path; (void)iface; (void)args; (void)data;
     printf( "item %s\n", method );
     fflush( stdout );
     if (!strcmp( method, "Activate" ) && getenv( "SNI_MENU_NO_ACTIVATE" ))
@@ -260,12 +262,14 @@ static void item_call( GDBusConnection* c, const char* sender, const char* path,
 }
 
 static gboolean rebuilt( gpointer data ) {
+    (void)data;
     rebuilding = 0;
     changed();
     return G_SOURCE_REMOVE;
 }
 
 static gboolean rebuild( gpointer data ) {
+    (void)data;
     printf( "rebuild\n" );
     fflush( stdout );
     rebuilding = 1;
@@ -277,6 +281,7 @@ static gboolean rebuild( gpointer data ) {
 
 static GVariant* item_prop( GDBusConnection* c, const char* sender, const char* path, const char* iface,
                             const char* name, GError** err, gpointer data ) {
+    (void)c; (void)sender; (void)path; (void)iface; (void)err; (void)data;
     if (!strcmp( name, "Category" )) return g_variant_new_string( "ApplicationStatus" );
     if (!strcmp( name, "Id" )) return g_variant_new_string( "sni_menu" );
     if (!strcmp( name, "Title" )) return g_variant_new_string( "sni_menu test" );
@@ -294,6 +299,7 @@ static GVariant* item_prop( GDBusConnection* c, const char* sender, const char* 
 static void registered( GObject* src, GAsyncResult* res, gpointer data ) {
     GError* err = NULL;
     GVariant* v = g_dbus_connection_call_finish( G_DBUS_CONNECTION( src ), res, &err );
+    (void)data;
     if (v) {
         printf( "registered\n" );
         g_variant_unref( v );

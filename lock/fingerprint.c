@@ -83,6 +83,7 @@ static void log_error(const char *what, sd_bus_message *m) {
 }
 
 static int verify_stopped(sd_bus_message *m, void *data, sd_bus_error *err) {
+    (void)m; (void)err;
     // an error too: it wasn't verifying any more, start again anyway
     verify_start(data);
     return 0;
@@ -102,6 +103,7 @@ static void restart_timer(void *data) {
 
 static int verify_started(sd_bus_message *m, void *data, sd_bus_error *err) {
     struct fingerprint *fp = data;
+    (void)err;
     if (sd_bus_message_is_method_error(m, NULL)) {
         log_error("VerifyStart", m);
         retry_later(fp, restart_timer);
@@ -121,6 +123,7 @@ static void claim_timer(void *data);
 
 static int claimed(sd_bus_message *m, void *data, sd_bus_error *err) {
     struct fingerprint *fp = data;
+    (void)err;
     if (sd_bus_message_is_method_error(m, NULL)) {
         const char *name = error_name(m);
         if (name && strcmp(name, FPRINT_IN_USE) == 0) {
@@ -150,6 +153,7 @@ static int verify_status(sd_bus_message *m, void *data, sd_bus_error *err) {
     struct fingerprint *fp = data;
     const char *result;
     int done;
+    (void)err;
     if (!fp->verifying || sd_bus_message_read(m, "sb", &result, &done) < 0) {
         return 0;
     }
@@ -177,6 +181,7 @@ static int verify_status(sd_bus_message *m, void *data, sd_bus_error *err) {
 static int got_device(sd_bus_message *m, void *data, sd_bus_error *err) {
     struct fingerprint *fp = data;
     const char *path;
+    (void)err;
     if (sd_bus_message_is_method_error(m, NULL)) {
         // no fprintd, or no reader: no fingerprints, said once
         const char *name = error_name(m);

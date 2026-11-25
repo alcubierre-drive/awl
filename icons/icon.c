@@ -155,8 +155,7 @@ static void add_dir( awl_icons_t* ic, theme_t* t, const entry_t* e, int n, const
     for (int i = 0; i < t->ndirs; i++)
         if (!strcmp( dir_name( &t->dirs[i] ), name )) return;
     const char* type = value( e, n, name, "Type" );
-    dir_t d = { 0 };
-    d.size = number( e, n, name, "Size", 0 );
+    dir_t d = { .size = number( e, n, name, "Size", 0 ) };
     if (d.size <= 0) return;
     d.scale = number( e, n, name, "Scale", 1 );
     if (d.scale <= 0) d.scale = 1;
@@ -482,14 +481,14 @@ static void* read_max( const char* path, size_t* len, size_t max ) {
     if (fd < 0) return NULL;
     struct stat st;
     void* data = NULL;
+    size_t size, got = 0;
     if (fstat( fd, &st ) || !S_ISREG( st.st_mode )) goto out;
     if ((uint64_t)st.st_size > max) {
         awl_vrb_printf( "icon: %s: too large (%lld bytes)\n", path, (long long)st.st_size );
         goto out;
     }
-    const size_t size = (size_t)st.st_size;
+    size = (size_t)st.st_size;
     data = malloc( size ? size : 1 );
-    size_t got = 0;
     while (data && got < size) {
         ssize_t r = read( fd, (char*)data + got, size - got );
         if (r < 0 && errno == EINTR) continue;
@@ -722,12 +721,14 @@ static pixman_image_t* wuffs_image( wuffs_base__image_decoder* dec, const uint8_
     const char* err = NULL;
     void* work = NULL;
     pixman_image_t* img = NULL;
+    uint32_t w, h;
+    uint64_t wlen;
     /* the reader doesn't write */
     wuffs_base__io_buffer src = wuffs_base__ptr_u8__reader( (uint8_t*)data, len, true );
     wuffs_base__image_config ic;
     wuffs_base__status st = wuffs_base__image_decoder__decode_image_config( dec, &ic, &src );
     if (!wuffs_base__status__is_ok( &st )) goto out;
-    uint32_t w = wuffs_base__pixel_config__width( &ic.pixcfg ), h = wuffs_base__pixel_config__height( &ic.pixcfg );
+    w = wuffs_base__pixel_config__width( &ic.pixcfg ), h = wuffs_base__pixel_config__height( &ic.pixcfg );
     if (!w || !h || w > (uint32_t)lim->dim || h > (uint32_t)lim->dim || (uint64_t)w * h > lim->pixels) {
         err = "too large";
         goto out;
@@ -735,7 +736,7 @@ static pixman_image_t* wuffs_image( wuffs_base__image_decoder* dec, const uint8_
     /* what the decoder needs besides the pixels: little for a PNG, a
      * progressive JPEG's coefficients (2 bytes a sample) for a JPEG; known
      * before anything is allocated */
-    uint64_t wlen = wuffs_base__image_decoder__workbuf_len( dec ).max_incl;
+    wlen = wuffs_base__image_decoder__workbuf_len( dec ).max_incl;
     if (wlen > lim->work) {
         err = "needs too much memory";
         goto out;
@@ -934,6 +935,10 @@ static pixman_image_t* svg( const uint8_t* data, size_t len, int max_w, int max_
     char* themed = apply_scheme( (const char*)data, &len );
     const char* text = themed ? themed : (const char*)data;
     pixman_image_t* img = NULL;
+    plutovg_surface_t* surface;
+    plutovg_canvas_t* canvas;
+    float w, h;
+    int tw, th, ok = 0;
     /* PlutoSVG reads no other file, and no image but a data: URL's PNG or
      * JPEG */
     plutosvg_document_t* doc = plutosvg_document_load_from_data( text, (int)len, -1, -1, NULL, NULL );
@@ -941,20 +946,18 @@ static pixman_image_t* svg( const uint8_t* data, size_t len, int max_w, int max_
         awl_vrb_printf( "icon: SVG: can't parse it\n" );
         goto out;
     }
-    float w = plutosvg_document_get_width( doc ), h = plutosvg_document_get_height( doc );
+    w = plutosvg_document_get_width( doc ), h = plutosvg_document_get_height( doc );
     if (!(w > 0) || !(h > 0) || !isfinite( w ) || !isfinite( h )) {
         awl_vrb_printf( "icon: SVG: no size\n" );
         goto out;
     }
-    int tw, th;
     fit( w, h, max_w, max_h, &tw, &th );
     img = pixman_image_create_bits( PIXMAN_a8r8g8b8, tw, th, NULL, 0 );
     if (!img) goto out;
     /* plutovg's pixels are pixman's a8r8g8b8: it draws right into img */
-    plutovg_surface_t* surface = plutovg_surface_create_for_data( (unsigned char*)pixman_image_get_data( img ), tw, th,
-                                                                  pixman_image_get_stride( img ) );
-    plutovg_canvas_t* canvas = surface ? plutovg_canvas_create( surface ) : NULL;
-    int ok = 0;
+    surface = plutovg_surface_create_for_data( (unsigned char*)pixman_image_get_data( img ), tw, th,
+                                               pixman_image_get_stride( img ) );
+    canvas = surface ? plutovg_canvas_create( surface ) : NULL;
     if (canvas) {
         plutovg_canvas_scale( canvas, (float)tw / w, (float)th / h );
         ok = plutosvg_document_render( doc, NULL, canvas, NULL, NULL, NULL );

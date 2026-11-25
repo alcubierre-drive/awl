@@ -31,10 +31,10 @@ dev = get_option('buildtype') == 'debug'
 
 # CUSTOM: flags of your own, for everything (awl, the plugins, the tests);
 # e.g. '-Wshadow', '-Wdeclaration-after-statement', '-Wfloat-conversion'
-custom_c_args = []
+custom_c_args = ['-Wjump-misses-init']
 custom_link_args = []
 
-# add_project_arguments('-Wno-unused-parameter', custom_c_args, language: 'c')
+add_project_arguments(custom_c_args, language: 'c')
 add_project_link_arguments(custom_link_args, language: 'c')
 if dev
   add_project_arguments('-ggdb3', '-fno-omit-frame-pointer', language: 'c')

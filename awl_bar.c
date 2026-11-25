@@ -78,15 +78,14 @@ struct awl_bars {
 static widget_t *
 barwidgetin(Monitor *m, double cx, unsigned int *xrel)
 {
-    unsigned int cursor_x, xpos = 0;
+    unsigned int xpos = 0;
     awl_bar_t *d = &m->bar;
-    int i;
 
     if (!d->m || cx < m->m.x)
         return NULL;
-    cursor_x = (unsigned int)((cx - m->m.x) * m->wlr_output->scale);
+    unsigned int cursor_x = (unsigned int)((cx - m->m.x) * m->wlr_output->scale);
 #define AT(w) do { if (xrel) *xrel = cursor_x - xpos; return (w); } while (0)
-    for (i = 0; i < d->n_widgets_left; ++i) {
+    for (int i = 0; i < d->n_widgets_left; ++i) {
         if (cursor_x >= xpos && cursor_x < xpos + d->widgets_left[i].width)
             AT(&d->widgets_left[i]);
         xpos += d->widgets_left[i].width;
@@ -95,7 +94,7 @@ barwidgetin(Monitor *m, double cx, unsigned int *xrel)
     if (cursor_x >= xpos && cursor_x < xpos + d->center_widget_space)
         AT(d->has_center_widget ? &d->center_widget : NULL);
     xpos += d->center_widget_space;
-    for (i = d->n_widgets_right - 1; i >= 0; --i) {
+    for (int i = d->n_widgets_right - 1; i >= 0; --i) {
         if (cursor_x >= xpos && cursor_x < xpos + d->widgets_right[i].width)
             AT(&d->widgets_right[i]);
         xpos += d->widgets_right[i].width;
@@ -221,14 +220,14 @@ static void widget_wrap_scroll_callback( widget_t* w, uint32_t xrel, double delt
 bool
 bar_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy)
 {
+    (void)buffer; (void)sx; (void)sy;
     return true;
 }
 
 void
 buffer_destroy(struct wlr_buffer *wlr_buffer)
 {
-    Buffer *buf;
-    buf = wl_container_of(wlr_buffer, buf, base);
+    Buffer *buf = wl_container_of(wlr_buffer, buf, base);
     free(buf);
 }
 
@@ -236,8 +235,7 @@ bool
 buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer, uint32_t flags,
                              void **data, uint32_t *format, size_t *stride)
 {
-    Buffer *buf;
-    buf = wl_container_of(wlr_buffer, buf, base);
+    Buffer *buf = wl_container_of(wlr_buffer, buf, base);
 
     if (flags & WLR_BUFFER_DATA_PTR_ACCESS_WRITE) return false;
 
@@ -251,6 +249,7 @@ buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer, uint32_t flags,
 void
 buffer_end_data_ptr_access(struct wlr_buffer *buffer)
 {
+    (void)buffer;
 }
 
 /** Logs it when m's right-hand widgets don't fit beside its left-hand ones
@@ -300,8 +299,6 @@ drawbar(awl_server_t *srv, Monitor *m)
     int oneoff;
     pixman_region32_t damage;
 
-    Client* ct;
-
     memset( m->bar.tagwindows, 0, sizeof(m->bar.tagwindows) );
     m->bar.n_tagwindows = 0;
     barview(m);
@@ -316,7 +313,7 @@ drawbar(awl_server_t *srv, Monitor *m)
 
     awl_bar_prepare_drawing(&m->bar, m->bar_area.width, m->bar_area.height, buf->data, buf->stride);
 
-    ct = focustop(srv, m);
+    Client* ct = focustop(srv, m);
     wl_list_for_each(c, &srv->clients.list, link) {
         if (c->mon != m)
             continue;
@@ -427,11 +424,8 @@ barbuffer(Monitor *m)
      * slot is therefore free to draw into, except the one shown: drawbar()
      * compares the new pixels with it. The slots are only dropped in
      * cleanupmon(). */
-    size_t i;
-    Buffer *buf;
-
-    for (i = 0; i < LENGTH(m->bar_bufs); i++) {
-        buf = m->bar_bufs[i];
+    for (size_t i = 0; i < LENGTH(m->bar_bufs); i++) {
+        Buffer *buf = m->bar_bufs[i];
         if (buf && (buf->base.n_locks || buf == m->bar_shown))
             continue;
         if (buf && (buf->w != (size_t)m->bar_area.width || buf->h != (size_t)m->bar_area.height)) {
@@ -452,7 +446,7 @@ bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *damage)
      * steps and over the full bar height, into damage; returns whether
      * anything differs. Without a comparable prev, everything does. */
     enum { BARTILE = 32 };
-    size_t x, y, x0, run = 0, w = buf->w, h = buf->h, ntiles = (w + BARTILE - 1) / BARTILE;
+    size_t run = 0, w = buf->w, h = buf->h, ntiles = (w + BARTILE - 1) / BARTILE;
     uint8_t dirty[ntiles ? ntiles : 1];
     int any = 0;
 
@@ -461,25 +455,25 @@ bardamage(const Buffer *buf, const Buffer *prev, pixman_region32_t *damage)
         return 1;
     }
     memset(dirty, 0, ntiles);
-    for (y = 0; y < h; y++) {
+    for (size_t y = 0; y < h; y++) {
         const uint32_t *a = (const uint32_t *)((const char *)buf->data + y * buf->stride);
         const uint32_t *b = (const uint32_t *)((const char *)prev->data + y * prev->stride);
         if (!memcmp(a, b, w * sizeof(*a)))
             continue;
-        for (x = 0; x < ntiles; x++) {
+        for (size_t x = 0; x < ntiles; x++) {
             size_t n = x + 1 < ntiles ? BARTILE : w - x * BARTILE;
             if (!dirty[x] && memcmp(a + x * BARTILE, b + x * BARTILE, n * sizeof(*a)))
                 dirty[x] = any = 1;
         }
     }
     /* one rectangle per run of changed tiles */
-    for (x = 0; x <= ntiles; x++) {
+    for (size_t x = 0; x <= ntiles; x++) {
         if (x < ntiles && dirty[x]) {
             run++;
             continue;
         }
         if (run) {
-            x0 = (x - run) * BARTILE;
+            size_t x0 = (x - run) * BARTILE;
             pixman_region32_union_rect(damage, damage, x0, 0,
                     (x * BARTILE < w ? x * BARTILE : w) - x0, h);
             run = 0;
@@ -516,7 +510,7 @@ barsdirty(awl_server_t *srv)
         srv->bars->redraw_idle = wl_event_loop_add_idle(srv->event_loop, redrawidle, srv);
 }
 
-void togglebar(awl_server_t *srv, const Arg *arg) { togglebar_mon(srv, srv->out.selmon); }
+void togglebar(awl_server_t *srv, const Arg *arg) { (void)arg; togglebar_mon(srv, srv->out.selmon); }
 void togglebar_mon(awl_server_t *srv, Monitor* m) {
     if (!m) return;
     m->showbar = !m->showbar;
@@ -814,14 +808,13 @@ int
 barbutton(awl_server_t *srv, uint32_t button, uint32_t mods, unsigned int *click)
 {
     unsigned int xrel = 0;
-    widget_t *pressed;
 
     if (!pointeronbar(srv))
         return 0;
     /* hover popups are hover only: a press on the widget closes what
      * its hover opened, or keeps it from opening, until the pointer
      * leaves and comes back; what a click opened is the click's to close */
-    pressed = barwidgetin(srv->out.selmon, srv->cursor.wlr->x, &xrel);
+    widget_t *pressed = barwidgetin(srv->out.selmon, srv->cursor.wlr->x, &xrel);
     if (pressed && pressed == srv->bars->hover_widget)
         wl_event_source_timer_update(srv->bars->hover_timer, 0);
     if (srv->bars->hover_active && pressed == srv->bars->hover_active) {
