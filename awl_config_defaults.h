@@ -145,6 +145,7 @@ static const awl_config_t awl_config_defaults = {
     .bypass_surface_visibility = 0,
     .screensaver_inhibit = 0,
     .idle_seconds = 0, /* never idle */
+    .idle_mode = AWL_IDLE_INHIBITORS,
     .on_idle = { on_idle, LENGTH(on_idle) },
     .systemd_session = 0,
     .colors = {

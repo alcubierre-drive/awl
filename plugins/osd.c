@@ -357,7 +357,10 @@ void awl_osd_dnd( awl_osd_t* o, int on ) {
               on ? pc->notify.bell_icon_dnd : pc->notify.bell_icon );
 }
 
-void awl_osd_idle_inhibit( awl_osd_t* o, int on ) {
-    if (!o) return;
-    text_osd( o, "osd-idle-inhibit", on ? "Idle inhibit on" : "Idle inhibit off", NULL );
+void awl_osd_idle_inhibit( awl_osd_t* o, awl_idle_mode_t mode ) {
+    if (!o || mode < 0 || mode >= AWL_IDLE_MODES) return;
+    static const char* const texts[AWL_IDLE_MODES] = { "Idle inhibit on", "Idle inhibit off", "Idle off" };
+    const char* const icons[AWL_IDLE_MODES] = { CFG->idle_icons.inhibitors, CFG->idle_icons.always,
+            CFG->idle_icons.never };
+    text_osd( o, "osd-idle-inhibit", texts[mode], icons[mode] );
 }

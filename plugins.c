@@ -334,8 +334,8 @@ void awl_brightness_adjust( awl_plugin_data_t* p, float delta ) {
 }
 
 void awl_idle_inhibit_toggle( awl_plugin_data_t* p ) {
-    awl_host->actions->toggle_idle_inhibit( awl_host->srv, &(Arg){ 0 } );
-    if (p) awl_osd_idle_inhibit( p->osd, !awl_host->idle_inhibit_ignored( awl_host->srv ) );
+    awl_host->actions->toggle_idle_inhibit( awl_host->srv, &(Arg){ .i = -1 } );
+    if (p) awl_osd_idle_inhibit( p->osd, awl_host->idle_mode( awl_host->srv ) );
 }
 
 void awl_notify_config( void ) {

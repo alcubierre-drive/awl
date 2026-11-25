@@ -158,7 +158,7 @@ static const awl_host_t host_template = {
     .monitor_named = monitor_named,
     .monitor_selected = monitor_selected,
     .monitor_scale = monitor_scale,
-    .idle_inhibit_ignored = idle_inhibit_ignored,
+    .idle_mode = idle_mode_get,
 
     .window_create = popup_create,
     .window_destroy = popup_destroy,

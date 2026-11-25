@@ -33,6 +33,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "awl_bar_type.h"
+#include "awl_host.h"
 #include "awl_opt.h"
 
 /* macros */
@@ -464,6 +465,9 @@ typedef struct awl_config_t {
      * :c:member:`~awl_config_t.on_idle` actions run, once until the next
      * key or motion; 0: never */
     float idle_seconds;
+    /** the :c:enum:`awl_idle_mode` awl starts in, and switches to when a
+     * reload changes this; :c:func:`toggle_idle_inhibit` changes it until then */
+    awl_idle_mode_t idle_mode;
     /** what runs after :c:member:`~awl_config_t.idle_seconds`, in order */
     struct { const IdleAction *v; size_t n; } on_idle;
     /** start systemd's graphical-session.target, for the user services

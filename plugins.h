@@ -253,7 +253,9 @@ typedef struct awl_plugin_config_t {
         int progress_height;
         /** the app's name after the summary, in italic and braces:
          * "summary {app}" */
-        bool show_app;
+        bool show_app:1;
+        /** do-not-disturb at awl's start; a reload keeps the current one */
+        bool dnd:1;
         /** the bar widget's bell from the icon theme (:c:member:`awl_config_t.tray`'s
          * icon_theme first, then the desktop's), without and with
          * do-not-disturb: icon names or paths, ";" between them, the
@@ -264,8 +266,8 @@ typedef struct awl_plugin_config_t {
     } notify;
     /** the notification a volume or brightness change brings
      * (plugins/osd.h), and the wallpaper's and the desktop files'
-     * (wallpaper_icon, desktop_icon) and do-not-disturb's (notify's
-     * bell icons): the new value as a bar beside an icon, no text,
+     * (wallpaper_icon, desktop_icon), do-not-disturb's (notify's bell
+     * icons) and the idle mode's (idle_icons): the new value as a bar beside an icon, no text,
      * replaced in place while the changes go on; in colors.notify_low_*,
      * the bar in :c:member:`colors.osd_progress <awl_plugin_colors_t.osd_progress>`, or for a change awl didn't ask for
      * in :c:member:`colors.osd_unasked <awl_plugin_colors_t.osd_unasked>` with its cause as the summary; above 100%
@@ -293,6 +295,9 @@ typedef struct awl_plugin_config_t {
          * the desktop) and the desktop files' (a Shift+click's toggle)
          * icons, as notify's bell_icon; none found: no icon */
         const char* wallpaper_icon, * desktop_icon;
+        /** the :c:enum:`awl_idle_mode` icons: idle by the inhibitors, always
+         * and never, as notify's bell_icon; none found: no icon */
+        struct { const char* inhibitors, * always, * never; } idle_icons;
         /** whether the timer's wallpaper changes show too, not only the
          * user's */
         bool wallpaper_timer;
@@ -449,8 +454,8 @@ void awl_speaker_mute_toggle( awl_plugin_data_t* p );
  * it isn't running; the osd's notification shows the expected value at once
  * and corrects it if the daemon's differs. Main thread, returns at once. */
 void awl_brightness_adjust( awl_plugin_data_t* p, float delta );
-/** plugins.c: the idle inhibitors ignored, or honored again
- * (:c:func:`toggle_idle_inhibit`); the osd's notification follows */
+/** plugins.c: the next :c:enum:`awl_idle_mode` (:c:func:`toggle_idle_inhibit`);
+ * the osd's notification follows */
 void awl_idle_inhibit_toggle( awl_plugin_data_t* p );
 
 /** plugins_widgets.c: :c:member:`awl_plugin_api_t.bar_widgets`, the widgets

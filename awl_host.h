@@ -46,6 +46,18 @@ typedef enum awl_logind_flags {
     AWL_LOGIND_SLEEP = 2,
 } awl_logind_flags_t;
 
+/** what decides whether :c:member:`awl_config_t.on_idle` runs, the
+ * action toggle_idle_inhibit's :c:member:`arg->i <Arg.i>` (-1: the next one) */
+typedef enum awl_idle_mode {
+    /** the idle inhibitors: idle comes unless one is there */
+    AWL_IDLE_INHIBITORS = 0,
+    /** idle comes despite the inhibitors */
+    AWL_IDLE_ALWAYS = 1,
+    /** idle never comes, as if an inhibitor were always there */
+    AWL_IDLE_NEVER = 2,
+    AWL_IDLE_MODES,
+} awl_idle_mode_t;
+
 /** a notification's urgency, its hint's values */
 typedef enum awl_notif_urgency {
     AWL_NOTIF_LOW = 0,
@@ -345,9 +357,9 @@ typedef struct awl_host_t {
     Monitor* (*monitor_selected)( awl_server_t* srv );
     /** m's output scale (what its popups are drawn at), 1 for NULL */
     float (*monitor_scale)( Monitor* m );
-    /** :c:func:`idle_inhibit_ignored`: whether idle comes despite the
-     * inhibitors (the action toggle_idle_inhibit) */
-    bool (*idle_inhibit_ignored)( awl_server_t* srv );
+    /** :c:func:`idle_mode_get`: what decides whether idle comes (the
+     * action toggle_idle_inhibit) */
+    awl_idle_mode_t (*idle_mode)( awl_server_t* srv );
 
     /* ---- popups (awl_window.h), NULL windows are fine everywhere ---- */
 

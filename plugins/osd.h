@@ -21,6 +21,8 @@
  * the bar widget's counts.
  */
 
+#include "awl_host.h"
+
 #include "handles.h"
 
 /** the OSD's state, with the timer for a value that doesn't change; p is
@@ -61,6 +63,7 @@ void awl_osd_desktop( awl_osd_t* o, const char* text );
  * disturb" or "Notifications enabled" alone, centered, notify's bell_icon_dnd
  * or bell_icon beside it. It shows through do-not-disturb, as every OSD. */
 void awl_osd_dnd( awl_osd_t* o, int on );
-/** the idle inhibitors are honored (on) or ignored (:c:func:`awl_idle_inhibit_toggle`):
- * "Idle inhibit on" or "Idle inhibit off" alone, centered */
-void awl_osd_idle_inhibit( awl_osd_t* o, int on );
+/** the :c:enum:`awl_idle_mode` changed (:c:func:`awl_idle_inhibit_toggle`):
+ * "Idle inhibit on", "Idle inhibit off" or "Idle off" alone, centered,
+ * :c:member:`osd.idle_icons <awl_plugin_config_t.osd.idle_icons>`' icon of the mode beside it */
+void awl_osd_idle_inhibit( awl_osd_t* o, awl_idle_mode_t mode );

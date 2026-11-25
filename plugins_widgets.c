@@ -1866,12 +1866,15 @@ static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     return w->width;
 }
 
-/** the idle inhibitors are ignored (Shift+left click): a frame half a dot out on the left, as far
- * from the bell as on the right, where the dot sticks out; over the neighbour, so drawn last */
+/** the idle mode isn't the inhibitors' (Shift+left click): a frame half a dot out on the left, as
+ * far from the bell as on the right, where the dot sticks out, in colors.bad for always idle and
+ * colors.warning for never; over the neighbour, so drawn last */
 static void notifywidget_overlay( widget_t* w, pixman_image_t* pix ) {
     const notifysnap_t* s = w->userdata;
-    if (s && awl_host->idle_inhibit_ignored( awl_host->srv ))
-        cell_frame( w, pix, w->x, (int)w->width, -(int)s->dot / 2, w->plugins->colors.bad );
+    const awl_idle_mode_t mode = awl_host->idle_mode( awl_host->srv );
+    if (s && mode != AWL_IDLE_INHIBITORS)
+        cell_frame( w, pix, w->x+1, (int)w->width-1, -(int)s->dot / 2,
+                    mode == AWL_IDLE_ALWAYS ? w->plugins->colors.bad : w->plugins->colors.warning );
 }
 
 static void notifywidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {

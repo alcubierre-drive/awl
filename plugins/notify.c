@@ -1037,6 +1037,9 @@ awl_notify_t* awl_notify_start( awl_plugin_data_t* p ) {
     awl_notify_t* ns = calloc( 1, sizeof *ns );
     if (!ns) return NULL;
     ns->p = p;
+    awl_dict_val_t v; /* only the main thread writes it */
+    if (AWL_HOST_CFG_GET( awl_host, DND_KEY, &v ) != AWL_DICT_OK)
+        AWL_HOST_CFG_SET( awl_host, DND_KEY, AWL_DICT_NUM( CFG->dnd ) );
     ns->img = awl_notify_image_new( p->config.tray.icon_theme );
     ns->menu = awl_notify_menu_new( ns, p );
     ns->timer = awl_host->timer_add( awl_host->srv, restack_timer, ns );

@@ -119,6 +119,7 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         .max_lines = 14, .max_shown = 8,
         .progress_height = 6,
         .show_app = 1,
+        .dnd = 0,
         /* NULL or none found: the glyphs (Adwaita, Breeze, Papirus have these) */
         .bell_icon = "notifications-symbolic;preferences-system-notifications-symbolic",
         .bell_icon_dnd = "notifications-disabled-symbolic",
@@ -154,6 +155,11 @@ static const awl_plugin_config_t awl_plugin_config_defaults = {
         },
         .wallpaper_icon = "image-x-generic-symbolic;image-x-generic",
         .desktop_icon = "text-x-generic-symbolic;text-x-generic",
+        .idle_icons = {
+            .inhibitors = "preferences-desktop-screensaver-symbolic;preferences-desktop-screensaver",
+            .always = "system-suspend-uninhibited;caffeine-cup-empty;view-conceal-symbolic;view-hidden",
+            .never = "system-suspend-inhibited;caffeine-cup-full;view-reveal-symbolic;view-visible",
+        },
         .wallpaper_timer = 0,
     },
     .screenshot = {
