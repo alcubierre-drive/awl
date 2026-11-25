@@ -50,9 +50,9 @@ struct widget_t {
      * popups, a client over the bar), and before the plugins detach */
     void (*callback_view)(widget_t* this, int32_t x_rel);
     /** a click, button as ``BTN_*`` */
-    void (*callback_click)(widget_t* this, uint32_t x_rel, int button);
+    void (*callback_click)(widget_t* this, uint32_t x_rel, int button, uint32_t mods);
     /** a scroll, amount 1 or -1 (see :c:member:`~widget_t.scroll_amount`) */
-    void (*callback_scroll)(widget_t* this, uint32_t x_rel, int amount);
+    void (*callback_scroll)(widget_t* this, uint32_t x_rel, int amount, uint32_t mods);
     /** called once the pointer has rested on the widget for :c:member:`~widget_t.hover_delay_ms`;
      * leaving it before then cancels, and it fires again only after the
      * pointer has left and come back */

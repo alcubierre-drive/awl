@@ -57,11 +57,11 @@ void updatehover(awl_server_t *srv, Client *c);
 /** The wheel turned by delta with the pointer on selmon's bar: the widget
  * there gets it (its callback_scroll, in steps); returns whether one was
  * there. */
-int baraxis(awl_server_t *srv, double delta);
+int baraxis(awl_server_t *srv, double delta, uint32_t mods);
 /** A press with the pointer on selmon's bar: closes what the hover of the
  * widget there opened, or keeps it from opening. Returns 1 if the widget's
  * callback_click took the press; else ``*click`` becomes ClkBar. */
-int barbutton(awl_server_t *srv, uint32_t button, unsigned int *click);
+int barbutton(awl_server_t *srv, uint32_t button, uint32_t mods, unsigned int *click);
 
 /* m's awl_bar_t (awl_bar_type.h) */
 /** makes bar m's (m->bar, unused), without font or widgets */

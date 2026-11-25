@@ -22,16 +22,16 @@
 
 
 static uint32_t tagwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void tagwidget_scroll( widget_t* w, uint32_t x, int amount );
-static void tagwidget_click( widget_t* w, uint32_t x, int button );
+static void tagwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
+static void tagwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
 
 static uint32_t layoutwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void layoutwidget_scroll( widget_t* w, uint32_t x, int amount );
-static void layoutwidget_click( widget_t* w, uint32_t x, int button );
+static void layoutwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
+static void layoutwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
 
 static uint32_t taskbarwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount );
-static void taskbarwidget_click( widget_t* w, uint32_t x, int button );
+static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
+static void taskbarwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
 
 /** :c:member:`draw() <widget_t.draw>` of the right-hand widgets that show a single text (see :c:type:`textsnap_t`) */
 static uint32_t textsnap_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
@@ -40,17 +40,17 @@ static uint32_t clockwidget_measure( widget_t* w );
 static uint32_t clockwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
 static void clockwidget_hover( widget_t* w );
 static void clockwidget_leave( widget_t* w );
-static void clockwidget_scroll( widget_t* w, uint32_t x, int amount );
-static void clockwidget_click( widget_t* w, uint32_t x, int button );
+static void clockwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
+static void clockwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
 
 static uint32_t pulsewidget_measure( widget_t* w );
-static void pulsewidget_click( widget_t* w, uint32_t x, int button );
-static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount );
+static void pulsewidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
+static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
 
 static uint32_t sniwidget_measure( widget_t* w );
 static uint32_t sniwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void sniwidget_click( widget_t* w, uint32_t x, int button );
-static void sniwidget_scroll( widget_t* w, uint32_t x, int amount );
+static void sniwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
+static void sniwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
 static void sniwidget_view( widget_t* w, int32_t x );
 static void sniwidget_free( void* userdata );
 static uint32_t statuswidget_measure( widget_t* w );
@@ -75,12 +75,12 @@ static void ipwidget_free( void* userdata );
 
 static uint32_t backlightwidget_measure( widget_t* w );
 static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void backlightwidget_click( widget_t* w, uint32_t x, int button );
-static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount );
+static void backlightwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
+static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods );
 
 static uint32_t notifywidget_measure( widget_t* w );
 static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix );
-static void notifywidget_click( widget_t* w, uint32_t x, int button );
+static void notifywidget_click( widget_t* w, uint32_t x, int button, uint32_t mods );
 static void notifywidget_view( widget_t* w, int32_t x );
 static void notifywidget_hover( widget_t* w );
 static void notifywidget_leave( widget_t* w );
@@ -664,7 +664,7 @@ static int sniwidget_center( widget_t* w, const sniwidget_t* u, int i ) {
  * it is a menu (ItemIsMenu), then its menu too (plugins/sni.c opens it if
  * Activate fails). Middle: SecondaryActivate. An item without a menu draws
  * its own on ContextMenu. With its menu open, any press only closes it. */
-static void sniwidget_click( widget_t* w, uint32_t x, int button ) {
+static void sniwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
     sniwidget_t* u = w->userdata;
     int i = sniwidget_at( u, (int32_t)x );
@@ -689,7 +689,7 @@ static void sniwidget_click( widget_t* w, uint32_t x, int button ) {
     }
 }
 
-static void sniwidget_scroll( widget_t* w, uint32_t x, int amount ) {
+static void sniwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
     sniwidget_t* u = w->userdata;
     int i = sniwidget_at( u, (int32_t)x );
@@ -1446,12 +1446,12 @@ static void ipwidget_free( void* userdata ) {
     free( u );
 }
 
-static void tagwidget_scroll( widget_t* w, uint32_t x, int amount ) {
+static void tagwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     (void)w;
     (void)x;
     awl_host->actions->cycle_view( awl_host->srv, &(Arg){.i=amount} );
 }
-static void tagwidget_click( widget_t* w, uint32_t x, int button ) {
+static void tagwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     int t = (double)x / (double)w->width * w->bar->ntags;
     switch (button) {
         case BTN_LEFT: awl_host->actions->view( awl_host->srv, &(Arg){.ui = (1 << t)} ); break;
@@ -1461,17 +1461,17 @@ static void tagwidget_click( widget_t* w, uint32_t x, int button ) {
     }
 }
 
-static void layoutwidget_scroll( widget_t* w, uint32_t x, int amount ) {
+static void layoutwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     (void)w; (void)x; awl_host->actions->cycle_layout( awl_host->srv, &(Arg){.i=amount} );
 }
-static void layoutwidget_click( widget_t* w, uint32_t x, int button ) {
+static void layoutwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     (void)w; (void)x; awl_host->actions->cycle_layout( awl_host->srv, &(Arg){.i=button==BTN_LEFT?1:-1} );
 }
 
-static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount ) {
+static void taskbarwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     awl_host->actions->focusstack( awl_host->srv, &(Arg){.i=amount} );
 }
-static void taskbarwidget_click( widget_t* w, uint32_t x, int button ) {
+static void taskbarwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     if (w->bar->n_tagwindows <= 0) return;
     awl_bar_window_t* windows = w->bar->tagwindows;
     int win_idx = (double)x / (double)w->width * (double)w->bar->n_tagwindows;
@@ -1491,13 +1491,13 @@ static void taskbarwidget_click( widget_t* w, uint32_t x, int button ) {
     }
 }
 
-static void pulsewidget_click( widget_t* w, uint32_t x, int button ) {
+static void pulsewidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
     (void)w; (void)x; (void)button;
     const char* const* mixer = P->plugin_config.volume.mixer;
     if (mixer && mixer[0]) awl_host->actions->spawn( awl_host->srv, &(Arg){.v=mixer} );
 }
-static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount ) {
+static void pulsewidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     (void)w; (void)x;
     awl_volume_adjust( w->plugins, amount < 0 ? 0.025f : -0.025f );
 }
@@ -1525,7 +1525,7 @@ static void clockwidget_leave( widget_t* w ) {
 }
 
 /* pages the calendar the hover opened; does nothing while it is closed */
-static void clockwidget_scroll( widget_t* w, uint32_t x, int amount ) {
+static void clockwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
     (void)w; (void)x;
     awl_calpopup_scroll( P->calpopup, amount );
@@ -1534,7 +1534,7 @@ static void clockwidget_scroll( widget_t* w, uint32_t x, int amount ) {
 /* A left click closes the calendar and the timer; a right one cycles: the
  * timer, unless it is open, then the calendar. What it opens closes as a
  * hover's would (callback_leave). */
-static void clockwidget_click( widget_t* w, uint32_t x, int button ) {
+static void clockwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
     (void)x;
     const int timer = awl_timerpopup_shown( P->timerpopup );
@@ -1797,7 +1797,7 @@ static uint32_t backlightwidget_draw( widget_t* w, uint32_t x, pixman_image_t* p
     return w->width;
 }
 
-static void backlightwidget_click( widget_t* w, uint32_t x, int button ) {
+static void backlightwidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     (void)w; (void)x;
     awl_plugin_data_t* P = w->plugins;
     if (!P->backlight) return;
@@ -1808,7 +1808,7 @@ static void backlightwidget_click( widget_t* w, uint32_t x, int button ) {
         backlight_toggle( P->backlight );
 }
 
-static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount ) {
+static void backlightwidget_scroll( widget_t* w, uint32_t x, int amount, uint32_t mods ) {
     (void)w; (void)x;
     awl_brightness_adjust( w->plugins, amount < 0 ? 0.025f : -0.025f );
 }
@@ -1885,7 +1885,7 @@ static uint32_t notifywidget_draw( widget_t* w, uint32_t x, pixman_image_t* pix 
     return w->width;
 }
 
-static void notifywidget_click( widget_t* w, uint32_t x, int button ) {
+static void notifywidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
     awl_plugin_data_t* P = w->plugins;
     (void)x;
     notifysnap_t* s = w->userdata;

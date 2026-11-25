@@ -34,7 +34,7 @@ dev = get_option('buildtype') == 'debug'
 custom_c_args = []
 custom_link_args = []
 
-add_project_arguments('-Wno-unused-parameter', custom_c_args, language: 'c')
+# add_project_arguments('-Wno-unused-parameter', custom_c_args, language: 'c')
 add_project_link_arguments(custom_link_args, language: 'c')
 if dev
   add_project_arguments('-ggdb3', '-fno-omit-frame-pointer', language: 'c')

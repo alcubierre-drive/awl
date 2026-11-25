@@ -42,10 +42,15 @@ axisnotify(struct wl_listener *listener, void *data)
     Client* c = NULL;
     awl_window_t *twin;
     int row, col;
+    struct wlr_keyboard *keyboard;
+    uint32_t mods;
 
     /* a grab drops the scrolling */
     if (srv->cursor.mode == CurGrab)
         return;
+
+    keyboard = wlr_seat_get_keyboard(srv->seat);
+    mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
 
     /* A popup that takes the pointer gets the scrolling, as it gets the
      * presses; one with only a click callback drops it: its motion took the
@@ -61,7 +66,7 @@ axisnotify(struct wl_listener *listener, void *data)
         return;
     }
     xytonode(srv, srv->cursor.wlr->x, srv->cursor.wlr->y, NULL, &c, NULL, NULL, NULL);
-    if (!c && !srv->clients.exclusive_focus && !srv->locked && baraxis(srv, event->delta))
+    if (!c && !srv->clients.exclusive_focus && !srv->locked && baraxis(srv, event->delta, CLEANMASK(mods)))
         return;
     /* No bindings for the wheel (as MODKEY+wheel): Button binds presses only,
      * on purpose. Notify the client with pointer focus of the axis event. */
@@ -148,8 +153,11 @@ buttonpress(struct wl_listener *listener, void *data)
     if (c)
         click = ClkClient;
 
+    keyboard = wlr_seat_get_keyboard(srv->seat);
+    mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
+
     if (!c && !srv->clients.exclusive_focus && event->state == WL_POINTER_BUTTON_STATE_PRESSED && !srv->locked
-            && barbutton(srv, event->button, &click))
+            && barbutton(srv, event->button, CLEANMASK(mods), &click))
         return;
 
     switch (event->state) {
@@ -164,8 +172,6 @@ buttonpress(struct wl_listener *listener, void *data)
         if (c && (!client_is_unmanaged(c) || client_wants_focus(c)))
             focusclient(srv, c, 1);
 
-        keyboard = wlr_seat_get_keyboard(srv->seat);
-        mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
         for (b = srv->cfg->buttons.v; b < srv->cfg->buttons.v + srv->cfg->buttons.n; b++) {
             if (CLEANMASK(mods) == CLEANMASK(bindmods(srv, b->mod)) &&
                     event->button == b->button && b->func) {

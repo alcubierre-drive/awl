@@ -17,7 +17,7 @@ static void updateview(struct awl_bars *b, widget_t *w, unsigned int xrel);
 static void setleavepending(struct awl_bars *b, int pending);
 static int leavetimeout(void *data);
 static int hovertimeout(void *data);
-static void widget_wrap_scroll_callback( widget_t* w, uint32_t xrel, double delta );
+static void widget_wrap_scroll_callback( widget_t* w, uint32_t xrel, double delta, uint32_t mods );
 static bool bar_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy);
 static void buffer_destroy(struct wlr_buffer *wlr_buffer);
 static bool buffer_begin_data_ptr_access(struct wlr_buffer *wlr_buffer, uint32_t flags,
@@ -208,11 +208,11 @@ updatehover(awl_server_t *srv, Client *c)
 }
 
 static const double SCROLL_LIMIT = 10.0;
-static void widget_wrap_scroll_callback( widget_t* w, uint32_t xrel, double delta ) {
+static void widget_wrap_scroll_callback( widget_t* w, uint32_t xrel, double delta, uint32_t mods ) {
     if (w->callback_scroll) {
         w->scroll_amount += delta;
         if (fabs(w->scroll_amount) > SCROLL_LIMIT) {
-            (*w->callback_scroll)( w, xrel, (w->scroll_amount > 0) ? 1 : (w->scroll_amount < 0) ? -1 : 0 );
+            (*w->callback_scroll)( w, xrel, (w->scroll_amount > 0) ? 1 : (w->scroll_amount < 0) ? -1 : 0, mods );
             w->scroll_amount = 0;
         }
     }
@@ -799,19 +799,19 @@ pointeronbar(awl_server_t *srv)
 }
 
 int
-baraxis(awl_server_t *srv, double delta)
+baraxis(awl_server_t *srv, double delta, uint32_t mods)
 {
     unsigned int xrel;
     widget_t *w;
 
     if (!pointeronbar(srv) || !(w = barwidgetin(srv->out.selmon, srv->cursor.wlr->x, &xrel)))
         return 0;
-    widget_wrap_scroll_callback(w, xrel, delta);
+    widget_wrap_scroll_callback(w, xrel, delta, mods);
     return 1;
 }
 
 int
-barbutton(awl_server_t *srv, uint32_t button, unsigned int *click)
+barbutton(awl_server_t *srv, uint32_t button, uint32_t mods, unsigned int *click)
 {
     unsigned int xrel = 0;
     widget_t *pressed;
@@ -834,7 +834,7 @@ barbutton(awl_server_t *srv, uint32_t button, unsigned int *click)
     *click = ClkBar;
     if (!pressed || !pressed->callback_click)
         return 0;
-    pressed->callback_click(pressed, xrel, button);
+    pressed->callback_click(pressed, xrel, button, mods);
     /* and that closes as a hover's would */
     if (pressed->callback_leave && popupshown(srv, pressed->popup_window)) {
         if (srv->bars->hover_active && srv->bars->hover_active != pressed) {
