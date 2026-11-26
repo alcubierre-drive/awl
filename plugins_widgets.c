@@ -1874,7 +1874,7 @@ static void notifywidget_overlay( widget_t* w, pixman_image_t* pix ) {
     const awl_idle_mode_t mode = awl_host->idle_mode( awl_host->srv );
     if (s && mode != AWL_IDLE_INHIBITORS)
         cell_frame( w, pix, w->x+1, (int)w->width-1, -(int)s->dot / 2,
-                    mode == AWL_IDLE_ALWAYS ? w->plugins->colors.bad : w->plugins->colors.warning );
+                    mode == AWL_IDLE_ALWAYS ? w->plugins->colors.good : w->plugins->colors.bad );
 }
 
 static void notifywidget_click( widget_t* w, uint32_t x, int button, uint32_t mods ) {
