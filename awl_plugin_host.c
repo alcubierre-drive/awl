@@ -375,6 +375,10 @@ void awl_plugins_notifications_changed( awl_process_t* proc ) {
     if (proc->plugins.api) proc->plugins.api->notifications_changed();
 }
 
+void awl_plugins_notification_action( awl_process_t* proc, uint32_t id, const char* key ) {
+    if (proc->plugins.api) proc->plugins.api->notification_action( id, key );
+}
+
 void awl_plugins_redraw( awl_process_t* proc ) {
     if (proc->plugins.api) proc->plugins.api->redraw();
 }

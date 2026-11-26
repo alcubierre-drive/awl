@@ -70,6 +70,9 @@ struct awl_notifs {
     struct wl_event_loop* loop;
     /** called with proc, the server's */
     void (*changed)( awl_process_t* proc );
+    /** called with proc, the server's, the id and the key of awl's own
+     * one's action the user chose */
+    void (*action)( awl_process_t* proc, uint32_t id, const char* key );
     awl_process_t* proc;
     struct wl_event_source* idle;
     awl_bus_t* conn;
@@ -305,8 +308,11 @@ void awl_notifications_invoke( awl_server_t* srv, uint32_t id, const char* key, 
         if (token) sd_bus_emit_signal( N->bus, PATH, IFACE, "ActivationToken", "us", id, token );
         sd_bus_emit_signal( N->bus, PATH, IFACE, "ActionInvoked", "us", id, key );
     }
+    const int own = n->pub.flags & AWL_NOTIF_AWL;
     /* acted on: not for the history */
     if (!(n->pub.flags & AWL_NOTIF_RESIDENT)) close_past( N, i, AWL_NOTIF_DISMISSED, 0 );
+    /* closed first: what it does may send another */
+    if (own && N->action) N->action( N->proc, id, key );
 }
 
 void awl_notifications_idle( awl_server_t *srv ) {
@@ -507,16 +513,9 @@ static int read_hints( awl_notifs_t* N, sd_bus_message* m, notif_t* n ) {
     return r < 0 ? r : sd_bus_message_exit_container( m );
 }
 
-/** the actions' key, label pairs, at most MAX_ACTIONS; an odd one out is
- * dropped */
-static int read_actions( sd_bus_message* m, notif_t* n ) {
-    const char* s[2 * MAX_ACTIONS];
-    int r, k = 0;
-    if ((r = sd_bus_message_enter_container( m, 'a', "s" )) < 0) return r;
-    const char* x;
-    while ((r = sd_bus_message_read_basic( m, 's', &x )) > 0)
-        if (k < 2 * MAX_ACTIONS) s[k++] = x;
-    if (r < 0 || (r = sd_bus_message_exit_container( m )) < 0) return r;
+/** n's actions: k strings of s, key and label pairs (an odd one out is
+ * dropped), copied */
+static int set_actions( notif_t* n, const char* const* s, int k ) {
     k &= ~1;
     if (!k) return 0;
     if (!(n->actions = calloc( (size_t)k, sizeof(*n->actions) ))) return -ENOMEM;
@@ -530,6 +529,19 @@ static int read_actions( sd_bus_message* m, notif_t* n ) {
     n->pub.actions = (const char* const*)n->actions;
     return 0;
 }
+
+/** the actions' key, label pairs, at most MAX_ACTIONS */
+static int read_actions( sd_bus_message* m, notif_t* n ) {
+    const char* s[2 * MAX_ACTIONS];
+    int r, k = 0;
+    if ((r = sd_bus_message_enter_container( m, 'a', "s" )) < 0) return r;
+    const char* x;
+    while ((r = sd_bus_message_read_basic( m, 's', &x )) > 0)
+        if (k < 2 * MAX_ACTIONS) s[k++] = x;
+    if (r < 0 || (r = sd_bus_message_exit_container( m )) < 0) return r;
+    return set_actions( n, s, k );
+}
+
 
 /** fills in n's strings that are still NULL with "" */
 static int strings_set( notif_t* n ) {
@@ -730,6 +742,7 @@ uint32_t awl_notifications_send( awl_server_t* srv, const awl_notif_send_t* s ) 
     if (!(n->pub.app = strdup( "awl" )) || !(n->pub.summary = copy_utf8( s->summary, MAX_SUMMARY )) ||
         !(n->pub.body = copy_utf8( s->body, MAX_BODY )) || !(n->pub.image_path = copy_utf8( s->image, MAX_PATH )) ||
         !(n->tag = copy_utf8( s->tag, MAX_SHORT )) || strings_set( n ) < 0 ||
+        set_actions( n, s->actions, 2 * MIN( s->nactions, MAX_ACTIONS ) ) < 0 ||
         (s->image_data.data && s->image_data.h > 0 && s->image_data.stride > 0 &&
          set_pixels( N, n, s->image_data.data, (size_t)s->image_data.stride * (size_t)s->image_data.h,
                      s->image_data.w, s->image_data.h, s->image_data.stride, s->image_data.has_alpha, 8,
@@ -819,12 +832,14 @@ static const awl_bus_ops_t ops = {
     .dropped = dropped,
 };
 
-int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( awl_process_t* proc ) ) {
+int awl_notifications_start( awl_server_t* srv, struct wl_event_loop* loop, void (*changed)( awl_process_t* proc ),
+                            void (*action)( awl_process_t* proc, uint32_t id, const char* key ) ) {
     if (srv->notifs) return 0;
     awl_notifs_t* N = srv->notifs = calloc_or_die( 1, sizeof(*N) );
     N->next_id = 1;
     N->loop = loop;
     N->changed = changed;
+    N->action = action;
     N->proc = srv->proc;
     N->last_activity = awl_now_ms();
     if (!(N->conn = awl_bus_start( loop, &ops, srv ))) {

@@ -49,6 +49,9 @@ void awl_plugins_set_covered( awl_process_t* proc, int covered );
 /** :c:member:`awl_plugin_api_t.notifications_changed`, if a library is loaded */
 void awl_plugins_notifications_changed( awl_process_t* proc );
 
+/** :c:member:`awl_plugin_api_t.notification_action`, if a library is loaded */
+void awl_plugins_notification_action( awl_process_t* proc, uint32_t id, const char* key );
+
 /** :c:member:`awl_plugin_api_t.redraw`, if a library is loaded */
 void awl_plugins_redraw( awl_process_t* proc );
 

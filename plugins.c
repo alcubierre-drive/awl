@@ -425,6 +425,11 @@ static void api_notifications_changed( void ) {
     if (plugin_data) awl_notify_changed( plugin_data->notify );
 }
 
+static void api_notification_action( uint32_t id, const char* key ) {
+    /* add more actions if needed in here. they have to be found by id */
+    if (plugin_data) awl_timerpopup_action( plugin_data->timerpopup, id, key );
+}
+
 static void api_redraw( void ) {
     if (!plugin_data) return;
     awl_osd_redraw( plugin_data->osd );
@@ -447,6 +452,7 @@ static const awl_plugin_api_t api = {
     .session_covered = api_session_covered,
     .config = api_config,
     .notifications_changed = api_notifications_changed,
+    .notification_action = api_notification_action,
     .redraw = api_redraw,
 };
 

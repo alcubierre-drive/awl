@@ -28,7 +28,7 @@
 #include "awl_host.h"
 
 /** The version both sides compare; see the top of this file. */
-#define AWL_PLUGIN_ABI 60
+#define AWL_PLUGIN_ABI 61
 /** The name of the library's only exported symbol, an :c:type:`awl_plugin_entry_t`. */
 #define AWL_PLUGIN_ENTRY "awl_plugin_entry"
 
@@ -143,6 +143,9 @@ typedef struct awl_plugin_api_t {
      * however many changed, not while the library sets up: it lists
      * them itself in :c:member:`~awl_plugin_api_t.init`. */
     void (*notifications_changed)( void );
+    /** the user chose action key of id, one of awl's own notifications
+     * (:c:member:`awl_notif_send_t.actions`); it closed already */
+    void (*notification_action)( uint32_t id, const char* key );
 
     /** awl woke for a redraw (:c:member:`awl_host_t.redraw_request`, from any
      * thread): what a thread published may have changed. Main thread,

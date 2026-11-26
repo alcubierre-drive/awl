@@ -223,6 +223,11 @@ typedef struct awl_notif_send_t {
     const char* tag;
     /** how it looks beyond the config, which a D-Bus client can't set */
     awl_notif_look_t look;
+    /** nactions key, label pairs (2 * nactions strings, copied) as
+     * :c:member:`awl_notif_t.actions`; choosing one closes it and
+     * fires :c:member:`awl_plugin_api_t.notification_action`; NULL none */
+    const char* const* actions;
+    int nactions;
 } awl_notif_send_t;
 
 #define AWL_NOTIF_SEND_INIT { .urgency = AWL_NOTIF_NORMAL, .value = -1, .timeout = -1 }

@@ -553,7 +553,8 @@ void setup( awl_server_t *srv ) {
     lock_init(srv);
     /* before the plugins: their tray widget asks it for the items */
     srv->sni = awl_sni_watcher_start(srv->event_loop);
-    awl_notifications_start(srv, srv->event_loop, awl_plugins_notifications_changed);
+    awl_notifications_start(srv, srv->event_loop, awl_plugins_notifications_changed,
+            awl_plugins_notification_action);
     awl_plugins_load(srv, 0, srv->cfg_dict);
     config_use(srv);
     awl_draw_init(srv->proc);

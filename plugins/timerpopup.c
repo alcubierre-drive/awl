@@ -35,6 +35,8 @@ struct awl_timerpopup {
      * suspend. */
     int ran;
     time_t end;
+    /** the run-out notification's id, whose snooze runs it again; 0 none */
+    uint32_t sent;
     /** the second the popup last showed */
     time_t shown;
     /** scrolling not yet turned into steps */
@@ -56,6 +58,13 @@ static const char* const labels[P_COUNT] = { "Start", "Stop ↺", "‹", NULL, "
 static void fmt( char* buf, size_t n, int s ) {
     if (s >= 3600) snprintf( buf, n, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60 );
     else snprintf( buf, n, "%d:%02d", s / 60, s % 60 );
+}
+
+/** s seconds (whole minutes) as 5 min, 1 h or 1:30 h */
+static void fmt_snooze( char* buf, size_t n, int s ) {
+    if (s < 3600) snprintf( buf, n, "%d min", s / 60 );
+    else if (s % 3600) snprintf( buf, n, "%d:%02d h", s / 3600, s / 60 % 60 );
+    else snprintf( buf, n, "%d h", s / 3600 );
 }
 
 /** the first row's two halves: "4:05 left" and "until 14:35:13", or
@@ -181,7 +190,21 @@ static void check( awl_timerpopup_t* tp ) {
     n.urgency = AWL_NOTIF_CRITICAL;
     n.timeout = 0;
     n.tag = "timer";
-    awl_notify_send( &n );
+    /* Dismiss, then the snoozes, their keys the seconds: 5 and 10
+     * minutes, and the duration it ran if neither */
+    const int snooze[] = { 300, 600, tp->ran };
+    char key[3][16], label[3][16];
+    const char* actions[8] = { "dismiss", "Dismiss" };
+    const int k = tp->ran == snooze[0] || tp->ran == snooze[1] ? 2 : 3;
+    for (int i = 0; i < k; i++) {
+        snprintf( key[i], sizeof key[i], "%d", snooze[i] );
+        fmt_snooze( label[i], sizeof label[i], snooze[i] );
+        actions[2 * i + 2] = key[i];
+        actions[2 * i + 3] = label[i];
+    }
+    n.actions = actions;
+    n.nactions = k + 1;
+    tp->sent = awl_notify_send( &n );
     tp->end = 0;
     redraw( tp );
 }
@@ -190,10 +213,11 @@ static void fire( void* data ) {
     check( data );
 }
 
-static void run( awl_timerpopup_t* tp ) {
+/** runs the timer for s seconds */
+static void run( awl_timerpopup_t* tp, int s ) {
     if (!tp->timer && !(tp->timer = awl_host->timer_add( awl_host->srv, fire, tp ))) return;
-    tp->ran = tp->dur;
-    tp->end = time( NULL ) + tp->dur;
+    tp->ran = s;
+    tp->end = time( NULL ) + s;
     check( tp );
     redraw( tp );
 }
@@ -226,7 +250,7 @@ static void click( awl_window_t* win, int part, int col, uint32_t button, void* 
     const bool reset = part == P_STOP && button == BTN_RIGHT;
     if (button != BTN_LEFT && !reset) return;
     switch (part) {
-    case P_START: run( tp ); break;
+    case P_START: run( tp, tp->dur ); break;
     case P_STOP: halt( tp, reset ); break;
     case P_DOWN: step( tp, -1 ); break;
     case P_UP: step( tp, 1 ); break;
@@ -267,6 +291,14 @@ void awl_timerpopup_poll( awl_timerpopup_t* tp ) {
     if (!tp) return;
     if (tp->end && time( NULL ) >= tp->end) check( tp );
     else if (tp->end && awl_timerpopup_shown( tp ) && time( NULL ) != tp->shown) redraw( tp );
+}
+
+void awl_timerpopup_action( awl_timerpopup_t* tp, uint32_t id, const char* key ) {
+    if (!tp || !id || id != tp->sent) return;
+    tp->sent = 0;
+    /* Dismiss's "dismiss" is 0: nothing */
+    const int s = atoi( key );
+    if (s > 0) run( tp, s );
 }
 
 awl_timerpopup_t* awl_timerpopup_start( awl_plugin_data_t* p ) {

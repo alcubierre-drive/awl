@@ -8,7 +8,9 @@
  * buttons. The wheel anywhere on the popup steps the duration as the
  * buttons do: by a minute up to 10 minutes, 5 up to an hour, 15 beyond.
  * Start (re)starts the timer with the duration, Stop stops it. When it
- * runs out, it sends a critical notification. One timer, in memory only;
+ * runs out, it sends a critical notification with Dismiss and snooze
+ * buttons (5 and 10 minutes, and the duration it ran if neither); a
+ * click elsewhere on it dismisses it too. One timer, in memory only;
  * one popup, on one monitor at a time. Main thread.
  */
 
@@ -31,3 +33,6 @@ int awl_timerpopup_shown( awl_timerpopup_t* tp );
  * still meanwhile) and counts the popup down while it is shown; call on
  * every bar redraw (the clock's measure()). */
 void awl_timerpopup_poll( awl_timerpopup_t* tp );
+/** :c:member:`awl_plugin_api_t.notification_action`: a snooze of the run-out
+ * notification runs the timer again for the key's seconds */
+void awl_timerpopup_action( awl_timerpopup_t* tp, uint32_t id, const char* key );
