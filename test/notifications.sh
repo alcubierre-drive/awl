@@ -628,6 +628,39 @@ check "a past one's \"Show\": it opens again, the menu closes" \
 check "its window is shown" eq "$(nwincount)" 1
 look "nclose $(awk '$1 == "notif" { print $2; exit }' <<<"$state") 2"
 
+echo "-- outputs (awl_output.c, the plugins' pause)"
+# the outputs the visible notification windows are on
+nmons() { awk '$1 == "pwin" && $8 == 1 && $9 == 1 { print $3 }' <<<"$state" | sort -u | tr '\n' ' '; }
+o1=$(notify app 0 out1 '[]' '{}' 0)
+o2=$(notify app 0 out2 '[]' '{}' 0)
+look
+check "two shown on the output" eq "$(nwincount)" 2
+out=$(nmons)
+out=${out% }
+"$live" randr --output "$out" --off >/dev/null 2>&1
+sleep 0.3
+look
+check "the only output off: none shown" eq "$(nwincount)" 0
+"$live" randr --output "$out" --on >/dev/null 2>&1
+sleep 0.3
+look
+check "on again: shown again" eq "$(nwincount) $(nmons)" "2 $out "
+# (live.sh remove never removes the last output: off is what's left of
+# that, the same pause and resume)
+"$live" add
+look
+out=$(nmons)
+out=${out% }
+"$live" randr --output "$out" --off >/dev/null 2>&1
+sleep 0.3
+look
+check "their output off, another on: shown on that one" \
+	eval '[ "$(nwincount)" = 2 ] && [ -n "$(nmons)" ] && [ "$(nmons)" != "$out " ]'
+"$live" randr --output "$out" --on >/dev/null 2>&1
+"$live" remove
+look "nclose $o1 2"
+look "nclose $o2 2"
+
 sleep 0.3
 kill "$monitor" 2>/dev/null
 check "signal: CloseNotification, reason 3" sawclosed "$b" 3

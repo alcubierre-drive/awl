@@ -503,7 +503,7 @@ static void outputs_update( awl_server_t *srv ) {
         desktop_update(srv->desktop, m);
         background_update(srv->background, m);
         awl_alert_draw(srv, m);
-        popups_update(srv, m);
+        popups_remove_mon(srv, m);
     }
     /* Insert outputs that need to */
     FOR_EACH_MON(m, srv) {

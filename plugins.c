@@ -207,8 +207,11 @@ static int api_fini( void ) {
 
 static void api_set_paused( int paused ) {
     if (!plugin_data) return;
+    /* an output again (or unlocked): what restack() hid without one shows */
+    const int resumed = plugin_data->paused && !paused;
     plugin_data->paused = paused;
     if (plugin_data->poller) poller_set_paused( plugin_data->poller, paused );
+    if (resumed) awl_notify_changed( plugin_data->notify );
 }
 
 static void api_wallpaper( WallpaperMode mode, int by_timer ) {
