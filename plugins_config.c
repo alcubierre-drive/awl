@@ -23,6 +23,7 @@
 #include "plugins_config_defaults.h"
 #include "plugins/logind.h"
 #include "plugins/screenshot.h"
+#include "plugins/notify.h"
 
 #define AWL_ACTION_REGISTER( name ) \
     void AWL_ACTION( name )( awl_server_t* srv, const Arg* arg ) { awl_host->actions->name( srv, arg ); }
@@ -33,6 +34,19 @@ AWL_ACTIONS
     void AWL_LAYOUT( name )( awl_server_t* srv, Monitor* m ) { awl_host->arranges->name( srv, m ); }
 AWL_ARRANGES
 #undef AWL_LAYOUT_REGISTER
+
+/** idle inhibit from the keyboard; with the OSD */
+static void AWL_ACTION( idle_inhibit_toggle )( awl_server_t* srv, const Arg* arg ) {
+    (void)srv; (void)arg;
+    awl_idle_inhibit_toggle( awl_plugin_get() );
+}
+
+/** toggles do not disturb from the keyboard; with the OSD */
+static void AWL_ACTION( dnd_toggle )( awl_server_t* srv, const Arg* arg ) {
+    (void)srv; (void)arg;
+    awl_plugin_data_t* p = awl_plugin_get();
+    if (p) awl_notify_set_dnd( p->notify, !awl_notify_dnd() );
+}
 
 /** the notifications' config popup (:c:func:`awl_notify_config`) */
 static void AWL_ACTION( notifyconfig )( awl_server_t* srv, const Arg* arg ) {
@@ -223,72 +237,67 @@ static const char* const autostart[][8] = {
 
 static const Key keys[] = {
     /* Note that Shift changes certain key codes: c -> C, 2 -> at, etc. */
-    /* modifier                  key                 function                    argument */
-    { MODKEY,                    XKB_KEY_p,          AWL_ACTION(launcher),         {.i = AWL_LAUNCHER_APPS} },
-    { MODKEY,                    XKB_KEY_r,          AWL_ACTION(launcher),         {.i = AWL_LAUNCHER_RUN} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_P,          AWL_ACTION(notifyconfig),     {0} },
-    { MODKEY,                    XKB_KEY_Return,     AWL_ACTION(spawn),            {.v = term_cmd} },
-    { MODKEY,                    XKB_KEY_y,          AWL_ACTION(backlightupdate),  {0} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Y,          AWL_ACTION(backlighttoggle),  {0} },
-    { MODKEY,                    XKB_KEY_i,          AWL_ACTION(toggle_bar),        {0} },
-    { MODKEY,                    XKB_KEY_j,          AWL_ACTION(focus_stack),       {.i = +1} },
-    { MODKEY,                    XKB_KEY_k,          AWL_ACTION(focus_stack),       {.i = -1} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_J,          AWL_ACTION(move_stack),        {.i = +1} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_K,          AWL_ACTION(move_stack),        {.i = -1} },
-    /*{ MODKEY,                    XKB_KEY_i,          AWL_ACTION(change_master_count),     {.i = +1} },*/
-    /*{ MODKEY,                    XKB_KEY_d,          AWL_ACTION(change_master_count),     {.i = -1} },*/
-    { MODKEY,                    XKB_KEY_h,          AWL_ACTION(set_master_factor),         {.f = -0.05f} },
-    { MODKEY,                    XKB_KEY_l,          AWL_ACTION(set_master_factor),         {.f = +0.05f} },
-    { MODKEY,                    XKB_KEY_Tab,        AWL_ACTION(view),             {0} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_C,          AWL_ACTION(kill_client),       {0} },
-    { MODKEY,                    XKB_KEY_m,          AWL_ACTION(maximize),         {0} },
-    { MODKEY,                    XKB_KEY_space,      AWL_ACTION(cycle_layout),     {.i = +1} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,      AWL_ACTION(cycle_layout),     {.i = -1} },
+    /* modifier                  key                function                        argument */
+    { MODKEY,                    XKB_KEY_p,         AWL_ACTION(launcher),           {.i = AWL_LAUNCHER_APPS} },
+    { MODKEY,                    XKB_KEY_r,         AWL_ACTION(launcher),           {.i = AWL_LAUNCHER_RUN} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_P,         AWL_ACTION(notifyconfig),       {0} },
+    { MODKEY,                    XKB_KEY_Return,    AWL_ACTION(spawn),              {.v = term_cmd} },
+    { MODKEY,                    XKB_KEY_y,         AWL_ACTION(backlightupdate),    {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_Y,         AWL_ACTION(backlighttoggle),    {0} },
+    { MODKEY,                    XKB_KEY_i,         AWL_ACTION(toggle_bar),         {0} },
+    { MODKEY,                    XKB_KEY_j,         AWL_ACTION(focus_stack),        {.i = +1} },
+    { MODKEY,                    XKB_KEY_k,         AWL_ACTION(focus_stack),        {.i = -1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_J,         AWL_ACTION(move_stack),         {.i = +1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_K,         AWL_ACTION(move_stack),         {.i = -1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_I,         AWL_ACTION(idle_inhibit_toggle),{0} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_I,AWL_ACTION(dnd_toggle), {0} },
+    { MODKEY,                    XKB_KEY_h,         AWL_ACTION(set_master_factor),  {.f = -0.05f} },
+    { MODKEY,                    XKB_KEY_l,         AWL_ACTION(set_master_factor),  {.f = +0.05f} },
+    { MODKEY,                    XKB_KEY_Tab,       AWL_ACTION(view),               {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_C,         AWL_ACTION(kill_client),        {0} },
+    { MODKEY,                    XKB_KEY_m,         AWL_ACTION(maximize),           {0} },
+    { MODKEY,                    XKB_KEY_space,     AWL_ACTION(cycle_layout),       {.i = +1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_space,     AWL_ACTION(cycle_layout),       {.i = -1} },
     { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_space,AWL_ACTION(toggle_per_tag),{0} },
-    { MODKEY,                    XKB_KEY_Right,      AWL_ACTION(cycle_view),       {.i = +1} },
-    { MODKEY,                    XKB_KEY_Left,       AWL_ACTION(cycle_view),       {.i = -1} },
-    { MODKEY,                    XKB_KEY_f,          AWL_ACTION(toggle_fullscreen), {0} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_space,      AWL_ACTION(toggle_floating),   {0} },
-    { MODKEY,                    XKB_KEY_t,          AWL_ACTION(toggle_on_top),      {0} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_r,          AWL_ACTION(plugin_restart),   {0} },
-    { MODKEY,                    XKB_KEY_w,          AWL_ACTION(wallpaper),        {.i = WallpaperTimerNext} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_W,          AWL_ACTION(wallpaper),        {.i = WallpaperTimerBack} },
-    { MODKEY,                    XKB_KEY_b,          AWL_ACTION(toggle_border),         {0} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_B,          AWL_ACTION(change_border_width),         {.i=+1} },
-    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_B, AWL_ACTION(change_border_width), {.i=-1} },
-    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_S, AWL_ACTION(suspend),  {0} },
-
-    { MODKEY,                    XKB_KEY_n,          AWL_ACTION(minimize),         {0} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_n,          AWL_ACTION(unminimize),       {0} },
-    { MODKEY,                    XKB_KEY_c,          AWL_ACTION(spawn),            {.v = hyprcopy} },
-    { 0, XKB_KEY_XF86MonBrightnessUp,                AWL_ACTION(brightness),       {.f =  0.05f} },
-    { 0, XKB_KEY_XF86MonBrightnessDown,              AWL_ACTION(brightness),       {.f = -0.05f} },
-    { 0, XKB_KEY_XF86AudioRaiseVolume,               AWL_ACTION(volume),           {.f =  0.05f} },
-    { 0, XKB_KEY_XF86AudioLowerVolume,               AWL_ACTION(volume),           {.f = -0.05f} },
-    { 0, XKB_KEY_XF86AudioMute,                      AWL_ACTION(volumemute),       {0} },
-    { 0, XKB_KEY_XF86AudioMicMute,                   AWL_ACTION(micmute),          {0} },
-    { MODKEY,                    XKB_KEY_F1,         AWL_ACTION(speakermute),      {0} },
-    { 0,                         XKB_KEY_Print,      AWL_ACTION(screenshot),       {.i=AWL_SCREENSHOT_SELECT} },
-    { WLR_MODIFIER_SHIFT,        XKB_KEY_Print,      AWL_ACTION(screenshot),       {.i=AWL_SCREENSHOT_WINDOW} },
-    { MODKEY,                    XKB_KEY_d,          AWL_ACTION(spawn),            {.v=wdisplays} },
-    { 0,                         XKB_KEY_XF86Display,AWL_ACTION(spawn),            {.v=wdisplays} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_A,          AWL_ACTION(spawn),            {.v=btrfs_snap_cpp_ask} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_G,          AWL_ACTION(lock_screen),       {0} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_z,          AWL_ACTION(change_opacity),        {.i=+1} },
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_Z,AWL_ACTION(change_opacity), {.i=-1} },
-
-    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_D, AWL_ACTION(output_profile), {.v="laptop"} },
-    { MODKEY|WLR_MODIFIER_CTRL,     XKB_KEY_d,         AWL_ACTION(output_profile), {.v="docked"} },
-    { MODKEY|WLR_MODIFIER_SHIFT,    XKB_KEY_D,         AWL_ACTION(output_profile), {.v="triple"} },
-    /*{ MODKEY,                    XKB_KEY_0,          AWL_ACTION(view),           {.ui = ~0} },*/
-    /*{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_parenright, AWL_ACTION(tag),            {.ui = ~0} },*/
-
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_h,          AWL_ACTION(change_master_count),     {.i = -1} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_l,          AWL_ACTION(change_master_count),     {.i = +1} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_j,          AWL_ACTION(focus_monitor),       {.i = -1} },
-    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_k,          AWL_ACTION(focus_monitor),       {.i = +1} },
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_O,          AWL_ACTION(move_to_monitor_follow),        {.i = -1} },
-    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_O,AWL_ACTION(move_to_monitor_follow), {.i = +1} },
+    { MODKEY,                    XKB_KEY_Right,     AWL_ACTION(cycle_view),         {.i = +1} },
+    { MODKEY,                    XKB_KEY_Left,      AWL_ACTION(cycle_view),         {.i = -1} },
+    { MODKEY,                    XKB_KEY_f,         AWL_ACTION(toggle_fullscreen),  {0} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_space,     AWL_ACTION(toggle_floating),    {0} },
+    { MODKEY,                    XKB_KEY_t,         AWL_ACTION(toggle_on_top),      {0} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_r,         AWL_ACTION(plugin_restart),     {0} },
+    { MODKEY,                    XKB_KEY_w,         AWL_ACTION(wallpaper),          {.i = WallpaperTimerNext} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_W,         AWL_ACTION(wallpaper),          {.i = WallpaperTimerBack} },
+    { MODKEY,                    XKB_KEY_b,         AWL_ACTION(toggle_border),      {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_B,         AWL_ACTION(change_border_width),{.i=+1} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_B,AWL_ACTION(change_border_width),{.i=-1} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_S,AWL_ACTION(suspend),    {0} },
+    { MODKEY,                    XKB_KEY_n,         AWL_ACTION(minimize),           {0} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_n,         AWL_ACTION(unminimize),         {0} },
+    { MODKEY,                    XKB_KEY_c,         AWL_ACTION(spawn),              {.v = hyprcopy} },
+    { 0, XKB_KEY_XF86MonBrightnessUp,               AWL_ACTION(brightness),         {.f =  0.05f} },
+    { 0, XKB_KEY_XF86MonBrightnessDown,             AWL_ACTION(brightness),         {.f = -0.05f} },
+    { 0, XKB_KEY_XF86AudioRaiseVolume,              AWL_ACTION(volume),             {.f =  0.05f} },
+    { 0, XKB_KEY_XF86AudioLowerVolume,              AWL_ACTION(volume),             {.f = -0.05f} },
+    { 0, XKB_KEY_XF86AudioMute,                     AWL_ACTION(volumemute),         {0} },
+    { 0, XKB_KEY_XF86AudioMicMute,                  AWL_ACTION(micmute),            {0} },
+    { MODKEY,                    XKB_KEY_F1,        AWL_ACTION(speakermute),        {0} },
+    { 0,                         XKB_KEY_Print,     AWL_ACTION(screenshot),         {.i=AWL_SCREENSHOT_SELECT} },
+    { WLR_MODIFIER_SHIFT,        XKB_KEY_Print,     AWL_ACTION(screenshot),         {.i=AWL_SCREENSHOT_WINDOW} },
+    { MODKEY,                    XKB_KEY_d,         AWL_ACTION(spawn),              {.v=wdisplays} },
+    { 0, XKB_KEY_XF86Display,                       AWL_ACTION(spawn),              {.v=wdisplays} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_A,         AWL_ACTION(spawn),              {.v=btrfs_snap_cpp_ask} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_G,         AWL_ACTION(lock_screen),        {0} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_z,         AWL_ACTION(change_opacity),     {.i=+1} },
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_Z,AWL_ACTION(change_opacity),{.i=-1} },
+    { MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,XKB_KEY_D, AWL_ACTION(output_profile),{.v="laptop"} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_d,         AWL_ACTION(output_profile),     {.v="docked"} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_D,         AWL_ACTION(output_profile),     {.v="triple"} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_h,         AWL_ACTION(change_master_count),{.i = -1} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_l,         AWL_ACTION(change_master_count),{.i = +1} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_j,         AWL_ACTION(focus_monitor),      {.i = -1} },
+    { MODKEY|WLR_MODIFIER_CTRL,  XKB_KEY_k,         AWL_ACTION(focus_monitor),      {.i = +1} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_O,         AWL_ACTION(move_to_monitor_follow),{.i = -1} },
+    { MODKEY|WLR_MODIFIER_SHIFT|WLR_MODIFIER_CTRL,XKB_KEY_O,AWL_ACTION(move_to_monitor_follow),{.i = +1} },
     TAG_KEYS(          XKB_KEY_1, XKB_KEY_exclam,                     0),
     TAG_KEYS(          XKB_KEY_2, XKB_KEY_quotedbl,                   1),
     TAG_KEYS(          XKB_KEY_3, XKB_KEY_section,                    2),
@@ -298,10 +307,10 @@ static const Key keys[] = {
     TAG_KEYS(          XKB_KEY_7, XKB_KEY_slash,                      6),
     TAG_KEYS(          XKB_KEY_8, XKB_KEY_parenleft,                  7),
     TAG_KEYS(          XKB_KEY_9, XKB_KEY_parenright,                 8),
-    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_equal,          AWL_ACTION(quit),       {0} },
+    { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_equal,     AWL_ACTION(quit),               {0} },
 
     /* Ctrl-Alt-Backspace and Ctrl-Alt-Fx used to be handled by X server */
-    { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_Terminate_Server, AWL_ACTION(quit), {0} },
+    { WLR_MODIFIER_CTRL|WLR_MODIFIER_ALT,XKB_KEY_Terminate_Server,AWL_ACTION(quit), {0} },
     /* Ctrl-Alt-Fx is used to switch to another VT, if you don't know what a VT is
      * do not remove them.
      */
@@ -310,10 +319,10 @@ static const Key keys[] = {
 };
 
 static const Button buttons[] = {
-    { ClkClient,   MODKEY, BTN_LEFT,   AWL_ACTION(move_resize),     {.ui = CurMove} },
-    { ClkClient,   MODKEY, BTN_MIDDLE, AWL_ACTION(toggle_floating), {0} },
-    { ClkClient,   MODKEY, BTN_RIGHT,  AWL_ACTION(move_resize),     {.ui = CurResize} },
-    { ClkClient,   MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT, BTN_LEFT, AWL_ACTION(kill_client), {.i=1} },
+    { ClkClient,   MODKEY, BTN_LEFT,    AWL_ACTION(move_resize),        {.ui = CurMove} },
+    { ClkClient,   MODKEY, BTN_MIDDLE,  AWL_ACTION(toggle_floating),    {0} },
+    { ClkClient,   MODKEY, BTN_RIGHT,   AWL_ACTION(move_resize),        {.ui = CurResize} },
+    { ClkClient,   MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,BTN_LEFT,AWL_ACTION(kill_client),{.i=1} },
 };
 
 /* configure() changes what differs from the defaults; awl_config_defaults.h
